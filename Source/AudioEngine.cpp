@@ -1,0 +1,444 @@
+#include "AudioEngine.h"
+
+#include "AudioFileIO.h"
+
+//==============================================================================
+juce::int64 DocumentSource::getTotalLength() const
+{
+    return document.getSnapshot()->getNumFrames();
+}
+
+void DocumentSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
+{
+    // Edits swap the snapshot; take a reference to the new one only when the version changes.
+    if (const auto v = document.getVersion(); snapshot == nullptr || v != snapshotVersion)
+    {
+        snapshot = document.getSnapshot();
+        snapshotVersion = v;
+    }
+
+    auto& buffer = *info.buffer;
+    const auto start = position.load();
+    const auto stop = stopFrame.load();
+    auto count = info.numSamples;
+
+    if (stop >= 0)
+        count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) info.numSamples, stop - start);
+
+    snapshot->read (buffer, info.startSample, start, count);
+
+    if (count < info.numSamples)
+        buffer.clear (info.startSample + count, info.numSamples - count);
+
+    // Mono documents play on both sides.
+    if (snapshot->getNumChannels() == 1)
+        for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
+            buffer.copyFrom (ch, info.startSample, buffer, 0, info.startSample, info.numSamples);
+
+    position = start + info.numSamples;
+}
+
+//==============================================================================
+DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc)
+    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      document (doc)
+{
+    documentReset();
+}
+
+DocumentPlayerProcessor::~DocumentPlayerProcessor()
+{
+    transport.setSource (nullptr);
+}
+
+void DocumentPlayerProcessor::documentReset()
+{
+    transport.stop();
+    // No read-ahead: the audio is already in memory. The transport resamples from the document's
+    // rate to the device's, so the interface keeps its own rate.
+    transport.setSource (&source, 0, nullptr, document.getSampleRate(), 2);
+    transport.setPosition (0.0);
+    stopAt = -1;
+    source.setStopFrame (-1);
+}
+
+void DocumentPlayerProcessor::play (juce::int64 startFrame, juce::int64 stopFrame)
+{
+    transport.stop();
+    stopAt = stopFrame;
+    source.setStopFrame (stopFrame);
+    setPositionFrames (startFrame);
+    transport.start();
+}
+
+juce::int64 DocumentPlayerProcessor::getPositionFrames() const
+{
+    return (juce::int64) std::llround (transport.getCurrentPosition() * document.getSampleRate());
+}
+
+void DocumentPlayerProcessor::setPositionFrames (juce::int64 frame)
+{
+    transport.setPosition ((double) frame / document.getSampleRate());
+}
+
+void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
+{
+    transport.prepareToPlay (blockSize, sampleRate);
+}
+
+void DocumentPlayerProcessor::releaseResources()
+{
+    transport.releaseResources();
+}
+
+void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    juce::AudioSourceChannelInfo info (&buffer, 0, buffer.getNumSamples());
+    transport.getNextAudioBlock (info);
+}
+
+//==============================================================================
+AudioEngine::AudioEngine()
+{
+    formatManager.registerBasicFormats();
+    juce::addDefaultFormatsToManager (pluginFormatManager);
+
+    auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document);
+    player = playerProcessor.get();
+    playerNode = graph.addNode (std::move (playerProcessor));
+
+    using IO = juce::AudioProcessorGraph::AudioGraphIOProcessor;
+    outputNode = graph.addNode (std::make_unique<IO> (IO::audioOutputNode));
+
+    graphPlayer.setProcessor (&graph);
+    deviceManager.addChangeListener (this);
+}
+
+AudioEngine::~AudioEngine()
+{
+    *alive = false;
+    deviceManager.removeChangeListener (this);
+    deviceManager.removeAudioCallback (&graphPlayer);
+    graphPlayer.setProcessor (nullptr);
+    deviceManager.closeAudioDevice();
+}
+
+juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
+{
+    // No inputs yet (recording comes later); up to 256 outputs so large interfaces such as
+    // a 30-output Fireface show every channel. With no saved state the system default device
+    // opens at its current sample rate, so other apps sharing the interface are not disturbed.
+    auto error = deviceManager.initialise (0, 256, savedState, true);
+    deviceManager.addAudioCallback (&graphPlayer);
+    rebuildConnections();
+    return error;
+}
+
+juce::String AudioEngine::openFile (const juce::File& file)
+{
+    auto loaded = AudioFileIO::load (file, formatManager);
+
+    if (loaded.error.isNotEmpty())
+        return loaded.error;
+
+    player->pause();
+    document.reset (std::move (loaded.snapshot), loaded.sampleRate, file, loaded.bitDepth);
+    player->documentReset();
+    sendChangeMessage();
+    return {};
+}
+
+//==============================================================================
+juce::StringArray AudioEngine::getDeviceOutputChannelNames() const
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        return device->getOutputChannelNames();
+
+    return {};
+}
+
+void AudioEngine::setOutputPair (int firstChannel)
+{
+    // A pair saved for a larger interface falls back to the first pair on a smaller one.
+    const auto numDeviceOutputs = getDeviceOutputChannelNames().size();
+    outputPairFirstChannel = juce::isPositiveAndBelow (firstChannel, numDeviceOutputs) ? firstChannel : 0;
+
+    // The device only delivers buffers for active channels, so make sure the chosen pair is on.
+    auto setup = deviceManager.getAudioDeviceSetup();
+    auto changed = false;
+
+    for (int ch = outputPairFirstChannel; ch < juce::jmin (outputPairFirstChannel + 2, numDeviceOutputs); ++ch)
+    {
+        if (! setup.outputChannels[ch])
+        {
+            setup.outputChannels.setBit (ch);
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        setup.useDefaultOutputChannels = false;
+        deviceManager.setAudioDeviceSetup (setup, true);
+    }
+
+    rebuildConnections();
+    sendChangeMessage();
+}
+
+void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    // Device, sample rate, buffer size or active channels changed.
+    rebuildConnections();
+    sendChangeMessage();
+}
+
+void AudioEngine::rebuildConnections()
+{
+    for (auto& c : graph.getConnections())
+        graph.removeConnection (c, juce::AudioProcessorGraph::UpdateKind::none);
+
+    // Chain: player -> each rack slot in order -> output. Bypassed slots stay in the chain;
+    // the graph calls their bypass processing so latency compensation keeps working.
+    auto* source = playerNode.get();
+
+    auto connectStereo = [this] (Node* from, Node* to, int toFirstChannel)
+    {
+        const auto fromChannels = from->getProcessor()->getTotalNumOutputChannels();
+        const auto toChannels   = to->getProcessor()->getTotalNumInputChannels();
+
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            const auto src = juce::jmin (ch, fromChannels - 1);
+            const auto dst = toFirstChannel + ch;
+
+            if (src >= 0 && dst < toChannels)
+                graph.addConnection ({ { from->nodeID, src }, { to->nodeID, dst } },
+                                     juce::AudioProcessorGraph::UpdateKind::none);
+        }
+    };
+
+    for (auto& slot : rack)
+    {
+        connectStereo (source, slot.get(), 0);
+        source = slot.get();
+    }
+
+    // The graph's output channels are the device's *active* output channels, in order,
+    // so map the absolute device channel to its position among the active ones.
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        const auto active = device->getActiveOutputChannels();
+
+        if (active[outputPairFirstChannel])
+        {
+            int graphChannel = 0;
+
+            for (int ch = 0; ch < outputPairFirstChannel; ++ch)
+                if (active[ch])
+                    ++graphChannel;
+
+            connectStereo (source, outputNode.get(), graphChannel);
+
+            // A pair whose second channel is inactive (or a mono device) still gets the left side.
+            if (! active[outputPairFirstChannel + 1])
+                graph.removeConnection ({ { source->nodeID, 1 }, { outputNode->nodeID, graphChannel + 1 } },
+                                        juce::AudioProcessorGraph::UpdateKind::none);
+        }
+    }
+
+    graph.rebuild();
+}
+
+//==============================================================================
+juce::AudioPluginInstance* AudioEngine::getRackPlugin (int index) const
+{
+    if (juce::isPositiveAndBelow (index, (int) rack.size()))
+        return dynamic_cast<juce::AudioPluginInstance*> (rack[(size_t) index]->getProcessor());
+
+    return nullptr;
+}
+
+bool AudioEngine::isRackSlotBypassed (int index) const
+{
+    return juce::isPositiveAndBelow (index, (int) rack.size()) && rack[(size_t) index]->isBypassed();
+}
+
+void AudioEngine::setRackSlotBypassed (int index, bool shouldBeBypassed)
+{
+    if (juce::isPositiveAndBelow (index, (int) rack.size()))
+    {
+        rack[(size_t) index]->setBypassed (shouldBeBypassed);
+        sendChangeMessage();
+    }
+}
+
+void AudioEngine::moveRackSlot (int fromIndex, int toIndex)
+{
+    if (! juce::isPositiveAndBelow (fromIndex, (int) rack.size())
+        || ! juce::isPositiveAndBelow (toIndex, (int) rack.size())
+        || fromIndex == toIndex)
+        return;
+
+    auto node = rack[(size_t) fromIndex];
+    rack.erase (rack.begin() + fromIndex);
+    rack.insert (rack.begin() + toIndex, node);
+    rebuildConnections();
+    sendChangeMessage();
+}
+
+double AudioEngine::currentSampleRate() const
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        return device->getCurrentSampleRate();
+
+    return 44100.0;
+}
+
+int AudioEngine::currentBlockSize() const
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        return device->getCurrentBufferSizeSamples();
+
+    return 512;
+}
+
+void AudioEngine::addPlugin (const juce::PluginDescription& description, AddCallback onDone)
+{
+    // Asynchronous creation is required for AUv3 and keeps the UI responsive for slow plug-ins.
+    pluginFormatManager.createPluginInstanceAsync (description, currentSampleRate(), currentBlockSize(),
+        [this, isAlive = alive, done = std::move (onDone)] (std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                             const juce::String& error)
+        {
+            if (! *isAlive)
+                return;
+
+            if (instance == nullptr)
+            {
+                if (done != nullptr)
+                    done (error.isNotEmpty() ? error : juce::String ("The plug-in could not be created."));
+                return;
+            }
+
+            instance->enableAllBuses();
+            rack.push_back (graph.addNode (std::move (instance)));
+            rebuildConnections();
+            sendChangeMessage();
+
+            if (done != nullptr)
+                done ({});
+        });
+}
+
+void AudioEngine::removeRackSlot (int index)
+{
+    if (! juce::isPositiveAndBelow (index, (int) rack.size()))
+        return;
+
+    auto node = rack[(size_t) index];
+
+    if (onPluginAboutToBeRemoved != nullptr)
+        onPluginAboutToBeRemoved (node->getProcessor());
+
+    rack.erase (rack.begin() + index);
+    graph.removeNode (node.get());
+    rebuildConnections();
+    sendChangeMessage();
+}
+
+void AudioEngine::clearRack()
+{
+    while (! rack.empty())
+        removeRackSlot ((int) rack.size() - 1);
+}
+
+//==============================================================================
+std::unique_ptr<juce::XmlElement> AudioEngine::createRackXml() const
+{
+    auto xml = std::make_unique<juce::XmlElement> ("WAVELOOM_RACK");
+    xml->setAttribute ("version", 1);
+
+    for (auto& node : rack)
+    {
+        auto* plugin = dynamic_cast<juce::AudioPluginInstance*> (node->getProcessor());
+
+        if (plugin == nullptr)
+            continue;
+
+        auto* slot = xml->createNewChildElement ("SLOT");
+        slot->setAttribute ("bypassed", node->isBypassed());
+        slot->addChildElement (plugin->getPluginDescription().createXml().release());
+
+        juce::MemoryBlock state;
+        plugin->getStateInformation (state);
+        slot->createNewChildElement ("STATE")->addTextElement (state.toBase64Encoding());
+    }
+
+    return xml;
+}
+
+void AudioEngine::loadRackXml (const juce::XmlElement& xml, AddCallback onDone)
+{
+    if (! xml.hasTagName ("WAVELOOM_RACK"))
+    {
+        if (onDone != nullptr)
+            onDone ("Not a Waveloom rack file.");
+        return;
+    }
+
+    clearRack();
+
+    auto slots = std::make_shared<std::vector<std::unique_ptr<juce::XmlElement>>>();
+
+    for (auto* slot : xml.getChildWithTagNameIterator ("SLOT"))
+        slots->push_back (std::make_unique<juce::XmlElement> (*slot));
+
+    addPluginsFromXml (slots, 0, {}, std::move (onDone));
+}
+
+void AudioEngine::addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr<juce::XmlElement>>> slots,
+                                     size_t next, juce::StringArray errors, AddCallback onDone)
+{
+    if (next >= slots->size())
+    {
+        if (onDone != nullptr)
+            onDone (errors.joinIntoString ("\n"));
+        return;
+    }
+
+    const auto& slot = *(*slots)[next];
+    juce::PluginDescription description;
+
+    if (auto* descXml = slot.getChildByName ("PLUGIN"); descXml == nullptr || ! description.loadFromXml (*descXml))
+    {
+        errors.add ("Slot " + juce::String ((int) next + 1) + ": missing plug-in description.");
+        addPluginsFromXml (slots, next + 1, errors, std::move (onDone));
+        return;
+    }
+
+    // Plug-ins load one after another so the rack keeps its order.
+    addPlugin (description, [this, slots, next, errors, onDone, description] (const juce::String& error) mutable
+    {
+        if (error.isNotEmpty())
+        {
+            errors.add (description.name + ": " + error);
+        }
+        else
+        {
+            const auto& loadedSlot = *(*slots)[next];
+            auto* plugin = getRackPlugin ((int) rack.size() - 1);
+
+            if (auto* stateXml = loadedSlot.getChildByName ("STATE"); plugin != nullptr && stateXml != nullptr)
+            {
+                juce::MemoryBlock state;
+
+                if (state.fromBase64Encoding (stateXml->getAllSubText()))
+                    plugin->setStateInformation (state.getData(), (int) state.getSize());
+            }
+
+            setRackSlotBypassed ((int) rack.size() - 1, loadedSlot.getBoolAttribute ("bypassed"));
+        }
+
+        addPluginsFromXml (slots, next + 1, errors, std::move (onDone));
+    });
+}

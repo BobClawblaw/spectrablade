@@ -1,0 +1,105 @@
+#pragma once
+
+#include "AudioEdits.h"
+#include "AudioEngine.h"
+#include "RackView.h"
+#include "WaveformView.h"
+
+class MainComponent final : public juce::Component,
+                            public juce::ApplicationCommandTarget,
+                            public juce::MenuBarModel,
+                            private juce::ChangeListener,
+                            private juce::Timer
+{
+public:
+    MainComponent();
+    ~MainComponent() override;
+
+    /** Asks about unsaved changes, then calls proceed unless the user cancels. */
+    void confirmDiscardChanges (std::function<void()> proceed);
+
+    std::function<void (const juce::String& title)> onTitleChanged;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+    // ApplicationCommandTarget
+    ApplicationCommandTarget* getNextCommandTarget() override  { return nullptr; }
+    void getAllCommands (juce::Array<juce::CommandID>&) override;
+    void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
+    bool perform (const InvocationInfo&) override;
+
+    // MenuBarModel
+    juce::StringArray getMenuBarNames() override;
+    juce::PopupMenu getMenuForIndex (int index, const juce::String& name) override;
+    void menuItemSelected (int, int) override {}
+
+private:
+    class PluginEditorWindow;
+    class PluginListWindow;
+    class RackRenderJob;
+
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void timerCallback() override;
+
+    // File
+    void openFile (const juce::File&);
+    void chooseFile();
+    void save();
+    void saveAs (std::function<void (bool saved)> done = {});
+    void writeFile (const juce::File&, int bitDepth, std::function<void (bool saved)> done);
+
+    // Edit
+    juce::Range<juce::int64> selectionOrAll() const;
+    void applyEdit (AudioDocument::Snapshot next, const juce::String& description, juce::Range<juce::int64> newSelection);
+    void cut();
+    void copy();
+    void paste();
+    void deleteSelection();
+    void cropToSelection();
+
+    // Effects
+    void askForDecibels (const juce::String& title, const juce::String& label, float initial,
+                         std::function<void (float)> onOk);
+    void applyGain();
+    void applyNormalize();
+    void applySimpleEffect (const juce::String& name,
+                            AudioDocument::Snapshot (*effect) (const AudioSnapshot&, juce::int64, juce::int64),
+                            bool needsSelection);
+    void applyRackToSelection();
+
+    // Transport and windows
+    void togglePlay();
+    void showAudioSettings();
+    void showPluginList();
+    void showEditor (int slotIndex);
+    void closeEditorFor (juce::AudioProcessor*);
+    void saveRack();
+    void loadRack();
+    void refreshOutputChoices();
+    void refreshTitle();
+    void saveSettings();
+
+    juce::ApplicationProperties appProperties;
+    AudioEngine engine;
+    juce::ApplicationCommandManager commands;
+    AudioClip clipboard;
+
+    juce::TextButton openButton { "Open..." }, playButton { "Play" }, stopButton { "Stop" },
+                     pluginsButton { "Plug-ins..." }, audioButton { "Audio Settings..." },
+                     saveRackButton { "Save Rack..." }, loadRackButton { "Load Rack..." };
+    juce::Label outputLabel { {}, "Output" };
+    juce::ComboBox outputPair;
+    juce::Label fileLabel, deviceLabel, timeLabel, selectionLabel;
+
+    WaveformView waveform { engine };
+    RackView rackView { engine };
+
+    std::unique_ptr<juce::FileChooser> chooser;
+    juce::OwnedArray<PluginEditorWindow> editorWindows;
+    std::unique_ptr<PluginListWindow> pluginListWindow;
+    std::unique_ptr<RackRenderJob> renderJob;
+    juce::File deadMansPedalFile;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
+};
