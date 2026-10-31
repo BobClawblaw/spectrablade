@@ -35,7 +35,8 @@ namespace
         cmdSpectralAttenuate, cmdSpectralRemove,
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
-        cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip
+        cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
+        cmdAddBus
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -501,7 +502,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSplitClip; ++id)
+    for (int id = cmdOpen; id <= cmdAddBus; ++id)
         ids.add (id);
 }
 
@@ -593,7 +594,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('i', cmd); info.setActive (multitrackMode); break;
         case cmdAddTrack:   info.setInfo ("Add Track", "Add an empty track", "Multitrack", 0);
                             info.addDefaultKeypress ('t', cmd | shift); info.setActive (multitrackMode); break;
-        case cmdDeleteTrack: info.setInfo ("Delete Track", "Delete the selected track and its clips", "Multitrack", 0);
+        case cmdAddBus:     info.setInfo ("Add Bus", "Add a bus for tracks to send to", "Multitrack", 0);
+                            info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
+        case cmdDeleteTrack: info.setInfo ("Delete Track", "Delete the selected track or bus", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdSplitClip:  info.setInfo ("Split Clip", "Split the selected clip at the cursor", "Multitrack", 0);
                             info.addDefaultKeypress ('k', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
@@ -703,6 +706,13 @@ bool MainComponent::perform (const InvocationInfo& info)
             engine.session.apply (std::move (next), "Add Track");
             break;
         }
+        case cmdAddBus:
+        {
+            auto next = *engine.session.getState();
+            next.addBus();
+            engine.session.apply (std::move (next), "Add Bus");
+            break;
+        }
         case cmdDeleteTrack: multitrack.deleteSelectedTrack(); break;
         case cmdSplitClip:  multitrack.splitSelectedClip(); break;
         case cmdSpectralAttenuate:
@@ -749,7 +759,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdDeleteTrack, 0, cmdSplitClip }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;

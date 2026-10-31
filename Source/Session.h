@@ -19,15 +19,30 @@ struct SessionClip
     juce::int64 getEnd() const noexcept    { return position + length; }
 };
 
-/** A track: clips (overlapping clips mix), a level, a pan, mute and solo. */
+/** Part of a track's signal sent to a bus, from before its volume (pre-fader) or after it. */
+struct SessionSend
+{
+    juce::uint32 busId = 0;
+    float gainDb = 0.0f;
+    bool preFader = false;
+};
+
+/** A track: clips (overlapping clips mix), a level, a pan, mute, solo and sends to buses.
+
+    A bus is a track with no clips that plays what other tracks send it, through its own effects,
+    volume and pan. Buses send nowhere themselves. */
 struct SessionTrack
 {
     juce::uint32 id = 0;
     juce::String name;
+    bool isBus = false;
     float gainDb = 0.0f;
     float pan = 0.0f;                      // -1 (left) to +1 (right)
     bool mute = false, solo = false;
     std::vector<SessionClip> clips;
+    std::vector<SessionSend> sends;
+
+    const SessionSend* findSend (juce::uint32 busId) const;
 };
 
 /** One state of a session. Copies share the clips' audio. */
@@ -44,6 +59,12 @@ struct SessionState
     /** Adds an empty track named "Track n" and returns it. */
     SessionTrack& addTrack();
 
+    /** Adds a bus named "Bus n" and returns it. */
+    SessionTrack& addBus();
+
+    /** The track (or bus) with this id, or null. */
+    const SessionTrack* findTrack (juce::uint32 trackId) const;
+
     /** The track and index of the clip with this id, or nothing. */
     std::optional<std::pair<int, int>> findClip (juce::uint32 clipId) const;
 };
@@ -53,10 +74,11 @@ struct SessionState
 namespace SessionEdits
 {
     /** Adds a clip of the whole audio at position on a track (a new one when track is past the
-        last). Returns the clip's id. */
+        last or a bus). Returns the clip's id. */
     juce::uint32 addClip (SessionState&, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position);
 
-    /** Moves a clip to a track (a new one when past the last) and a position (not before 0). */
+    /** Moves a clip to a track (a new one when past the last) and a position (not before 0).
+        Onto a bus, it only moves in time. */
     bool moveClip (SessionState&, juce::uint32 clipId, int toTrack, juce::int64 position);
 
     /** Sets where a clip starts and ends in the session, showing more or less of its audio, which
@@ -68,7 +90,12 @@ namespace SessionEdits
     bool splitClip (SessionState&, juce::uint32 clipId, juce::int64 frame);
 
     bool removeClip (SessionState&, juce::uint32 clipId);
+    /** Removes a track or bus; removing a bus removes the sends to it. */
     bool removeTrack (SessionState&, int track);
+
+    /** Sets a track's send to a bus, adding it if there is none. */
+    bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);
+    bool removeSend (SessionState&, juce::uint32 trackId, juce::uint32 busId);
 }
 
 //==============================================================================

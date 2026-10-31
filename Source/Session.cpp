@@ -19,13 +19,58 @@ bool SessionState::anySolo() const
     return std::any_of (tracks.begin(), tracks.end(), [] (const SessionTrack& t) { return t.solo; });
 }
 
+namespace
+{
+    /** prefix + n, counting up from n past names already in use. */
+    juce::String freeName (const SessionState& s, const juce::String& prefix, int n)
+    {
+        const auto taken = [&] (const juce::String& name)
+        {
+            return std::any_of (s.tracks.begin(), s.tracks.end(), [&] (auto& t) { return t.name == name; });
+        };
+
+        while (taken (prefix + juce::String (n)))
+            ++n;
+
+        return prefix + juce::String (n);
+    }
+}
+
 SessionTrack& SessionState::addTrack()
 {
     SessionTrack t;
     t.id = nextId++;
-    t.name = "Track " + juce::String ((int) tracks.size() + 1);
+    t.name = freeName (*this, "Track ", (int) std::count_if (tracks.begin(), tracks.end(), [] (auto& x) { return ! x.isBus; }) + 1);
     tracks.push_back (std::move (t));
     return tracks.back();
+}
+
+SessionTrack& SessionState::addBus()
+{
+    SessionTrack t;
+    t.id = nextId++;
+    t.isBus = true;
+    t.name = freeName (*this, "Bus ", (int) std::count_if (tracks.begin(), tracks.end(), [] (auto& x) { return x.isBus; }) + 1);
+    tracks.push_back (std::move (t));
+    return tracks.back();
+}
+
+const SessionTrack* SessionState::findTrack (juce::uint32 trackId) const
+{
+    for (auto& t : tracks)
+        if (t.id == trackId)
+            return &t;
+
+    return nullptr;
+}
+
+const SessionSend* SessionTrack::findSend (juce::uint32 busId) const
+{
+    for (auto& send : sends)
+        if (send.busId == busId)
+            return &send;
+
+    return nullptr;
 }
 
 std::optional<std::pair<int, int>> SessionState::findClip (juce::uint32 clipId) const
@@ -58,7 +103,7 @@ namespace
 
 juce::uint32 addClip (SessionState& s, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position)
 {
-    if (track < 0 || track >= (int) s.tracks.size())
+    if (track < 0 || track >= (int) s.tracks.size() || s.tracks[(size_t) track].isBus)
     {
         s.addTrack();
         track = (int) s.tracks.size() - 1;
@@ -85,6 +130,9 @@ bool moveClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int64 po
     auto& from = s.tracks[(size_t) where->first].clips;
     auto clip = from[(size_t) where->second];
     clip.position = juce::jmax ((juce::int64) 0, position);
+
+    if (toTrack < (int) s.tracks.size() && s.tracks[(size_t) toTrack].isBus)
+        toTrack = where->first;
 
     if (toTrack == where->first)
     {
@@ -169,8 +217,51 @@ bool removeTrack (SessionState& s, int track)
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))
         return false;
 
+    const auto removed = s.tracks[(size_t) track].id;
     s.tracks.erase (s.tracks.begin() + track);
+
+    for (auto& t : s.tracks)
+        t.sends.erase (std::remove_if (t.sends.begin(), t.sends.end(), [removed] (auto& send) { return send.busId == removed; }),
+                       t.sends.end());
+
     return true;
+}
+
+bool setSend (SessionState& s, juce::uint32 trackId, const SessionSend& send)
+{
+    const auto* bus = s.findTrack (send.busId);
+    auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (bus == nullptr || ! bus->isBus || track == s.tracks.end() || track->isBus)
+        return false;
+
+    for (auto& existing : track->sends)
+    {
+        if (existing.busId == send.busId)
+        {
+            existing = send;
+            return true;
+        }
+    }
+
+    track->sends.push_back (send);
+    return true;
+}
+
+bool removeSend (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
+{
+    for (auto& t : s.tracks)
+    {
+        if (t.id != trackId)
+            continue;
+
+        const auto before = t.sends.size();
+        t.sends.erase (std::remove_if (t.sends.begin(), t.sends.end(), [busId] (auto& send) { return send.busId == busId; }),
+                       t.sends.end());
+        return t.sends.size() != before;
+    }
+
+    return false;
 }
 }
 
@@ -295,10 +386,27 @@ juce::String save (const SessionState& state, const juce::File& target,
     root.setAttribute ("version", 1);
     root.setAttribute ("sampleRate", state.sampleRate);
 
+    // Sends name their bus by its place in the file, since ids are given out afresh on loading.
+    std::map<juce::uint32, int> indexOf;
+
+    for (size_t i = 0; i < state.tracks.size(); ++i)
+        indexOf[state.tracks[i].id] = (int) i;
+
     for (auto& t : state.tracks)
     {
         auto* track = root.createNewChildElement ("TRACK");
         track->setAttribute ("name", t.name);
+
+        if (t.isBus)
+            track->setAttribute ("bus", true);
+
+        for (auto& send : t.sends)
+        {
+            auto* sendXml = track->createNewChildElement ("SEND");
+            sendXml->setAttribute ("bus", indexOf[send.busId]);
+            sendXml->setAttribute ("gainDb", send.gainDb);
+            sendXml->setAttribute ("preFader", send.preFader);
+        }
         track->setAttribute ("gainDb", t.gainDb);
         track->setAttribute ("pan", t.pan);
         track->setAttribute ("mute", t.mute);
@@ -351,8 +459,17 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
     for (auto* trackXml : root->getChildWithTagNameIterator ("TRACK"))
     {
-        auto& track = state.addTrack();
+        auto& track = trackXml->getBoolAttribute ("bus") ? state.addBus() : state.addTrack();
         track.name = trackXml->getStringAttribute ("name", track.name);
+
+        for (auto* sendXml : trackXml->getChildWithTagNameIterator ("SEND"))
+        {
+            SessionSend send;
+            send.busId = (juce::uint32) sendXml->getIntAttribute ("bus", -1);   // an index until every track is read
+            send.gainDb = (float) sendXml->getDoubleAttribute ("gainDb");
+            send.preFader = sendXml->getBoolAttribute ("preFader");
+            track.sends.push_back (send);
+        }
         track.gainDb = (float) trackXml->getDoubleAttribute ("gainDb");
         track.pan = (float) trackXml->getDoubleAttribute ("pan");
         track.mute = trackXml->getBoolAttribute ("mute");
@@ -400,6 +517,23 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.fadeIn = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeIn").getLargeIntValue());
             clip.fadeOut = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeOut").getLargeIntValue());
             track.clips.push_back (std::move (clip));
+        }
+    }
+
+    // Indices to ids; sends to anything but a bus are dropped.
+    const auto pending = state.tracks;
+
+    for (size_t i = 0; i < pending.size(); ++i)
+    {
+        state.tracks[i].sends.clear();
+
+        for (auto send : pending[i].sends)
+        {
+            if (send.busId < pending.size())
+            {
+                send.busId = pending[send.busId].id;
+                SessionEdits::setSend (state, state.tracks[i].id, send);
+            }
         }
     }
 

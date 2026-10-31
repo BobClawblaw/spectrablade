@@ -6,13 +6,22 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 12: buses and sends**
+- Multitrack > Add Bus (Cmd+Shift+B) adds a bus: a row with no clips that plays what tracks send it, through its own effects (the FX button), volume and pan. Its lane lists the tracks feeding it.
+- Each track's Sends button opens a panel with a row per bus: turn the send on, set its level, and choose Pre to send before the track's volume instead of after it. New Bus makes a bus and sends the track to it in one step. Every change is undoable, and deleting a bus removes the sends to it.
+- Muting a track silences its sends too. Soloing a bus plays it with the tracks that feed it; soloing a track plays it with the buses it feeds.
+- Delay compensation covers every path. A track is read ahead by its own effects' latency plus the most latency among the buses it sends to, and each of its outputs is held back by what that path lacks, so the direct sound and every bus line up. After a jump, the mixer runs the frames before the start point that the longest path needs, so the first block plays in time.
+- Buses and sends are saved in the session file.
+- Measured by the tests: pre- and post-fader sends, bus volume and pan against the same sums made by hand. With latencies of 300 frames on a track, 500 on one bus and 64 on another, the mix matches the mix without effects bit for bit in 333- and 2900-frame blocks and after a jump. Also checked: mute and solo rules, the edit rules (sends only from tracks to buses, clips never on buses, deleting a bus) and the file round trip.
+- Not yet: buses feeding buses, sends to anywhere but a bus, or a choice of output for a track.
+
 **Milestone 11: effects on each track**
 - The FX button on each track header opens its effect chain: add any scanned VST3 or Audio Unit effect, and edit, bypass, reorder or remove each one. The button shows how many effects the track has and lights while any is on.
 - Each track plays its clips, panned, through its effects, then its volume, then the master rack. Plug-ins run at the session's rate in blocks of up to 1024 frames. A mono plug-in gets the average of the two sides and plays on both.
 - Plug-in delay compensation adds no delay of its own: a track whose effects delay it by L frames is read L frames ahead, so every track lines up and the session plays when you press play. After each jump, the effects are run over the frames they read ahead before the first block plays. Bypassed effects are skipped and their latency is not counted. The menu shows the latency it compensates.
 - Effects are saved in the session file with each plug-in's state and bypass, and come back when it is opened. Deleting a track keeps its effects, so undoing the delete brings them back. Changing effects marks the session as needing a save; they are not undoable steps.
 - Measured by the tests, with a test plug-in that delays by a known number of frames: chains of 377 and 1029 frames of latency mix bit for bit like the session without them, in blocks of 333, 512 and 3000 frames. Playing from a jump matches the dry mix bit for bit, both through the mixer and through the player. Bypass, reordering, removal, muting and a new session rate are checked, and a real Apple Audio Unit loads onto a track and is restored with its bypass.
-- Not yet: buses and sends, automation, recording onto tracks, fade handles and snapping. Changing a chain while playing jumps that track by the change in latency.
+- Changing a chain while playing jumps that track by the change in latency.
 
 **Milestone 10: multitrack sessions (first part)**
 - View > Multitrack Session (Cmd+4), or the Multitrack button, switches between the open file and a multitrack session. Drop audio files onto the session, or use Multitrack > Import Audio (Cmd+I), to add them as clips at the cursor (dropped files land on the track under the mouse). Each track has a name (double-click to rename), mute, solo, volume and pan. Drag a clip to move it, onto another track or below the last one for a new track. Drag its edges to trim it, split it at the cursor with Multitrack > Split Clip (Cmd+K), and delete it with Delete. Double-click a clip to open its file in the editor. Every change is undoable.
@@ -108,6 +117,7 @@ The tests run against the real machine:
 - Spectrogram level calibration and image, and spectral edits: identity, removal depth, neighbouring tones, untouched audio, attenuation.
 - Multitrack: the mixer (pan laws, gains, mute, solo, trims, fades, block-size independence), clip edits (split, trim, move, delete), undo with merged steps, session files (round trip after moving the folder, shared audio read once, rate conversion, missing files), and session playback through the player.
 - Track effects: delay compensation bit for bit across tracks with different latencies and block sizes, playing from a jump, bypass, reordering, removal, saving each chain in the session file, and a real Apple Audio Unit on a track.
+- Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
 - Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
 - Loudness against the EBU Tech 3341 and 3342 signals at two rates, 5.1 channel weights, gating, true peak between samples, measuring part of a file, and cancelling.
@@ -143,4 +153,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: buses and sends, recording onto tracks with punch-in, automation, fade handles and snapping
+1. Multitrack, continued: recording onto tracks with punch-in, automation, fade handles and snapping

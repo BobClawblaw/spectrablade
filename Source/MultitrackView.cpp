@@ -46,6 +46,10 @@ public:
             b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? juce::Colour (0xffd0453a) : juce::Colour (0xffd8b43a));
         }
 
+        sendsButton.setTooltip ("Send this track to buses");
+        sendsButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+        sendsButton.onClick = [this] { view.showSends (trackId, sendsButton); };
+
         effectsButton.setTooltip ("This track's effects");
         effectsButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
         effectsButton.onClick = [this] { view.showEffectsMenu (trackId, effectsButton); };
@@ -85,14 +89,20 @@ public:
             s->setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
         }
 
-        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &mute, &solo, &gain, &pan })
+        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &mute, &solo, &gain, &pan, &sendsButton })
             addAndMakeVisible (c);
     }
 
     void update (const SessionTrack& t, int index, bool selected)
     {
-        colour = trackColour (index);
+        colour = t.isBus ? juce::Colour (0xff9aa3ad) : trackColour (index);
         isSelected = selected;
+        isBus = t.isBus;
+        sendsButton.setVisible (! isBus);
+        sendsButton.setButtonText (t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
+        sendsButton.setToggleState (! t.sends.empty(), juce::dontSendNotification);
+        effectsButton.setTooltip (isBus ? "This bus's effects" : "This track's effects");
+        resized();
 
         if (! name.isBeingEdited())
             name.setText (t.name, juce::dontSendNotification);
@@ -121,9 +131,9 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (0xff1b1e23));
+        g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (isBus ? 0xff16191d : 0xff1b1e23));
         g.setColour (colour);
-        g.fillRect (0, 0, 4, getHeight());
+        g.fillRect (0, 0, isBus ? 8 : 4, getHeight());
         g.setColour (laneLine);
         g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
     }
@@ -141,7 +151,15 @@ public:
         r.removeFromTop (8);
         gain.setBounds (r.removeFromTop (22));
         r.removeFromTop (6);
-        pan.setBounds (r.removeFromTop (22));
+        auto bottom = r.removeFromTop (22);
+
+        if (! isBus)
+        {
+            sendsButton.setBounds (bottom.removeFromRight (64));
+            bottom.removeFromRight (4);
+        }
+
+        pan.setBounds (bottom);
     }
 
     void mouseDown (const juce::MouseEvent&) override
@@ -157,10 +175,160 @@ public:
 private:
     MultitrackView& view;
     juce::Label name;
-    juce::TextButton effectsButton { "FX" }, mute { "M" }, solo { "S" };
+    juce::TextButton effectsButton { "FX" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" };
     juce::Slider gain, pan;
     juce::Colour colour;
-    bool isSelected = false;
+    bool isSelected = false, isBus = false;
+};
+
+//==============================================================================
+/** A track's sends: one row per bus (on/off, level, before or after the track's volume), and a
+    button that makes a new bus with a send to it. Follows the session, so undo shows here too. */
+class MultitrackView::SendsPanel final : public juce::Component,
+                                         private juce::ChangeListener
+{
+public:
+    SendsPanel (AudioEngine& e, juce::uint32 id) : engine (e), trackId (id)
+    {
+        newBus.onClick = [this]
+        {
+            auto next = *engine.session.getState();
+            const auto busId = next.addBus().id;
+            SessionEdits::setSend (next, trackId, { busId, 0.0f, false });
+            engine.session.apply (std::move (next), "Add Bus and Send");
+        };
+
+        addAndMakeVisible (newBus);
+        addChildComponent (empty);
+        empty.setText ("No buses yet.", juce::dontSendNotification);
+        empty.setColour (juce::Label::textColourId, juce::Colours::grey);
+        engine.session.addChangeListener (this);
+        refresh();
+    }
+
+    ~SendsPanel() override
+    {
+        engine.session.removeChangeListener (this);
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds().reduced (8);
+
+        for (auto* row : rows)
+        {
+            auto line = r.removeFromTop (rowHeight).reduced (0, 2);
+            row->on.setBounds (line.removeFromLeft (110));
+            row->pre.setBounds (line.removeFromRight (44));
+            line.removeFromRight (4);
+            row->level.setBounds (line);
+        }
+
+        if (rows.isEmpty())
+            empty.setBounds (r.removeFromTop (rowHeight));
+
+        r.removeFromTop (6);
+        newBus.setBounds (r.removeFromTop (24).removeFromLeft (120));
+    }
+
+private:
+    struct Row
+    {
+        juce::uint32 busId = 0;
+        juce::ToggleButton on;
+        juce::Slider level;
+        juce::TextButton pre { "Pre" };
+    };
+
+    static constexpr int rowHeight = 28;
+
+    void changeListenerCallback (juce::ChangeBroadcaster*) override  { refresh(); }
+
+    /** The send as the row shows it now. */
+    SessionSend sendFrom (const Row& row) const
+    {
+        return { row.busId, (float) row.level.getValue(), row.pre.getToggleState() };
+    }
+
+    void apply (const Row& row, const juce::String& description, bool merge)
+    {
+        auto next = *engine.session.getState();
+
+        if (row.on.getToggleState())
+            SessionEdits::setSend (next, trackId, sendFrom (row));
+        else
+            SessionEdits::removeSend (next, trackId, row.busId);
+
+        engine.session.apply (std::move (next), description, merge);
+    }
+
+    void refresh()
+    {
+        const auto current = engine.session.getState();
+        const auto* track = current->findTrack (trackId);
+        std::vector<const SessionTrack*> buses;
+
+        for (auto& t : current->tracks)
+            if (t.isBus)
+                buses.push_back (&t);
+
+        auto same = track != nullptr && (int) buses.size() == rows.size();
+
+        for (size_t i = 0; same && i < buses.size(); ++i)
+            same = rows[(int) i]->busId == buses[i]->id;
+
+        if (! same)
+        {
+            rows.clear();
+
+            for (auto* bus : buses)
+            {
+                auto* row = rows.add (new Row());
+                row->busId = bus->id;
+                row->level.setSliderStyle (juce::Slider::LinearBar);
+                row->level.setRange (-60.0, 12.0, 0.1);
+                row->level.setSkewFactorFromMidPoint (-12.0);
+                row->level.setDoubleClickReturnValue (true, 0.0);
+                row->level.setTextValueSuffix (" dB");
+                row->level.setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
+                row->pre.setClickingTogglesState (true);
+                row->pre.setTooltip ("Send before the track's volume");
+                row->pre.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+
+                // Turning a level or Pre on a send that is off turns it on.
+                row->on.onClick = [this, row] { apply (*row, row->on.getToggleState() ? "Add Send" : "Remove Send", false); };
+                row->level.onValueChange = [this, row] { row->on.setToggleState (true, juce::dontSendNotification); apply (*row, "Send Level", true); };
+                row->pre.onClick = [this, row] { row->on.setToggleState (true, juce::dontSendNotification); apply (*row, "Send Before or After Volume", false); };
+
+                for (auto* c : std::initializer_list<juce::Component*> { &row->on, &row->level, &row->pre })
+                    addAndMakeVisible (c);
+            }
+
+            empty.setVisible (rows.isEmpty());
+            setSize (340, 16 + juce::jmax (1, rows.size()) * rowHeight + 30);
+            resized();
+        }
+
+        for (auto* row : rows)
+        {
+            const auto* bus = current->findTrack (row->busId);
+            const auto* send = track != nullptr ? track->findSend (row->busId) : nullptr;
+            row->on.setButtonText (bus != nullptr ? bus->name : juce::String());
+            row->on.setToggleState (send != nullptr, juce::dontSendNotification);
+            row->pre.setToggleState (send != nullptr && send->preFader, juce::dontSendNotification);
+
+            if (! row->level.isMouseButtonDown())
+                row->level.setValue (send != nullptr ? send->gainDb : 0.0, juce::dontSendNotification);
+
+            row->level.setAlpha (send != nullptr ? 1.0f : 0.5f);
+        }
+    }
+
+    AudioEngine& engine;
+    const juce::uint32 trackId;
+    juce::OwnedArray<Row> rows;
+    juce::Label empty;
+    juce::TextButton newBus { "New Bus" };
 };
 
 //==============================================================================
@@ -184,6 +352,11 @@ MultitrackView::~MultitrackView()
 }
 
 //==============================================================================
+void MultitrackView::showSends (juce::uint32 trackId, juce::Component& target)
+{
+    juce::CallOutBox::launchAsynchronously (std::make_unique<SendsPanel> (engine, trackId), target.getScreenBounds(), nullptr);
+}
+
 void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& target)
 {
     auto& effects = engine.getTrackEffects();
@@ -555,7 +728,26 @@ void MultitrackView::paint (juce::Graphics& g)
             g.setColour (laneLine);
             g.drawHorizontalLine (lane.getBottom() - 1, (float) lane.getX(), (float) lane.getRight());
 
-            for (auto& c : s.tracks[(size_t) t].clips)
+            const auto& track = s.tracks[(size_t) t];
+
+            if (track.isBus)
+            {
+                juce::StringArray feeders;
+
+                for (auto& other : s.tracks)
+                    if (other.findSend (track.id) != nullptr)
+                        feeders.add (other.name);
+
+                g.setColour (juce::Colour (0x0affffff));
+                g.fillRect (lane.reduced (0, 3));
+                g.setColour (juce::Colours::grey);
+                g.setFont (13.0f);
+                g.drawText (feeders.isEmpty() ? "Bus: nothing sends here yet. Use a track's Sends button."
+                                              : "Bus: from " + feeders.joinIntoString (", "),
+                            lane.reduced (12, 0), juce::Justification::centredLeft);
+            }
+
+            for (auto& c : track.clips)
                 drawClip (g, t, c);
         }
 

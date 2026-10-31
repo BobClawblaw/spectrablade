@@ -5,99 +5,16 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
+#include "TestPlugins.h"
 #include "TestUtils.h"
 #include "TrackEffectsTests.h"
 
 namespace
 {
     using TestUtils::check;
+    using TestPlugins::DelayPlugin;
 
     constexpr double rate = 48000.0;
-
-    /** Delays its input by a known latency, which it reports, and scales it. */
-    class DelayPlugin final : public juce::AudioPluginInstance
-    {
-    public:
-        DelayPlugin (int latencyFrames, float g)
-            : AudioPluginInstance (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
-                                                    .withOutput ("Out", juce::AudioChannelSet::stereo(), true)),
-              latency (latencyFrames), gain (g)
-        {
-            setLatencySamples (latency);
-        }
-
-        void fillInPluginDescription (juce::PluginDescription& d) const override
-        {
-            d.name = "Test Delay";
-            d.pluginFormatName = "Test";
-            d.fileOrIdentifier = "test-delay";
-            d.numInputChannels = d.numOutputChannels = 2;
-        }
-
-        const juce::String getName() const override  { return "Test Delay"; }
-
-        void prepareToPlay (double, int) override
-        {
-            line.setSize (2, juce::jmax (1, latency));
-            line.clear();
-            write = 0;
-            ++prepared;
-        }
-
-        void releaseResources() override             {}
-        void reset() override                        { line.clear(); write = 0; }
-
-        void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
-        {
-            maxSeen = juce::jmax (maxSeen, b.getNumSamples());
-
-            for (int i = 0; i < b.getNumSamples(); ++i)
-            {
-                for (int ch = 0; ch < 2; ++ch)
-                {
-                    const auto in = b.getSample (ch, i);
-
-                    if (latency == 0)
-                    {
-                        b.setSample (ch, i, in * gain);
-                        continue;
-                    }
-
-                    b.setSample (ch, i, line.getSample (ch, write) * gain);
-                    line.setSample (ch, write, in);
-                }
-
-                if (latency > 0)
-                    write = (write + 1) % latency;
-            }
-        }
-
-        double getTailLengthSeconds() const override { return 0.0; }
-        bool acceptsMidi() const override            { return false; }
-        bool producesMidi() const override           { return false; }
-        juce::AudioProcessorEditor* createEditor() override { return nullptr; }
-        bool hasEditor() const override              { return false; }
-        int getNumPrograms() override                { return 1; }
-        int getCurrentProgram() override             { return 0; }
-        void setCurrentProgram (int) override        {}
-        const juce::String getProgramName (int) override { return {}; }
-        void changeProgramName (int, const juce::String&) override {}
-
-        void getStateInformation (juce::MemoryBlock& m) override { m.append (&gain, sizeof (gain)); }
-        void setStateInformation (const void* data, int size) override
-        {
-            if (size == (int) sizeof (gain))
-                std::memcpy (&gain, data, sizeof (gain));
-        }
-
-        const int latency;
-        float gain;
-        int prepared = 0, maxSeen = 0;
-
-    private:
-        juce::AudioBuffer<float> line;
-        int write = 0;
-    };
 
     /** Noise, so any misalignment shows. */
     AudioDocument::Snapshot noise (int channels, int frames, int seed)
