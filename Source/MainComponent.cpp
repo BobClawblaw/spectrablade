@@ -120,19 +120,138 @@ public:
         : DocumentWindow ("Plug-ins", juce::Colours::darkgrey, DocumentWindow::closeButton),
           closeCallback (std::move (onClose))
     {
-        auto* list = new juce::PluginListComponent (audioEngine.pluginFormatManager, audioEngine.knownPlugins,
-                                                    deadMansPedal, props, true);
-        list->setNumberOfThreadsForScanning (1);
-        setContentOwned (list, false);
+        setContentOwned (new Panel (audioEngine, deadMansPedal, props), false);
         setUsingNativeTitleBar (true);
         setResizable (true, false);
-        centreWithSize (760, 560);
+        centreWithSize (760, 600);
         setVisible (true);
     }
 
     void closeButtonPressed() override  { closeCallback(); }
 
 private:
+    /** The plug-in list, with scanning that never stops to ask: plug-ins that crash, hang or
+        fail their check are marked not working (listed at the end) and logged. */
+    class Panel final : public juce::Component,
+                        private juce::Timer
+    {
+    public:
+        Panel (AudioEngine& e, const juce::File& pedal, juce::PropertiesFile* props)
+            : engine (e), list (e.pluginFormatManager, e.knownPlugins, pedal, props, true)
+        {
+            // Its own scan shows a modal progress window and a summary to dismiss; ours doesn't.
+            list.getOptionsButton().setVisible (false);
+            addAndMakeVisible (list);
+
+            scanButton.setTooltip ("Find new VST3 and Audio Unit plug-ins, and check each one loads and plays");
+            retryButton.setTooltip ("Check the plug-ins marked not working again");
+            removeButton.setTooltip ("Remove the selected plug-ins from the list");
+            scanButton.onClick = [this] { start (false); };
+            retryButton.onClick = [this] { start (true); };
+            removeButton.onClick = [this] { list.removeSelectedPlugins(); };
+            stopButton.onClick = [this] { finish ("Scan stopped."); };
+
+            for (auto* c : std::initializer_list<juce::Component*> { &scanButton, &retryButton, &removeButton, &stopButton, &progressBar, &status })
+                addAndMakeVisible (c);
+
+            status.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+            showSummary ({});
+            updateButtons();
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds().reduced (8);
+            auto bar = r.removeFromTop (26);
+
+            for (auto* b : { &scanButton, &retryButton, &removeButton })
+            {
+                b->setBounds (bar.removeFromLeft (b == &retryButton ? 150 : 140));
+                bar.removeFromLeft (6);
+            }
+
+            stopButton.setBounds (bar.removeFromRight (60));
+            bar.removeFromRight (6);
+            progressBar.setBounds (bar);
+            r.removeFromTop (6);
+            status.setBounds (r.removeFromTop (22));
+            r.removeFromTop (4);
+            list.setBounds (r);
+        }
+
+    private:
+        void start (bool retryNotWorking)
+        {
+            if (scan != nullptr)
+                return;
+
+            juce::Logger::writeToLog (retryNotWorking ? "Plug-in scan: retrying plug-ins marked not working" : "Plug-in scan started");
+            scan = std::make_unique<PluginScan> (engine.pluginFormatManager, engine.knownPlugins, retryNotWorking);
+            updateButtons();
+            startTimerHz (10);
+        }
+
+        void finish (const juce::String& how)
+        {
+            stopTimer();
+
+            if (scan == nullptr)
+                return;
+
+            const auto checked = scan->getNumWorking(), failed = scan->getNumNotWorking();
+            scan = nullptr;
+            progress = 0.0;
+            const auto summary = how + " " + juce::String (checked) + " new plug-in files work, " + juce::String (failed) + " don't.";
+            juce::Logger::writeToLog ("Plug-in scan: " + summary);
+            showSummary (summary);
+            updateButtons();
+        }
+
+        void timerCallback() override
+        {
+            progress = scan->getProgress();
+
+            if (scan->isFinished())
+            {
+                finish ("Scan finished.");
+                return;
+            }
+
+            status.setText ("Checking " + scan->getCurrentName() + "  (" + juce::String (scan->getNumWorking()) + " work, "
+                                + juce::String (scan->getNumNotWorking()) + " don't)", juce::dontSendNotification);
+        }
+
+        void showSummary (const juce::String& lastScan)
+        {
+            const auto working = engine.knownPlugins.getNumTypes();
+            const auto failed = engine.knownPlugins.getBlacklistedFiles().size();
+            auto text = juce::String (working) + " working plug-ins";
+
+            if (failed > 0)
+                text << ", " << failed << " not working (at the end of the list; reasons in the log)";
+
+            status.setText (lastScan.isEmpty() ? text : lastScan + "  " + text, juce::dontSendNotification);
+        }
+
+        void updateButtons()
+        {
+            const auto scanning = scan != nullptr;
+            scanButton.setEnabled (! scanning);
+            retryButton.setEnabled (! scanning && ! engine.knownPlugins.getBlacklistedFiles().isEmpty());
+            removeButton.setEnabled (! scanning);
+            stopButton.setEnabled (scanning);
+        }
+
+        AudioEngine& engine;
+        juce::PluginListComponent list;
+        juce::TextButton scanButton { "Scan for Plug-ins" }, retryButton { "Retry Not Working" },
+                         removeButton { "Remove Selected" }, stopButton { "Stop" };
+        double progress = 0.0;
+        juce::ProgressBar progressBar { progress };
+        juce::Label status;
+        std::unique_ptr<PluginScan> scan;
+    };
+
     std::function<void()> closeCallback;
 };
 
@@ -405,8 +524,15 @@ MainComponent::MainComponent()
     juce::MenuBarModel::setMacMainMenu (this);
    #endif
 
+    // Reopening the last file is quiet: one that can no longer be read is logged and forgotten.
     if (const juce::File last (settings->getValue (lastFileKey)); last.existsAsFile())
-        openFile (last);
+    {
+        if (const auto error = engine.openFile (last); error.isNotEmpty())
+        {
+            juce::Logger::writeToLog ("Could not reopen " + last.getFullPathName() + ": " + error);
+            settings->removeValue (lastFileKey);
+        }
+    }
 
     refreshOutputChoices();
     refreshInputChoices();

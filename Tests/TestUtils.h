@@ -6,6 +6,10 @@ namespace TestUtils
 {
     inline int failures = 0;
 
+    /** The app that runs as the plug-in scan worker: the one built with the tests, or the one
+        named with --app (a signed or packaged copy). */
+    inline juce::File appExecutable { SPECTRABLADE_APP_EXECUTABLE };
+
     inline void check (bool ok, const juce::String& what)
     {
         std::cout << (ok ? "PASS  " : "FAIL  ") << what << std::endl;

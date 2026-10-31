@@ -100,6 +100,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/TrackEffectsTests.cpp
     Tests/BusTests.cpp
     Tests/TrackRecordingTests.cpp
+    Tests/PluginTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/AudioEdits.cpp
@@ -117,6 +118,18 @@ target_sources(SpectraBladeTests PRIVATE
     Source/TrackEffects.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp)
+# Plug-in bundles that misbehave on purpose, for the scan tests (see Tests/TestBundle.cpp).
+foreach(bundle IntelOnlyBundle HangingBundle CrashingBundle)
+    add_library(${bundle} MODULE Tests/TestBundle.cpp)
+    set_target_properties(${bundle} PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION vst3
+                          LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/TestBundles")
+    add_dependencies(SpectraBladeTests ${bundle})
+endforeach()
+set_target_properties(IntelOnlyBundle PROPERTIES OSX_ARCHITECTURES x86_64)
+target_compile_definitions(HangingBundle PRIVATE TEST_BUNDLE_HANGS=1)
+target_compile_definitions(CrashingBundle PRIVATE TEST_BUNDLE_CRASHES=1)
+target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_TEST_BUNDLES="${CMAKE_BINARY_DIR}/TestBundles")
+
 get_target_property(spectrablade_defs SpectraBlade COMPILE_DEFINITIONS)
 target_compile_definitions(SpectraBladeTests PRIVATE ${spectrablade_defs} JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(SpectraBladeTests SpectraBlade)

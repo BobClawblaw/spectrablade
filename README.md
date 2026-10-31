@@ -6,6 +6,15 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Release 0.1.0: the first build to install**
+- `dist/SpectraBlade-0.1.0.dmg` holds a universal app (Apple silicon and Intel), built for macOS 13 or later and tested on macOS 27. See [Installing](#installing), and [Packaging](#packaging) to make it.
+- VST3 and Audio Unit plug-ins are checked when they are scanned. Plug-ins > Scan for Plug-ins loads each one in a worker copy of the app, plays 16 blocks of noise (or a note, for instruments) through it at 48 kHz, requires every output sample to be finite, and reads and restores its state. Four plug-ins are checked at once, each in its own worker.
+- A plug-in that crashes, hangs for 60 s or fails the check is marked not working and listed at the end of the plug-in list. The reason goes to the log (`~/Library/Logs/SpectraBlade/SpectraBlade.log`), and the scan carries on: nothing stops to ask, and no crash report appears. Retry Not Working checks those again.
+- The reasons are plain: "it crashed while loading or playing", "it took longer than 60 s to load and run", "it played invalid samples", "no plug-in was found in it", the plug-in's own error, or, for a VST3 or Audio Unit built only for Intel Macs, "it has no code for Apple silicon" (it may work with SpectraBlade opened using Rosetta). Audio Units are created the way hosts create them, asynchronously, so the ones that need it load too.
+- Measured with `--plugin-sweep` on a Mac with a large collection (1,018 files): 874 plug-in types work (Audio Unit: 366 effects and 131 instruments; VST3: 275 effects and 102 instruments) and 149 files don't, scanned in 6.1 minutes with no crash reports and no worker processes left behind. Of the 149, 89 have no code for Apple silicon, 46 crashed, 10 Audio Units returned an OS error during initialisation, 3 VST3 bundles held no plug-in, and 1 played invalid samples. All the crashes but one (Rob Papen's Punch-BD) were Native Instruments plug-ins. The one looked into, Raum, crashed because it could not read `~/Documents`: the sweep ran from a shell without that permission. The app would get macOS's prompt for Documents access instead, but that was not tested.
+- Measured by the tests, with the signed app from the disk image as the worker, natively and under Rosetta: Kilohearts' kHs Gain, as both a VST3 and an Audio Unit, passes the check, loads in the rack, hands noise back bit for bit at its default setting, and comes back from a saved rack. A bundle with no code in it is marked not working, with its reason logged, in under 20 s.
+- The app no longer reports an error at every launch when the last file it had open can't be read; it logs it and forgets the file.
+
 **Milestone 13: recording onto session tracks**
 - Record (Shift+Space) works in the multitrack too. Arm a track with its R button and the take goes onto that track; with no track armed it goes onto a new one. One track is armed at a time, and buses can't be armed.
 - Drag across the timeline (or the ruler) to select a time range. Record then punches in at its start and out at its end, after a 2 s preroll, and stops by itself once the end has come back through the input. Without a range it records from the cursor until you stop. Play with a range plays just the range.
@@ -97,7 +106,7 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - Waveform overview with click-to-seek; space bar plays and pauses.
 - An effects rack: add, bypass, reorder and remove effects, and open each plug-in's editor (or a generic one).
 - Save and load the rack, plug-in state included, as `.sbrack`.
-- Plug-ins are scanned **out of process**: each one is loaded in a worker copy of the app. One that crashes, or hangs longer than 60 s, is marked as failed; the editor keeps running.
+- Plug-ins are scanned **out of process**: each one is loaded in a worker copy of the app. One that crashes, or hangs longer than 60 s, is marked as not working; the editor keeps running.
 - Works with multi-output interfaces such as the RME Fireface UFX (30 outputs). Pick any output pair in the bottom bar. The device opens at its current sample rate, and files at other rates are resampled on playback.
 
 ## Build
@@ -112,6 +121,26 @@ open build/SpectraBlade_artefacts/Release/SpectraBlade.app
 
 CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DSPECTRABLADE_JUCE_DIR=/path/to/JUCE`.
 
+## Installing
+
+Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications. The app is signed ad hoc, not with a Developer ID, so macOS blocks it the first time: open it once, then choose Open Anyway under System Settings > Privacy & Security. After that it opens normally. macOS asks for microphone access the first time you choose a recording input.
+
+Then choose Plug-ins and Scan for Plug-ins. The first scan of a large collection takes a while; it runs in the background, and the window shows how far it has got.
+
+## Packaging
+
+```bash
+Scripts/package.sh
+```
+
+This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
+
+To check a disk image's app on its own, mount it and point the tests at it:
+
+```bash
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.1.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+```
+
 ## Integration tests
 
 ```bash
@@ -121,7 +150,8 @@ CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DSPEC
 The tests run against the real machine:
 - Editing and undo, bit for bit: cut and paste, crops across many segments, and peak tables against a brute-force scan.
 - The effects, file round trips (float exact; integer formats within the dither and rounding bound), the playback source, and offline rendering through Apple's AUDelay.
-- Out-of-process scanning, using the built app as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.
+- Out-of-process scanning, using the built app (or the one named with `--app`) as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.
+- Third-party plug-ins: the scan check, kHs Gain as a VST3 and an Audio Unit in the rack (bit for bit at unity, saved and restored), and a broken bundle marked not working with its reason logged.
 - The default audio device: output-pair routing on a multi-output interface. With `--live-input`, also arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
 - Spectrogram level calibration and image, and spectral edits: identity, removal depth, neighbouring tones, untouched audio, attenuation.
 - Multitrack: the mixer (pan laws, gains, mute, solo, trims, fades, block-size independence), clip edits (split, trim, move, delete), undo with merged steps, session files (round trip after moving the folder, shared audio read once, rate conversion, missing files), and session playback through the player.
@@ -142,6 +172,12 @@ The player only ever plays silence, so the tests make no sound. The live input t
 ./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --live-input
 ```
 
+The plug-in sweep is opt-in too: it scans every plug-in on the machine the way Scan for Plug-ins does, which takes a while with a large collection, and some commercial plug-ins open licence windows while it runs. It writes a report of what works and why the rest don't:
+
+```bash
+./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --plugin-sweep plugin-sweep.txt
+```
+
 ## Plug-in locations
 
 - AU: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, and AUv3 app extensions
@@ -153,7 +189,7 @@ VST2 is deliberately not supported: Steinberg no longer licenses the VST2 SDK.
 
 JUCE is dual-licensed under AGPLv3 or a commercial JUCE licence. Shipping SpectraBlade as closed source requires a commercial JUCE licence; otherwise the app must be released under the AGPLv3.
 
-The release build enables the hardened runtime with `disable-library-validation`, which is needed to load third-party plug-ins. These entitlements take effect only when the app is signed. Building with the Xcode generator (`-G Xcode`) is the simplest way to sign and notarize.
+`Scripts/package.sh` signs the app ad hoc, without the hardened runtime, so it loads any plug-in's code. The CMake target asks for the hardened runtime with `disable-library-validation` (which third-party plug-ins need), but that applies only when the app is signed with a Developer ID, as notarization requires. Releases are not notarized yet; building with the Xcode generator (`-G Xcode`) is the simplest way to sign and notarize.
 
 ## Clean-room rules
 

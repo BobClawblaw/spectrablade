@@ -18,6 +18,7 @@
 #include "TrackEffectsTests.h"
 #include "BusTests.h"
 #include "TrackRecordingTests.h"
+#include "PluginTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -37,7 +38,7 @@ namespace
     void testScanner (AudioEngine& engine, juce::Array<juce::PluginDescription>& found)
     {
         // The built app is the worker, exactly as in production.
-        OutOfProcessScanner scanner (juce::File (SPECTRABLADE_APP_EXECUTABLE));
+        OutOfProcessScanner scanner (TestUtils::appExecutable);
 
         if (auto* au = findFormat (engine, "AudioUnit"))
         {
@@ -291,10 +292,31 @@ int main (int argc, char* argv[])
 {
     // The live input test opens the interface's inputs. macOS asks for microphone access for
     // every new build of this binary and blocks until someone answers, so it runs only on request.
-    const auto liveInput = argc > 1 && juce::String (argv[1]) == "--live-input";
+    //   --live-input            also record from the interface
+    //   --app <executable>      use this copy of the app as the scan worker
+    //   --plugin-sweep <report> only scan every plug-in on this machine and write what works
+    juce::StringArray args;
+
+    for (int i = 1; i < argc; ++i)
+        args.add (argv[i]);
+
+    const auto liveInput = args.contains ("--live-input");
+    const auto valueOf = [&] (const char* flag) { const auto i = args.indexOf (flag); return i >= 0 ? args[i + 1] : juce::String(); };
+
+    if (const auto app = valueOf ("--app"); app.isNotEmpty())
+        TestUtils::appExecutable = juce::File::getCurrentWorkingDirectory().getChildFile (app);
 
     juce::ScopedJuceInitialiser_GUI juceInit;
     juce::Array<juce::PluginDescription> found;
+
+    if (const auto report = valueOf ("--plugin-sweep"); report.isNotEmpty())
+    {
+        AudioEngine engine;
+        runPluginSweep (engine, juce::File::getCurrentWorkingDirectory().getChildFile (report));
+        return 0;
+    }
+
+    std::cout << "Scan worker: " << TestUtils::appExecutable.getFullPathName() << std::endl;
 
     {
         AudioEngine engine;
@@ -316,6 +338,7 @@ int main (int argc, char* argv[])
         std::thread scanThread ([&] { testScanner (engine, found); scanned = true; });
         runUntil ([&] { return scanned.load(); }, 600000);
         scanThread.join();
+        runPluginTests (engine);
 
         testDevice (engine);
         if (liveInput)
