@@ -1,16 +1,16 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(WaveDrill VERSION 0.1.0 LANGUAGES C CXX)
+project(SpectraBlade VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 
-# Use a local JUCE checkout with -DWAVEDRILL_JUCE_DIR=/path/to/JUCE, otherwise fetch the pinned release.
-set(WAVEDRILL_JUCE_DIR "" CACHE PATH "Local JUCE checkout (optional)")
+# Use a local JUCE checkout with -DSPECTRABLADE_JUCE_DIR=/path/to/JUCE, otherwise fetch the pinned release.
+set(SPECTRABLADE_JUCE_DIR "" CACHE PATH "Local JUCE checkout (optional)")
 
-if(WAVEDRILL_JUCE_DIR)
-    add_subdirectory("${WAVEDRILL_JUCE_DIR}" JUCE)
+if(SPECTRABLADE_JUCE_DIR)
+    add_subdirectory("${SPECTRABLADE_JUCE_DIR}" JUCE)
 else()
     include(FetchContent)
     FetchContent_Declare(JUCE
@@ -20,13 +20,13 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
-juce_add_gui_app(WaveDrill
-    PRODUCT_NAME                 "WaveDrill"
-    COMPANY_NAME                 "WaveDrill"
-    BUNDLE_ID                    org.wavedrill.editor
+juce_add_gui_app(SpectraBlade
+    PRODUCT_NAME                 "SpectraBlade"
+    COMPANY_NAME                 "SpectraBlade"
+    BUNDLE_ID                    org.spectrablade.editor
     PLUGINHOST_AU                TRUE
     MICROPHONE_PERMISSION_ENABLED TRUE
-    MICROPHONE_PERMISSION_TEXT   "WaveDrill records from your audio interface."
+    MICROPHONE_PERMISSION_TEXT   "SpectraBlade records from your audio interface."
     HARDENED_RUNTIME_ENABLED     TRUE
     # Third-party plug-ins are signed by other teams, so library validation must be off to load them.
     HARDENED_RUNTIME_OPTIONS     com.apple.security.cs.disable-library-validation
@@ -34,9 +34,9 @@ juce_add_gui_app(WaveDrill
     NEEDS_WEB_BROWSER            FALSE
     NEEDS_CURL                   FALSE)
 
-juce_generate_juce_header(WaveDrill)
+juce_generate_juce_header(SpectraBlade)
 
-target_sources(WaveDrill PRIVATE
+target_sources(SpectraBlade PRIVATE
     Source/Main.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
@@ -53,7 +53,7 @@ target_sources(WaveDrill PRIVATE
     Source/WaveformView.cpp
     Source/RackView.cpp)
 
-target_compile_definitions(WaveDrill PRIVATE
+target_compile_definitions(SpectraBlade PRIVATE
     JUCE_PLUGINHOST_AU=1
     JUCE_PLUGINHOST_VST3=1
     JUCE_PLUGINHOST_VST=0
@@ -64,10 +64,10 @@ target_compile_definitions(WaveDrill PRIVATE
     JUCE_USE_MP3AUDIOFORMAT=1
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
-    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:WaveDrill,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:WaveDrill,JUCE_VERSION>")
+    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SpectraBlade,JUCE_PRODUCT_NAME>"
+    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SpectraBlade,JUCE_VERSION>")
 
-target_link_libraries(WaveDrill PRIVATE
+target_link_libraries(SpectraBlade PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
@@ -76,9 +76,9 @@ target_link_libraries(WaveDrill PRIVATE
     juce::juce_recommended_warning_flags)
 
 # Integration checks: plug-in scanning, device routing and rack restore on this machine.
-juce_add_console_app(WaveDrillTests PRODUCT_NAME "WaveDrillTests" PLUGINHOST_AU TRUE)
-juce_generate_juce_header(WaveDrillTests)
-target_sources(WaveDrillTests PRIVATE
+juce_add_console_app(SpectraBladeTests PRODUCT_NAME "SpectraBladeTests" PLUGINHOST_AU TRUE)
+juce_generate_juce_header(SpectraBladeTests)
+target_sources(SpectraBladeTests PRIVATE
     Tests/EngineTests.cpp
     Tests/DocumentTests.cpp
     Tests/RecorderTests.cpp
@@ -96,11 +96,11 @@ target_sources(WaveDrillTests PRIVATE
     Source/SpectralEdit.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp)
-get_target_property(wavedrill_defs WaveDrill COMPILE_DEFINITIONS)
-target_compile_definitions(WaveDrillTests PRIVATE ${wavedrill_defs} JUCE_MODAL_LOOPS_PERMITTED=1)
-add_dependencies(WaveDrillTests WaveDrill)
-target_compile_definitions(WaveDrillTests PRIVATE WAVEDRILL_APP_EXECUTABLE="$<TARGET_FILE:WaveDrill>")
-target_link_libraries(WaveDrillTests PRIVATE
+get_target_property(spectrablade_defs SpectraBlade COMPILE_DEFINITIONS)
+target_compile_definitions(SpectraBladeTests PRIVATE ${spectrablade_defs} JUCE_MODAL_LOOPS_PERMITTED=1)
+add_dependencies(SpectraBladeTests SpectraBlade)
+target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_APP_EXECUTABLE="$<TARGET_FILE:SpectraBlade>")
+target_link_libraries(SpectraBladeTests PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp

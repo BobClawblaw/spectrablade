@@ -2,7 +2,7 @@
 #include "MainComponent.h"
 #include "PluginScanner.h"
 
-class WaveDrillApplication final : public juce::JUCEApplication
+class SpectraBladeApplication final : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override       { return JUCE_APPLICATION_NAME_STRING; }
@@ -21,8 +21,8 @@ public:
             return;
         }
 
-        // ~/Library/Logs/WaveDrill/WaveDrill.log
-        logger.reset (juce::FileLogger::createDefaultAppLogger ("WaveDrill", "WaveDrill.log",
+        // ~/Library/Logs/SpectraBlade/SpectraBlade.log
+        logger.reset (juce::FileLogger::createDefaultAppLogger ("SpectraBlade", "SpectraBlade.log",
                                                                getApplicationName() + " " + getApplicationVersion()));
         juce::Logger::setCurrentLogger (logger.get());
 
@@ -75,4 +75,4 @@ private:
     std::unique_ptr<ScannerWorker> scannerWorker;
 };
 
-START_JUCE_APPLICATION (WaveDrillApplication)
+START_JUCE_APPLICATION (SpectraBladeApplication)

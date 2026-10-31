@@ -229,23 +229,28 @@ private:
 MainComponent::MainComponent()
 {
     juce::PropertiesFile::Options options;
-    options.applicationName     = "WaveDrill";
+    options.applicationName     = "SpectraBlade";
     options.filenameSuffix      = "settings";
     options.osxLibrarySubFolder = "Application Support";
-    options.folderName          = "WaveDrill";
+    options.folderName          = "SpectraBlade";
     appProperties.setStorageParameters (options);
 
-    // The app used to be called Waveloom: bring its settings (devices, plug-in list) across once.
+    // The app used to be called WaveDrill, and before that Waveloom: bring the newest of their
+    // settings (devices, plug-in list) across once.
     if (const auto newFile = options.getDefaultFile(); ! newFile.exists())
     {
-        auto old = options;
-        old.applicationName = old.folderName = "Waveloom";
-        const auto oldFile = old.getDefaultFile();
-
-        if (oldFile.existsAsFile() && newFile.getParentDirectory().createDirectory())
+        for (auto* previousName : { "WaveDrill", "Waveloom" })
         {
-            oldFile.copyFileTo (newFile);
-            oldFile.getSiblingFile ("RecentlyCrashedPluginsList").copyFileTo (newFile.getSiblingFile ("RecentlyCrashedPluginsList"));
+            auto old = options;
+            old.applicationName = old.folderName = previousName;
+            const auto oldFile = old.getDefaultFile();
+
+            if (oldFile.existsAsFile() && newFile.getParentDirectory().createDirectory())
+            {
+                oldFile.copyFileTo (newFile);
+                oldFile.getSiblingFile ("RecentlyCrashedPluginsList").copyFileTo (newFile.getSiblingFile ("RecentlyCrashedPluginsList"));
+                break;
+            }
         }
     }
 
@@ -714,7 +719,7 @@ void MainComponent::refreshTitle()
                        juce::dontSendNotification);
 
     if (onTitleChanged != nullptr)
-        onTitleChanged ((doc.isDirty() ? "* " : "") + name + " - WaveDrill");
+        onTitleChanged ((doc.isDirty() ? "* " : "") + name + " - SpectraBlade");
 }
 
 void MainComponent::refreshOutputChoices()
@@ -853,7 +858,7 @@ void MainComponent::saveAs (std::function<void (bool)> done)
 
                               if (depths.isEmpty())
                               {
-                                  showError ("Save As", "WaveDrill can't write " + file.getFileExtension() + " files.");
+                                  showError ("Save As", "SpectraBlade can't write " + file.getFileExtension() + " files.");
                                   if (done != nullptr) done (false);
                                   return;
                               }
@@ -1426,7 +1431,7 @@ void MainComponent::closeEditorFor (juce::AudioProcessor* processor)
 
 void MainComponent::saveRack()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Save effects rack", juce::File(), "*.wdrack");
+    chooser = std::make_unique<juce::FileChooser> ("Save effects rack", juce::File(), "*.sbrack");
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
                           [this] (const juce::FileChooser& fc)
                           {
@@ -1435,14 +1440,14 @@ void MainComponent::saveRack()
                               if (file == juce::File())
                                   return;
 
-                              if (! engine.createRackXml()->writeTo (file.withFileExtension ("wdrack")))
+                              if (! engine.createRackXml()->writeTo (file.withFileExtension ("sbrack")))
                                   showError ("Save failed", "Could not write " + file.getFullPathName());
                           });
 }
 
 void MainComponent::loadRack()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Load effects rack", juce::File(), "*.wdrack;*.wlrack");
+    chooser = std::make_unique<juce::FileChooser> ("Load effects rack", juce::File(), "*.sbrack;*.wdrack;*.wlrack");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
                           {

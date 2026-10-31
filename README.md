@@ -1,8 +1,8 @@
-# WaveDrill
+# SpectraBlade
 
 A clean-room audio editor for macOS that hosts VST3 and Audio Unit (v2 and v3) plug-ins. Built on JUCE 9.0.4.
 
-WaveDrill was called Waveloom until 31 October 2026. On first launch it copies Waveloom's settings (audio device, inputs and outputs, plug-in list), and it still opens `.wlrack` rack files.
+SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026. On first launch it copies the settings of whichever earlier version you ran (audio device, inputs and outputs, plug-in list), and it still opens `.wdrack` and `.wlrack` rack files.
 
 **Milestone 6: spectrogram and spectral editing**
 - View > Waveform (Cmd 1), Spectrogram (Cmd 2), or Waveform and Spectrogram (Cmd 3), per channel. The spectrogram runs from 20 Hz to Nyquist on a log scale with a frequency scale on the left, and shows -130 dBFS (black) to 0 dBFS (white). Each pixel column is a 4096-point Blackman-Harris FFT, calibrated so a sine reads its true level (within 0.01 dB when centred on a bin).
@@ -46,7 +46,7 @@ WaveDrill was called Waveloom until 31 October 2026. On first launch it copies W
 - Open an audio file (WAV, AIFF, FLAC, Ogg, MP3, CAF and others). Drag and drop also works.
 - Waveform overview with click-to-seek; space bar plays and pauses.
 - An effects rack: add, bypass, reorder and remove effects, and open each plug-in's editor (or a generic one).
-- Save and load the rack, plug-in state included, as `.wdrack`.
+- Save and load the rack, plug-in state included, as `.sbrack`.
 - Plug-ins are scanned **out of process**: each one is loaded in a worker copy of the app. One that crashes, or hangs longer than 60 s, is marked as failed; the editor keeps running.
 - Works with multi-output interfaces such as the RME Fireface UFX (30 outputs). Pick any output pair in the bottom bar. The device opens at its current sample rate, and files at other rates are resampled on playback.
 
@@ -57,15 +57,15 @@ You need Xcode (command-line tools) and CMake 3.22 or later.
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j 12
-open build/WaveDrill_artefacts/Release/WaveDrill.app
+open build/SpectraBlade_artefacts/Release/SpectraBlade.app
 ```
 
-CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DWAVEDRILL_JUCE_DIR=/path/to/JUCE`.
+CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DSPECTRABLADE_JUCE_DIR=/path/to/JUCE`.
 
 ## Integration tests
 
 ```bash
-./build/WaveDrillTests_artefacts/Release/WaveDrillTests
+./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests
 ```
 
 The tests run against the real machine:
@@ -82,7 +82,7 @@ The tests run against the real machine:
 The player only ever plays silence, so the tests make no sound. The live input test is opt-in because macOS asks for microphone access for each new build of the test binary, and the test waits until someone answers:
 
 ```bash
-./build/WaveDrillTests_artefacts/Release/WaveDrillTests --live-input
+./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --live-input
 ```
 
 ## Plug-in locations
@@ -94,7 +94,7 @@ VST2 is deliberately not supported: Steinberg no longer licenses the VST2 SDK.
 
 ## Licensing
 
-JUCE is dual-licensed under AGPLv3 or a commercial JUCE licence. Shipping WaveDrill as closed source requires a commercial JUCE licence; otherwise the app must be released under the AGPLv3.
+JUCE is dual-licensed under AGPLv3 or a commercial JUCE licence. Shipping SpectraBlade as closed source requires a commercial JUCE licence; otherwise the app must be released under the AGPLv3.
 
 The release build enables the hardened runtime with `disable-library-validation`, which is needed to load third-party plug-ins. These entitlements take effect only when the app is signed. Building with the Xcode generator (`-G Xcode`) is the simplest way to sign and notarize.
 

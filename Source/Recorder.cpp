@@ -10,7 +10,7 @@ namespace
 class Recorder::Writer final : public juce::Thread
 {
 public:
-    explicit Writer (Recorder& r) : Thread ("WaveDrill recorder"), owner (r) {}
+    explicit Writer (Recorder& r) : Thread ("SpectraBlade recorder"), owner (r) {}
 
     void run() override
     {

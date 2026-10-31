@@ -270,7 +270,7 @@ namespace
     void testOfflineRender (AudioEngine& engine)
     {
         const auto signal = makeSignal (48000);
-        juce::XmlElement emptyRack ("WAVEDRILL_RACK");
+        juce::XmlElement emptyRack ("SPECTRABLADE_RACK");
         auto audio = signal;
         const auto error = OfflineRender::processThroughRack (emptyRack, engine.pluginFormatManager, rate, audio, {});
         check (error.isEmpty() && identical (audio, signal), "rendering through an empty rack changes nothing");
@@ -293,7 +293,7 @@ namespace
             return;
         }
 
-        juce::XmlElement rack ("WAVEDRILL_RACK");
+        juce::XmlElement rack ("SPECTRABLADE_RACK");
         auto* slot = rack.createNewChildElement ("SLOT");
         slot->addChildElement (types[0]->createXml().release());
 

@@ -3,7 +3,7 @@
 #include <JuceHeader.h>
 
 /** Command-line token that makes the app start as a plug-in scanning worker instead of the editor. */
-inline constexpr const char* scannerProcessUID = "wavedrill-plugin-scanner";
+inline constexpr const char* scannerProcessUID = "spectrablade-plugin-scanner";
 
 //==============================================================================
 /** Runs inside the worker process: receives (format, file) requests, loads the plug-in
