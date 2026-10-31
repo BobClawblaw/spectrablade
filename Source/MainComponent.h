@@ -3,6 +3,7 @@
 #include "AudioEdits.h"
 #include "AudioEngine.h"
 #include "LevelMeter.h"
+#include "Loudness.h"
 #include "RackView.h"
 #include "WaveformView.h"
 
@@ -82,6 +83,12 @@ private:
                             AudioDocument::Snapshot (*effect) (const AudioSnapshot&, juce::int64, juce::int64),
                             bool needsSelection);
     void applyRackToSelection();
+
+    // Loudness
+    void measureLoudness (std::function<void (const Loudness::Result&, juce::Range<juce::int64>)> done);
+    void showLoudness();
+    void askForLoudnessTarget();
+    void matchLoudness (double target, double ceiling);
 
     // Transport and windows
     void togglePlay();

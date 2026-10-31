@@ -24,6 +24,7 @@ juce_add_gui_app(SpectraBlade
     PRODUCT_NAME                 "SpectraBlade"
     COMPANY_NAME                 "SpectraBlade"
     BUNDLE_ID                    org.spectrablade.editor
+    ICON_BIG                     "${CMAKE_CURRENT_SOURCE_DIR}/Art/spectrablade-icon.png"
     PLUGINHOST_AU                TRUE
     MICROPHONE_PERMISSION_ENABLED TRUE
     MICROPHONE_PERMISSION_TEXT   "SpectraBlade records from your audio interface."
@@ -47,6 +48,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SampleRateConverter.cpp
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
+    Source/Loudness.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
@@ -85,6 +87,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/MarkerTests.cpp
     Tests/ConverterTests.cpp
     Tests/SpectralTests.cpp
+    Tests/LoudnessTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/AudioEdits.cpp
@@ -94,6 +97,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SampleRateConverter.cpp
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
+    Source/Loudness.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp)
 get_target_property(spectrablade_defs SpectraBlade COMPILE_DEFINITIONS)

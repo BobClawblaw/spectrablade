@@ -32,7 +32,8 @@ namespace
         cmdAddMarker, cmdPreviousMarker, cmdNextMarker, cmdDeleteAllMarkers,
         cmdConvertRate,
         cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth,
-        cmdSpectralAttenuate, cmdSpectralRemove
+        cmdSpectralAttenuate, cmdSpectralRemove,
+        cmdLoudnessStats, cmdMatchLoudness
     };
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -186,7 +187,7 @@ private:
 
 //==============================================================================
 /** Runs work on a background thread behind a progress window, then finish() on the message thread
-    unless it was cancelled. Used for sample-rate conversion. */
+    unless it was cancelled. Used for sample-rate conversion and loudness measurement. */
 class MainComponent::BackgroundJob final : public juce::ThreadWithProgressWindow
 {
 public:
@@ -457,7 +458,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSpectralRemove; ++id)
+    for (int id = cmdOpen; id <= cmdMatchLoudness; ++id)
         ids.add (id);
 }
 
@@ -527,6 +528,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress (juce::KeyPress::backspaceKey, alt);
                             info.setActive (hasSelection && ! waveform.getSpectralBand().isEmpty()); break;
 
+        case cmdLoudnessStats: info.setInfo ("Loudness Statistics...", "Measure loudness (EBU R128) and true peak of the selection or file", "Effects", 0);
+            info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdMatchLoudness: info.setInfo ("Match Loudness...", "Set the integrated loudness of the selection or file", "Effects", 0);
+            info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
 
@@ -602,6 +607,8 @@ bool MainComponent::perform (const InvocationInfo& info)
             askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
             break;
         case cmdSpectralRemove: applySpectral (-std::numeric_limits<float>::infinity()); break;
+        case cmdLoudnessStats: showLoudness(); break;
+        case cmdMatchLoudness: askForLoudnessTarget(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdDeleteAllMarkers: engine.document.setMarkers ({}, "Delete All Markers"); break;
@@ -634,7 +641,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     {
         case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs }); break;
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
-        case 2: add ({ cmdGain, cmdNormalize, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
+        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
         case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
@@ -1132,6 +1139,122 @@ void MainComponent::applyNormalize()
             showError ("Normalize", "The selection is silent.");
         else
             applyEdit (std::move (next), "Normalize", waveform.getSelection());
+    });
+}
+
+void MainComponent::measureLoudness (std::function<void (const Loudness::Result&, juce::Range<juce::int64>)> done)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr || doc.getNumFrames() == 0)
+        return;
+
+    auto result = std::make_shared<Loudness::Result>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Measuring loudness...",
+        [result, snapshot, rate, range] (const std::function<bool (float)>& progress)
+        {
+            const auto r = Loudness::measure (*snapshot, range.getStart(), range.getEnd(), rate, progress);
+
+            if (r.has_value())
+                *result = *r;
+
+            return r.has_value();
+        },
+        [this, result, range, version, done]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Loudness", "The audio changed while it was measured, so the result was discarded.");
+            else
+                done (*result, range);
+        });
+    backgroundJob->launchThread();
+}
+
+void MainComponent::showLoudness()
+{
+    measureLoudness ([this] (const Loudness::Result& r, juce::Range<juce::int64> range)
+    {
+        const auto whole = range.getLength() == engine.document.getNumFrames();
+        const auto rows = juce::StringArray {
+            "Integrated loudness:   " + Loudness::format (r.integrated, "LUFS"),
+            "Loudness range:        " + juce::String (r.range, 1) + " LU",
+            "Max momentary:         " + Loudness::format (r.maxMomentary, "LUFS"),
+            "Max short-term:        " + Loudness::format (r.maxShortTerm, "LUFS"),
+            "True peak:             " + Loudness::format (r.truePeak, "dBTP"),
+            "Sample peak:           " + Loudness::format (r.samplePeak, "dBFS"),
+        };
+
+        auto* box = new juce::AlertWindow ("Loudness Statistics",
+                                           (whole ? juce::String ("Whole file") : juce::String ("Selection")) + ", "
+                                               + formatTime (range.getLength(), engine.document.getSampleRate())
+                                               + ". EBU R128 / ITU-R BS.1770-4.",
+                                           juce::MessageBoxIconType::NoIcon, this);
+        auto* text = new juce::TextEditor();
+        text->setMultiLine (true);
+        text->setReadOnly (true);
+        text->setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
+        text->setText (rows.joinIntoString ("\n"));
+        text->setSize (360, 120);
+        box->addCustomComponent (text);
+        box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        box->enterModalState (true, juce::ModalCallbackFunction::create ([text] (int) { delete text; }), true);
+    });
+}
+
+void MainComponent::askForLoudnessTarget()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Match Loudness",
+                                       "Common targets: EBU R128 -23, ATSC A/85 -24, podcasts -16, streaming -14 LUFS.\n"
+                                       "Gain stops short of the target if the true peak would pass the ceiling.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("target", juce::String (settings->getDoubleValue ("loudnessTarget", -23.0), 1), "Target (LUFS)");
+    box->addTextEditor ("ceiling", juce::String (settings->getDoubleValue ("truePeakCeiling", -1.0), 1), "True peak ceiling (dBTP)");
+
+    for (auto* name : { "target", "ceiling" })
+        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
+
+    box->addButton ("Match", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto target = juce::jlimit (-70.0, 0.0, box->getTextEditorContents ("target").getDoubleValue());
+        const auto ceiling = juce::jlimit (-30.0, 0.0, box->getTextEditorContents ("ceiling").getDoubleValue());
+        settings->setValue ("loudnessTarget", target);
+        settings->setValue ("truePeakCeiling", ceiling);
+        matchLoudness (target, ceiling);
+    }), true);
+}
+
+void MainComponent::matchLoudness (double target, double ceiling)
+{
+    measureLoudness ([this, target, ceiling] (const Loudness::Result& r, juce::Range<juce::int64> range)
+    {
+        if (! std::isfinite (r.integrated))
+        {
+            showError ("Match Loudness", "There is nothing above the -70 LUFS gate to measure.");
+            return;
+        }
+
+        const auto wanted = target - r.integrated;
+        const auto gain = juce::jmin (wanted, ceiling - r.truePeak);
+
+        applyEdit (AudioEdits::gain (*engine.document.getSnapshot(), range.getStart(), range.getEnd(), (float) gain),
+                   "Match Loudness " + Loudness::format (target, "LUFS"), waveform.getSelection());
+
+        if (gain < wanted - 0.05)
+            showError ("Match Loudness", "The true peak ceiling of " + Loudness::format (ceiling, "dBTP") + " allowed only "
+                                             + juce::String (gain, 1) + " dB of gain, so the result is "
+                                             + Loudness::format (r.integrated + gain, "LUFS") + " instead of "
+                                             + Loudness::format (target, "LUFS") + ".");
     });
 }
 
