@@ -2,6 +2,12 @@
 
 A clean-room audio editor for macOS that hosts VST3 and Audio Unit (v2 and v3) plug-ins. Built on JUCE 9.0.4.
 
+**Milestone 4: markers and regions**
+- Press M to drop a marker at the cursor, or at the playing position during playback (you can mark while listening or recording). With a selection, M makes a region of it.
+- Markers sit in a lane under the ruler. Click one to move the cursor there (a region selects its range), drag it to move it, double-click to rename, right-click to rename or delete. Option+Left and Option+Right jump between markers and region edges.
+- Markers are part of the undo history and follow the audio through edits: cutting before a marker moves it back, pasting moves it on, a region spanning an edit grows or shrinks, and markers inside deleted audio go with it. Crop keeps what overlaps the kept range.
+- Saved in WAV files as cue points with labels, and regions as cue points with a length (`ltxt`), the layout other editors read. AIFF keeps point markers with names (a region keeps its start). FLAC and the other formats cannot hold markers; saving one says so.
+
 **Milestone 3: recording**
 - Pick the input in the bottom bar: any stereo pair or mono channel of the interface (all 30 inputs of a Fireface UFX). Only the chosen inputs are opened; macOS asks for microphone access the first time. The meter next to it shows the input level with a peak hold and clip lights (click to clear).
 - Record with Shift+Space or the Record button; Space, Stop or Shift+Space ends the take. Each take is one undoable edit.
@@ -52,11 +58,16 @@ The tests run against the real machine:
 - Editing and undo, bit for bit: cut and paste, crops across many segments, and peak tables against a brute-force scan.
 - The effects, file round trips (float exact; integer formats within the dither and rounding bound), the playback source, and offline rendering through Apple's AUDelay.
 - Out-of-process scanning, using the built app as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.
-- The default audio device: output-pair routing on a multi-output interface, then arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
+- The default audio device: output-pair routing on a multi-output interface. With `--live-input`, also arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
+- Markers: the edit rules (delete, insert, replace, crop), undo and redo, and WAV, AIFF and FLAC round trips.
 - The recorder against a simulated device: channel mapping among active inputs, a 30 s take checked sample by sample, the playback anchor, and a punch-in through a simulated loop cable that must line up exactly.
 - Rack save and restore with real plug-ins (Apple's own effects, which never stop for licence dialogs): order, bypass and a changed parameter.
 
-The player only ever plays silence, so the tests make no sound. The live input test opens the interface's inputs, so macOS may ask for microphone access for the terminal.
+The player only ever plays silence, so the tests make no sound. The live input test is opt-in because macOS asks for microphone access for each new build of the test binary, and the test waits until someone answers:
+
+```bash
+./build/WaveloomTests_artefacts/Release/WaveloomTests --live-input
+```
 
 ## Plug-in locations
 
@@ -79,6 +90,6 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers and regions, sample-rate conversion
+1. Sample-rate conversion (also for pasting and recording across rates)
 2. Multitrack session: clips, buses, sends, automation, delay compensation, recording (Fireface inputs) and punch-in
 3. Spectral view and editing, noise reduction, click and pop repair, loudness (EBU R128)

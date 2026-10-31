@@ -10,6 +10,7 @@ namespace AudioFileIO
         double sampleRate = 0.0;
         int bitDepth = 0;              // 32 means 32-bit float
         juce::String error;
+        Markers markers;               // WAV cue points and regions, AIFF markers
     };
 
     /** Reads the whole file into memory, in blocks of a few seconds each. */
@@ -18,8 +19,12 @@ namespace AudioFileIO
     /** Bit depths offered when saving to this file type (32 = float), best first. */
     juce::Array<int> bitDepthsFor (const juce::File&, juce::AudioFormatManager&);
 
-    /** Writes the snapshot through a temporary file, then replaces the target.
-        Integer formats get TPDF dither. Returns an error message, or empty on success. */
+    /** True for the file types that can hold markers (WAV, and AIFF without regions). */
+    bool canStoreMarkers (const juce::File&);
+
+    /** Writes the snapshot (and markers, where the format holds them) through a temporary file,
+        then replaces the target. Integer formats get TPDF dither. Returns an error message, or
+        empty on success. */
     juce::String save (const AudioSnapshot&, double sampleRate, const juce::File& target, int bitDepth,
-                       juce::AudioFormatManager&);
+                       juce::AudioFormatManager&, const Markers& = {});
 }

@@ -177,7 +177,7 @@ std::vector<AudioSnapshot::Segment> AudioSnapshot::slice (juce::int64 start, juc
 AudioDocument::AudioDocument()
 {
     current = std::make_shared<const AudioSnapshot> (2, std::vector<AudioSnapshot::Segment>());
-    history.push_back ({ current, {} });
+    history.push_back ({ current, {}, {} });
 }
 
 AudioDocument::Snapshot AudioDocument::getSnapshot() const
@@ -188,6 +188,13 @@ AudioDocument::Snapshot AudioDocument::getSnapshot() const
 
 void AudioDocument::setCurrent (Snapshot next)
 {
+    // A step that changed only the markers keeps the audio and its version.
+    if (next == getSnapshot())
+    {
+        sendChangeMessage();
+        return;
+    }
+
     Snapshot previous;
 
     {
@@ -209,13 +216,14 @@ void AudioDocument::retire (Snapshot s)
         pendingRelease.push_back (std::move (s));
 }
 
-void AudioDocument::reset (Snapshot initial, double rate, const juce::File& f, int bitDepth)
+void AudioDocument::reset (Snapshot initial, double rate, const juce::File& f, int bitDepth, Markers markers)
 {
     for (auto& e : history)
         retire (std::move (e.snapshot));
 
+    MarkerEdits::sort (markers);
     history.clear();
-    history.push_back ({ initial, {} });
+    history.push_back ({ initial, std::move (markers), {} });
     position = savedPosition = 0;
     sampleRate = rate;
     file = f;
@@ -226,6 +234,16 @@ void AudioDocument::reset (Snapshot initial, double rate, const juce::File& f, i
 
 void AudioDocument::apply (Snapshot next, const juce::String& description)
 {
+    apply (std::move (next), description, getMarkers());
+}
+
+void AudioDocument::setMarkers (Markers markers, const juce::String& description)
+{
+    apply (getSnapshot(), description, std::move (markers));
+}
+
+void AudioDocument::apply (Snapshot next, const juce::String& description, Markers markers)
+{
     // A new edit after undo discards the redo branch.
     for (auto i = (size_t) position + 1; i < history.size(); ++i)
         retire (std::move (history[i].snapshot));
@@ -235,7 +253,8 @@ void AudioDocument::apply (Snapshot next, const juce::String& description)
     if (savedPosition > position)
         savedPosition = -1;   // the saved state is no longer reachable
 
-    history.push_back ({ next, description });
+    MarkerEdits::sort (markers);
+    history.push_back ({ next, std::move (markers), description });
     ++position;
     setCurrent (std::move (next));
 }

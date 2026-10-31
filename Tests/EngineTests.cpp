@@ -8,6 +8,7 @@
 #include "../Source/AudioEdits.h"
 #include "DocumentTests.h"
 #include "RecorderTests.h"
+#include "MarkerTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -252,8 +253,12 @@ namespace
     }
 }
 
-int main()
+int main (int argc, char* argv[])
 {
+    // The live input test opens the interface's inputs. macOS asks for microphone access for
+    // every new build of this binary and blocks until someone answers, so it runs only on request.
+    const auto liveInput = argc > 1 && juce::String (argv[1]) == "--live-input";
+
     juce::ScopedJuceInitialiser_GUI juceInit;
     juce::Array<juce::PluginDescription> found;
 
@@ -261,6 +266,7 @@ int main()
         AudioEngine engine;
         runDocumentTests (engine);
         runRecorderTests();
+        runMarkerTests (engine);
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };
@@ -269,7 +275,8 @@ int main()
         scanThread.join();
 
         testDevice (engine);
-        testLiveInput (engine);
+        if (liveInput)
+            testLiveInput (engine);
         testRack (engine, found);
     }
 

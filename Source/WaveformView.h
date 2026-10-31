@@ -2,9 +2,10 @@
 
 #include "AudioEngine.h"
 
-/** The editor view: time ruler, one lane per channel, selection, cursor and playhead.
+/** The editor view: time ruler, marker lane, one lane per channel, selection, cursor and playhead.
     Drag to select, shift-click to extend, wheel or pinch to zoom, horizontal scroll to pan.
-    Dropping a file opens it. */
+    In the marker lane, click a marker to jump to it (a region selects its range), drag to move it,
+    double-click to rename, right-click for more. Dropping a file opens it. */
 class WaveformView final : public juce::Component,
                            public juce::FileDragAndDropTarget,
                            private juce::ChangeListener,
@@ -34,6 +35,9 @@ public:
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseMagnify (const juce::MouseEvent&, float scaleFactor) override;
 
@@ -46,6 +50,12 @@ private:
     void timerCallback() override;
 
     juce::Rectangle<int> getWaveArea() const;
+    juce::Rectangle<int> getMarkerLane() const;
+    const Markers& shownMarkers() const;
+    int markerAt (juce::Point<float>) const;
+    void drawMarkers (juce::Graphics&);
+    void renameMarker (int index);
+    void showMarkerMenu (int index);
     double frameToX (juce::int64 frame) const;
     juce::int64 xToFrame (float x) const;
     void setView (double startFrame, double framesPerPixel);
@@ -64,6 +74,12 @@ private:
     juce::int64 dragAnchor = 0;
     juce::uint32 lastVersion = 0;
     int lastResetCount = 0;
+
+    // A marker being dragged: the document's markers with that one moved, shown until mouse-up.
+    int draggedMarker = -1;
+    juce::int64 dragGrabOffset = 0;
+    Markers dragMarkers;
+    bool markerWasMoved = false;
 
     juce::Image waveformImage;
     bool waveformValid = false;

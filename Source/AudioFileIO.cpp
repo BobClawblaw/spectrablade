@@ -19,13 +19,13 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
 
     if (reader == nullptr)
-        return { nullptr, 0.0, 0, "Unsupported or unreadable audio file." };
+        return { nullptr, 0.0, 0, "Unsupported or unreadable audio file.", {} };
 
     const auto channels = (int) reader->numChannels;
     const auto total = reader->lengthInSamples;
 
     if (channels <= 0 || total < 0)
-        return { nullptr, 0.0, 0, "The file has no audio channels." };
+        return { nullptr, 0.0, 0, "The file has no audio channels.", {} };
 
     std::vector<AudioSnapshot::Segment> segments;
 
@@ -35,13 +35,14 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         juce::AudioBuffer<float> buffer (channels, count);
 
         if (! reader->read (&buffer, 0, count, pos, true, true))
-            return { nullptr, 0.0, 0, "Reading failed at frame " + juce::String (pos) + "." };
+            return { nullptr, 0.0, 0, "Reading failed at frame " + juce::String (pos) + ".", {} };
 
         segments.push_back ({ std::make_shared<const AudioBlock> (std::move (buffer)), 0, count });
     }
 
     const auto bitDepth = reader->usesFloatingPointData ? 32 : (int) reader->bitsPerSample;
-    return { std::make_shared<const AudioSnapshot> (channels, std::move (segments)), reader->sampleRate, bitDepth, {} };
+    return { std::make_shared<const AudioSnapshot> (channels, std::move (segments)), reader->sampleRate, bitDepth, {},
+             MarkerEdits::fromMetadata (reader->metadataValues, total) };
 }
 
 juce::Array<int> bitDepthsFor (const juce::File& file, juce::AudioFormatManager& formats)
@@ -59,8 +60,13 @@ juce::Array<int> bitDepthsFor (const juce::File& file, juce::AudioFormatManager&
     return result;
 }
 
+bool canStoreMarkers (const juce::File& file)
+{
+    return file.hasFileExtension ("wav;wave;bwf;aif;aiff;aifc");
+}
+
 juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce::File& target, int bitDepth,
-                   juce::AudioFormatManager& formats)
+                   juce::AudioFormatManager& formats, const Markers& markers)
 {
     auto* format = formatFor (target, formats);
 
@@ -88,6 +94,9 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
                            .withBitsPerSample (bitDepth)
                            .withSampleFormat (isFloat ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
                                                       : juce::AudioFormatWriterOptions::SampleFormat::integral);
+
+        if (canStoreMarkers (target))
+            options = options.withMetadataValues (MarkerEdits::toMetadata (markers));
 
         auto writer = format->createWriterFor (stream, options);
 

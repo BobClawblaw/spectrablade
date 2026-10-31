@@ -39,6 +39,7 @@ juce_generate_juce_header(Waveloom)
 target_sources(Waveloom PRIVATE
     Source/Main.cpp
     Source/AudioDocument.cpp
+    Source/Markers.cpp
     Source/AudioEdits.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
@@ -78,7 +79,9 @@ target_sources(WaveloomTests PRIVATE
     Tests/EngineTests.cpp
     Tests/DocumentTests.cpp
     Tests/RecorderTests.cpp
+    Tests/MarkerTests.cpp
     Source/AudioDocument.cpp
+    Source/Markers.cpp
     Source/AudioEdits.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp

@@ -25,7 +25,8 @@ namespace
         cmdPlayPause, cmdGoToStart, cmdGoToEnd,
         cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
         cmdPlugins, cmdAudioSettings, cmdSaveRack, cmdLoadRack,
-        cmdRecord
+        cmdRecord,
+        cmdAddMarker, cmdPreviousMarker, cmdNextMarker, cmdDeleteAllMarkers
     };
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -387,7 +388,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdRecord; ++id)
+    for (int id = cmdOpen; id <= cmdDeleteAllMarkers; ++id)
         ids.add (id);
 }
 
@@ -395,6 +396,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
 {
     const auto cmd = juce::ModifierKeys::commandModifier;
     const auto shift = juce::ModifierKeys::shiftModifier;
+    const auto alt = juce::ModifierKeys::altModifier;
     const auto& doc = engine.document;
     const auto hasAudio = doc.hasAudio();
     const auto hasSelection = ! waveform.getSelection().isEmpty();
@@ -441,6 +443,16 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                                           "Record from the input", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, shift); break;
 
+        case cmdAddMarker:  info.setInfo (hasSelection ? "Add Region" : "Add Marker",
+                                          "Mark the cursor or play position, or make a region of the selection", "Markers", 0);
+                            info.addDefaultKeypress ('m', 0); info.setActive (hasAudio); break;
+        case cmdPreviousMarker: info.setInfo ("Previous Marker", "Move the cursor to the previous marker", "Markers", 0);
+                            info.addDefaultKeypress (juce::KeyPress::leftKey, alt); info.setActive (! doc.getMarkers().empty()); break;
+        case cmdNextMarker: info.setInfo ("Next Marker", "Move the cursor to the next marker", "Markers", 0);
+                            info.addDefaultKeypress (juce::KeyPress::rightKey, alt); info.setActive (! doc.getMarkers().empty()); break;
+        case cmdDeleteAllMarkers: info.setInfo ("Delete All Markers", "Remove every marker and region", "Markers", 0);
+                            info.setActive (! doc.getMarkers().empty()); break;
+
         case cmdZoomIn:     info.setInfo ("Zoom In", "Zoom in", "View", 0); info.addDefaultKeypress ('=', cmd); info.setActive (hasAudio); break;
         case cmdZoomOut:    info.setInfo ("Zoom Out", "Zoom out", "View", 0); info.addDefaultKeypress ('-', cmd); info.setActive (hasAudio); break;
         case cmdZoomFit:    info.setInfo ("Zoom to Fit", "Show the whole file", "View", 0); info.addDefaultKeypress ('0', cmd); info.setActive (hasAudio); break;
@@ -455,7 +467,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
     }
 
     // While recording, the document must stay as it is so the take lands where it was started.
-    if (engine.getRecorder().isRecording() && id != cmdRecord && id != cmdPlayPause)
+    if (engine.getRecorder().isRecording() && id != cmdRecord && id != cmdPlayPause && id != cmdAddMarker)
         info.setActive (false);
 }
 
@@ -494,6 +506,10 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveRack:   saveRack(); break;
         case cmdLoadRack:   loadRack(); break;
         case cmdRecord:     toggleRecord(); break;
+        case cmdAddMarker:  addMarker(); break;
+        case cmdPreviousMarker: goToMarker (false); break;
+        case cmdNextMarker: goToMarker (true); break;
+        case cmdDeleteAllMarkers: engine.document.setMarkers ({}, "Delete All Markers"); break;
         default:            return false;
     }
 
@@ -502,7 +518,7 @@ bool MainComponent::perform (const InvocationInfo& info)
 
 juce::StringArray MainComponent::getMenuBarNames()
 {
-    return { "File", "Edit", "Effects", "View", "Transport", "Window" };
+    return { "File", "Edit", "Effects", "View", "Transport", "Markers", "Window" };
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
@@ -526,7 +542,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0, cmdApplyRack }); break;
         case 3: add ({ cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
         case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
-        case 5: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
+        case 5: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
+        case 6: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
 
@@ -781,12 +798,21 @@ void MainComponent::saveAs (std::function<void (bool)> done)
 void MainComponent::writeFile (const juce::File& file, int bitDepth, std::function<void (bool)> done)
 {
     auto& doc = engine.document;
-    const auto error = AudioFileIO::save (*doc.getSnapshot(), doc.getSampleRate(), file, bitDepth, engine.formatManager);
+    const auto error = AudioFileIO::save (*doc.getSnapshot(), doc.getSampleRate(), file, bitDepth, engine.formatManager,
+                                          doc.getMarkers());
 
     if (error.isNotEmpty())
+    {
         showError ("Save failed", error);
+    }
     else
+    {
         doc.markSaved (file, bitDepth);
+
+        if (! doc.getMarkers().empty() && ! AudioFileIO::canStoreMarkers (file))
+            showError ("Markers not saved", file.getFileExtension().toUpperCase().trimCharactersAtStart (".")
+                                              + " files cannot hold markers. Save as WAV to keep them.");
+    }
 
     if (done != nullptr)
         done (error.isEmpty());
@@ -808,6 +834,58 @@ void MainComponent::applyEdit (AudioDocument::Snapshot next, const juce::String&
     waveform.setSelection (newSelection);
 }
 
+void MainComponent::applyEdit (AudioDocument::Snapshot next, const juce::String& description,
+                               juce::Range<juce::int64> newSelection, Markers markers)
+{
+    if (next == nullptr)
+        return;
+
+    engine.document.apply (std::move (next), description, std::move (markers));
+    waveform.setSelection (newSelection);
+}
+
+void MainComponent::addMarker()
+{
+    auto& doc = engine.document;
+    auto& player = engine.getPlayer();
+    const auto sel = waveform.getSelection();
+    auto markers = doc.getMarkers();
+
+    // During playback (or recording) M marks what is playing; otherwise the cursor or selection.
+    Marker m;
+
+    if (player.isPlaying())
+        m.start = juce::jlimit ((juce::int64) 0, doc.getNumFrames(), player.getPositionFrames());
+    else if (! sel.isEmpty())
+        m = { sel.getStart(), sel.getLength(), {} };
+    else
+        m.start = waveform.getCursor();
+
+    m.name = MarkerEdits::nextName (markers, m.isRegion());
+    markers.push_back (m);
+    doc.setMarkers (std::move (markers), "Add " + m.name);
+}
+
+void MainComponent::goToMarker (bool forwards)
+{
+    const auto& markers = engine.document.getMarkers();
+    const auto cursor = waveform.getCursor();
+    std::optional<juce::int64> target;
+
+    for (const auto& m : markers)
+    {
+        for (auto frame : { m.start, m.isRegion() ? m.getEnd() : m.start })
+        {
+            if (forwards ? frame > cursor && (! target || frame < *target)
+                         : frame < cursor && (! target || frame > *target))
+                target = frame;
+        }
+    }
+
+    if (target)
+        waveform.setCursor (*target);
+}
+
 void MainComponent::copy()
 {
     const auto sel = waveform.getSelection();
@@ -826,7 +904,8 @@ void MainComponent::cut()
         return;
 
     copy();
-    applyEdit (AudioEdits::remove (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Cut", { sel.getStart(), sel.getStart() });
+    applyEdit (AudioEdits::remove (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Cut", { sel.getStart(), sel.getStart() },
+               MarkerEdits::afterReplace (engine.document.getMarkers(), sel.getStart(), sel.getEnd(), 0));
 }
 
 void MainComponent::paste()
@@ -849,7 +928,8 @@ void MainComponent::paste()
         sel = { waveform.getCursor(), waveform.getCursor() };
 
     applyEdit (AudioEdits::replaceWithClip (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), clipboard),
-               "Paste", { sel.getStart(), sel.getStart() + clipboard.getNumFrames() });
+               "Paste", { sel.getStart(), sel.getStart() + clipboard.getNumFrames() },
+               MarkerEdits::afterReplace (doc.getMarkers(), sel.getStart(), sel.getEnd(), clipboard.getNumFrames()));
 }
 
 void MainComponent::deleteSelection()
@@ -857,7 +937,8 @@ void MainComponent::deleteSelection()
     const auto sel = waveform.getSelection();
 
     if (! sel.isEmpty())
-        applyEdit (AudioEdits::remove (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Delete", { sel.getStart(), sel.getStart() });
+        applyEdit (AudioEdits::remove (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Delete", { sel.getStart(), sel.getStart() },
+                   MarkerEdits::afterReplace (engine.document.getMarkers(), sel.getStart(), sel.getEnd(), 0));
 }
 
 void MainComponent::cropToSelection()
@@ -865,7 +946,8 @@ void MainComponent::cropToSelection()
     const auto sel = waveform.getSelection();
 
     if (! sel.isEmpty())
-        applyEdit (AudioEdits::crop (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Crop", { 0, sel.getLength() });
+        applyEdit (AudioEdits::crop (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Crop", { 0, sel.getLength() },
+                   MarkerEdits::afterCrop (engine.document.getMarkers(), sel.getStart(), sel.getEnd()));
 }
 
 //==============================================================================
@@ -1067,7 +1149,8 @@ void MainComponent::stopRecording()
     const auto start = juce::jmin (placement.destStart, snapshot->getNumFrames());
     const auto end = juce::jmin (start + clip.getNumFrames(), snapshot->getNumFrames());
 
-    applyEdit (AudioEdits::replaceWithClip (*snapshot, start, end, clip), "Record", { start, start + clip.getNumFrames() });
+    applyEdit (AudioEdits::replaceWithClip (*snapshot, start, end, clip), "Record", { start, start + clip.getNumFrames() },
+               MarkerEdits::afterReplace (doc.getMarkers(), start, end, clip.getNumFrames()));
 }
 
 void MainComponent::showAudioSettings()

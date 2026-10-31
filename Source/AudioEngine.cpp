@@ -152,7 +152,7 @@ juce::String AudioEngine::openFile (const juce::File& file)
         return loaded.error;
 
     player->pause();
-    document.reset (std::move (loaded.snapshot), loaded.sampleRate, file, loaded.bitDepth);
+    document.reset (std::move (loaded.snapshot), loaded.sampleRate, file, loaded.bitDepth, std::move (loaded.markers));
     player->documentReset();
     sendChangeMessage();
     return {};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Markers.h"
 
 //==============================================================================
 /** Immutable multichannel audio. Edits never change a block; they make new snapshots
@@ -60,7 +61,7 @@ private:
 };
 
 //==============================================================================
-/** The open audio file: current snapshot, sample rate, undo history and dirty state.
+/** The open audio file: current snapshot and markers, sample rate, undo history and dirty state.
     Edit methods must be called on the message thread. getSnapshot() may be called from any thread. */
 class AudioDocument final : public juce::ChangeBroadcaster
 {
@@ -70,10 +71,13 @@ public:
     using Snapshot = std::shared_ptr<const AudioSnapshot>;
 
     /** Replaces everything (new file); clears undo history. */
-    void reset (Snapshot initial, double sampleRate, const juce::File& file, int sourceBitDepth);
+    void reset (Snapshot initial, double sampleRate, const juce::File& file, int sourceBitDepth, Markers = {});
 
     Snapshot getSnapshot() const;
     juce::uint32 getVersion() const noexcept      { return version.load(); }
+
+    /** Message thread only. */
+    const Markers& getMarkers() const noexcept    { return history[(size_t) position].markers; }
 
     /** Increments each time a different file (or a new empty document) is loaded. */
     int getResetCount() const noexcept            { return resetCount; }
@@ -86,8 +90,13 @@ public:
     int getSourceBitDepth() const noexcept        { return sourceBitDepth; }
 
     //==============================================================================
-    /** Applies a new state as one undoable step. */
+    /** Applies a new state as one undoable step. The first form keeps the markers as they are
+        (for edits that do not move audio in time). */
     void apply (Snapshot next, const juce::String& description);
+    void apply (Snapshot next, const juce::String& description, Markers);
+
+    /** Changes only the markers, as one undoable step. */
+    void setMarkers (Markers, const juce::String& description);
 
     bool canUndo() const noexcept                 { return position > 0; }
     bool canRedo() const noexcept                 { return position + 1 < (int) history.size(); }
@@ -106,6 +115,7 @@ private:
     struct Entry
     {
         Snapshot snapshot;
+        Markers markers;
         juce::String description;
     };
 

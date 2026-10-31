@@ -3,6 +3,7 @@
 namespace
 {
     constexpr int rulerHeight = 22;
+    constexpr int markerLaneHeight = 18;
     constexpr int scrollBarHeight = 12;
     constexpr double minFramesPerPixel = 1.0 / 64.0;
 
@@ -11,6 +12,8 @@ namespace
     const juce::Colour waveColour  (0xff4fc3a1);
     const juce::Colour selectColour (0x3346a0ff);
     const juce::Colour cursorColour (0xffffd34d);
+    const juce::Colour markerColour (0xffff8a3d);
+    const juce::Colour regionColour (0xff58a6ff);
 
     juce::String formatTime (double seconds, double secondsPerTick)
     {
@@ -39,7 +42,116 @@ WaveformView::~WaveformView()
 //==============================================================================
 juce::Rectangle<int> WaveformView::getWaveArea() const
 {
-    return getLocalBounds().withTrimmedTop (rulerHeight).withTrimmedBottom (scrollBarHeight);
+    return getLocalBounds().withTrimmedTop (rulerHeight + markerLaneHeight).withTrimmedBottom (scrollBarHeight);
+}
+
+juce::Rectangle<int> WaveformView::getMarkerLane() const
+{
+    return getLocalBounds().withTrimmedTop (rulerHeight).withHeight (markerLaneHeight);
+}
+
+const Markers& WaveformView::shownMarkers() const
+{
+    return draggedMarker >= 0 ? dragMarkers : engine.document.getMarkers();
+}
+
+int WaveformView::markerAt (juce::Point<float> p) const
+{
+    if (! getMarkerLane().toFloat().contains (p))
+        return -1;
+
+    const auto& markers = shownMarkers();
+
+    // Point markers win over regions (their flags are small); among them, the nearest.
+    int best = -1;
+    auto bestDistance = 7.0;
+
+    for (size_t i = 0; i < markers.size(); ++i)
+    {
+        if (markers[i].isRegion())
+            continue;
+
+        const auto d = std::abs (frameToX (markers[i].start) - (double) p.x);
+
+        if (d < bestDistance)
+        {
+            best = (int) i;
+            bestDistance = d;
+        }
+    }
+
+    if (best >= 0)
+        return best;
+
+    // The shortest region under the mouse, so nested regions stay reachable.
+    for (size_t i = 0; i < markers.size(); ++i)
+    {
+        const auto& m = markers[i];
+
+        if (m.isRegion() && (double) p.x >= frameToX (m.start) - 3.0 && (double) p.x <= frameToX (m.getEnd()) + 3.0
+            && (best < 0 || m.length < markers[(size_t) best].length))
+            best = (int) i;
+    }
+
+    return best;
+}
+
+void WaveformView::drawMarkers (juce::Graphics& g)
+{
+    const auto lane = getMarkerLane().toFloat();
+    const auto wave = getWaveArea().toFloat();
+
+    g.setColour (juce::Colour (0xff181b20));
+    g.fillRect (lane);
+
+    if (! engine.document.hasAudio())
+        return;
+
+    g.setFont (11.0f);
+    const auto& markers = shownMarkers();
+
+    for (size_t i = 0; i < markers.size(); ++i)
+    {
+        const auto& m = markers[i];
+        const auto x1 = (float) frameToX (m.start);
+        const auto active = (int) i == draggedMarker;
+
+        if (m.isRegion())
+        {
+            const auto x2 = (float) frameToX (m.getEnd());
+
+            if (x2 < 0.0f || x1 > (float) getWidth())
+                continue;
+
+            const auto bar = juce::Rectangle<float> (x1, lane.getY() + 2.0f, juce::jmax (2.0f, x2 - x1), lane.getHeight() - 4.0f);
+            g.setColour (regionColour.withAlpha (active ? 0.75f : 0.45f));
+            g.fillRoundedRectangle (bar, 2.0f);
+            g.setColour (regionColour.withAlpha (0.08f));
+            g.fillRect (juce::Rectangle<float> (x1, wave.getY(), x2 - x1, wave.getHeight()));
+            g.setColour (regionColour.withAlpha (0.6f));
+            g.drawVerticalLine ((int) x1, wave.getY(), wave.getBottom());
+            g.drawVerticalLine ((int) x2, wave.getY(), wave.getBottom());
+            g.setColour (juce::Colours::white);
+            g.drawText (m.name, bar.reduced (4.0f, 0.0f), juce::Justification::centredLeft, true);
+        }
+        else
+        {
+            if (x1 < -100.0f || x1 > (float) getWidth())
+                continue;
+
+            juce::Path flag;
+            flag.addTriangle (x1 - 5.0f, lane.getY() + 2.0f, x1 + 5.0f, lane.getY() + 2.0f, x1, lane.getBottom() - 2.0f);
+            g.setColour (active ? juce::Colours::white : markerColour);
+            g.fillPath (flag);
+
+            const float dashes[] = { 4.0f, 3.0f };
+            g.setColour (markerColour.withAlpha (0.7f));
+            g.drawDashedLine (juce::Line<float> (x1, wave.getY(), x1, wave.getBottom()), dashes, 2);
+            g.setColour (juce::Colours::lightgrey);
+            g.drawText (m.name, juce::Rectangle<float> (x1 + 7.0f, lane.getY(), 120.0f, lane.getHeight()),
+                        juce::Justification::centredLeft, true);
+        }
+    }
 }
 
 double WaveformView::frameToX (juce::int64 frame) const
@@ -238,6 +350,7 @@ void WaveformView::paint (juce::Graphics& g)
 
     if (! engine.document.hasAudio())
     {
+        drawMarkers (g);
         g.setColour (background);
         g.fillRect (area);
         g.setColour (juce::Colours::grey);
@@ -250,6 +363,7 @@ void WaveformView::paint (juce::Graphics& g)
         renderWaveform();
 
     g.drawImageAt (waveformImage, area.getX(), area.getY());
+    drawMarkers (g);
 
     if (! selection.isEmpty())
     {
@@ -281,6 +395,31 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     if (! engine.document.hasAudio())
         return;
 
+    if (const auto index = markerAt (e.position); index >= 0)
+    {
+        const auto& m = engine.document.getMarkers()[(size_t) index];
+
+        if (e.mods.isPopupMenu())
+        {
+            showMarkerMenu (index);
+            return;
+        }
+
+        if (m.isRegion())
+            setSelection ({ m.start, m.getEnd() });
+        else
+            setCursor (m.start);
+
+        draggedMarker = index;
+        dragMarkers = engine.document.getMarkers();
+        dragGrabOffset = xToFrame (e.position.x) - m.start;
+        markerWasMoved = false;
+        return;
+    }
+
+    if (getMarkerLane().toFloat().contains (e.position))
+        return;
+
     const auto frame = xToFrame (e.position.x);
 
     if (e.mods.isShiftDown())
@@ -302,6 +441,27 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     if (! engine.document.hasAudio())
         return;
 
+    if (draggedMarker >= 0)
+    {
+        if (! markerWasMoved && e.getDistanceFromDragStart() < 3)
+            return;
+
+        auto& m = dragMarkers[(size_t) draggedMarker];
+        const auto length = engine.document.getNumFrames();
+        m.start = juce::jlimit ((juce::int64) 0, length - m.length, xToFrame (e.position.x) - dragGrabOffset);
+        markerWasMoved = true;
+
+        if (m.isRegion())
+            setSelection ({ m.start, m.getEnd() });
+        else
+            setCursor (m.start);
+
+        return;
+    }
+
+    if (e.mouseDownPosition.y < (float) getWaveArea().getY())
+        return;
+
     // Auto-scroll when dragging past the edges.
     if (e.position.x < 0.0f)
         setView (viewStart + e.position.x * framesPerPixel * 0.1, framesPerPixel);
@@ -310,6 +470,82 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
     const auto frame = xToFrame (e.position.x);
     setSelection (juce::Range<juce::int64>::between (dragAnchor, frame));
+}
+
+void WaveformView::mouseUp (const juce::MouseEvent&)
+{
+    if (draggedMarker < 0)
+        return;
+
+    const auto moved = std::exchange (markerWasMoved, false);
+    const auto markers = std::move (dragMarkers);
+    const auto name = markers[(size_t) draggedMarker].name;
+    draggedMarker = -1;
+
+    if (moved)
+        engine.document.setMarkers (markers, "Move " + name);
+
+    repaint();
+}
+
+void WaveformView::mouseMove (const juce::MouseEvent& e)
+{
+    setMouseCursor (markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+}
+
+void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    if (const auto index = markerAt (e.position); index >= 0)
+        renameMarker (index);
+}
+
+void WaveformView::renameMarker (int index)
+{
+    const auto& markers = engine.document.getMarkers();
+
+    if (! juce::isPositiveAndBelow (index, (int) markers.size()))
+        return;
+
+    const auto old = markers[(size_t) index];
+    auto* box = new juce::AlertWindow ("Rename", {}, juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("name", old.name);
+    box->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, old] (int result)
+    {
+        const auto name = box->getTextEditorContents ("name").trim();
+
+        if (result != 1 || name.isEmpty() || name == old.name)
+            return;
+
+        // Find it again by value: the markers may have changed while the box was open.
+        auto current = engine.document.getMarkers();
+
+        if (auto it = std::find (current.begin(), current.end(), old); it != current.end())
+        {
+            it->name = name;
+            engine.document.setMarkers (std::move (current), "Rename " + old.name);
+        }
+    }), true);
+}
+
+void WaveformView::showMarkerMenu (int index)
+{
+    const auto old = engine.document.getMarkers()[(size_t) index];
+    juce::PopupMenu menu;
+    menu.addItem ("Rename...", [this, index] { renameMarker (index); });
+    menu.addItem ("Delete " + old.name, [this, old]
+    {
+        auto markers = engine.document.getMarkers();
+
+        if (auto it = std::find (markers.begin(), markers.end(), old); it != markers.end())
+        {
+            markers.erase (it);
+            engine.document.setMarkers (std::move (markers), "Delete " + old.name);
+        }
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
 
 void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
@@ -366,9 +602,11 @@ void WaveformView::changeListenerCallback (juce::ChangeBroadcaster*)
         const auto length = engine.document.getNumFrames();
         setView (viewStart, framesPerPixel);
         setSelection ({ juce::jmin (selection.getStart(), length), juce::jmin (selection.getEnd(), length) });
+        invalidateWaveform();
     }
 
-    invalidateWaveform();
+    // Markers (or the saved state) changed; the waveform image is still good.
+    repaint();
 }
 
 void WaveformView::timerCallback()

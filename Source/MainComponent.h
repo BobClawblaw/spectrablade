@@ -53,11 +53,17 @@ private:
     // Edit
     juce::Range<juce::int64> selectionOrAll() const;
     void applyEdit (AudioDocument::Snapshot next, const juce::String& description, juce::Range<juce::int64> newSelection);
+    void applyEdit (AudioDocument::Snapshot next, const juce::String& description, juce::Range<juce::int64> newSelection,
+                    Markers);
     void cut();
     void copy();
     void paste();
     void deleteSelection();
     void cropToSelection();
+
+    // Markers
+    void addMarker();
+    void goToMarker (bool forwards);
 
     // Effects
     void askForDecibels (const juce::String& title, const juce::String& label, float initial,

@@ -1,0 +1,47 @@
+#pragma once
+
+#include <JuceHeader.h>
+
+/** A point marker (length 0) or a region (length > 0), in document frames. */
+struct Marker
+{
+    juce::int64 start = 0;
+    juce::int64 length = 0;
+    juce::String name;
+
+    bool isRegion() const noexcept                { return length > 0; }
+    juce::int64 getEnd() const noexcept           { return start + length; }
+
+    bool operator== (const Marker& o) const       { return start == o.start && length == o.length && name == o.name; }
+    bool operator!= (const Marker& o) const       { return ! operator== (o); }
+};
+
+/** Kept sorted by start, then length. */
+using Markers = std::vector<Marker>;
+
+namespace MarkerEdits
+{
+    void sort (Markers&);
+
+    /** Where markers end up after frames [start, end) are replaced by newLength frames
+        (a deletion when newLength is 0, an insert when start == end):
+        - markers before the edit stay, markers after it move by the change in length;
+        - point markers strictly inside the replaced range are removed;
+        - a region keeps whatever part of it lies outside the replaced range, and grows or shrinks
+          when it spans the edit. A region inside the range is removed. */
+    Markers afterReplace (const Markers&, juce::int64 start, juce::int64 end, juce::int64 newLength);
+
+    /** Markers for keeping only [start, end): points inside it (or at its end) and the parts of
+        regions that overlap it, moved so start becomes frame 0. */
+    Markers afterCrop (const Markers&, juce::int64 start, juce::int64 end);
+
+    /** A name not used yet: "Marker 01", "Region 01", ... */
+    juce::String nextName (const Markers&, bool region);
+
+    /** Reads WAV cue points with their labels and regions (cue + ltxt), or AIFF markers. */
+    Markers fromMetadata (const juce::StringPairArray& metadata, juce::int64 numFrames);
+
+    /** Metadata for a WAV cue chunk (points and regions) or AIFF MARK chunk (points; a region
+        keeps only its start there, since AIFF has no regions). */
+    std::unordered_map<juce::String, juce::String> toMetadata (const Markers&);
+}
