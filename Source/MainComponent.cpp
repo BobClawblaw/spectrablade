@@ -34,7 +34,7 @@ namespace
         cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth,
         cmdSpectralAttenuate, cmdSpectralRemove,
         cmdLoudnessStats, cmdMatchLoudness,
-        cmdCaptureNoisePrint, cmdNoiseReduction
+        cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair
     };
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -59,6 +59,11 @@ namespace
     {
         juce::Logger::writeToLog ("Error shown: " + title + ": " + message);
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, title, message);
+    }
+
+    void showNote (const juce::String& title, const juce::String& message)
+    {
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, title, message);
     }
 }
 
@@ -188,7 +193,7 @@ private:
 
 //==============================================================================
 /** Runs work on a background thread behind a progress window, then finish() on the message thread
-    unless it was cancelled. Used for sample-rate conversion, loudness and noise reduction. */
+    unless it was cancelled. Used for sample-rate conversion, loudness and restoration. */
 class MainComponent::BackgroundJob final : public juce::ThreadWithProgressWindow
 {
 public:
@@ -459,7 +464,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdNoiseReduction; ++id)
+    for (int id = cmdOpen; id <= cmdClickRepair; ++id)
         ids.add (id);
 }
 
@@ -539,6 +544,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdNoiseReduction: info.setInfo ("Noise Reduction...", "Reduce the captured noise in the selection or file", "Effects", 0);
             info.addDefaultKeypress ('p', cmd | juce::ModifierKeys::shiftModifier);
             info.setActive (hasAudio && noisePrint.has_value() && backgroundJob == nullptr); break;
+        case cmdClickRepair: info.setInfo ("Click and Pop Repair...", "Find clicks and pops in the selection or file and rebuild them", "Effects", 0);
+            info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
 
@@ -618,6 +625,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMatchLoudness: askForLoudnessTarget(); break;
         case cmdCaptureNoisePrint: captureNoisePrint(); break;
         case cmdNoiseReduction: askForNoiseReduction(); break;
+        case cmdClickRepair: askForClickRepair(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdDeleteAllMarkers: engine.document.setMarkers ({}, "Delete All Markers"); break;
@@ -651,7 +659,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs }); break;
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, 0, cmdApplyRack }); break;
+                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
         case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 5: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
@@ -1344,6 +1352,86 @@ void MainComponent::reduceNoise (NoiseReduction::Settings s)
                 showError ("Noise Reduction", "The audio changed during processing, so the result was discarded.");
             else
                 applyEdit (*result, "Noise Reduction " + juce::String (s.reductionDb, 1) + " dB", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
+}
+
+void MainComponent::askForClickRepair()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Click and Pop Repair",
+                                       "Finds clicks and pops and rebuilds those samples from the audio around them; nothing else "
+                                       "changes. Lower the threshold to catch fainter clicks; raise it if drums or plucks are "
+                                       "being taken for clicks.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("threshold", juce::String (settings->getDoubleValue ("clickThreshold", 18.0), 1), "Threshold (dB above the background)");
+    box->addTextEditor ("length", juce::String (settings->getDoubleValue ("clickMaxLength", 3.0), 1), "Longest click (ms)");
+
+    for (auto* name : { "threshold", "length" })
+        box->getTextEditor (name)->setInputRestrictions (8, ".0123456789");
+
+    box->addButton ("Repair", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        ClickRepair::Settings s;
+        s.thresholdDb = juce::jlimit (6.0f, 60.0f, box->getTextEditorContents ("threshold").getFloatValue());
+        s.maxLengthMs = juce::jlimit (0.1f, 20.0f, box->getTextEditorContents ("length").getFloatValue());
+        settings->setValue ("clickThreshold", s.thresholdDb);
+        settings->setValue ("clickMaxLength", s.maxLengthMs);
+        repairClicks (s);
+    }), true);
+}
+
+void MainComponent::repairClicks (ClickRepair::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr || doc.getNumFrames() == 0)
+        return;
+
+    auto result = std::make_shared<ClickRepair::Result>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Repairing clicks...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            const auto r = ClickRepair::repair (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+
+            if (r.has_value())
+                *result = *r;
+
+            return r.has_value();
+        },
+        [this, result, version]
+        {
+            if (engine.document.getVersion() != version)
+            {
+                showError ("Click and Pop Repair", "The audio changed during processing, so the result was discarded.");
+                return;
+            }
+
+            const auto skipped = result->skipped > 0 ? " " + juce::String (result->skipped) + " longer event"
+                                                           + (result->skipped == 1 ? " was" : "s were") + " left alone."
+                                                     : juce::String();
+
+            if (result->snapshot == nullptr)
+            {
+                showNote ("Click and Pop Repair", "No clicks found." + skipped);
+                return;
+            }
+
+            applyEdit (result->snapshot, "Click Repair (" + juce::String (result->repaired) + ")", waveform.getSelection());
+
+            if (result->skipped > 0)
+                showNote ("Click and Pop Repair", "Repaired " + juce::String (result->repaired) + " click"
+                                                      + (result->repaired == 1 ? "." : "s.") + skipped);
         });
     backgroundJob->launchThread();
 }

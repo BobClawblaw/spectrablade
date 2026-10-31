@@ -2,6 +2,7 @@
 
 #include "AudioEdits.h"
 #include "AudioEngine.h"
+#include "ClickRepair.h"
 #include "LevelMeter.h"
 #include "Loudness.h"
 #include "NoiseReduction.h"
@@ -95,6 +96,8 @@ private:
     void captureNoisePrint();
     void askForNoiseReduction();
     void reduceNoise (NoiseReduction::Settings);
+    void askForClickRepair();
+    void repairClicks (ClickRepair::Settings);
 
     // Transport and windows
     void togglePlay();

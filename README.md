@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 9: click and pop repair**
+- Effects > Click and Pop Repair finds clicks and pops in the selection, or the whole file, and rebuilds the damaged samples from the audio around them. No other sample changes, and only the stretches with repairs are rewritten. Two settings: a threshold (18 dB above the background by default; lower catches fainter clicks) and the longest click to repair (3 ms by default; longer events are left alone and counted). It is undoable and runs behind a progress window.
+- Detection fits an order-32 autoregressive model to each block and predicts every sample from the samples before it and, separately, from the samples after it. A click is where both predictions miss by more than the threshold over the block's typical (median) error. It then reaches back to the first forward miss and on to the last backward miss, which find where the click begins and ends. Repair is least-squares autoregressive interpolation from 2048 samples either side, with a margin that grows with the click's length.
+- Measured by the tests on three tones over a -60 dBFS noise floor with 30 planted clicks (1, 5 and 20 samples, in one or both channels): all 30 found and none in clean audio or silence. Only samples near the clicks change, the worst repaired click is left at -52.2 dBFS RMS (about the noise floor, which no model can predict), and the whole file matches the clean signal to 68.2 dB. Five minutes of stereo with 990 clicks take 1.53 s.
+
 **Milestone 8: noise reduction**
 - Select a stretch of noise alone (room tone, hiss, hum between phrases) and choose Effects > Capture Noise Print (Shift+P). Then Effects > Noise Reduction (Cmd+Shift+P) lowers that noise in the selection, or the whole file, by up to the reduction you set (12 dB by default). A threshold (3 dB above the print by default) decides how far above the noise a sound must be to be kept. It is undoable and runs behind a progress window.
 - Each 4096-point frame (75% overlap, square-root Hann windows) gets a Wiener gain per frequency bin, with its signal-to-noise estimate smoothed over time (Ephraim and Malah's decision-directed method), so the noise that is left stays steady instead of warbling. The gain never drops below the reduction, so 0 dB changes nothing.
@@ -86,6 +91,7 @@ The tests run against the real machine:
 - Out-of-process scanning, using the built app as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.
 - The default audio device: output-pair routing on a multi-output interface. With `--live-input`, also arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
 - Spectrogram level calibration and image, and spectral edits: identity, removal depth, neighbouring tones, untouched audio, attenuation.
+- Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
 - Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
 - Loudness against the EBU Tech 3341 and 3342 signals at two rates, 5.1 channel weights, gating, true peak between samples, measuring part of a file, and cancelling.
 - Sample-rate conversion: accuracy against ideal sines at four rate pairs, passband flatness, alias rejection, a round-trip null, an inexact ratio, cancelling, undo of a conversion, and speed.
@@ -120,5 +126,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Click and pop repair
-2. Multitrack session, last: clips, buses, sends, automation, delay compensation, recording and punch-in
+1. Multitrack session: clips, buses, sends, automation, delay compensation, recording and punch-in
