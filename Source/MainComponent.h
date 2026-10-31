@@ -65,6 +65,10 @@ private:
     void deleteSelection();
     void cropToSelection();
 
+    // Spectrogram
+    void setDisplay (WaveformView::Display);
+    void applySpectral (float gainDb);
+
     // Markers
     void addMarker();
     void goToMarker (bool forwards);

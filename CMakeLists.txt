@@ -45,6 +45,8 @@ target_sources(WaveDrill PRIVATE
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
+    Source/Spectrogram.cpp
+    Source/SpectralEdit.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
@@ -82,6 +84,7 @@ target_sources(WaveDrillTests PRIVATE
     Tests/RecorderTests.cpp
     Tests/MarkerTests.cpp
     Tests/ConverterTests.cpp
+    Tests/SpectralTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/AudioEdits.cpp
@@ -89,6 +92,8 @@ target_sources(WaveDrillTests PRIVATE
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
+    Source/Spectrogram.cpp
+    Source/SpectralEdit.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp)
 get_target_property(wavedrill_defs WaveDrill COMPILE_DEFINITIONS)
@@ -98,5 +103,6 @@ target_compile_definitions(WaveDrillTests PRIVATE WAVEDRILL_APP_EXECUTABLE="$<TA
 target_link_libraries(WaveDrillTests PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
+    juce::juce_dsp
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

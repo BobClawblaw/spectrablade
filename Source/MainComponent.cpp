@@ -3,6 +3,7 @@
 #include "OfflineRender.h"
 #include "PluginScanner.h"
 #include "SampleRateConverter.h"
+#include "SpectralEdit.h"
 
 namespace
 {
@@ -12,6 +13,7 @@ namespace
     constexpr const char* lastFileKey     = "lastFile";
     constexpr const char* inputFirstKey   = "inputFirstChannel";
     constexpr const char* inputCountKey   = "inputNumChannels";
+    constexpr const char* displayKey      = "display";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -28,7 +30,9 @@ namespace
         cmdPlugins, cmdAudioSettings, cmdSaveRack, cmdLoadRack,
         cmdRecord,
         cmdAddMarker, cmdPreviousMarker, cmdNextMarker, cmdDeleteAllMarkers,
-        cmdConvertRate
+        cmdConvertRate,
+        cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth,
+        cmdSpectralAttenuate, cmdSpectralRemove
     };
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -336,6 +340,7 @@ MainComponent::MainComponent()
     selectionLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
 
     addAndMakeVisible (waveform);
+    waveform.setDisplay ((WaveformView::Display) juce::jlimit (0, 2, settings->getIntValue (displayKey, 0)));
     waveform.onFileDropped = [this] (const juce::File& f) { confirmDiscardChanges ([this, f] { openFile (f); }); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
@@ -391,6 +396,7 @@ void MainComponent::saveSettings()
     settings->setValue (outputPairKey, engine.getOutputPair());
     settings->setValue (inputFirstKey, engine.getInputFirstChannel());
     settings->setValue (inputCountKey, engine.getInputNumChannels());
+    settings->setValue (displayKey, (int) waveform.getDisplay());
     settings->setValue (lastFileKey, engine.document.getFile().getFullPathName());
     settings->saveIfNeeded();
 }
@@ -446,7 +452,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdConvertRate; ++id)
+    for (int id = cmdOpen; id <= cmdSpectralRemove; ++id)
         ids.add (id);
 }
 
@@ -500,6 +506,21 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdRecord:     info.setInfo (engine.getRecorder().isRecording() ? "Stop Recording" : "Record",
                                           "Record from the input", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, shift); break;
+
+        case cmdShowWaveform: info.setInfo ("Waveform", "Show each channel's waveform", "View", 0);
+                            info.addDefaultKeypress ('1', cmd);
+                            info.setTicked (waveform.getDisplay() == WaveformView::Display::waveform); break;
+        case cmdShowSpectrogram: info.setInfo ("Spectrogram", "Show each channel's frequencies over time", "View", 0);
+                            info.addDefaultKeypress ('2', cmd);
+                            info.setTicked (waveform.getDisplay() == WaveformView::Display::spectrogram); break;
+        case cmdShowBoth:   info.setInfo ("Waveform and Spectrogram", "Show both, one above the other", "View", 0);
+                            info.addDefaultKeypress ('3', cmd);
+                            info.setTicked (waveform.getDisplay() == WaveformView::Display::both); break;
+        case cmdSpectralAttenuate: info.setInfo ("Attenuate Frequencies...", "Lower the level inside the box selected in the spectrogram", "Effects", 0);
+                            info.setActive (hasSelection && ! waveform.getSpectralBand().isEmpty()); break;
+        case cmdSpectralRemove: info.setInfo ("Remove Frequencies", "Remove what is inside the box selected in the spectrogram", "Effects", 0);
+                            info.addDefaultKeypress (juce::KeyPress::backspaceKey, alt);
+                            info.setActive (hasSelection && ! waveform.getSpectralBand().isEmpty()); break;
 
         case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
@@ -569,6 +590,13 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRecord:     toggleRecord(); break;
         case cmdAddMarker:  addMarker(); break;
         case cmdConvertRate: chooseSampleRate(); break;
+        case cmdShowWaveform: setDisplay (WaveformView::Display::waveform); break;
+        case cmdShowSpectrogram: setDisplay (WaveformView::Display::spectrogram); break;
+        case cmdShowBoth:   setDisplay (WaveformView::Display::both); break;
+        case cmdSpectralAttenuate:
+            askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
+            break;
+        case cmdSpectralRemove: applySpectral (-std::numeric_limits<float>::infinity()); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdDeleteAllMarkers: engine.document.setMarkers ({}, "Delete All Markers"); break;
@@ -601,8 +629,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     {
         case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs }); break;
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
-        case 2: add ({ cmdGain, cmdNormalize, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0, cmdApplyRack }); break;
-        case 3: add ({ cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
+        case 2: add ({ cmdGain, cmdNormalize, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
+                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdApplyRack }); break;
+        case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
         case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 5: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 6: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -904,6 +933,28 @@ void MainComponent::applyEdit (AudioDocument::Snapshot next, const juce::String&
 
     engine.document.apply (std::move (next), description, std::move (markers));
     waveform.setSelection (newSelection);
+}
+
+void MainComponent::setDisplay (WaveformView::Display d)
+{
+    waveform.setDisplay (d);
+    commands.commandStatusChanged();
+    saveSettings();
+}
+
+void MainComponent::applySpectral (float gainDb)
+{
+    const auto sel = waveform.getSelection();
+    const auto band = waveform.getSpectralBand();
+
+    if (sel.isEmpty() || band.isEmpty())
+        return;
+
+    auto& doc = engine.document;
+    const auto name = std::isinf (gainDb) ? juce::String ("Remove Frequencies")
+                                          : "Attenuate Frequencies " + juce::String (gainDb, 1) + " dB";
+    applyEdit (SpectralEdit::changeBand (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), band, doc.getSampleRate(), gainDb),
+               name, sel);
 }
 
 void MainComponent::addMarker()

@@ -203,6 +203,9 @@ void WaveformView::setSelection (juce::Range<juce::int64> r)
     r = { juce::jlimit ((juce::int64) 0, length, r.getStart()), juce::jlimit ((juce::int64) 0, length, r.getEnd()) };
     selection = r;
     cursor = r.getStart();
+
+    if (r.isEmpty())
+        band = {};
     repaint();
 
     if (onSelectionChanged != nullptr)
@@ -216,6 +219,7 @@ void WaveformView::setCursor (juce::int64 frame)
 
 void WaveformView::selectAll()
 {
+    band = {};
     setSelection ({ 0, engine.document.getNumFrames() });
 }
 
@@ -224,6 +228,52 @@ void WaveformView::invalidateWaveform()
 {
     waveformValid = false;
     repaint();
+}
+
+WaveformView::Lane WaveformView::getLane (int channel, int numChannels) const
+{
+    const auto area = getWaveArea();
+    const auto laneHeight = area.getHeight() / juce::jmax (1, numChannels);
+    auto lane = juce::Rectangle<int> (0, laneHeight * channel, area.getWidth(), laneHeight);
+
+    switch (display)
+    {
+        case Display::waveform:    return { lane, {} };
+        case Display::spectrogram: return { {}, lane };
+        case Display::both:        break;
+    }
+
+    const auto wave = lane.removeFromTop (lane.getHeight() * 35 / 100);
+    return { wave, lane.withTrimmedTop (1) };
+}
+
+void WaveformView::setDisplay (Display d)
+{
+    display = d;
+    invalidateWaveform();
+}
+
+void WaveformView::drawFrequencyScale (juce::Graphics& g, juce::Rectangle<int> spectrum, double sampleRate)
+{
+    g.setFont (10.0f);
+
+    for (auto f : { 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0 })
+    {
+        if (f >= sampleRate * 0.5)
+            break;
+
+        const auto y = (float) spectrum.getY() + Spectrogram::frequencyToY (f, sampleRate, spectrum.getHeight());
+
+        if (y < (float) spectrum.getY() + 6.0f || y > (float) spectrum.getBottom() - 4.0f)
+            continue;
+
+        g.setColour (juce::Colours::white.withAlpha (0.25f));
+        g.drawHorizontalLine ((int) y, (float) spectrum.getX(), (float) spectrum.getX() + 6.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.7f));
+        g.drawText (f >= 1000.0 ? juce::String (f / 1000.0, 0) + "k" : juce::String ((int) f),
+                    juce::Rectangle<float> ((float) spectrum.getX() + 8.0f, y - 6.0f, 40.0f, 12.0f),
+                    juce::Justification::centredLeft, false);
+    }
 }
 
 void WaveformView::renderWaveform()
@@ -240,21 +290,36 @@ void WaveformView::renderWaveform()
     if (snapshot->getNumFrames() == 0 || channels == 0)
         return;
 
-    const auto laneHeight = (float) waveformImage.getHeight() / (float) channels;
     const auto width = waveformImage.getWidth();
+    const auto rate = engine.document.getSampleRate();
 
     for (int ch = 0; ch < channels; ++ch)
     {
-        const auto top = laneHeight * (float) ch;
-        const auto mid = top + laneHeight * 0.5f;
-        const auto half = laneHeight * 0.45f;
+        const auto lane = getLane (ch, channels);
+
+        if (ch > 0)
+        {
+            g.setColour (laneLine);
+            g.drawHorizontalLine (juce::jmin (lane.wave.isEmpty() ? lane.spectrum.getY() : lane.wave.getY(), area.getHeight()) - 1,
+                                  0.0f, (float) width);
+        }
+
+        if (! lane.spectrum.isEmpty())
+        {
+            g.drawImageAt (Spectrogram::render (*snapshot, ch, rate, viewStart, framesPerPixel, width, lane.spectrum.getHeight()),
+                           lane.spectrum.getX(), lane.spectrum.getY());
+            drawFrequencyScale (g, lane.spectrum, rate);
+        }
+
+        if (lane.wave.isEmpty())
+            continue;
+
+        const auto top = (float) lane.wave.getY();
+        const auto mid = top + (float) lane.wave.getHeight() * 0.5f;
+        const auto half = (float) lane.wave.getHeight() * 0.45f;
 
         g.setColour (laneLine);
         g.drawHorizontalLine ((int) mid, 0.0f, (float) width);
-
-        if (ch > 0)
-            g.drawHorizontalLine ((int) top, 0.0f, (float) width);
-
         g.setColour (waveColour);
 
         if (framesPerPixel >= 1.0)
@@ -367,10 +432,37 @@ void WaveformView::paint (juce::Graphics& g)
 
     if (! selection.isEmpty())
     {
-        const auto x1 = juce::jmax (0.0, frameToX (selection.getStart()));
-        const auto x2 = juce::jmin ((double) getWidth(), frameToX (selection.getEnd()));
-        g.setColour (selectColour);
-        g.fillRect (juce::Rectangle<double> (x1, area.getY(), juce::jmax (1.0, x2 - x1), area.getHeight()).toFloat());
+        const auto x1 = (float) juce::jmax (0.0, frameToX (selection.getStart()));
+        const auto x2 = (float) juce::jmin ((double) getWidth(), frameToX (selection.getEnd()));
+        const auto w = juce::jmax (1.0f, x2 - x1);
+
+        if (band.isEmpty())
+        {
+            g.setColour (selectColour);
+            g.fillRect (juce::Rectangle<float> (x1, (float) area.getY(), w, (float) area.getHeight()));
+        }
+        else
+        {
+            // A spectral box: drawn on every channel's spectrogram, since edits apply to all channels.
+            const auto channels = engine.document.getNumChannels();
+            const auto rate = engine.document.getSampleRate();
+
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                const auto spectrum = getLane (ch, channels).spectrum.translated (area.getX(), area.getY());
+
+                if (spectrum.isEmpty())
+                    continue;
+
+                const auto y1 = (float) spectrum.getY() + Spectrogram::frequencyToY (band.getEnd(), rate, spectrum.getHeight());
+                const auto y2 = (float) spectrum.getY() + Spectrogram::frequencyToY (band.getStart(), rate, spectrum.getHeight());
+                const juce::Rectangle<float> box (x1, y1, w, juce::jmax (1.0f, y2 - y1));
+                g.setColour (juce::Colours::white.withAlpha (0.12f));
+                g.fillRect (box);
+                g.setColour (juce::Colours::white.withAlpha (0.9f));
+                g.drawRect (box, 1.0f);
+            }
+        }
     }
 
     g.setColour (cursorColour);
@@ -405,6 +497,8 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
             return;
         }
 
+        band = {};
+
         if (m.isRegion())
             setSelection ({ m.start, m.getEnd() });
         else
@@ -419,6 +513,31 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
 
     if (getMarkerLane().toFloat().contains (e.position))
         return;
+
+    // Option-drag in a spectrogram selects a box of time and frequency.
+    if (e.mods.isAltDown())
+    {
+        const auto channels = engine.document.getNumChannels();
+        const auto area = getWaveArea();
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            const auto spectrum = getLane (ch, channels).spectrum.translated (area.getX(), area.getY());
+
+            if (spectrum.contains (e.position.toInt()))
+            {
+                bandLane = ch;
+                bandAnchor = Spectrogram::yToFrequency (e.position.y - (float) spectrum.getY(), engine.document.getSampleRate(), spectrum.getHeight());
+                dragAnchor = xToFrame (e.position.x);
+                band = {};
+                setCursor (dragAnchor);
+                return;
+            }
+        }
+    }
+
+    bandLane = -1;
+    band = {};
 
     const auto frame = xToFrame (e.position.x);
 
@@ -469,6 +588,16 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
         setView (viewStart + (e.position.x - (float) getWidth()) * framesPerPixel * 0.1, framesPerPixel);
 
     const auto frame = xToFrame (e.position.x);
+
+    if (bandLane >= 0)
+    {
+        const auto area = getWaveArea();
+        const auto spectrum = getLane (bandLane, engine.document.getNumChannels()).spectrum.translated (area.getX(), area.getY());
+        const auto y = juce::jlimit ((float) spectrum.getY(), (float) spectrum.getBottom(), e.position.y);
+        const auto frequency = Spectrogram::yToFrequency (y - (float) spectrum.getY(), engine.document.getSampleRate(), spectrum.getHeight());
+        band = juce::Range<double>::between (bandAnchor, frequency);
+    }
+
     setSelection (juce::Range<juce::int64>::between (dragAnchor, frame));
 }
 

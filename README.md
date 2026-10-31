@@ -4,6 +4,11 @@ A clean-room audio editor for macOS that hosts VST3 and Audio Unit (v2 and v3) p
 
 WaveDrill was called Waveloom until 31 October 2026. On first launch it copies Waveloom's settings (audio device, inputs and outputs, plug-in list), and it still opens `.wlrack` rack files.
 
+**Milestone 6: spectrogram and spectral editing**
+- View > Waveform (Cmd 1), Spectrogram (Cmd 2), or Waveform and Spectrogram (Cmd 3), per channel. The spectrogram runs from 20 Hz to Nyquist on a log scale with a frequency scale on the left, and shows -130 dBFS (black) to 0 dBFS (white). Each pixel column is a 4096-point Blackman-Harris FFT, calibrated so a sine reads its true level (within 0.01 dB when centred on a bin).
+- Option-drag in a spectrogram to select a box of time and frequency. Effects > Attenuate Frequencies lowers what is inside by any amount; Effects > Remove Frequencies (Option+Delete) takes it out. Both are undoable and apply to every channel.
+- Edits use short-time Fourier resynthesis (4096-point frames, 75% overlap, square-root Hann windows) with gains tapered over three bins and about a frame of time at the box edges, so they do not click or ring. Measured by the tests: an edit with no change gives the input back within -130 dB; removing 3-8 kHz takes a 5 kHz tone below -130 dB while a 1 kHz tone keeps its level to 0.01 dB; a -12 dB attenuation lowers a tone by 12.00 dB; audio outside the edited stretch is bit-identical.
+
 **Milestone 5: sample-rate conversion**
 - Edit > Convert Sample Rate converts the whole file (8 kHz to 192 kHz), with a progress bar and a cancel button. It is one undoable step: undo brings back the original audio and rate. Markers and the selection keep their times.
 - Pasting audio copied from a file at another rate converts it to the file's rate first.
@@ -68,6 +73,7 @@ The tests run against the real machine:
 - The effects, file round trips (float exact; integer formats within the dither and rounding bound), the playback source, and offline rendering through Apple's AUDelay.
 - Out-of-process scanning, using the built app as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.
 - The default audio device: output-pair routing on a multi-output interface. With `--live-input`, also arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
+- Spectrogram level calibration and image, and spectral edits: identity, removal depth, neighbouring tones, untouched audio, attenuation.
 - Sample-rate conversion: accuracy against ideal sines at four rate pairs, passband flatness, alias rejection, a round-trip null, an inexact ratio, cancelling, undo of a conversion, and speed.
 - Markers: the edit rules (delete, insert, replace, crop), undo and redo, and WAV, AIFF and FLAC round trips.
 - The recorder against a simulated device: channel mapping among active inputs, a 30 s take checked sample by sample, the playback anchor, and a punch-in through a simulated loop cable that must line up exactly.
@@ -100,5 +106,5 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack session: clips, buses, sends, automation, delay compensation, recording (Fireface inputs) and punch-in
-2. Spectral view and editing, noise reduction, click and pop repair, loudness (EBU R128)
+1. Noise reduction, click and pop repair, loudness (EBU R128 measurement and matching)
+2. Multitrack session, last: clips, buses, sends, automation, delay compensation, recording and punch-in
