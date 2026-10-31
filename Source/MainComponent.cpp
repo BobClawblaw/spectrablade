@@ -30,6 +30,7 @@ namespace
     void askThreeWay (const juce::String& title, const juce::String& message,
                       const juce::String& yes, const juce::String& no, std::function<void (int)> onResult)
     {
+        juce::Logger::writeToLog ("Asking: " + title + ": " + message);
         auto* box = new juce::AlertWindow (title, message, juce::MessageBoxIconType::WarningIcon);
         box->addButton (yes, 1, juce::KeyPress (juce::KeyPress::returnKey));
         box->addButton (no, 2);
@@ -39,6 +40,7 @@ namespace
 
     void showError (const juce::String& title, const juce::String& message)
     {
+        juce::Logger::writeToLog ("Error shown: " + title + ": " + message);
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, title, message);
     }
 }
@@ -193,6 +195,12 @@ MainComponent::MainComponent()
 
     if (deviceError.isNotEmpty())
         showError ("Audio device", deviceError);
+
+    if (auto* device = engine.deviceManager.getCurrentAudioDevice())
+        juce::Logger::writeToLog ("Audio device: " + device->getName() + ", " + juce::String (device->getCurrentSampleRate())
+                                  + " Hz, " + juce::String (device->getCurrentBufferSizeSamples()) + " samples");
+    else
+        juce::Logger::writeToLog ("Audio device: none");
 
     engine.setOutputPair (settings->getIntValue (outputPairKey, 0));
 

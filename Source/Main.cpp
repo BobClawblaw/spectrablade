@@ -21,12 +21,18 @@ public:
             return;
         }
 
+        // ~/Library/Logs/Waveloom/Waveloom.log
+        logger.reset (juce::FileLogger::createDefaultAppLogger ("Waveloom", "Waveloom.log",
+                                                               getApplicationName() + " " + getApplicationVersion()));
+        juce::Logger::setCurrentLogger (logger.get());
+
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
     }
 
     void shutdown() override
     {
         mainWindow = nullptr;
+        juce::Logger::setCurrentLogger (nullptr);
         scannerWorker = nullptr;
     }
 
@@ -64,6 +70,7 @@ private:
         }
     };
 
+    std::unique_ptr<juce::FileLogger> logger;
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<ScannerWorker> scannerWorker;
 };
