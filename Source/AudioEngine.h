@@ -48,7 +48,8 @@ public:
 
     void setNextReadPosition (juce::int64 frame) override    { position = frame; }
     juce::int64 getNextReadPosition() const override         { return position; }
-    juce::int64 getTotalLength() const override              { return session.getState()->getLength(); }
+    /** The session's length, or the stop frame when that is later (recording past the end). */
+    juce::int64 getTotalLength() const override              { return juce::jmax (session.getState()->getLength(), stopFrame.load()); }
     bool isLooping() const override                           { return false; }
 
 private:

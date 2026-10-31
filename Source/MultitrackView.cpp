@@ -40,6 +40,11 @@ public:
             view.editTrack (trackId, "Rename Track", false, [text] (SessionTrack& t) { if (text.isNotEmpty()) t.name = text; });
         };
 
+        arm.setClickingTogglesState (true);
+        arm.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffd0453a));
+        arm.setTooltip ("Arm for recording: Record puts the take on this track");
+        arm.onClick = [this] { view.setArmedTrack (arm.getToggleState() ? trackId : 0); };
+
         for (auto* b : { &mute, &solo })
         {
             b->setClickingTogglesState (true);
@@ -89,7 +94,7 @@ public:
             s->setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
         }
 
-        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &mute, &solo, &gain, &pan, &sendsButton })
+        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &arm, &mute, &solo, &gain, &pan, &sendsButton })
             addAndMakeVisible (c);
     }
 
@@ -99,6 +104,8 @@ public:
         isSelected = selected;
         isBus = t.isBus;
         sendsButton.setVisible (! isBus);
+        arm.setVisible (! isBus);
+        arm.setToggleState (view.armedTrackId == trackId, juce::dontSendNotification);
         sendsButton.setButtonText (t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
         sendsButton.setToggleState (! t.sends.empty(), juce::dontSendNotification);
         effectsButton.setTooltip (isBus ? "This bus's effects" : "This track's effects");
@@ -146,6 +153,13 @@ public:
         top.removeFromRight (4);
         mute.setBounds (top.removeFromRight (26));
         top.removeFromRight (4);
+
+        if (! isBus)
+        {
+            arm.setBounds (top.removeFromRight (26));
+            top.removeFromRight (4);
+        }
+
         effectsButton.setBounds (top.removeFromRight (40));
         name.setBounds (top);
         r.removeFromTop (8);
@@ -175,7 +189,7 @@ public:
 private:
     MultitrackView& view;
     juce::Label name;
-    juce::TextButton effectsButton { "FX" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" };
+    juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" };
     juce::Slider gain, pan;
     juce::Colour colour;
     bool isSelected = false, isBus = false;
@@ -451,6 +465,9 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 
     if (! state->findClip (selectedClip).has_value())
         selectedClip = 0;
+
+    if (state->findTrack (armedTrackId) == nullptr)
+        armedTrackId = 0;
 
     rebuildHeaders();
     updateScrollBars();
@@ -758,6 +775,29 @@ void MultitrackView::paint (juce::Graphics& g)
             g.drawText ("Drop audio files here, or choose Multitrack > Import Audio", area, juce::Justification::centred);
         }
 
+        if (! timeSelection.isEmpty())
+        {
+            const auto x0 = xForFrame (timeSelection.getStart()), x1 = xForFrame (timeSelection.getEnd());
+            g.setColour (juce::Colours::white.withAlpha (0.08f));
+            g.fillRect (juce::Rectangle<float> (x0, (float) area.getY(), x1 - x0, (float) area.getHeight()));
+        }
+
+        if (! recording.isEmpty())
+        {
+            auto lane = (int) s.tracks.size();
+
+            for (int t = 0; t < (int) s.tracks.size(); ++t)
+                if (s.tracks[(size_t) t].id == armedTrackId)
+                    lane = t;
+
+            const auto x0 = xForFrame (recording.getStart()), x1 = xForFrame (recording.getEnd());
+            const auto r = juce::Rectangle<float> (x0, (float) laneTop (lane) + 2.0f, juce::jmax (1.0f, x1 - x0), (float) trackHeight - 4.0f);
+            g.setColour (juce::Colour (0xffd0453a).withAlpha (0.3f));
+            g.fillRoundedRectangle (r, 3.0f);
+            g.setColour (juce::Colour (0xffd0453a));
+            g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
+        }
+
         g.setColour (cursorColour);
         g.drawVerticalLine ((int) xForFrame (cursor), (float) area.getY(), (float) area.getBottom());
 
@@ -771,6 +811,16 @@ void MultitrackView::paint (juce::Graphics& g)
     }
 
     drawRuler (g, { area.getX(), 0, area.getWidth(), rulerHeight });
+
+    if (! timeSelection.isEmpty())
+    {
+        const auto x0 = juce::jmax ((float) area.getX(), xForFrame (timeSelection.getStart()));
+        const auto x1 = juce::jmin ((float) area.getRight(), xForFrame (timeSelection.getEnd()));
+        g.setColour (cursorColour.withAlpha (0.35f));
+
+        if (x1 > x0)
+            g.fillRect (juce::Rectangle<float> (x0, (float) rulerHeight - 5.0f, x1 - x0, 5.0f));
+    }
     g.setColour (juce::Colour (0xff1b1e23));
     g.fillRect (0, 0, headerWidth, rulerHeight);
     g.setColour (juce::Colours::lightgrey);
@@ -784,6 +834,32 @@ void MultitrackView::setCursor (juce::int64 frame)
 {
     cursor = juce::jmax ((juce::int64) 0, frame);
     repaint();
+}
+
+void MultitrackView::setTimeSelection (juce::Range<juce::int64> range)
+{
+    timeSelection = range.getStart() < 0 ? range.movedToStartAt (0) : range;
+    repaint();
+
+    if (onSelectionChanged != nullptr)
+        onSelectionChanged();
+}
+
+void MultitrackView::setArmedTrack (juce::uint32 trackId)
+{
+    const auto* t = shown().findTrack (trackId);
+    armedTrackId = t != nullptr && ! t->isBus ? trackId : 0;
+    rebuildHeaders();
+    repaint();
+}
+
+void MultitrackView::showRecording (juce::Range<juce::int64> range)
+{
+    if (range != recording)
+    {
+        recording = range;
+        repaint();
+    }
 }
 
 int MultitrackView::getSelectedTrack() const
@@ -861,8 +937,10 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
 
     if (p.y < rulerHeight)
     {
-        drag = Drag::cursor;
-        setCursor (frameForX ((float) p.x));
+        drag = Drag::range;
+        dragFrame = frameForX ((float) p.x);
+        setCursor (dragFrame);
+        setTimeSelection ({});
         return;
     }
 
@@ -882,8 +960,10 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
     }
 
     selectedClip = 0;
-    drag = Drag::cursor;
-    setCursor (frameForX ((float) p.x));
+    drag = Drag::range;
+    dragFrame = frameForX ((float) p.x);
+    setCursor (dragFrame);
+    setTimeSelection ({});
     selectTrack (trackAt (p.y));
 }
 
@@ -891,9 +971,14 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
 {
     const auto p = e.getPosition();
 
-    if (drag == Drag::cursor)
+    if (drag == Drag::range)
     {
-        setCursor (frameForX ((float) juce::jmax (headerWidth, p.x)));
+        // Dragging selects the range between where the mouse went down and where it is now; the
+        // cursor follows the range's start.
+        const auto frame = frameForX ((float) juce::jmax (headerWidth, p.x));
+        const auto range = juce::Range<juce::int64>::between (dragFrame, frame);
+        setCursor (range.getStart());
+        setTimeSelection (range);
         return;
     }
 
@@ -914,7 +999,7 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         case Drag::trimStart: SessionEdits::trimClip (next, dragClip.id, dragClip.position + delta, dragClip.getEnd()); break;
         case Drag::trimEnd:   SessionEdits::trimClip (next, dragClip.id, dragClip.position, dragClip.getEnd() + delta); break;
         case Drag::none:
-        case Drag::cursor:    break;
+        case Drag::range:     break;
     }
 
     preview = std::move (next);

@@ -90,6 +90,14 @@ namespace SessionEdits
     bool splitClip (SessionState&, juce::uint32 clipId, juce::int64 frame);
 
     bool removeClip (SessionState&, juce::uint32 clipId);
+
+    /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
+        (or split in two) and lose their fade on the cut side. False when nothing was there. */
+    bool clearRange (SessionState&, int track, juce::int64 start, juce::int64 end);
+
+    /** Places a recorded take at position on a track (a new one when track is past the last or a
+        bus), replacing what the track had there. Returns the clip's id. */
+    juce::uint32 recordClip (SessionState&, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position);
     /** Removes a track or bus; removing a bus removes the sends to it. */
     bool removeTrack (SessionState&, int track);
 

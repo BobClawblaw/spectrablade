@@ -119,6 +119,9 @@ private:
     void toggleRecord();
     void startRecording();
     void stopRecording();
+    void startSessionRecording();
+    void finishSessionRecording (const Recorder::Take&);
+    juce::File recordingsFolder() const;
     void showAudioSettings();
     void showPluginList();
     void showEditor (int slotIndex);
@@ -164,6 +167,11 @@ private:
     // punchOut < 0) and the round-trip latency measured when it started.
     juce::int64 punchIn = 0, punchOut = -1;
     int recordLatency = 0;
+
+    // A take going onto a session track (the armed one, or a new one when recordTrackId is 0)
+    // rather than into the document.
+    bool recordingSession = false, recordChangedRate = false;
+    juce::uint32 recordTrackId = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

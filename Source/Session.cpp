@@ -212,6 +212,59 @@ bool removeClip (SessionState& s, juce::uint32 clipId)
     return true;
 }
 
+bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
+{
+    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || end <= start)
+        return false;
+
+    auto& clips = s.tracks[(size_t) track].clips;
+    std::vector<SessionClip> kept;
+    auto changed = false;
+
+    for (auto& c : clips)
+    {
+        if (end <= c.position || start >= c.getEnd())
+        {
+            kept.push_back (c);
+            continue;
+        }
+
+        changed = true;
+
+        if (start > c.position)
+        {
+            auto left = c;
+            left.length = start - c.position;
+            left.fadeOut = 0;
+            limitFades (left);
+            kept.push_back (std::move (left));
+        }
+
+        if (end < c.getEnd())
+        {
+            auto right = c;
+            right.id = start > c.position ? s.nextId++ : c.id;
+            right.offset += end - c.position;
+            right.length = c.getEnd() - end;
+            right.position = end;
+            right.fadeIn = 0;
+            limitFades (right);
+            kept.push_back (std::move (right));
+        }
+    }
+
+    clips = std::move (kept);
+    return changed;
+}
+
+juce::uint32 recordClip (SessionState& s, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position)
+{
+    if (audio != nullptr && juce::isPositiveAndBelow (track, (int) s.tracks.size()) && ! s.tracks[(size_t) track].isBus)
+        clearRange (s, track, position, position + audio->getNumFrames());
+
+    return addClip (s, track, source, std::move (audio), position);
+}
+
 bool removeTrack (SessionState& s, int track)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))

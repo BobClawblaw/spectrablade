@@ -17,6 +17,7 @@
 #include "SessionTests.h"
 #include "TrackEffectsTests.h"
 #include "BusTests.h"
+#include "TrackRecordingTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -308,6 +309,7 @@ int main (int argc, char* argv[])
         runSessionTests (engine.formatManager);
         runTrackEffectsTests();
         runBusTests();
+        runTrackRecordingTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

@@ -6,6 +6,15 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 13: recording onto session tracks**
+- Record (Shift+Space) works in the multitrack too. Arm a track with its R button and the take goes onto that track; with no track armed it goes onto a new one. One track is armed at a time, and buses can't be armed.
+- Drag across the timeline (or the ruler) to select a time range. Record then punches in at its start and out at its end, after a 2 s preroll, and stops by itself once the end has come back through the input. Without a range it records from the cursor until you stop. Play with a range plays just the range.
+- The take replaces what the armed track had under it: clips inside the range go, and clips across its edges are cut back (or split in two) without their fade on the cut side. A red band shows the take as it lands, and the whole recording is one undo step.
+- The take is lined up with the round-trip latency, as in the editor, and saved as a 32-bit float WAV in a "<session> Recordings" folder beside the session file (in Music/SpectraBlade/Recordings while the session is unsaved). Past the end of the session the player plays silence, so a take there still lines up.
+- A session with no audio yet takes the interface's sample rate; otherwise the interface must run at the session's rate.
+- Measured by the tests: the session's own output, looped back with 731 frames of latency into the recorder during a punch-in through the real player, lands bit for bit equal to the session mix over the range. Also checked: clearing a range (clips inside, across each edge, and a split from one clip), placing a take onto an armed track, a bus or no track, and recording from past the end of an empty session.
+- Not yet: input monitoring through the track's effects, several armed tracks at once, and loop recording into takes.
+
 **Milestone 12: buses and sends**
 - Multitrack > Add Bus (Cmd+Shift+B) adds a bus: a row with no clips that plays what tracks send it, through its own effects (the FX button), volume and pan. Its lane lists the tracks feeding it.
 - Each track's Sends button opens a panel with a row per bus: turn the send on, set its level, and choose Pre to send before the track's volume instead of after it. New Bus makes a bus and sends the track to it in one step. Every change is undoable, and deleting a bus removes the sends to it.
@@ -28,7 +37,7 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - The session plays through the same effects rack and outputs as the editor, resampled to the interface's rate. Mono clips pan with a constant-power law (-3 dB each side at the centre); stereo clips are balanced, so the centre leaves them untouched. Clips fade with raised-cosine curves. An empty session takes the first file's sample rate, and later files are converted to it.
 - File > New Session, Open Session and Save Session (Cmd+S while the session shows) use `.sbsession` files. These name each clip's audio file relative to the session, so a session folder can be moved. Each file is read once however many clips use it, and missing files are reported.
 - Measured by the tests: the mixer's pan laws, gains, mute, solo, trims and fades, sample by sample. Rendering in 7-frame blocks is bit-identical to one block. Split clips play bit for bit like the whole clip, and trimmed clips stay in place in time. Undo merges a dragged control into one step. Sessions saved and reloaded after moving their folder mix bit for bit like the original. The player in session mode plays exactly the mix and stops where told.
-- Recording and the editing effects are off while the session shows.
+- The editing effects are off while the session shows.
 
 **Milestone 9: click and pop repair**
 - Effects > Click and Pop Repair finds clicks and pops in the selection, or the whole file, and rebuilds the damaged samples from the audio around them. No other sample changes, and only the stretches with repairs are rewritten. Two settings: a threshold (18 dB above the background by default; lower catches fainter clicks) and the longest click to repair (3 ms by default; longer events are left alone and counted). It is undoable and runs behind a progress window.
@@ -118,6 +127,7 @@ The tests run against the real machine:
 - Multitrack: the mixer (pan laws, gains, mute, solo, trims, fades, block-size independence), clip edits (split, trim, move, delete), undo with merged steps, session files (round trip after moving the folder, shared audio read once, rate conversion, missing files), and session playback through the player.
 - Track effects: delay compensation bit for bit across tracks with different latencies and block sizes, playing from a jump, bypass, reordering, removal, saving each chain in the session file, and a real Apple Audio Unit on a track.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
+- Recording onto tracks: a punch-in through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
 - Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
 - Loudness against the EBU Tech 3341 and 3342 signals at two rates, 5.1 channel weights, gating, true peak between samples, measuring part of a file, and cancelling.
@@ -153,4 +163,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: recording onto tracks with punch-in, automation, fade handles and snapping
+1. Multitrack, continued: automation, fade handles and snapping

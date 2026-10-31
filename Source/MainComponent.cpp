@@ -42,7 +42,7 @@ namespace
     /** Commands that work on the open file only, off while the session is showing. */
     bool isEditorOnly (int id)
     {
-        return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection || id == cmdRecord
+        return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair);
     }
 
@@ -322,7 +322,8 @@ MainComponent::MainComponent()
     recordButton.onClick   = [this] { toggleRecord(); };
     recordButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::darkred);
     recordButton.setTooltip ("Record from the input (Shift+Space). Over a selection it punches in and out with a "
-                             + juce::String (prerollSeconds, 0) + " s preroll; otherwise it records from the cursor.");
+                             + juce::String (prerollSeconds, 0) + " s preroll; otherwise it records from the cursor. "
+                             "In the multitrack, the take goes onto the armed track (R), or a new track.");
     pluginsButton.onClick  = [this] { showPluginList(); };
     audioButton.onClick    = [this] { showAudioSettings(); };
     saveRackButton.onClick = [this] { saveRack(); };
@@ -803,8 +804,24 @@ void MainComponent::timerCallback()
     if (multitrackMode)
     {
         const auto rate = engine.session.getSampleRate();
+        recordButton.setToggleState (recorder.isRecording(), juce::dontSendNotification);
+
+        if (recorder.isRecording() && recordingSession)
+        {
+            // The take so far, as it will land: what has come back through the input by now.
+            const auto played = player.getPlayedFrame().load() - recordLatency;
+            const auto end = punchOut >= 0 ? juce::jmin (played, punchOut) : played;
+            multitrack.showRecording ({ punchIn, juce::jmax (punchIn, end) });
+
+            if (punchOut >= 0 && played >= punchOut + (juce::int64) (rate * 0.25))
+            {
+                stopRecording();
+                return;
+            }
+        }
+
         const auto pos = player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor();
-        timeLabel.setText (formatTime (pos, rate), juce::dontSendNotification);
+        timeLabel.setText ((recorder.isRecording() ? "REC " : "") + formatTime (pos, rate), juce::dontSendNotification);
         playButton.setButtonText (player.isPlaying() ? "Pause" : "Play");
 
         const auto state = engine.session.getState();
@@ -973,7 +990,7 @@ void MainComponent::confirmQuit (std::function<void()> proceed)
 //==============================================================================
 void MainComponent::setMultitrack (bool on)
 {
-    if (on == multitrackMode)
+    if (on == multitrackMode || engine.getRecorder().isRecording())
         return;
 
     engine.getPlayer().pause();
@@ -1832,8 +1849,15 @@ void MainComponent::togglePlay()
 
     if (multitrackMode)
     {
+        // As in the editor: a time range plays and stops at its end.
+        const auto range = multitrack.getTimeSelection();
         const auto cursor = multitrack.getCursor();
-        player.play (cursor >= engine.session.getState()->getLength() ? 0 : cursor, -1);
+
+        if (! range.isEmpty())
+            player.play (range.getStart(), range.getEnd());
+        else
+            player.play (cursor >= engine.session.getState()->getLength() ? 0 : cursor, -1);
+
         return;
     }
 
@@ -1947,6 +1971,12 @@ void MainComponent::startRecording()
         return;
     }
 
+    if (multitrackMode)
+    {
+        startSessionRecording();
+        return;
+    }
+
     const auto deviceRate = device->getCurrentSampleRate();
 
     if (! doc.hasAudio())
@@ -2012,6 +2042,14 @@ void MainComponent::stopRecording()
         showError ("Record", juce::String (take.droppedFrames) + " frames were lost because the computer could not keep up. "
                                "Listen to the take before keeping it.");
 
+    if (recordingSession)
+    {
+        recordingSession = false;
+        multitrack.showRecording ({});
+        finishSessionRecording (take);
+        return;
+    }
+
     const auto placement = Recorder::place (take, punchIn, punchOut, recordLatency);
 
     if (placement.takeEnd <= placement.takeStart)
@@ -2027,6 +2065,115 @@ void MainComponent::stopRecording()
 
     applyEdit (AudioEdits::replaceWithClip (*snapshot, start, end, clip), "Record", { start, start + clip.getNumFrames() },
                MarkerEdits::afterReplace (doc.getMarkers(), start, end, clip.getNumFrames()));
+}
+
+void MainComponent::startSessionRecording()
+{
+    auto& recorder = engine.getRecorder();
+    auto& player = engine.getPlayer();
+    auto& session = engine.session;
+    const auto deviceRate = engine.deviceManager.getCurrentAudioDevice()->getCurrentSampleRate();
+
+    const auto rateDiffers = ! juce::exactlyEqual (session.getSampleRate(), deviceRate);
+
+    if (rateDiffers && session.getState()->getLength() > 0)
+    {
+        showError ("Record", "This session is " + juce::String (session.getSampleRate()) + " Hz but the interface runs at "
+                               + juce::String (deviceRate) + " Hz. Set the interface to the session's rate in Audio Settings.");
+        return;
+    }
+
+    // A session with no audio yet takes the interface's rate, as a Record step that the take
+    // replaces when it lands (see finishSessionRecording).
+    recordChangedRate = rateDiffers;
+
+    if (rateDiffers)
+    {
+        auto next = *session.getState();
+        next.sampleRate = deviceRate;
+        session.apply (std::move (next), "Record");
+        player.resetSource();
+    }
+
+    const auto range = multitrack.getTimeSelection();
+    punchIn = range.isEmpty() ? multitrack.getCursor() : range.getStart();
+    punchOut = range.isEmpty() ? -1 : range.getEnd();
+    recordLatency = engine.getRoundTripLatency();
+    recordTrackId = multitrack.getArmedTrack();
+
+    player.pause();
+
+    if (! recorder.start())
+    {
+        showError ("Record", "The recorder could not start.");
+        return;
+    }
+
+    // Always play, from the preroll: the performer hears the session, and the player's frame
+    // counter lines the take up. Past the end of the session it plays silence until stopped.
+    recordingSession = true;
+    player.play (juce::jmax ((juce::int64) 0, punchIn - (juce::int64) (deviceRate * prerollSeconds)),
+                 std::numeric_limits<juce::int64>::max() / 4);
+
+    juce::Logger::writeToLog ("Recording to the session: input " + juce::String (engine.getInputFirstChannel() + 1) + " x"
+                              + juce::String (engine.getInputNumChannels()) + ", punch in " + juce::String (punchIn)
+                              + ", punch out " + juce::String (punchOut) + ", round trip " + juce::String (recordLatency));
+    refreshInputChoices();
+    commands.commandStatusChanged();
+}
+
+juce::File MainComponent::recordingsFolder() const
+{
+    // Beside a saved session, in a folder of its own; otherwise in the user's Music folder.
+    const auto file = engine.session.getFile();
+
+    if (file != juce::File())
+        return file.getSiblingFile (file.getFileNameWithoutExtension() + " Recordings");
+
+    return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SpectraBlade").getChildFile ("Recordings");
+}
+
+void MainComponent::finishSessionRecording (const Recorder::Take& take)
+{
+    const auto placement = Recorder::place (take, punchIn, punchOut, recordLatency);
+
+    if (placement.takeEnd <= placement.takeStart)
+        return;
+
+    const AudioSnapshot takeAudio (take.clip.numChannels, take.clip.segments);
+    const auto clip = AudioEdits::copy (takeAudio, placement.takeStart, placement.takeEnd, take.clip.sampleRate);
+    auto audio = std::make_shared<const AudioSnapshot> (clip.numChannels, clip.segments);
+
+    auto state = *engine.session.getState();
+    auto track = -1;
+
+    for (int t = 0; t < (int) state.tracks.size(); ++t)
+        if (state.tracks[(size_t) t].id == recordTrackId)
+            track = t;
+
+    // The take is kept as a 32-bit float WAV, so it is exactly what came in.
+    const auto folder = recordingsFolder();
+    const auto trackName = track >= 0 ? state.tracks[(size_t) track].name : juce::String ("Take");
+    const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (trackName) + " "
+                                                          + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"), ".wav", false);
+
+    if (const auto made = folder.createDirectory(); made.failed())
+    {
+        showError ("Record", "Could not make the recordings folder " + folder.getFullPathName() + ": " + made.getErrorMessage());
+        return;
+    }
+
+    if (const auto error = AudioFileIO::save (*audio, state.sampleRate, file, 32, engine.formatManager); error.isNotEmpty())
+    {
+        showError ("Record", "Could not save the take: " + error);
+        return;
+    }
+
+    SessionEdits::recordClip (state, track, file, std::move (audio), placement.destStart);
+
+    // One undo step, which also takes back the rate change of a session that had no audio yet.
+    engine.session.apply (std::move (state), "Record", recordChangedRate);
+    multitrack.setTimeSelection ({});
 }
 
 void MainComponent::showAudioSettings()

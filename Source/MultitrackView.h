@@ -5,8 +5,9 @@
 /** The multitrack session: a ruler, a header per track or bus (name, effects, mute, solo, gain,
     pan, and on tracks their sends) and the tracks' clips with their waveforms. Drag a clip to
     move it (onto another track, or below the last for a new one); drag its edges to trim it;
-    double-click it to open its file in the editor. Click to place the cursor; drop audio files
-    to add them as clips. */
+    double-click it to open its file in the editor. Click to place the cursor, drag across the
+    timeline to select a time range; drop audio files to add them as clips. A track's R button arms
+    it for recording. */
 class MultitrackView final : public juce::Component,
                              public juce::FileDragAndDropTarget,
                              private juce::ChangeListener,
@@ -26,6 +27,18 @@ public:
 
     juce::int64 getCursor() const noexcept        { return cursor; }
     void setCursor (juce::int64 frame);
+
+    /** The time range dragged across the timeline (empty when there is none). */
+    juce::Range<juce::int64> getTimeSelection() const noexcept { return timeSelection; }
+    void setTimeSelection (juce::Range<juce::int64>);
+
+    /** The track armed for recording (its id), or 0. One track at a time. */
+    juce::uint32 getArmedTrack() const noexcept   { return armedTrackId; }
+    void setArmedTrack (juce::uint32 trackId);
+
+    /** Shows the take under way: the part of the session it covers on the armed track (or a new
+        track below the last), empty when nothing is recording. */
+    void showRecording (juce::Range<juce::int64>);
 
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;
@@ -58,7 +71,7 @@ private:
     class TrackHeader;
     class SendsPanel;
 
-    enum class Drag { none, cursor, move, trimStart, trimEnd };
+    enum class Drag { none, range, move, trimStart, trimEnd };
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void scrollBarMoved (juce::ScrollBar*, double newRangeStart) override;
@@ -94,10 +107,11 @@ private:
     double framesPerPixel = 1000.0, viewStart = 0.0;
     int scrollY = 0;
     juce::int64 cursor = 0;
-    juce::uint32 selectedClip = 0, selectedTrackId = 0;
+    juce::uint32 selectedClip = 0, selectedTrackId = 0, armedTrackId = 0;
+    juce::Range<juce::int64> timeSelection, recording;
 
     Drag drag = Drag::none;
-    juce::int64 dragFrame = 0;             // frame under the mouse when the drag began
+    juce::int64 dragFrame = 0;             // frame under the mouse when the drag began (or the range's anchor)
     SessionClip dragClip;                  // the clip as it was
     int dragTrack = 0;
 

@@ -99,6 +99,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SessionTests.cpp
     Tests/TrackEffectsTests.cpp
     Tests/BusTests.cpp
+    Tests/TrackRecordingTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/AudioEdits.cpp
