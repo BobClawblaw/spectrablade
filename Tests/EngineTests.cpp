@@ -5,7 +5,9 @@
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
 #include "../Source/PluginScanner.h"
+#include "../Source/AudioEdits.h"
 #include "DocumentTests.h"
+#include "RecorderTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -107,11 +109,72 @@ namespace
         check (engine.getOutputPair() == 0, "out-of-range output pair falls back to 1/2");
     }
 
+    /** Arms the device's first two inputs and records a second while the document plays,
+        checking the real device's callback order gives an anchor. */
+    void testLiveInput (AudioEngine& engine)
+    {
+        auto* device = engine.deviceManager.getCurrentAudioDevice();
+        const auto names = engine.getDeviceInputChannelNames();
+        std::cout << "      inputs: " << names.size() << std::endl;
+
+        if (device == nullptr || names.size() < 2)
+            return;
+
+        const auto error = engine.setInput (0, 2);
+        device = engine.deviceManager.getCurrentAudioDevice();
+        const auto active = device->getActiveInputChannels();
+        check (error.isEmpty() && active[0] && active[1] && engine.getRecorder().isInputActive(),
+               "input 1/2 armed" + (error.isEmpty() ? juce::String() : ": " + error));
+
+        const auto rate = device->getCurrentSampleRate();
+        const auto latency = engine.getRoundTripLatency();
+        std::cout << "      round trip " << latency << " frames at " << rate << " Hz, "
+                  << device->getCurrentBufferSizeSamples() << "-frame buffer" << std::endl;
+        check (latency > 0, "round-trip latency is reported");
+
+        juce::AudioBuffer<float> silence (2, (int) (rate * 3.0));
+        silence.clear();
+        engine.document.reset (AudioEdits::fromBuffer (std::move (silence)), rate, {}, 24);
+        engine.getPlayer().documentReset();
+
+        auto& recorder = engine.getRecorder();
+        check (recorder.start(), "recorder starts on the live device");
+        engine.getPlayer().play (0, -1);
+        const auto startMs = juce::Time::getMillisecondCounterHiRes();
+        runUntil ([] { return false; }, 1000);
+        const auto elapsed = (juce::Time::getMillisecondCounterHiRes() - startMs) / 1000.0;
+        const auto take = recorder.stop();
+        engine.getPlayer().pause();
+
+        const auto expected = elapsed * rate;
+        std::cout << "      recorded " << take.clip.getNumFrames() << " frames in " << elapsed << " s, anchor "
+                  << take.anchorRecorded << " -> " << take.anchorPlayed << std::endl;
+        check (take.droppedFrames == 0 && std::abs ((double) take.clip.getNumFrames() - expected) < rate * 0.1,
+               "live take has the expected length with nothing dropped");
+        check (take.anchorPlayed >= 0 && (double) take.anchorPlayed < rate * 0.2, "live take is anchored to playback");
+
+        engine.setInput (0, 0);
+        check (! engine.getRecorder().isInputActive()
+                   && engine.deviceManager.getCurrentAudioDevice()->getActiveInputChannels().isZero(),
+               "inputs turn off again");
+    }
+
     void testRack (AudioEngine& engine, const juce::Array<juce::PluginDescription>& found)
     {
         int added = 0;
 
+        // Apple's own effects first: third-party plug-ins may stop for a licence or activation
+        // alert, which blocks an unattended run (and puts a dialog on the user's screen).
+        juce::Array<juce::PluginDescription> candidates;
+
         for (auto& d : found)
+            if (d.manufacturerName == "Apple" && ! d.isInstrument)
+                candidates.add (d);
+
+        if (candidates.isEmpty())
+            candidates = found;
+
+        for (auto& d : candidates)
         {
             if (added == 3)
                 break;
@@ -197,6 +260,7 @@ int main()
     {
         AudioEngine engine;
         runDocumentTests (engine);
+        runRecorderTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };
@@ -205,6 +269,7 @@ int main()
         scanThread.join();
 
         testDevice (engine);
+        testLiveInput (engine);
         testRack (engine, found);
     }
 

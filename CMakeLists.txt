@@ -43,6 +43,7 @@ target_sources(Waveloom PRIVATE
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
+    Source/Recorder.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
     Source/WaveformView.cpp
@@ -76,11 +77,13 @@ juce_generate_juce_header(WaveloomTests)
 target_sources(WaveloomTests PRIVATE
     Tests/EngineTests.cpp
     Tests/DocumentTests.cpp
+    Tests/RecorderTests.cpp
     Source/AudioDocument.cpp
     Source/AudioEdits.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
+    Source/Recorder.cpp
     Source/PluginScanner.cpp)
 get_target_property(waveloom_defs Waveloom COMPILE_DEFINITIONS)
 target_compile_definitions(WaveloomTests PRIVATE ${waveloom_defs} JUCE_MODAL_LOOPS_PERMITTED=1)

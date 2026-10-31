@@ -2,6 +2,15 @@
 
 A clean-room audio editor for macOS that hosts VST3 and Audio Unit (v2 and v3) plug-ins. Built on JUCE 9.0.4.
 
+**Milestone 3: recording**
+- Pick the input in the bottom bar: any stereo pair or mono channel of the interface (all 30 inputs of a Fireface UFX). Only the chosen inputs are opened; macOS asks for microphone access the first time. The meter next to it shows the input level with a peak hold and clip lights (click to clear).
+- Record with Shift+Space or the Record button; Space, Stop or Shift+Space ends the take. Each take is one undoable edit.
+- **Into an empty window** a new file is recorded at the interface's sample rate.
+- **Into an existing file**, playback starts 2 s before the punch-in so you can play along. With a selection, the take replaces exactly the selection (punch in and out, and recording stops by itself shortly after the punch-out); without one, it overwrites from the cursor and can run past the end.
+- **Latency compensation:** the take is placed using the interface's reported input and output latency (buffers included) plus the effects rack's latency, so a punch-in lines up with what you heard. The recorder pairs each input block with the document frames the player sent in the same audio cycle, which keeps the alignment sample-exact regardless of when you pressed Record. On a Fireface UFX at 44.1 kHz with 512-frame buffers the round trip is 1135 frames (25.7 ms).
+- The audio thread only copies into a lock-free buffer; a writer thread stores the take. Lost frames (the computer could not keep up) are reported after the take.
+- Recording into a file needs the interface to run at the file's sample rate; the app says so when it does not.
+
 **Milestone 2: waveform editing**
 - Select by dragging; shift-click extends the selection. Zoom with the wheel, a pinch or Cmd +/-, Cmd 0 or Cmd E; scroll sideways to pan. Zoomed in far enough, individual samples are drawn.
 - Cut, copy, paste (inserts at the cursor or replaces the selection), delete, crop and select all.
@@ -43,10 +52,11 @@ The tests run against the real machine:
 - Editing and undo, bit for bit: cut and paste, crops across many segments, and peak tables against a brute-force scan.
 - The effects, file round trips (float exact; integer formats within the dither and rounding bound), the playback source, and offline rendering through Apple's AUDelay.
 - Out-of-process scanning, using the built app as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.
-- The default audio device: output-pair routing on a multi-output interface.
-- Rack save and restore with real plug-ins: order, bypass and a changed parameter.
+- The default audio device: output-pair routing on a multi-output interface, then arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
+- The recorder against a simulated device: channel mapping among active inputs, a 30 s take checked sample by sample, the playback anchor, and a punch-in through a simulated loop cable that must line up exactly.
+- Rack save and restore with real plug-ins (Apple's own effects, which never stop for licence dialogs): order, bypass and a changed parameter.
 
-The player is never started, so the tests make no sound.
+The player only ever plays silence, so the tests make no sound. The live input test opens the interface's inputs, so macOS may ask for microphone access for the terminal.
 
 ## Plug-in locations
 
@@ -69,6 +79,6 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Recording from the interface's inputs, punch-in, markers and regions, sample-rate conversion
+1. Markers and regions, sample-rate conversion
 2. Multitrack session: clips, buses, sends, automation, delay compensation, recording (Fireface inputs) and punch-in
 3. Spectral view and editing, noise reduction, click and pop repair, loudness (EBU R128)

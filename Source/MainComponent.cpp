@@ -9,6 +9,13 @@ namespace
     constexpr const char* audioDeviceKey  = "audioDevice";
     constexpr const char* outputPairKey   = "outputPairFirstChannel";
     constexpr const char* lastFileKey     = "lastFile";
+    constexpr const char* inputFirstKey   = "inputFirstChannel";
+    constexpr const char* inputCountKey   = "inputNumChannels";
+
+    // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
+    constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
+
+    constexpr double prerollSeconds = 2.0;
 
     enum CommandIDs
     {
@@ -17,7 +24,8 @@ namespace
         cmdGain, cmdNormalize, cmdFadeIn, cmdFadeOut, cmdSilence, cmdInvert, cmdReverse, cmdApplyRack,
         cmdPlayPause, cmdGoToStart, cmdGoToEnd,
         cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
-        cmdPlugins, cmdAudioSettings, cmdSaveRack, cmdLoadRack
+        cmdPlugins, cmdAudioSettings, cmdSaveRack, cmdLoadRack,
+        cmdRecord
     };
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -204,12 +212,28 @@ MainComponent::MainComponent()
 
     engine.setOutputPair (settings->getIntValue (outputPairKey, 0));
 
-    for (auto* b : { &openButton, &playButton, &stopButton, &pluginsButton, &audioButton, &saveRackButton, &loadRackButton })
+    if (const auto count = settings->getIntValue (inputCountKey, 0); count > 0)
+        if (const auto error = engine.setInput (settings->getIntValue (inputFirstKey, 0), count); error.isNotEmpty())
+            showError ("Recording input", error);
+
+    for (auto* b : { &openButton, &playButton, &stopButton, &recordButton, &pluginsButton, &audioButton, &saveRackButton, &loadRackButton })
         addAndMakeVisible (b);
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
     playButton.onClick     = [this] { togglePlay(); };
-    stopButton.onClick     = [this] { engine.getPlayer().pause(); waveform.repaint(); };
+    stopButton.onClick     = [this]
+    {
+        if (engine.getRecorder().isRecording())
+            stopRecording();
+        else
+            engine.getPlayer().pause();
+
+        waveform.repaint();
+    };
+    recordButton.onClick   = [this] { toggleRecord(); };
+    recordButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::darkred);
+    recordButton.setTooltip ("Record from the input (Shift+Space). Over a selection it punches in and out with a "
+                             + juce::String (prerollSeconds, 0) + " s preroll; otherwise it records from the cursor.");
     pluginsButton.onClick  = [this] { showPluginList(); };
     audioButton.onClick    = [this] { showAudioSettings(); };
     saveRackButton.onClick = [this] { saveRack(); };
@@ -222,6 +246,27 @@ MainComponent::MainComponent()
     {
         if (outputPair.getSelectedId() > 0)
             engine.setOutputPair (outputPair.getSelectedId() - 1);
+    };
+
+    addAndMakeVisible (inputLabel);
+    addAndMakeVisible (inputChoice);
+    addAndMakeVisible (inputMeter);
+    inputChoice.setTooltip ("Device inputs to record from");
+    inputMeter.readPeak = [this] (int ch) { return engine.getRecorder().takePeak (ch); };
+    inputChoice.onChange = [this]
+    {
+        const auto id = inputChoice.getSelectedId();
+
+        if (id <= 0 || engine.getRecorder().isRecording())
+            return;
+
+        const auto first = id >= monoInputBase ? id - monoInputBase : id >= stereoInputBase ? id - stereoInputBase : 0;
+        const auto count = id >= monoInputBase ? 1 : id >= stereoInputBase ? 2 : 0;
+
+        if (const auto error = engine.setInput (first, count); error.isNotEmpty())
+            showError ("Recording input", error);
+
+        saveSettings();
     };
 
     for (auto* l : { &fileLabel, &deviceLabel, &timeLabel, &selectionLabel })
@@ -252,6 +297,7 @@ MainComponent::MainComponent()
         openFile (last);
 
     refreshOutputChoices();
+    refreshInputChoices();
     refreshTitle();
     setWantsKeyboardFocus (true);
     setSize (1200, 680);
@@ -263,6 +309,9 @@ MainComponent::~MainComponent()
    #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (nullptr);
    #endif
+    if (engine.getRecorder().isRecording())
+        engine.getRecorder().stop();   // the take is lost: the app is closing
+
     saveSettings();
     renderJob = nullptr;
     engine.onPluginAboutToBeRemoved = nullptr;
@@ -281,6 +330,8 @@ void MainComponent::saveSettings()
         settings->setValue (audioDeviceKey, xml.get());
 
     settings->setValue (outputPairKey, engine.getOutputPair());
+    settings->setValue (inputFirstKey, engine.getInputFirstChannel());
+    settings->setValue (inputCountKey, engine.getInputNumChannels());
     settings->setValue (lastFileKey, engine.document.getFile().getFullPathName());
     settings->saveIfNeeded();
 }
@@ -297,9 +348,9 @@ void MainComponent::resized()
 
     auto toolbar = r.removeFromTop (30);
 
-    for (auto* b : { &openButton, &playButton, &stopButton })
+    for (auto* b : { &openButton, &playButton, &stopButton, &recordButton })
     {
-        b->setBounds (toolbar.removeFromLeft (b == &openButton ? 80 : 64));
+        b->setBounds (toolbar.removeFromLeft (b == &openButton || b == &recordButton ? 80 : 64));
         toolbar.removeFromLeft (6);
     }
 
@@ -319,6 +370,11 @@ void MainComponent::resized()
     outputLabel.setBounds (status.removeFromLeft (52));
     outputPair.setBounds (status.removeFromLeft (240));
     status.removeFromLeft (12);
+    inputLabel.setBounds (status.removeFromLeft (42));
+    inputChoice.setBounds (status.removeFromLeft (200));
+    status.removeFromLeft (6);
+    inputMeter.setBounds (status.removeFromLeft (160).reduced (0, 3));
+    status.removeFromLeft (12);
     deviceLabel.setBounds (status.removeFromRight (status.getWidth() / 2));
     fileLabel.setBounds (status);
     r.removeFromBottom (8);
@@ -331,7 +387,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdLoadRack; ++id)
+    for (int id = cmdOpen; id <= cmdRecord; ++id)
         ids.add (id);
 }
 
@@ -381,6 +437,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress (juce::KeyPress::homeKey, 0); info.setActive (hasAudio); break;
         case cmdGoToEnd:    info.setInfo ("Go to End", "Move the cursor to the end", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::endKey, 0); info.setActive (hasAudio); break;
+        case cmdRecord:     info.setInfo (engine.getRecorder().isRecording() ? "Stop Recording" : "Record",
+                                          "Record from the input", "Transport", 0);
+                            info.addDefaultKeypress (juce::KeyPress::spaceKey, shift); break;
 
         case cmdZoomIn:     info.setInfo ("Zoom In", "Zoom in", "View", 0); info.addDefaultKeypress ('=', cmd); info.setActive (hasAudio); break;
         case cmdZoomOut:    info.setInfo ("Zoom Out", "Zoom out", "View", 0); info.addDefaultKeypress ('-', cmd); info.setActive (hasAudio); break;
@@ -394,6 +453,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdLoadRack:   info.setInfo ("Load Rack...", "Load an effects rack", "Window", 0); break;
         default: break;
     }
+
+    // While recording, the document must stay as it is so the take lands where it was started.
+    if (engine.getRecorder().isRecording() && id != cmdRecord && id != cmdPlayPause)
+        info.setActive (false);
 }
 
 bool MainComponent::perform (const InvocationInfo& info)
@@ -430,6 +493,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAudioSettings: showAudioSettings(); break;
         case cmdSaveRack:   saveRack(); break;
         case cmdLoadRack:   loadRack(); break;
+        case cmdRecord:     toggleRecord(); break;
         default:            return false;
     }
 
@@ -461,7 +525,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop }); break;
         case 2: add ({ cmdGain, cmdNormalize, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0, cmdApplyRack }); break;
         case 3: add ({ cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdPlayPause, cmdGoToStart, cmdGoToEnd }); break;
+        case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 5: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
@@ -491,16 +555,37 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     }
 
     refreshOutputChoices();
+    refreshInputChoices();
     commands.commandStatusChanged();
 }
 
 void MainComponent::timerCallback()
 {
     auto& player = engine.getPlayer();
+    auto& recorder = engine.getRecorder();
     const auto rate = engine.document.getSampleRate();
-    const auto pos = player.isPlaying() ? player.getPositionFrames() : waveform.getCursor();
-    timeLabel.setText (formatTime (pos, rate), juce::dontSendNotification);
+
+    if (recorder.isRecording())
+    {
+        // A punch-out stops by itself once the end of the range has come back through the input.
+        const auto margin = (juce::int64) (rate * 0.25);
+
+        if (punchOut >= 0 && player.getPlayedFrame().load() >= punchOut + recordLatency + margin)
+        {
+            stopRecording();
+            return;
+        }
+
+        timeLabel.setText ("REC " + formatTime (recorder.getRecordedFrames(), rate), juce::dontSendNotification);
+    }
+    else
+    {
+        const auto pos = player.isPlaying() ? player.getPositionFrames() : waveform.getCursor();
+        timeLabel.setText (formatTime (pos, rate), juce::dontSendNotification);
+    }
+
     playButton.setButtonText (player.isPlaying() ? "Pause" : "Play");
+    recordButton.setToggleState (recorder.isRecording(), juce::dontSendNotification);
 
     const auto sel = waveform.getSelection();
     selectionLabel.setText (sel.isEmpty() ? juce::String()
@@ -550,6 +635,28 @@ void MainComponent::refreshOutputChoices()
     {
         deviceLabel.setText ("No audio device", juce::dontSendNotification);
     }
+}
+
+void MainComponent::refreshInputChoices()
+{
+    inputChoice.clear (juce::dontSendNotification);
+    inputChoice.addItem ("No input", noInputId);
+    const auto names = engine.getDeviceInputChannelNames();
+
+    for (int ch = 0; ch + 1 < names.size(); ch += 2)
+        inputChoice.addItem (names[ch] + " / " + names[ch + 1], stereoInputBase + ch);
+
+    inputChoice.addSeparator();
+
+    for (int ch = 0; ch < names.size(); ++ch)
+        inputChoice.addItem (names[ch] + " (mono)", monoInputBase + ch);
+
+    const auto first = engine.getInputFirstChannel();
+    const auto count = engine.getInputNumChannels();
+    inputChoice.setSelectedId (count == 2 ? stereoInputBase + first : count == 1 ? monoInputBase + first : noInputId,
+                               juce::dontSendNotification);
+    inputChoice.setEnabled (! engine.getRecorder().isRecording());
+    inputMeter.setNumChannels (engine.getRecorder().isInputActive() ? count : 0);
 }
 
 //==============================================================================
@@ -832,6 +939,12 @@ void MainComponent::applyRackToSelection()
 //==============================================================================
 void MainComponent::togglePlay()
 {
+    if (engine.getRecorder().isRecording())
+    {
+        stopRecording();
+        return;
+    }
+
     auto& player = engine.getPlayer();
 
     if (player.isPlaying())
@@ -847,6 +960,114 @@ void MainComponent::togglePlay()
         player.play (waveform.getCursor() >= engine.document.getNumFrames() ? 0 : waveform.getCursor(), -1);
     else
         player.play (sel.getStart(), sel.getEnd());
+}
+
+void MainComponent::toggleRecord()
+{
+    if (engine.getRecorder().isRecording())
+        stopRecording();
+    else
+        startRecording();
+}
+
+void MainComponent::startRecording()
+{
+    auto& recorder = engine.getRecorder();
+    auto& player = engine.getPlayer();
+    auto& doc = engine.document;
+    auto* device = engine.deviceManager.getCurrentAudioDevice();
+
+    if (device == nullptr)
+    {
+        showError ("Record", "No audio device is open.");
+        return;
+    }
+
+    if (! recorder.isInputActive())
+    {
+        showError ("Record", "Choose an input to record from first (Input, at the bottom of the window).");
+        return;
+    }
+
+    const auto deviceRate = device->getCurrentSampleRate();
+
+    if (! doc.hasAudio())
+    {
+        // A new recording takes the interface's rate and the input's channel count.
+        if (! juce::exactlyEqual (doc.getSampleRate(), deviceRate) || doc.getNumChannels() != engine.getInputNumChannels())
+        {
+            doc.reset (std::make_shared<const AudioSnapshot> (engine.getInputNumChannels(), std::vector<AudioSnapshot::Segment>()),
+                       deviceRate, {}, 24);
+            player.documentReset();
+        }
+    }
+    else if (! juce::exactlyEqual (doc.getSampleRate(), deviceRate))
+    {
+        showError ("Record", "This file is " + juce::String (doc.getSampleRate()) + " Hz but the interface runs at "
+                               + juce::String (deviceRate) + " Hz. Set the interface to the file's rate in Audio Settings "
+                               "to record into it. Sample-rate conversion comes in a later version.");
+        return;
+    }
+
+    const auto sel = waveform.getSelection();
+    punchIn = sel.isEmpty() ? juce::jmin (waveform.getCursor(), doc.getNumFrames()) : sel.getStart();
+    punchOut = sel.isEmpty() ? -1 : sel.getEnd();
+    recordLatency = engine.getRoundTripLatency();
+
+    player.pause();
+
+    if (! recorder.start())
+    {
+        showError ("Record", "The recorder could not start.");
+        return;
+    }
+
+    // Over existing audio, play from the preroll so the performer hears what comes before the
+    // punch-in; the player's frame counter is also what lines the take up. A new file just records.
+    if (doc.hasAudio())
+        player.play (juce::jmax ((juce::int64) 0, punchIn - (juce::int64) (deviceRate * prerollSeconds)), -1);
+
+    juce::Logger::writeToLog ("Recording: input " + juce::String (engine.getInputFirstChannel() + 1) + " x"
+                              + juce::String (engine.getInputNumChannels()) + ", punch in " + juce::String (punchIn)
+                              + ", punch out " + juce::String (punchOut) + ", round trip " + juce::String (recordLatency));
+    refreshInputChoices();
+    commands.commandStatusChanged();
+}
+
+void MainComponent::stopRecording()
+{
+    auto& recorder = engine.getRecorder();
+
+    if (! recorder.isRecording())
+        return;
+
+    auto take = recorder.stop();
+    engine.getPlayer().pause();
+    refreshInputChoices();
+    commands.commandStatusChanged();
+
+    juce::Logger::writeToLog ("Recorded " + juce::String (take.clip.getNumFrames()) + " frames, anchor "
+                              + juce::String (take.anchorRecorded) + " -> " + juce::String (take.anchorPlayed)
+                              + ", dropped " + juce::String (take.droppedFrames));
+
+    if (take.droppedFrames > 0)
+        showError ("Record", juce::String (take.droppedFrames) + " frames were lost because the computer could not keep up. "
+                               "Listen to the take before keeping it.");
+
+    const auto placement = Recorder::place (take, punchIn, punchOut, recordLatency);
+
+    if (placement.takeEnd <= placement.takeStart)
+        return;
+
+    const AudioSnapshot takeAudio (take.clip.numChannels, take.clip.segments);
+    const auto clip = AudioEdits::copy (takeAudio, placement.takeStart, placement.takeEnd, take.clip.sampleRate);
+
+    auto& doc = engine.document;
+    const auto snapshot = doc.getSnapshot();
+    const auto start = juce::jmin (placement.destStart, snapshot->getNumFrames());
+    const auto end = juce::jmin (start + clip.getNumFrames(), snapshot->getNumFrames());
+
+    applyEdit (AudioEdits::replaceWithClip (*snapshot, start, end, clip), "Record", { start, start + clip.getNumFrames() });
 }
 
 void MainComponent::showAudioSettings()

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "AudioDocument.h"
+#include "Recorder.h"
 
 //==============================================================================
 /** Reads the document's current snapshot for playback. Picks up edits on the fly. */
@@ -48,6 +49,12 @@ public:
     void setPositionFrames (juce::int64);
     juce::int64 getStopFrame() const noexcept     { return stopAt; }
 
+    /** The document frame after the last one sent to the output while playing. The audio thread
+        advances it by each block it plays, so a recorder running later in the same device cycle can
+        tell which frames went out (the resampler reads a few frames ahead of the source position).
+        Counts device frames, which are document frames only when the two rates match. */
+    const std::atomic<juce::int64>& getPlayedFrame() const noexcept { return playedFrame; }
+
     //==============================================================================
     const juce::String getName() const override   { return "Document Player"; }
     void prepareToPlay (double sampleRate, int blockSize) override;
@@ -72,6 +79,7 @@ private:
     DocumentSource source { document };
     juce::AudioTransportSource transport;
     juce::int64 stopAt = -1;
+    std::atomic<juce::int64> playedFrame { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DocumentPlayerProcessor)
 };
@@ -111,6 +119,23 @@ public:
     juce::StringArray getDeviceOutputChannelNames() const;
 
     //==============================================================================
+    /** Recording input: numChannels (1 or 2) device inputs from firstChannel (absolute index),
+        or none when numChannels is 0. Turns those inputs on (and only those); macOS asks for
+        microphone access the first time. Returns an error message, or empty on success. */
+    juce::String setInput (int firstChannel, int numChannels);
+    int getInputFirstChannel() const              { return inputFirstChannel; }
+    int getInputNumChannels() const               { return inputNumChannels; }
+
+    /** The input channel names of the device in use, even before any input is on. */
+    juce::StringArray getDeviceInputChannelNames() const;
+
+    Recorder& getRecorder()                       { return *recorder; }
+
+    /** Frames from a document frame leaving the player to the same moment arriving back at the
+        recorder: device output and input latency (each including a buffer) plus the rack's latency. */
+    int getRoundTripLatency() const;
+
+    //==============================================================================
     int getNumRackSlots() const                   { return (int) rack.size(); }
     juce::AudioPluginInstance* getRackPlugin (int index) const;
     bool isRackSlotBypassed (int index) const;
@@ -136,6 +161,7 @@ private:
     void addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr<juce::XmlElement>>> slots,
                             size_t next, juce::StringArray errors, AddCallback onDone);
     double currentSampleRate() const;
+    juce::String inputDeviceNameFor (const juce::AudioDeviceManager::AudioDeviceSetup&) const;
     int currentBlockSize() const;
 
     juce::AudioProcessorGraph graph;
@@ -144,6 +170,8 @@ private:
     Node::Ptr playerNode, outputNode;
     std::vector<Node::Ptr> rack;
     int outputPairFirstChannel = 0;
+    int inputFirstChannel = 0, inputNumChannels = 0;
+    std::unique_ptr<Recorder> recorder;
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)

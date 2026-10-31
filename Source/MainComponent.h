@@ -2,6 +2,7 @@
 
 #include "AudioEdits.h"
 #include "AudioEngine.h"
+#include "LevelMeter.h"
 #include "RackView.h"
 #include "WaveformView.h"
 
@@ -70,6 +71,9 @@ private:
 
     // Transport and windows
     void togglePlay();
+    void toggleRecord();
+    void startRecording();
+    void stopRecording();
     void showAudioSettings();
     void showPluginList();
     void showEditor (int slotIndex);
@@ -77,6 +81,7 @@ private:
     void saveRack();
     void loadRack();
     void refreshOutputChoices();
+    void refreshInputChoices();
     void refreshTitle();
     void saveSettings();
 
@@ -85,11 +90,14 @@ private:
     juce::ApplicationCommandManager commands;
     AudioClip clipboard;
 
-    juce::TextButton openButton { "Open..." }, playButton { "Play" }, stopButton { "Stop" },
+    juce::TextButton openButton { "Open..." }, playButton { "Play" }, stopButton { "Stop" }, recordButton { "Record" },
                      pluginsButton { "Plug-ins..." }, audioButton { "Audio Settings..." },
                      saveRackButton { "Save Rack..." }, loadRackButton { "Load Rack..." };
     juce::Label outputLabel { {}, "Output" };
     juce::ComboBox outputPair;
+    juce::Label inputLabel { {}, "Input" };
+    juce::ComboBox inputChoice;
+    LevelMeter inputMeter;
     juce::Label fileLabel, deviceLabel, timeLabel, selectionLabel;
 
     WaveformView waveform { engine };
@@ -100,6 +108,11 @@ private:
     std::unique_ptr<PluginListWindow> pluginListWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     juce::File deadMansPedalFile;
+
+    // The take in progress: where it goes in the document ([punchIn, punchOut), or open-ended when
+    // punchOut < 0) and the round-trip latency measured when it started.
+    juce::int64 punchIn = 0, punchOut = -1;
+    int recordLatency = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

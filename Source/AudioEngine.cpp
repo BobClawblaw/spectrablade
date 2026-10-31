@@ -79,6 +79,7 @@ juce::int64 DocumentPlayerProcessor::getPositionFrames() const
 void DocumentPlayerProcessor::setPositionFrames (juce::int64 frame)
 {
     transport.setPosition ((double) frame / document.getSampleRate());
+    playedFrame = frame;
 }
 
 void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
@@ -94,7 +95,11 @@ void DocumentPlayerProcessor::releaseResources()
 void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::AudioSourceChannelInfo info (&buffer, 0, buffer.getNumSamples());
+    const auto playing = transport.isPlaying();
     transport.getNextAudioBlock (info);
+
+    if (playing)
+        playedFrame += buffer.getNumSamples();
 }
 
 //==============================================================================
@@ -109,6 +114,7 @@ AudioEngine::AudioEngine()
 
     using IO = juce::AudioProcessorGraph::AudioGraphIOProcessor;
     outputNode = graph.addNode (std::make_unique<IO> (IO::audioOutputNode));
+    recorder = std::make_unique<Recorder> (player->getPlayedFrame());
 
     graphPlayer.setProcessor (&graph);
     deviceManager.addChangeListener (this);
@@ -118,6 +124,7 @@ AudioEngine::~AudioEngine()
 {
     *alive = false;
     deviceManager.removeChangeListener (this);
+    deviceManager.removeAudioCallback (recorder.get());
     deviceManager.removeAudioCallback (&graphPlayer);
     graphPlayer.setProcessor (nullptr);
     deviceManager.closeAudioDevice();
@@ -125,11 +132,14 @@ AudioEngine::~AudioEngine()
 
 juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
 {
-    // No inputs yet (recording comes later); up to 256 outputs so large interfaces such as
-    // a 30-output Fireface show every channel. With no saved state the system default device
+    // Inputs stay off until one is chosen for recording; up to 256 outputs so large interfaces such
+    // as a 30-output Fireface show every channel. With no saved state the system default device
     // opens at its current sample rate, so other apps sharing the interface are not disturbed.
     auto error = deviceManager.initialise (0, 256, savedState, true);
+
+    // The recorder runs after the player in each cycle, so it sees what the player just played.
     deviceManager.addAudioCallback (&graphPlayer);
+    deviceManager.addAudioCallback (recorder.get());
     rebuildConnections();
     return error;
 }
@@ -155,6 +165,86 @@ juce::StringArray AudioEngine::getDeviceOutputChannelNames() const
         return device->getOutputChannelNames();
 
     return {};
+}
+
+juce::String AudioEngine::inputDeviceNameFor (const juce::AudioDeviceManager::AudioDeviceSetup& setup) const
+{
+    if (setup.inputDeviceName.isNotEmpty())
+        return setup.inputDeviceName;
+
+    auto* type = deviceManager.getCurrentDeviceTypeObject();
+
+    if (type == nullptr)
+        return {};
+
+    // Prefer the output interface's own inputs (a Fireface records and plays through one device).
+    const auto inputs = type->getDeviceNames (true);
+
+    if (inputs.contains (setup.outputDeviceName))
+        return setup.outputDeviceName;
+
+    return inputs[type->getDefaultDeviceIndex (true)];
+}
+
+juce::StringArray AudioEngine::getDeviceInputChannelNames() const
+{
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        if (const auto names = device->getInputChannelNames(); ! names.isEmpty())
+            return names;
+
+    // No input open yet: ask an unopened device object for its names.
+    auto* type = deviceManager.getCurrentDeviceTypeObject();
+    const auto name = inputDeviceNameFor (deviceManager.getAudioDeviceSetup());
+
+    if (type == nullptr || name.isEmpty())
+        return {};
+
+    if (std::unique_ptr<juce::AudioIODevice> device (type->createDevice ({}, name)); device != nullptr)
+        return device->getInputChannelNames();
+
+    return {};
+}
+
+juce::String AudioEngine::setInput (int firstChannel, int numChannels)
+{
+    auto setup = deviceManager.getAudioDeviceSetup();
+    setup.useDefaultInputChannels = false;
+    setup.inputChannels.clear();
+
+    const auto names = getDeviceInputChannelNames();
+    numChannels = juce::jlimit (0, 2, juce::jmin (numChannels, names.size() - firstChannel));
+
+    if (numChannels > 0)
+    {
+        setup.inputDeviceName = inputDeviceNameFor (setup);
+        setup.inputChannels.setRange (firstChannel, numChannels, true);
+    }
+
+    inputFirstChannel = juce::jmax (0, firstChannel);
+    inputNumChannels = juce::jmax (0, numChannels);
+
+    if (inputNumChannels > 0)
+        recorder->setInput (inputFirstChannel, inputNumChannels);
+
+    auto error = deviceManager.setAudioDeviceSetup (setup, true);
+
+    // A setup that needed no restart does not call the recorder back, so update it here too.
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        recorder->configure (device->getCurrentSampleRate(), inputNumChannels > 0 ? device->getActiveInputChannels()
+                                                                                  : juce::BigInteger());
+
+    sendChangeMessage();
+    return error;
+}
+
+int AudioEngine::getRoundTripLatency() const
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+
+    if (device == nullptr)
+        return 0;
+
+    return device->getInputLatencyInSamples() + device->getOutputLatencyInSamples() + graph.getLatencySamples();
 }
 
 void AudioEngine::setOutputPair (int firstChannel)
