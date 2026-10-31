@@ -29,7 +29,7 @@ namespace
     void testScanner (AudioEngine& engine, juce::Array<juce::PluginDescription>& found)
     {
         // The built app is the worker, exactly as in production.
-        OutOfProcessScanner scanner (juce::File (WAVELOOM_APP_EXECUTABLE));
+        OutOfProcessScanner scanner (juce::File (WAVEDRILL_APP_EXECUTABLE));
 
         if (auto* au = findFormat (engine, "AudioUnit"))
         {

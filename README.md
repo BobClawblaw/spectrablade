@@ -1,6 +1,8 @@
-# Waveloom
+# WaveDrill
 
 A clean-room audio editor for macOS that hosts VST3 and Audio Unit (v2 and v3) plug-ins. Built on JUCE 9.0.4.
+
+WaveDrill was called Waveloom until 31 October 2026. On first launch it copies Waveloom's settings (audio device, inputs and outputs, plug-in list), and it still opens `.wlrack` rack files.
 
 **Milestone 5: sample-rate conversion**
 - Edit > Convert Sample Rate converts the whole file (8 kHz to 192 kHz), with a progress bar and a cancel button. It is one undoable step: undo brings back the original audio and rate. Markers and the selection keep their times.
@@ -39,7 +41,7 @@ A clean-room audio editor for macOS that hosts VST3 and Audio Unit (v2 and v3) p
 - Open an audio file (WAV, AIFF, FLAC, Ogg, MP3, CAF and others). Drag and drop also works.
 - Waveform overview with click-to-seek; space bar plays and pauses.
 - An effects rack: add, bypass, reorder and remove effects, and open each plug-in's editor (or a generic one).
-- Save and load the rack, plug-in state included, as `.wlrack`.
+- Save and load the rack, plug-in state included, as `.wdrack`.
 - Plug-ins are scanned **out of process**: each one is loaded in a worker copy of the app. One that crashes, or hangs longer than 60 s, is marked as failed; the editor keeps running.
 - Works with multi-output interfaces such as the RME Fireface UFX (30 outputs). Pick any output pair in the bottom bar. The device opens at its current sample rate, and files at other rates are resampled on playback.
 
@@ -50,15 +52,15 @@ You need Xcode (command-line tools) and CMake 3.22 or later.
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j 12
-open build/Waveloom_artefacts/Release/Waveloom.app
+open build/WaveDrill_artefacts/Release/WaveDrill.app
 ```
 
-CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DWAVELOOM_JUCE_DIR=/path/to/JUCE`.
+CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DWAVEDRILL_JUCE_DIR=/path/to/JUCE`.
 
 ## Integration tests
 
 ```bash
-./build/WaveloomTests_artefacts/Release/WaveloomTests
+./build/WaveDrillTests_artefacts/Release/WaveDrillTests
 ```
 
 The tests run against the real machine:
@@ -74,7 +76,7 @@ The tests run against the real machine:
 The player only ever plays silence, so the tests make no sound. The live input test is opt-in because macOS asks for microphone access for each new build of the test binary, and the test waits until someone answers:
 
 ```bash
-./build/WaveloomTests_artefacts/Release/WaveloomTests --live-input
+./build/WaveDrillTests_artefacts/Release/WaveDrillTests --live-input
 ```
 
 ## Plug-in locations
@@ -86,7 +88,7 @@ VST2 is deliberately not supported: Steinberg no longer licenses the VST2 SDK.
 
 ## Licensing
 
-JUCE is dual-licensed under AGPLv3 or a commercial JUCE licence. Shipping Waveloom as closed source requires a commercial JUCE licence; otherwise the app must be released under the AGPLv3.
+JUCE is dual-licensed under AGPLv3 or a commercial JUCE licence. Shipping WaveDrill as closed source requires a commercial JUCE licence; otherwise the app must be released under the AGPLv3.
 
 The release build enables the hardened runtime with `disable-library-validation`, which is needed to load third-party plug-ins. These entitlements take effect only when the app is signed. Building with the Xcode generator (`-G Xcode`) is the simplest way to sign and notarize.
 

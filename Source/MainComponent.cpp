@@ -225,11 +225,25 @@ private:
 MainComponent::MainComponent()
 {
     juce::PropertiesFile::Options options;
-    options.applicationName     = "Waveloom";
+    options.applicationName     = "WaveDrill";
     options.filenameSuffix      = "settings";
     options.osxLibrarySubFolder = "Application Support";
-    options.folderName          = "Waveloom";
+    options.folderName          = "WaveDrill";
     appProperties.setStorageParameters (options);
+
+    // The app used to be called Waveloom: bring its settings (devices, plug-in list) across once.
+    if (const auto newFile = options.getDefaultFile(); ! newFile.exists())
+    {
+        auto old = options;
+        old.applicationName = old.folderName = "Waveloom";
+        const auto oldFile = old.getDefaultFile();
+
+        if (oldFile.existsAsFile() && newFile.getParentDirectory().createDirectory())
+        {
+            oldFile.copyFileTo (newFile);
+            oldFile.getSiblingFile ("RecentlyCrashedPluginsList").copyFileTo (newFile.getSiblingFile ("RecentlyCrashedPluginsList"));
+        }
+    }
 
     auto* settings = appProperties.getUserSettings();
     deadMansPedalFile = settings->getFile().getSiblingFile ("RecentlyCrashedPluginsList");
@@ -671,7 +685,7 @@ void MainComponent::refreshTitle()
                        juce::dontSendNotification);
 
     if (onTitleChanged != nullptr)
-        onTitleChanged ((doc.isDirty() ? "* " : "") + name + " - Waveloom");
+        onTitleChanged ((doc.isDirty() ? "* " : "") + name + " - WaveDrill");
 }
 
 void MainComponent::refreshOutputChoices()
@@ -810,7 +824,7 @@ void MainComponent::saveAs (std::function<void (bool)> done)
 
                               if (depths.isEmpty())
                               {
-                                  showError ("Save As", "Waveloom can't write " + file.getFileExtension() + " files.");
+                                  showError ("Save As", "WaveDrill can't write " + file.getFileExtension() + " files.");
                                   if (done != nullptr) done (false);
                                   return;
                               }
@@ -1361,7 +1375,7 @@ void MainComponent::closeEditorFor (juce::AudioProcessor* processor)
 
 void MainComponent::saveRack()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Save effects rack", juce::File(), "*.wlrack");
+    chooser = std::make_unique<juce::FileChooser> ("Save effects rack", juce::File(), "*.wdrack");
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
                           [this] (const juce::FileChooser& fc)
                           {
@@ -1370,14 +1384,14 @@ void MainComponent::saveRack()
                               if (file == juce::File())
                                   return;
 
-                              if (! engine.createRackXml()->writeTo (file.withFileExtension ("wlrack")))
+                              if (! engine.createRackXml()->writeTo (file.withFileExtension ("wdrack")))
                                   showError ("Save failed", "Could not write " + file.getFullPathName());
                           });
 }
 
 void MainComponent::loadRack()
 {
-    chooser = std::make_unique<juce::FileChooser> ("Load effects rack", juce::File(), "*.wlrack");
+    chooser = std::make_unique<juce::FileChooser> ("Load effects rack", juce::File(), "*.wdrack;*.wlrack");
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
                           {

@@ -457,7 +457,7 @@ void AudioEngine::clearRack()
 //==============================================================================
 std::unique_ptr<juce::XmlElement> AudioEngine::createRackXml() const
 {
-    auto xml = std::make_unique<juce::XmlElement> ("WAVELOOM_RACK");
+    auto xml = std::make_unique<juce::XmlElement> ("WAVEDRILL_RACK");
     xml->setAttribute ("version", 1);
 
     for (auto& node : rack)
@@ -481,10 +481,11 @@ std::unique_ptr<juce::XmlElement> AudioEngine::createRackXml() const
 
 void AudioEngine::loadRackXml (const juce::XmlElement& xml, AddCallback onDone)
 {
-    if (! xml.hasTagName ("WAVELOOM_RACK"))
+    // WAVELOOM_RACK: racks saved before the app was renamed.
+    if (! xml.hasTagName ("WAVEDRILL_RACK") && ! xml.hasTagName ("WAVELOOM_RACK"))
     {
         if (onDone != nullptr)
-            onDone ("Not a Waveloom rack file.");
+            onDone ("Not a WaveDrill rack file.");
         return;
     }
 
