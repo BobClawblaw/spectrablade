@@ -41,6 +41,9 @@ public:
     /** Call after the document is replaced (its sample rate may have changed). */
     void documentReset();
 
+    /** The document rate the player was last set up for. */
+    double getSourceRate() const noexcept         { return sourceRate; }
+
     /** Plays from start; stops by itself at stopFrame (-1 = the end). */
     void play (juce::int64 startFrame, juce::int64 stopFrame);
     void pause()                                  { transport.stop(); }
@@ -79,6 +82,7 @@ private:
     DocumentSource source { document };
     juce::AudioTransportSource transport;
     juce::int64 stopAt = -1;
+    double sourceRate = 0.0;
     std::atomic<juce::int64> playedFrame { 0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DocumentPlayerProcessor)

@@ -39,6 +39,7 @@ private:
     class PluginEditorWindow;
     class PluginListWindow;
     class RackRenderJob;
+    class BackgroundJob;
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
@@ -58,6 +59,9 @@ private:
     void cut();
     void copy();
     void paste();
+    void pasteClip (const AudioClip&);
+    void chooseSampleRate();
+    void convertSampleRate (double newRate);
     void deleteSelection();
     void cropToSelection();
 
@@ -113,6 +117,7 @@ private:
     juce::OwnedArray<PluginEditorWindow> editorWindows;
     std::unique_ptr<PluginListWindow> pluginListWindow;
     std::unique_ptr<RackRenderJob> renderJob;
+    std::unique_ptr<BackgroundJob> backgroundJob;
     juce::File deadMansPedalFile;
 
     // The take in progress: where it goes in the document ([punchIn, punchOut), or open-ended when

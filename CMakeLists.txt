@@ -44,6 +44,7 @@ target_sources(Waveloom PRIVATE
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
+    Source/SampleRateConverter.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
@@ -80,12 +81,14 @@ target_sources(WaveloomTests PRIVATE
     Tests/DocumentTests.cpp
     Tests/RecorderTests.cpp
     Tests/MarkerTests.cpp
+    Tests/ConverterTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/AudioEdits.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
+    Source/SampleRateConverter.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp)
 get_target_property(waveloom_defs Waveloom COMPILE_DEFINITIONS)

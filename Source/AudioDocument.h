@@ -83,7 +83,7 @@ public:
     int getResetCount() const noexcept            { return resetCount; }
 
     bool hasAudio() const                         { return getSnapshot()->getNumFrames() > 0; }
-    double getSampleRate() const noexcept         { return sampleRate; }
+    double getSampleRate() const noexcept         { return sampleRate.load(); }
     int getNumChannels() const                    { return getSnapshot()->getNumChannels(); }
     juce::int64 getNumFrames() const              { return getSnapshot()->getNumFrames(); }
     juce::File getFile() const                    { return file; }
@@ -94,6 +94,9 @@ public:
         (for edits that do not move audio in time). */
     void apply (Snapshot next, const juce::String& description);
     void apply (Snapshot next, const juce::String& description, Markers);
+
+    /** Replaces the audio with a version at another sample rate, as one undoable step. */
+    void applyNewRate (Snapshot next, double newSampleRate, Markers, const juce::String& description);
 
     /** Changes only the markers, as one undoable step. */
     void setMarkers (Markers, const juce::String& description);
@@ -116,10 +119,12 @@ private:
     {
         Snapshot snapshot;
         Markers markers;
+        double sampleRate;
         juce::String description;
     };
 
-    void setCurrent (Snapshot);
+    void setCurrent (const Entry&);
+    void push (Entry);
     void retire (Snapshot);
 
     mutable juce::SpinLock lock;
@@ -131,7 +136,7 @@ private:
     int savedPosition = 0;
     std::vector<Snapshot> pendingRelease;
 
-    double sampleRate = 44100.0;
+    std::atomic<double> sampleRate { 44100.0 };
     juce::File file;
     int sourceBitDepth = 24;
     int resetCount = 0;

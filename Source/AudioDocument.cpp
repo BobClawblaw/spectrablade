@@ -177,7 +177,7 @@ std::vector<AudioSnapshot::Segment> AudioSnapshot::slice (juce::int64 start, juc
 AudioDocument::AudioDocument()
 {
     current = std::make_shared<const AudioSnapshot> (2, std::vector<AudioSnapshot::Segment>());
-    history.push_back ({ current, {}, {} });
+    history.push_back ({ current, {}, sampleRate.load(), {} });
 }
 
 AudioDocument::Snapshot AudioDocument::getSnapshot() const
@@ -186,10 +186,13 @@ AudioDocument::Snapshot AudioDocument::getSnapshot() const
     return current;
 }
 
-void AudioDocument::setCurrent (Snapshot next)
+void AudioDocument::setCurrent (const Entry& entry)
 {
+    // The rate is set before the audio, so a reader that sees the new audio sees its rate too.
+    sampleRate = entry.sampleRate;
+
     // A step that changed only the markers keeps the audio and its version.
-    if (next == getSnapshot())
+    if (entry.snapshot == getSnapshot())
     {
         sendChangeMessage();
         return;
@@ -199,7 +202,7 @@ void AudioDocument::setCurrent (Snapshot next)
 
     {
         const juce::SpinLock::ScopedLockType sl (lock);
-        previous = std::exchange (current, std::move (next));
+        previous = std::exchange (current, entry.snapshot);
     }
 
     ++version;
@@ -223,26 +226,35 @@ void AudioDocument::reset (Snapshot initial, double rate, const juce::File& f, i
 
     MarkerEdits::sort (markers);
     history.clear();
-    history.push_back ({ initial, std::move (markers), {} });
+    history.push_back ({ std::move (initial), std::move (markers), rate, {} });
     position = savedPosition = 0;
-    sampleRate = rate;
     file = f;
     sourceBitDepth = bitDepth;
     ++resetCount;
-    setCurrent (std::move (initial));
+    setCurrent (history.back());
 }
 
 void AudioDocument::apply (Snapshot next, const juce::String& description)
 {
-    apply (std::move (next), description, getMarkers());
+    push ({ std::move (next), getMarkers(), sampleRate.load(), description });
+}
+
+void AudioDocument::apply (Snapshot next, const juce::String& description, Markers markers)
+{
+    push ({ std::move (next), std::move (markers), sampleRate.load(), description });
+}
+
+void AudioDocument::applyNewRate (Snapshot next, double newSampleRate, Markers markers, const juce::String& description)
+{
+    push ({ std::move (next), std::move (markers), newSampleRate, description });
 }
 
 void AudioDocument::setMarkers (Markers markers, const juce::String& description)
 {
-    apply (getSnapshot(), description, std::move (markers));
+    push ({ getSnapshot(), std::move (markers), sampleRate.load(), description });
 }
 
-void AudioDocument::apply (Snapshot next, const juce::String& description, Markers markers)
+void AudioDocument::push (Entry entry)
 {
     // A new edit after undo discards the redo branch.
     for (auto i = (size_t) position + 1; i < history.size(); ++i)
@@ -253,10 +265,10 @@ void AudioDocument::apply (Snapshot next, const juce::String& description, Marke
     if (savedPosition > position)
         savedPosition = -1;   // the saved state is no longer reachable
 
-    MarkerEdits::sort (markers);
-    history.push_back ({ next, std::move (markers), description });
+    MarkerEdits::sort (entry.markers);
+    history.push_back (std::move (entry));
     ++position;
-    setCurrent (std::move (next));
+    setCurrent (history.back());
 }
 
 juce::String AudioDocument::getUndoDescription() const
@@ -272,13 +284,13 @@ juce::String AudioDocument::getRedoDescription() const
 void AudioDocument::undo()
 {
     if (canUndo())
-        setCurrent (history[(size_t) --position].snapshot);
+        setCurrent (history[(size_t) --position]);
 }
 
 void AudioDocument::redo()
 {
     if (canRedo())
-        setCurrent (history[(size_t) ++position].snapshot);
+        setCurrent (history[(size_t) ++position]);
 }
 
 void AudioDocument::markSaved (const juce::File& savedAs, int bitDepth)

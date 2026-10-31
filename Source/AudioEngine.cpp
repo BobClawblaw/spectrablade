@@ -56,7 +56,8 @@ void DocumentPlayerProcessor::documentReset()
     transport.stop();
     // No read-ahead: the audio is already in memory. The transport resamples from the document's
     // rate to the device's, so the interface keeps its own rate.
-    transport.setSource (&source, 0, nullptr, document.getSampleRate(), 2);
+    sourceRate = document.getSampleRate();
+    transport.setSource (&source, 0, nullptr, sourceRate, 2);
     transport.setPosition (0.0);
     stopAt = -1;
     source.setStopFrame (-1);
@@ -118,11 +119,13 @@ AudioEngine::AudioEngine()
 
     graphPlayer.setProcessor (&graph);
     deviceManager.addChangeListener (this);
+    document.addChangeListener (this);
 }
 
 AudioEngine::~AudioEngine()
 {
     *alive = false;
+    document.removeChangeListener (this);
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (recorder.get());
     deviceManager.removeAudioCallback (&graphPlayer);
@@ -276,8 +279,17 @@ void AudioEngine::setOutputPair (int firstChannel)
     sendChangeMessage();
 }
 
-void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster*)
+void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
+    if (source == &document)
+    {
+        // A conversion (or undoing one) changed the rate the player must resample from.
+        if (! juce::exactlyEqual (player->getSourceRate(), document.getSampleRate()))
+            player->documentReset();
+
+        return;
+    }
+
     // Device, sample rate, buffer size or active channels changed.
     rebuildConnections();
     sendChangeMessage();

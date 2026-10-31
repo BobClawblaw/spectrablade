@@ -2,6 +2,7 @@
 #include "AudioFileIO.h"
 #include "OfflineRender.h"
 #include "PluginScanner.h"
+#include "SampleRateConverter.h"
 
 namespace
 {
@@ -26,7 +27,8 @@ namespace
         cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
         cmdPlugins, cmdAudioSettings, cmdSaveRack, cmdLoadRack,
         cmdRecord,
-        cmdAddMarker, cmdPreviousMarker, cmdNextMarker, cmdDeleteAllMarkers
+        cmdAddMarker, cmdPreviousMarker, cmdNextMarker, cmdDeleteAllMarkers,
+        cmdConvertRate
     };
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -179,6 +181,47 @@ private:
 };
 
 //==============================================================================
+/** Runs work on a background thread behind a progress window, then finish() on the message thread
+    unless it was cancelled. Used for sample-rate conversion. */
+class MainComponent::BackgroundJob final : public juce::ThreadWithProgressWindow
+{
+public:
+    using Work = std::function<bool (const std::function<bool (float)>& progress)>;
+
+    BackgroundJob (MainComponent& o, const juce::String& title, Work w, std::function<void()> f)
+        : ThreadWithProgressWindow (title, true, true, 30000, "Cancel", &o),
+          owner (o), work (std::move (w)), finish (std::move (f))
+    {
+    }
+
+    void run() override
+    {
+        completed = work ([this] (float p) { setProgress (p); return ! threadShouldExit(); });
+    }
+
+    void threadComplete (bool userPressedCancel) override
+    {
+        if (completed && ! userPressedCancel)
+            finish();
+
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (&owner)]
+        {
+            if (safe != nullptr)
+            {
+                safe->backgroundJob = nullptr;
+                safe->commands.commandStatusChanged();
+            }
+        });
+    }
+
+private:
+    MainComponent& owner;
+    Work work;
+    std::function<void()> finish;
+    bool completed = false;
+};
+
+//==============================================================================
 MainComponent::MainComponent()
 {
     juce::PropertiesFile::Options options;
@@ -315,6 +358,7 @@ MainComponent::~MainComponent()
 
     saveSettings();
     renderJob = nullptr;
+    backgroundJob = nullptr;
     engine.onPluginAboutToBeRemoved = nullptr;
     engine.document.removeChangeListener (this);
     engine.removeChangeListener (this);
@@ -388,7 +432,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDeleteAllMarkers; ++id)
+    for (int id = cmdOpen; id <= cmdConvertRate; ++id)
         ids.add (id);
 }
 
@@ -442,6 +486,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdRecord:     info.setInfo (engine.getRecorder().isRecording() ? "Stop Recording" : "Record",
                                           "Record from the input", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, shift); break;
+
+        case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
 
         case cmdAddMarker:  info.setInfo (hasSelection ? "Add Region" : "Add Marker",
                                           "Mark the cursor or play position, or make a region of the selection", "Markers", 0);
@@ -507,6 +554,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdLoadRack:   loadRack(); break;
         case cmdRecord:     toggleRecord(); break;
         case cmdAddMarker:  addMarker(); break;
+        case cmdConvertRate: chooseSampleRate(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdDeleteAllMarkers: engine.document.setMarkers ({}, "Delete All Markers"); break;
@@ -538,7 +586,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     switch (index)
     {
         case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0, cmdApplyRack }); break;
         case 3: add ({ cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
         case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
@@ -917,19 +965,46 @@ void MainComponent::paste()
 
     if (doc.hasAudio() && ! juce::exactlyEqual (clipboard.sampleRate, doc.getSampleRate()))
     {
-        showError ("Paste", "The clipboard is " + juce::String (clipboard.sampleRate) + " Hz but this file is "
-                              + juce::String (doc.getSampleRate()) + " Hz. Sample-rate conversion comes in a later version.");
+        // Convert a copy of the clipboard to this file's rate first, then paste it.
+        if (backgroundJob != nullptr)
+            return;
+
+        auto converted = std::make_shared<AudioClip>();
+        const auto source = clipboard;
+        const auto rate = doc.getSampleRate();
+        const auto version = doc.getVersion();
+
+        backgroundJob = std::make_unique<BackgroundJob> (*this, "Converting the clipboard to " + juce::String (rate / 1000.0, 1) + " kHz...",
+            [converted, source, rate] (const std::function<bool (float)>& progress)
+            {
+                *converted = SampleRateConverter::convert (source, rate, progress);
+                return converted->numChannels > 0;
+            },
+            [this, converted, version]
+            {
+                if (engine.document.getVersion() != version)
+                    showError ("Paste", "The audio changed while the clipboard was converted, so nothing was pasted.");
+                else
+                    pasteClip (*converted);
+            });
+        backgroundJob->launchThread();
         return;
     }
 
+    pasteClip (clipboard);
+}
+
+void MainComponent::pasteClip (const AudioClip& clip)
+{
+    auto& doc = engine.document;
     auto sel = waveform.getSelection();
 
     if (sel.isEmpty())
         sel = { waveform.getCursor(), waveform.getCursor() };
 
-    applyEdit (AudioEdits::replaceWithClip (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), clipboard),
-               "Paste", { sel.getStart(), sel.getStart() + clipboard.getNumFrames() },
-               MarkerEdits::afterReplace (doc.getMarkers(), sel.getStart(), sel.getEnd(), clipboard.getNumFrames()));
+    applyEdit (AudioEdits::replaceWithClip (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), clip),
+               "Paste", { sel.getStart(), sel.getStart() + clip.getNumFrames() },
+               MarkerEdits::afterReplace (doc.getMarkers(), sel.getStart(), sel.getEnd(), clip.getNumFrames()));
 }
 
 void MainComponent::deleteSelection()
@@ -1044,6 +1119,80 @@ void MainComponent::togglePlay()
         player.play (sel.getStart(), sel.getEnd());
 }
 
+void MainComponent::chooseSampleRate()
+{
+    auto& doc = engine.document;
+    const juce::Array<int> rates { 8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000 };
+
+    auto* box = new juce::AlertWindow ("Convert Sample Rate",
+                                       "This file is " + juce::String (doc.getSampleRate()) + " Hz. Convert it to:",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    juce::StringArray names;
+
+    for (auto r : rates)
+        names.add (juce::String (r) + " Hz");
+
+    box->addComboBox ("rate", names);
+    auto* combo = box->getComboBoxComponent ("rate");
+
+    // Offer the interface's rate first, since that is usually why a file is converted.
+    auto suggested = rates.indexOf (48000);
+
+    if (auto* device = engine.deviceManager.getCurrentAudioDevice())
+        if (const auto i = rates.indexOf ((int) std::llround (device->getCurrentSampleRate()));
+            i >= 0 && ! juce::exactlyEqual ((double) rates[i], doc.getSampleRate()))
+            suggested = i;
+
+    combo->setSelectedItemIndex (suggested);
+    box->addButton ("Convert", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, rates] (int result)
+    {
+        if (result == 1)
+            convertSampleRate ((double) rates[box->getComboBoxComponent ("rate")->getSelectedItemIndex()]);
+    }), true);
+}
+
+void MainComponent::convertSampleRate (double newRate)
+{
+    auto& doc = engine.document;
+
+    if (juce::exactlyEqual (newRate, doc.getSampleRate()) || backgroundJob != nullptr)
+        return;
+
+    engine.getPlayer().pause();
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto oldRate = doc.getSampleRate();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Converting to " + juce::String (newRate / 1000.0, 1) + " kHz...",
+        [result, snapshot, oldRate, newRate] (const std::function<bool (float)>& progress)
+        {
+            *result = SampleRateConverter::convert (*snapshot, oldRate, newRate, progress);
+            return *result != nullptr;
+        },
+        [this, result, oldRate, newRate, version]
+        {
+            auto& d = engine.document;
+
+            if (d.getVersion() != version)
+            {
+                showError ("Convert Sample Rate", "The audio changed during the conversion, so the result was discarded.");
+                return;
+            }
+
+            const auto scale = [&] (juce::int64 frame) { return (juce::int64) std::llround ((double) frame * newRate / oldRate); };
+            const auto sel = waveform.getSelection();
+            d.applyNewRate (*result, newRate, SampleRateConverter::convert (d.getMarkers(), oldRate, newRate),
+                            "Convert to " + juce::String (newRate / 1000.0, 1) + " kHz");
+            waveform.setSelection ({ scale (sel.getStart()), scale (sel.getEnd()) });
+        });
+    backgroundJob->launchThread();
+}
+
 void MainComponent::toggleRecord()
 {
     if (engine.getRecorder().isRecording())
@@ -1086,8 +1235,8 @@ void MainComponent::startRecording()
     else if (! juce::exactlyEqual (doc.getSampleRate(), deviceRate))
     {
         showError ("Record", "This file is " + juce::String (doc.getSampleRate()) + " Hz but the interface runs at "
-                               + juce::String (deviceRate) + " Hz. Set the interface to the file's rate in Audio Settings "
-                               "to record into it. Sample-rate conversion comes in a later version.");
+                               + juce::String (deviceRate) + " Hz. Set the interface to the file's rate in Audio Settings, "
+                               "or convert the file to " + juce::String (deviceRate) + " Hz (Edit > Convert Sample Rate).");
         return;
     }
 

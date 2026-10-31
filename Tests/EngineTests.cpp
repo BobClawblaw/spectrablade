@@ -9,6 +9,7 @@
 #include "DocumentTests.h"
 #include "RecorderTests.h"
 #include "MarkerTests.h"
+#include "ConverterTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -267,6 +268,7 @@ int main (int argc, char* argv[])
         runDocumentTests (engine);
         runRecorderTests();
         runMarkerTests (engine);
+        runConverterTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };
