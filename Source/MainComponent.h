@@ -5,6 +5,7 @@
 #include "ClickRepair.h"
 #include "LevelMeter.h"
 #include "Loudness.h"
+#include "MultitrackView.h"
 #include "NoiseReduction.h"
 #include "RackView.h"
 #include "WaveformView.h"
@@ -19,8 +20,11 @@ public:
     MainComponent();
     ~MainComponent() override;
 
-    /** Asks about unsaved changes, then calls proceed unless the user cancels. */
+    /** Asks about unsaved changes to the file, then calls proceed unless the user cancels. */
     void confirmDiscardChanges (std::function<void()> proceed);
+
+    /** Asks about unsaved changes to the file and then the session, then calls proceed. */
+    void confirmQuit (std::function<void()> proceed);
 
     std::function<void (const juce::String& title)> onTitleChanged;
 
@@ -99,6 +103,17 @@ private:
     void askForClickRepair();
     void repairClicks (ClickRepair::Settings);
 
+    // Multitrack
+    void setMultitrack (bool);
+    void confirmDiscardSession (std::function<void()> proceed);
+    void newSession();
+    void chooseSession();
+    void openSession (const juce::File&);
+    void saveSession (std::function<void (bool saved)> done = {});
+    void saveSessionAs (std::function<void (bool saved)> done = {});
+    void chooseFilesForSession();
+    void addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame);
+
     // Transport and windows
     void togglePlay();
     void toggleRecord();
@@ -120,6 +135,7 @@ private:
     juce::ApplicationCommandManager commands;
     AudioClip clipboard;
 
+    juce::TextButton multitrackButton { "Multitrack" };
     juce::TextButton openButton { "Open..." }, playButton { "Play" }, stopButton { "Stop" }, recordButton { "Record" },
                      pluginsButton { "Plug-ins..." }, audioButton { "Audio Settings..." },
                      saveRackButton { "Save Rack..." }, loadRackButton { "Load Rack..." };
@@ -131,6 +147,8 @@ private:
     juce::Label fileLabel, deviceLabel, timeLabel, selectionLabel;
 
     WaveformView waveform { engine };
+    MultitrackView multitrack { engine };
+    bool multitrackMode = false;
     RackView rackView { engine };
 
     std::unique_ptr<juce::FileChooser> chooser;

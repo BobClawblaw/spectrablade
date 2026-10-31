@@ -14,6 +14,7 @@
 #include "LoudnessTests.h"
 #include "NoiseTests.h"
 #include "ClickTests.h"
+#include "SessionTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -141,7 +142,7 @@ namespace
         juce::AudioBuffer<float> silence (2, (int) (rate * 3.0));
         silence.clear();
         engine.document.reset (AudioEdits::fromBuffer (std::move (silence)), rate, {}, 24);
-        engine.getPlayer().documentReset();
+        engine.getPlayer().resetSource();
 
         auto& recorder = engine.getRecorder();
         check (recorder.start(), "recorder starts on the live device");
@@ -277,6 +278,7 @@ int main (int argc, char* argv[])
         runLoudnessTests();
         runNoiseTests();
         runClickTests();
+        runSessionTests (engine.formatManager);
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

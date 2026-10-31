@@ -51,10 +51,13 @@ target_sources(SpectraBlade PRIVATE
     Source/Loudness.cpp
     Source/NoiseReduction.cpp
     Source/ClickRepair.cpp
+    Source/Session.cpp
+    Source/SessionMixer.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
     Source/WaveformView.cpp
+    Source/MultitrackView.cpp
     Source/RackView.cpp)
 
 target_compile_definitions(SpectraBlade PRIVATE
@@ -92,6 +95,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/LoudnessTests.cpp
     Tests/NoiseTests.cpp
     Tests/ClickTests.cpp
+    Tests/SessionTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/AudioEdits.cpp
@@ -104,6 +108,8 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Loudness.cpp
     Source/NoiseReduction.cpp
     Source/ClickRepair.cpp
+    Source/Session.cpp
+    Source/SessionMixer.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp)
 get_target_property(spectrablade_defs SpectraBlade COMPILE_DEFINITIONS)

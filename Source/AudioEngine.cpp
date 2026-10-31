@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 
 #include "AudioFileIO.h"
+#include "SessionMixer.h"
 
 //==============================================================================
 juce::int64 DocumentSource::getTotalLength() const
@@ -39,11 +40,42 @@ void DocumentSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info
 }
 
 //==============================================================================
-DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc)
-    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      document (doc)
+void SessionSource::prepareToPlay (int blockSize, double)
 {
-    documentReset();
+    // Room for the largest block the transport's resampler is likely to ask for, so the mixer
+    // does not allocate on the audio thread.
+    scratch.setSize (2, juce::jmax (8192, 4 * blockSize));
+}
+
+void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
+{
+    if (const auto v = session.getVersion(); state == nullptr || v != stateVersion)
+    {
+        state = session.getState();
+        stateVersion = v;
+    }
+
+    const auto start = position.load();
+    const auto stop = stopFrame.load();
+    auto count = info.numSamples;
+
+    if (stop >= 0)
+        count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) info.numSamples, stop - start);
+
+    SessionMixer::render (*state, start, *info.buffer, info.startSample, count, scratch);
+
+    if (count < info.numSamples)
+        info.buffer->clear (info.startSample + count, info.numSamples - count);
+
+    position = start + info.numSamples;
+}
+
+//==============================================================================
+DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s)
+    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+      document (doc), session (s)
+{
+    resetSource();
 }
 
 DocumentPlayerProcessor::~DocumentPlayerProcessor()
@@ -51,16 +83,32 @@ DocumentPlayerProcessor::~DocumentPlayerProcessor()
     transport.setSource (nullptr);
 }
 
-void DocumentPlayerProcessor::documentReset()
+double DocumentPlayerProcessor::modeRate() const
+{
+    return mode == Mode::session ? session.getSampleRate() : document.getSampleRate();
+}
+
+void DocumentPlayerProcessor::setMode (Mode m)
+{
+    if (m == mode)
+        return;
+
+    mode = m;
+    resetSource();
+}
+
+void DocumentPlayerProcessor::resetSource()
 {
     transport.stop();
-    // No read-ahead: the audio is already in memory. The transport resamples from the document's
+    // No read-ahead: the audio is already in memory. The transport resamples from the source's
     // rate to the device's, so the interface keeps its own rate.
-    sourceRate = document.getSampleRate();
-    transport.setSource (&source, 0, nullptr, sourceRate, 2);
+    sourceRate = modeRate();
+    transport.setSource (mode == Mode::session ? static_cast<juce::PositionableAudioSource*> (&sessionSource) : &source,
+                         0, nullptr, sourceRate, 2);
     transport.setPosition (0.0);
     stopAt = -1;
     source.setStopFrame (-1);
+    sessionSource.setStopFrame (-1);
 }
 
 void DocumentPlayerProcessor::play (juce::int64 startFrame, juce::int64 stopFrame)
@@ -68,18 +116,19 @@ void DocumentPlayerProcessor::play (juce::int64 startFrame, juce::int64 stopFram
     transport.stop();
     stopAt = stopFrame;
     source.setStopFrame (stopFrame);
+    sessionSource.setStopFrame (stopFrame);
     setPositionFrames (startFrame);
     transport.start();
 }
 
 juce::int64 DocumentPlayerProcessor::getPositionFrames() const
 {
-    return (juce::int64) std::llround (transport.getCurrentPosition() * document.getSampleRate());
+    return (juce::int64) std::llround (transport.getCurrentPosition() * modeRate());
 }
 
 void DocumentPlayerProcessor::setPositionFrames (juce::int64 frame)
 {
-    transport.setPosition ((double) frame / document.getSampleRate());
+    transport.setPosition ((double) frame / modeRate());
     playedFrame = frame;
 }
 
@@ -109,7 +158,7 @@ AudioEngine::AudioEngine()
     formatManager.registerBasicFormats();
     juce::addDefaultFormatsToManager (pluginFormatManager);
 
-    auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document);
+    auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session);
     player = playerProcessor.get();
     playerNode = graph.addNode (std::move (playerProcessor));
 
@@ -120,12 +169,14 @@ AudioEngine::AudioEngine()
     graphPlayer.setProcessor (&graph);
     deviceManager.addChangeListener (this);
     document.addChangeListener (this);
+    session.addChangeListener (this);
 }
 
 AudioEngine::~AudioEngine()
 {
     *alive = false;
     document.removeChangeListener (this);
+    session.removeChangeListener (this);
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (recorder.get());
     deviceManager.removeAudioCallback (&graphPlayer);
@@ -156,7 +207,7 @@ juce::String AudioEngine::openFile (const juce::File& file)
 
     player->pause();
     document.reset (std::move (loaded.snapshot), loaded.sampleRate, file, loaded.bitDepth, std::move (loaded.markers));
-    player->documentReset();
+    player->resetSource();
     sendChangeMessage();
     return {};
 }
@@ -281,11 +332,14 @@ void AudioEngine::setOutputPair (int firstChannel)
 
 void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
-    if (source == &document)
+    if (source == &document || source == &session)
     {
-        // A conversion (or undoing one) changed the rate the player must resample from.
-        if (! juce::exactlyEqual (player->getSourceRate(), document.getSampleRate()))
-            player->documentReset();
+        // A conversion (or undoing one), or a new session, changed the rate the player must resample from.
+        const auto rate = player->getMode() == DocumentPlayerProcessor::Mode::session ? session.getSampleRate()
+                                                                                     : document.getSampleRate();
+
+        if (! juce::exactlyEqual (player->getSourceRate(), rate))
+            player->resetSource();
 
         return;
     }

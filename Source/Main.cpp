@@ -39,7 +39,7 @@ public:
     void systemRequestedQuit() override
     {
         if (mainWindow != nullptr)
-            mainWindow->getMainComponent().confirmDiscardChanges ([] { quit(); });
+            mainWindow->getMainComponent().confirmQuit ([] { quit(); });
         else
             quit();
     }

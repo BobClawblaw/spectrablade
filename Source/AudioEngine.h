@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "AudioDocument.h"
 #include "Recorder.h"
+#include "Session.h"
 
 //==============================================================================
 /** Reads the document's current snapshot for playback. Picks up edits on the fly. */
@@ -31,17 +32,50 @@ private:
 };
 
 //==============================================================================
-/** Plays the document as the source node of the processing graph. */
+/** Mixes the session for playback. Picks up edits on the fly. */
+class SessionSource final : public juce::PositionableAudioSource
+{
+public:
+    explicit SessionSource (Session& s) : session (s) {}
+
+    /** Frames from this one onwards play as silence (-1 = play to the end). */
+    void setStopFrame (juce::int64 frame)                     { stopFrame = frame; }
+
+    void prepareToPlay (int blockSize, double) override;
+    void releaseResources() override                          {}
+    void getNextAudioBlock (const juce::AudioSourceChannelInfo&) override;
+
+    void setNextReadPosition (juce::int64 frame) override    { position = frame; }
+    juce::int64 getNextReadPosition() const override         { return position; }
+    juce::int64 getTotalLength() const override              { return session.getState()->getLength(); }
+    bool isLooping() const override                           { return false; }
+
+private:
+    Session& session;
+    Session::State state;                  // audio thread's own reference
+    juce::uint32 stateVersion = 0;
+    juce::AudioBuffer<float> scratch;
+    std::atomic<juce::int64> position { 0 }, stopFrame { -1 };
+};
+
+//==============================================================================
+/** Plays the document, or the multitrack session, as the source node of the processing graph. */
 class DocumentPlayerProcessor final : public juce::AudioProcessor
 {
 public:
-    explicit DocumentPlayerProcessor (AudioDocument&);
+    DocumentPlayerProcessor (AudioDocument&, Session&);
     ~DocumentPlayerProcessor() override;
 
-    /** Call after the document is replaced (its sample rate may have changed). */
-    void documentReset();
+    enum class Mode { document, session };
 
-    /** The document rate the player was last set up for. */
+    /** Switches between playing the document and the session; stops and goes to the start. */
+    void setMode (Mode);
+    Mode getMode() const noexcept                 { return mode; }
+
+    /** Call after the document or session is replaced (its sample rate may have changed). */
+    void resetSource();
+
+    /** The rate the player was last set up for. */
     double getSourceRate() const noexcept         { return sourceRate; }
 
     /** Plays from start; stops by itself at stopFrame (-1 = the end). */
@@ -78,8 +112,13 @@ public:
     void setStateInformation (const void*, int) override {}
 
 private:
+    double modeRate() const;
+
     AudioDocument& document;
+    Session& session;
     DocumentSource source { document };
+    SessionSource sessionSource { session };
+    Mode mode = Mode::document;
     juce::AudioTransportSource transport;
     juce::int64 stopAt = -1;
     double sourceRate = 0.0;
@@ -110,6 +149,7 @@ public:
     juce::KnownPluginList knownPlugins;
 
     AudioDocument document;
+    Session session;
     DocumentPlayerProcessor& getPlayer()          { return *player; }
 
     /** Loads a file into the document. Returns an error message, or empty on success. */

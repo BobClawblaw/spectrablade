@@ -34,8 +34,16 @@ namespace
         cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth,
         cmdSpectralAttenuate, cmdSpectralRemove,
         cmdLoudnessStats, cmdMatchLoudness,
-        cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair
+        cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
+        cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip
     };
+
+    /** Commands that work on the open file only, off while the session is showing. */
+    bool isEditorOnly (int id)
+    {
+        return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection || id == cmdRecord
+            || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair);
+    }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
     {
@@ -271,6 +279,7 @@ MainComponent::MainComponent()
     engine.knownPlugins.addChangeListener (this);
     engine.addChangeListener (this);
     engine.document.addChangeListener (this);
+    engine.session.addChangeListener (this);
 
     const auto savedDevice = settings->getXmlValue (audioDeviceKey);
     const auto deviceError = engine.openDevice (savedDevice.get());
@@ -290,8 +299,12 @@ MainComponent::MainComponent()
         if (const auto error = engine.setInput (settings->getIntValue (inputFirstKey, 0), count); error.isNotEmpty())
             showError ("Recording input", error);
 
-    for (auto* b : { &openButton, &playButton, &stopButton, &recordButton, &pluginsButton, &audioButton, &saveRackButton, &loadRackButton })
+    for (auto* b : { &multitrackButton, &openButton, &playButton, &stopButton, &recordButton, &pluginsButton, &audioButton, &saveRackButton, &loadRackButton })
         addAndMakeVisible (b);
+
+    multitrackButton.setTooltip ("Switch between the file and the multitrack session (Cmd+4)");
+    multitrackButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5a8a));
+    multitrackButton.onClick = [this] { setMultitrack (! multitrackMode); };
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
     playButton.onClick     = [this] { togglePlay(); };
@@ -303,6 +316,7 @@ MainComponent::MainComponent()
             engine.getPlayer().pause();
 
         waveform.repaint();
+        multitrack.repaint();
     };
     recordButton.onClick   = [this] { toggleRecord(); };
     recordButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::darkred);
@@ -356,6 +370,25 @@ MainComponent::MainComponent()
     waveform.onFileDropped = [this] (const juce::File& f) { confirmDiscardChanges ([this, f] { openFile (f); }); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
+    addChildComponent (multitrack);
+    multitrack.onOpenInEditor = [this] (const juce::File& f)
+    {
+        confirmDiscardChanges ([this, f]
+        {
+            setMultitrack (false);
+            openFile (f);
+        });
+    };
+    multitrack.onFilesDropped = [this] (const juce::StringArray& files, int track, juce::int64 frame) { addFilesToSession (files, track, frame); };
+    multitrack.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
+
+    if (auto* device = engine.deviceManager.getCurrentAudioDevice())
+    {
+        SessionState empty;
+        empty.sampleRate = device->getCurrentSampleRate();
+        engine.session.reset (std::move (empty), {});
+    }
+
     addAndMakeVisible (rackView);
     rackView.onEditSlot = [this] (int index) { showEditor (index); };
     engine.onPluginAboutToBeRemoved = [this] (juce::AudioProcessor* p) { closeEditorFor (p); };
@@ -392,6 +425,7 @@ MainComponent::~MainComponent()
     backgroundJob = nullptr;
     engine.onPluginAboutToBeRemoved = nullptr;
     engine.document.removeChangeListener (this);
+    engine.session.removeChangeListener (this);
     engine.removeChangeListener (this);
     engine.knownPlugins.removeChangeListener (this);
     editorWindows.clear();
@@ -425,10 +459,10 @@ void MainComponent::resized()
 
     auto toolbar = r.removeFromTop (30);
 
-    for (auto* b : { &openButton, &playButton, &stopButton, &recordButton })
+    for (auto* b : { &multitrackButton, &openButton, &playButton, &stopButton, &recordButton })
     {
-        b->setBounds (toolbar.removeFromLeft (b == &openButton || b == &recordButton ? 80 : 64));
-        toolbar.removeFromLeft (6);
+        b->setBounds (toolbar.removeFromLeft (b == &multitrackButton ? 96 : b == &openButton || b == &recordButton ? 80 : 64));
+        toolbar.removeFromLeft (b == &multitrackButton ? 14 : 6);
     }
 
     toolbar.removeFromLeft (10);
@@ -459,12 +493,13 @@ void MainComponent::resized()
     rackView.setBounds (r.removeFromRight (juce::jlimit (300, 420, r.getWidth() / 3)));
     r.removeFromRight (8);
     waveform.setBounds (r);
+    multitrack.setBounds (r);
 }
 
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdClickRepair; ++id)
+    for (int id = cmdOpen; id <= cmdSplitClip; ++id)
         ids.add (id);
 }
 
@@ -546,6 +581,20 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
             info.setActive (hasAudio && noisePrint.has_value() && backgroundJob == nullptr); break;
         case cmdClickRepair: info.setInfo ("Click and Pop Repair...", "Find clicks and pops in the selection or file and rebuild them", "Effects", 0);
             info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdMultitrack: info.setInfo ("Multitrack Session", "Show the multitrack session instead of the file", "View", 0);
+                            info.addDefaultKeypress ('4', cmd); info.setTicked (multitrackMode); break;
+        case cmdNewSession: info.setInfo ("New Session", "Start an empty multitrack session", "File", 0);
+                            info.addDefaultKeypress ('n', cmd | shift); break;
+        case cmdOpenSession: info.setInfo ("Open Session...", "Open a multitrack session", "File", 0);
+                            info.addDefaultKeypress ('o', cmd | shift); break;
+        case cmdImportToSession: info.setInfo ("Import Audio...", "Add audio files to the session, each on a new track, at the cursor", "Multitrack", 0);
+                            info.addDefaultKeypress ('i', cmd); info.setActive (multitrackMode); break;
+        case cmdAddTrack:   info.setInfo ("Add Track", "Add an empty track", "Multitrack", 0);
+                            info.addDefaultKeypress ('t', cmd | shift); info.setActive (multitrackMode); break;
+        case cmdDeleteTrack: info.setInfo ("Delete Track", "Delete the selected track and its clips", "Multitrack", 0);
+                            info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
+        case cmdSplitClip:  info.setInfo ("Split Clip", "Split the selected clip at the cursor", "Multitrack", 0);
+                            info.addDefaultKeypress ('k', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
 
@@ -572,6 +621,28 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         default: break;
     }
 
+    if (multitrackMode)
+    {
+        const auto& session = engine.session;
+        const auto hasClips = session.getState()->getLength() > 0;
+
+        switch (id)
+        {
+            case cmdSave:   info.shortName = "Save Session"; info.setActive (session.isDirty() || session.getFile() == juce::File()); break;
+            case cmdSaveAs: info.shortName = "Save Session As..."; info.setActive (true); break;
+            case cmdUndo:   info.shortName = session.canUndo() ? "Undo " + session.getUndoDescription() : juce::String ("Undo");
+                            info.setActive (session.canUndo()); break;
+            case cmdRedo:   info.shortName = session.canRedo() ? "Redo " + session.getRedoDescription() : juce::String ("Redo");
+                            info.setActive (session.canRedo()); break;
+            case cmdDelete: info.shortName = "Delete Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdPlayPause: case cmdGoToStart: case cmdGoToEnd: case cmdZoomIn: case cmdZoomOut: case cmdZoomFit:
+                            info.setActive (hasClips); break;
+            case cmdShowWaveform: case cmdShowSpectrogram: case cmdShowBoth:
+                            info.setTicked (false); break;
+            default:        if (isEditorOnly (id)) info.setActive (false); break;
+        }
+    }
+
     // While recording, the document must stay as it is so the take lands where it was started.
     if (engine.getRecorder().isRecording() && id != cmdRecord && id != cmdPlayPause && id != cmdAddMarker)
         info.setActive (false);
@@ -582,14 +653,14 @@ bool MainComponent::perform (const InvocationInfo& info)
     switch (info.commandID)
     {
         case cmdOpen:       confirmDiscardChanges ([this] { chooseFile(); }); break;
-        case cmdSave:       save(); break;
-        case cmdSaveAs:     saveAs(); break;
-        case cmdUndo:       engine.document.undo(); break;
-        case cmdRedo:       engine.document.redo(); break;
+        case cmdSave:       if (multitrackMode) saveSession(); else save(); break;
+        case cmdSaveAs:     if (multitrackMode) saveSessionAs(); else saveAs(); break;
+        case cmdUndo:       if (multitrackMode) engine.session.undo(); else engine.document.undo(); break;
+        case cmdRedo:       if (multitrackMode) engine.session.redo(); else engine.document.redo(); break;
         case cmdCut:        cut(); break;
         case cmdCopy:       copy(); break;
         case cmdPaste:      paste(); break;
-        case cmdDelete:     deleteSelection(); break;
+        case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
         case cmdSelectAll:  waveform.selectAll(); break;
         case cmdCrop:       cropToSelection(); break;
         case cmdGain:       applyGain(); break;
@@ -601,11 +672,13 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdReverse:    applySimpleEffect ("Reverse", &AudioEdits::reverse, false); break;
         case cmdApplyRack:  applyRackToSelection(); break;
         case cmdPlayPause:  togglePlay(); break;
-        case cmdGoToStart:  waveform.setCursor (0); break;
-        case cmdGoToEnd:    waveform.setCursor (engine.document.getNumFrames()); break;
-        case cmdZoomIn:     waveform.zoomIn(); break;
-        case cmdZoomOut:    waveform.zoomOut(); break;
-        case cmdZoomFit:    waveform.zoomToFit(); break;
+        case cmdGoToStart:  if (multitrackMode) multitrack.setCursor (0); else waveform.setCursor (0); break;
+        case cmdGoToEnd:    if (multitrackMode) multitrack.setCursor (engine.session.getState()->getLength());
+                            else waveform.setCursor (engine.document.getNumFrames());
+                            break;
+        case cmdZoomIn:     if (multitrackMode) multitrack.zoomIn(); else waveform.zoomIn(); break;
+        case cmdZoomOut:    if (multitrackMode) multitrack.zoomOut(); else waveform.zoomOut(); break;
+        case cmdZoomFit:    if (multitrackMode) multitrack.zoomToFit(); else waveform.zoomToFit(); break;
         case cmdZoomSelection: waveform.zoomToSelection(); break;
         case cmdPlugins:    showPluginList(); break;
         case cmdAudioSettings: showAudioSettings(); break;
@@ -614,9 +687,22 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRecord:     toggleRecord(); break;
         case cmdAddMarker:  addMarker(); break;
         case cmdConvertRate: chooseSampleRate(); break;
-        case cmdShowWaveform: setDisplay (WaveformView::Display::waveform); break;
-        case cmdShowSpectrogram: setDisplay (WaveformView::Display::spectrogram); break;
-        case cmdShowBoth:   setDisplay (WaveformView::Display::both); break;
+        case cmdShowWaveform: setMultitrack (false); setDisplay (WaveformView::Display::waveform); break;
+        case cmdShowSpectrogram: setMultitrack (false); setDisplay (WaveformView::Display::spectrogram); break;
+        case cmdShowBoth:   setMultitrack (false); setDisplay (WaveformView::Display::both); break;
+        case cmdMultitrack: setMultitrack (! multitrackMode); break;
+        case cmdNewSession: confirmDiscardSession ([this] { newSession(); }); break;
+        case cmdOpenSession: confirmDiscardSession ([this] { chooseSession(); }); break;
+        case cmdImportToSession: chooseFilesForSession(); break;
+        case cmdAddTrack:
+        {
+            auto next = *engine.session.getState();
+            next.addTrack();
+            engine.session.apply (std::move (next), "Add Track");
+            break;
+        }
+        case cmdDeleteTrack: multitrack.deleteSelectedTrack(); break;
+        case cmdSplitClip:  multitrack.splitSelectedClip(); break;
         case cmdSpectralAttenuate:
             askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
             break;
@@ -637,7 +723,7 @@ bool MainComponent::perform (const InvocationInfo& info)
 
 juce::StringArray MainComponent::getMenuBarNames()
 {
-    return { "File", "Edit", "Effects", "View", "Transport", "Markers", "Window" };
+    return { "File", "Edit", "Effects", "View", "Multitrack", "Transport", "Markers", "Window" };
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
@@ -656,14 +742,15 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
     switch (index)
     {
-        case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs }); break;
+        case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession }); break;
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
-        case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
-        case 5: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
-        case 6: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
+        case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdDeleteTrack, 0, cmdSplitClip }); break;
+        case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
+        case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
+        case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
 
@@ -684,7 +771,7 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
         return;
     }
 
-    if (source == &engine.document)
+    if (source == &engine.document || source == &engine.session)
     {
         refreshTitle();
         commands.commandStatusChanged();
@@ -700,6 +787,28 @@ void MainComponent::timerCallback()
 {
     auto& player = engine.getPlayer();
     auto& recorder = engine.getRecorder();
+
+    if (multitrackMode)
+    {
+        const auto rate = engine.session.getSampleRate();
+        const auto pos = player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor();
+        timeLabel.setText (formatTime (pos, rate), juce::dontSendNotification);
+        playButton.setButtonText (player.isPlaying() ? "Pause" : "Play");
+
+        const auto state = engine.session.getState();
+        juce::String clipText;
+
+        if (const auto where = state->findClip (multitrack.getSelectedClip()))
+        {
+            const auto& clip = state->tracks[(size_t) where->first].clips[(size_t) where->second];
+            clipText = clip.name + "  " + formatTime (clip.position, rate) + " - " + formatTime (clip.getEnd(), rate)
+                       + "  (" + formatTime (clip.length, rate) + ")";
+        }
+
+        selectionLabel.setText (clipText, juce::dontSendNotification);
+        return;
+    }
+
     const auto rate = engine.document.getSampleRate();
 
     if (recorder.isRecording())
@@ -733,6 +842,23 @@ void MainComponent::timerCallback()
 
 void MainComponent::refreshTitle()
 {
+    multitrackButton.setToggleState (multitrackMode, juce::dontSendNotification);
+
+    if (multitrackMode)
+    {
+        auto& session = engine.session;
+        const auto state = session.getState();
+        const auto name = session.getFile() == juce::File() ? juce::String ("Untitled Session") : session.getFile().getFileName();
+        fileLabel.setText (name + "  |  " + juce::String (state->sampleRate / 1000.0, 1) + " kHz, "
+                               + juce::String ((int) state->tracks.size()) + (state->tracks.size() == 1 ? " track" : " tracks"),
+                           juce::dontSendNotification);
+
+        if (onTitleChanged != nullptr)
+            onTitleChanged ((session.isDirty() ? "* " : "") + name + " - SpectraBlade");
+
+        return;
+    }
+
     auto& doc = engine.document;
     const auto name = doc.getFile() == juce::File() ? juce::String ("Untitled") : doc.getFile().getFileName();
     fileLabel.setText (doc.hasAudio() ? name + "  |  " + juce::String (doc.getSampleRate() / 1000.0, 1) + " kHz, "
@@ -827,12 +953,213 @@ void MainComponent::confirmDiscardChanges (std::function<void()> proceed)
                  });
 }
 
+void MainComponent::confirmQuit (std::function<void()> proceed)
+{
+    confirmDiscardChanges ([this, then = std::move (proceed)] { confirmDiscardSession (then); });
+}
+
+//==============================================================================
+void MainComponent::setMultitrack (bool on)
+{
+    if (on == multitrackMode)
+        return;
+
+    engine.getPlayer().pause();
+    multitrackMode = on;
+    engine.getPlayer().setMode (on ? DocumentPlayerProcessor::Mode::session : DocumentPlayerProcessor::Mode::document);
+    waveform.setVisible (! on);
+    multitrack.setVisible (on);
+    refreshTitle();
+    timerCallback();
+    commands.commandStatusChanged();
+}
+
+void MainComponent::confirmDiscardSession (std::function<void()> proceed)
+{
+    auto& session = engine.session;
+
+    if (! session.isDirty() || session.getState()->tracks.empty())
+    {
+        proceed();
+        return;
+    }
+
+    const auto name = session.getFile() == juce::File() ? juce::String ("the session") : session.getFile().getFileName();
+    askThreeWay ("Unsaved session", "Save changes to " + name + " first?", "Save", "Don't Save",
+                 [this, then = std::move (proceed)] (int result)
+                 {
+                     if (result == 2)
+                         then();
+                     else if (result == 1)
+                         saveSession ([then] (bool saved) { if (saved) then(); });
+                 });
+}
+
+void MainComponent::newSession()
+{
+    engine.getPlayer().pause();
+    SessionState empty;
+    empty.sampleRate = engine.deviceManager.getCurrentAudioDevice() != nullptr
+                           ? engine.deviceManager.getCurrentAudioDevice()->getCurrentSampleRate()
+                           : engine.session.getSampleRate();
+    engine.session.reset (std::move (empty), {});
+    multitrack.setCursor (0);
+    setMultitrack (true);
+    refreshTitle();
+}
+
+void MainComponent::chooseSession()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Open session", engine.session.getFile().getParentDirectory(), "*.sbsession");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              if (fc.getResult().existsAsFile())
+                                  openSession (fc.getResult());
+                          });
+}
+
+void MainComponent::openSession (const juce::File& file)
+{
+    auto loaded = SessionFile::load (file, engine.formatManager);
+
+    if (loaded.error.isNotEmpty())
+    {
+        showError ("Can't open session", loaded.error);
+        return;
+    }
+
+    engine.getPlayer().pause();
+    engine.session.reset (std::move (loaded.state), file);
+    multitrack.setCursor (0);
+    setMultitrack (true);
+    multitrack.zoomToFit();
+    refreshTitle();
+
+    if (! loaded.missing.isEmpty())
+        showError ("Missing audio", "These files could not be read, so their clips were left out:\n\n"
+                                        + loaded.missing.joinIntoString ("\n"));
+}
+
+void MainComponent::saveSession (std::function<void (bool)> done)
+{
+    const auto file = engine.session.getFile();
+
+    if (file == juce::File())
+    {
+        saveSessionAs (std::move (done));
+        return;
+    }
+
+    const auto error = SessionFile::save (*engine.session.getState(), file);
+
+    if (error.isNotEmpty())
+        showError ("Save Session", error);
+    else
+        engine.session.markSaved (file);
+
+    if (done != nullptr)
+        done (error.isEmpty());
+}
+
+void MainComponent::saveSessionAs (std::function<void (bool)> done)
+{
+    const auto current = engine.session.getFile();
+    chooser = std::make_unique<juce::FileChooser> ("Save session",
+                                                   current != juce::File() ? current
+                                                                           : juce::File::getSpecialLocation (juce::File::userMusicDirectory)
+                                                                                 .getChildFile ("Untitled.sbsession"),
+                                                   "*.sbsession");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this, done] (const juce::FileChooser& fc)
+                          {
+                              auto file = fc.getResult();
+
+                              if (file == juce::File())
+                              {
+                                  if (done != nullptr) done (false);
+                                  return;
+                              }
+
+                              file = file.withFileExtension ("sbsession");
+                              const auto error = SessionFile::save (*engine.session.getState(), file);
+
+                              if (error.isNotEmpty())
+                                  showError ("Save Session", error);
+                              else
+                                  engine.session.markSaved (file);
+
+                              if (done != nullptr)
+                                  done (error.isEmpty());
+                          });
+}
+
+void MainComponent::chooseFilesForSession()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Import audio", engine.document.getFile().getParentDirectory(),
+                                                   engine.formatManager.getWildcardForAllFormats());
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::canSelectMultipleItems,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              juce::StringArray paths;
+
+                              for (auto& f : fc.getResults())
+                                  paths.add (f.getFullPathName());
+
+                              if (! paths.isEmpty())
+                                  addFilesToSession (paths, -1, multitrack.getCursor());
+                          });
+}
+
+void MainComponent::addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame)
+{
+    auto next = *engine.session.getState();
+    juce::StringArray errors;
+    int added = 0;
+
+    for (auto& path : files)
+    {
+        const juce::File file (path);
+        auto loaded = AudioFileIO::load (file, engine.formatManager);
+
+        if (loaded.error.isNotEmpty())
+        {
+            errors.add (file.getFileName() + ": " + loaded.error);
+            continue;
+        }
+
+        // An empty session takes the first file's rate; later files are converted to it.
+        if (next.getLength() == 0 && added == 0)
+            next.sampleRate = loaded.sampleRate;
+        else if (! juce::exactlyEqual (loaded.sampleRate, next.sampleRate))
+            loaded.snapshot = SampleRateConverter::convert (*loaded.snapshot, loaded.sampleRate, next.sampleRate);
+
+        // The first file goes on the track it was dropped on; the rest on new tracks.
+        SessionEdits::addClip (next, added == 0 ? track : -1, file, loaded.snapshot, frame);
+        ++added;
+    }
+
+    if (added > 0)
+    {
+        engine.getPlayer().pause();
+        engine.session.apply (std::move (next), added == 1 ? "Import Audio" : "Import " + juce::String (added) + " Files");
+        setMultitrack (true);
+    }
+
+    if (! errors.isEmpty())
+        showError ("Import Audio", errors.joinIntoString ("\n"));
+}
+
 void MainComponent::openFile (const juce::File& file)
 {
     const auto error = engine.openFile (file);
 
     if (error.isNotEmpty())
         showError ("Can't open file", file.getFullPathName() + "\n\n" + error);
+    else
+        setMultitrack (false);
 }
 
 void MainComponent::chooseFile()
@@ -1481,6 +1808,13 @@ void MainComponent::togglePlay()
         return;
     }
 
+    if (multitrackMode)
+    {
+        const auto cursor = multitrack.getCursor();
+        player.play (cursor >= engine.session.getState()->getLength() ? 0 : cursor, -1);
+        return;
+    }
+
     // A selection plays and stops at its end; otherwise play from the cursor to the end.
     const auto sel = waveform.getSelection();
 
@@ -1600,7 +1934,7 @@ void MainComponent::startRecording()
         {
             doc.reset (std::make_shared<const AudioSnapshot> (engine.getInputNumChannels(), std::vector<AudioSnapshot::Segment>()),
                        deviceRate, {}, 24);
-            player.documentReset();
+            player.resetSource();
         }
     }
     else if (! juce::exactlyEqual (doc.getSampleRate(), deviceRate))
