@@ -122,6 +122,7 @@ private:
     void showAudioSettings();
     void showPluginList();
     void showEditor (int slotIndex);
+    void showEditor (juce::AudioProcessor&);
     void closeEditorFor (juce::AudioProcessor*);
     void saveRack();
     void loadRack();

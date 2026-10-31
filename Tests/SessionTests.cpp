@@ -40,7 +40,8 @@ namespace
 
     juce::AudioBuffer<float> mix (const SessionState& s, juce::int64 start, int frames)
     {
-        juce::AudioBuffer<float> out (2, frames), scratch;
+        juce::AudioBuffer<float> out (2, frames);
+        SessionMixer::Buffers scratch;
         SessionMixer::render (s, start, out, 0, frames, scratch);
         return out;
     }
@@ -146,7 +147,8 @@ void runSessionTests (juce::AudioFormatManager& formats)
         s.addTrack().clips.push_back (clipOf (s, ramp (2, 2000), 1500));
 
         const auto whole = mix (s, 0, 5000);
-        juce::AudioBuffer<float> pieces (2, 5000), scratch;
+        juce::AudioBuffer<float> pieces (2, 5000);
+        SessionMixer::Buffers scratch;
 
         for (int p = 0; p < 5000; p += 7)
             SessionMixer::render (s, p, pieces, p, juce::jmin (7, 5000 - p), scratch);
@@ -169,7 +171,8 @@ void runSessionTests (juce::AudioFormatManager& formats)
         s.addTrack().clips.push_back (clipOf (s, ramp (2, 3000), 256));
         session.reset (s, {});
 
-        DocumentPlayerProcessor player (document, session);
+        TrackEffects effects;
+        DocumentPlayerProcessor player (document, session, effects);
         player.setMode (DocumentPlayerProcessor::Mode::session);
         player.prepareToPlay (rate, 512);
         player.play (0, 2048);

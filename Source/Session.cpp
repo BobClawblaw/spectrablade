@@ -216,6 +216,7 @@ void Session::reset (SessionState initial, const juce::File& f)
     history.clear();
     history.push_back ({ std::make_shared<const SessionState> (std::move (initial)), {} });
     position = savedPosition = 0;
+    effectsChanged = false;
     file = f;
     setCurrent (history.back().state);
 }
@@ -263,9 +264,16 @@ void Session::redo()
         setCurrent (history[(size_t) ++position].state);
 }
 
+void Session::markEffectsChanged()
+{
+    effectsChanged = true;
+    sendChangeMessage();
+}
+
 void Session::markSaved (const juce::File& savedAs)
 {
     savedPosition = position;
+    effectsChanged = false;
     file = savedAs;
     sendChangeMessage();
 }
@@ -280,7 +288,8 @@ void Session::releaseUnusedStates()
 //==============================================================================
 namespace SessionFile
 {
-juce::String save (const SessionState& state, const juce::File& target)
+juce::String save (const SessionState& state, const juce::File& target,
+                   const std::function<std::unique_ptr<juce::XmlElement> (juce::uint32 trackId)>& trackEffects)
 {
     juce::XmlElement root ("SPECTRABLADE_SESSION");
     root.setAttribute ("version", 1);
@@ -294,6 +303,10 @@ juce::String save (const SessionState& state, const juce::File& target)
         track->setAttribute ("pan", t.pan);
         track->setAttribute ("mute", t.mute);
         track->setAttribute ("solo", t.solo);
+
+        if (trackEffects != nullptr)
+            if (auto effects = trackEffects (t.id))
+                track->addChildElement (effects.release());
 
         for (auto& c : t.clips)
         {
@@ -344,6 +357,9 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.pan = (float) trackXml->getDoubleAttribute ("pan");
         track.mute = trackXml->getBoolAttribute ("mute");
         track.solo = trackXml->getBoolAttribute ("solo");
+
+        if (auto* effects = trackXml->getChildByName ("EFFECTS"))
+            result.effects[track.id] = std::make_shared<juce::XmlElement> (*effects);
 
         for (auto* clipXml : trackXml->getChildWithTagNameIterator ("CLIP"))
         {

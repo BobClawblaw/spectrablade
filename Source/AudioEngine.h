@@ -4,6 +4,7 @@
 #include "AudioDocument.h"
 #include "Recorder.h"
 #include "Session.h"
+#include "TrackEffects.h"
 
 //==============================================================================
 /** Reads the document's current snapshot for playback. Picks up edits on the fly. */
@@ -32,11 +33,11 @@ private:
 };
 
 //==============================================================================
-/** Mixes the session for playback. Picks up edits on the fly. */
+/** Mixes the session for playback, through each track's effects. Picks up edits on the fly. */
 class SessionSource final : public juce::PositionableAudioSource
 {
 public:
-    explicit SessionSource (Session& s) : session (s) {}
+    SessionSource (Session& s, SessionMixer::Inserts& i) : session (s), inserts (i) {}
 
     /** Frames from this one onwards play as silence (-1 = play to the end). */
     void setStopFrame (juce::int64 frame)                     { stopFrame = frame; }
@@ -52,9 +53,11 @@ public:
 
 private:
     Session& session;
+    SessionMixer::Inserts& inserts;
     Session::State state;                  // audio thread's own reference
     juce::uint32 stateVersion = 0;
-    juce::AudioBuffer<float> scratch;
+    SessionMixer::Buffers buffers;
+    juce::int64 nextFrame = -1;            // where the last block ended; anything else is a jump
     std::atomic<juce::int64> position { 0 }, stopFrame { -1 };
 };
 
@@ -63,7 +66,7 @@ private:
 class DocumentPlayerProcessor final : public juce::AudioProcessor
 {
 public:
-    DocumentPlayerProcessor (AudioDocument&, Session&);
+    DocumentPlayerProcessor (AudioDocument&, Session&, SessionMixer::Inserts&);
     ~DocumentPlayerProcessor() override;
 
     enum class Mode { document, session };
@@ -117,7 +120,7 @@ private:
     AudioDocument& document;
     Session& session;
     DocumentSource source { document };
-    SessionSource sessionSource { session };
+    SessionSource sessionSource;
     Mode mode = Mode::document;
     juce::AudioTransportSource transport;
     juce::int64 stopAt = -1;
@@ -197,6 +200,22 @@ public:
     std::unique_ptr<juce::XmlElement> createRackXml() const;
     void loadRackXml (const juce::XmlElement& xml, AddCallback onDone);
 
+    //==============================================================================
+    /** Each session track's effects. Read them here; change them through the methods below. */
+    const TrackEffects& getTrackEffects() const   { return trackEffects; }
+
+    /** Creates the plug-in at the session's rate and adds it to the end of the track's chain. */
+    void addTrackPlugin (juce::uint32 trackId, const juce::PluginDescription&, AddCallback onDone);
+    void removeTrackPlugin (juce::uint32 trackId, int slot);
+    void setTrackPluginBypassed (juce::uint32 trackId, int slot, bool);
+    void moveTrackPlugin (juce::uint32 trackId, int from, int to);
+
+    /** Removes every track's effects (for a new session). */
+    void clearTrackEffects();
+
+    /** Restores track effects from session file EFFECTS elements, by track id, one after another. */
+    void loadTrackEffects (std::map<juce::uint32, std::shared_ptr<juce::XmlElement>> effects, AddCallback onDone);
+
 private:
     using Node = juce::AudioProcessorGraph::Node;
 
@@ -204,10 +223,13 @@ private:
     void rebuildConnections();
     void addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr<juce::XmlElement>>> slots,
                             size_t next, juce::StringArray errors, AddCallback onDone);
+    void createPlugin (const juce::PluginDescription&, double rate,
+                       std::function<void (std::unique_ptr<juce::AudioPluginInstance>, const juce::String& error)>);
     double currentSampleRate() const;
     juce::String inputDeviceNameFor (const juce::AudioDeviceManager::AudioDeviceSetup&) const;
     int currentBlockSize() const;
 
+    TrackEffects trackEffects;   // before the graph: the player in it uses them
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer graphPlayer;
     DocumentPlayerProcessor* player = nullptr;

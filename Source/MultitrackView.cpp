@@ -46,6 +46,10 @@ public:
             b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? juce::Colour (0xffd0453a) : juce::Colour (0xffd8b43a));
         }
 
+        effectsButton.setTooltip ("This track's effects");
+        effectsButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+        effectsButton.onClick = [this] { view.showEffectsMenu (trackId, effectsButton); };
+
         mute.setTooltip ("Mute");
         solo.setTooltip ("Solo: play only soloed tracks");
         mute.onClick = [this] { const auto on = mute.getToggleState(); view.editTrack (trackId, on ? "Mute" : "Unmute", false, [on] (SessionTrack& t) { t.mute = on; }); };
@@ -81,7 +85,7 @@ public:
             s->setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
         }
 
-        for (auto* c : std::initializer_list<juce::Component*> { &name, &mute, &solo, &gain, &pan })
+        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &mute, &solo, &gain, &pan })
             addAndMakeVisible (c);
     }
 
@@ -95,6 +99,16 @@ public:
 
         mute.setToggleState (t.mute, juce::dontSendNotification);
         solo.setToggleState (t.solo, juce::dontSendNotification);
+
+        const auto& effects = view.engine.getTrackEffects();
+        const auto slots = effects.getNumSlots (trackId);
+        effectsButton.setButtonText (slots > 0 ? "FX " + juce::String (slots) : juce::String ("FX"));
+        auto anyOn = false;
+
+        for (int i = 0; i < slots; ++i)
+            anyOn = anyOn || ! effects.isBypassed (trackId, i);
+
+        effectsButton.setToggleState (anyOn, juce::dontSendNotification);
 
         if (! gain.isMouseButtonDown())
             gain.setValue (t.gainDb, juce::dontSendNotification);
@@ -121,6 +135,8 @@ public:
         solo.setBounds (top.removeFromRight (26));
         top.removeFromRight (4);
         mute.setBounds (top.removeFromRight (26));
+        top.removeFromRight (4);
+        effectsButton.setBounds (top.removeFromRight (40));
         name.setBounds (top);
         r.removeFromTop (8);
         gain.setBounds (r.removeFromTop (22));
@@ -141,7 +157,7 @@ public:
 private:
     MultitrackView& view;
     juce::Label name;
-    juce::TextButton mute { "M" }, solo { "S" };
+    juce::TextButton effectsButton { "FX" }, mute { "M" }, solo { "S" };
     juce::Slider gain, pan;
     juce::Colour colour;
     bool isSelected = false;
@@ -168,6 +184,94 @@ MultitrackView::~MultitrackView()
 }
 
 //==============================================================================
+void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& target)
+{
+    auto& effects = engine.getTrackEffects();
+    const auto slots = effects.getNumSlots (trackId);
+
+    juce::Array<juce::PluginDescription> types;
+
+    for (auto& type : engine.knownPlugins.getTypes())
+        if (! type.isInstrument)
+            types.add (type);
+
+    // Plug-in choices take ids from 1 (KnownPluginList); each slot's actions sit above them.
+    enum { slotBase = 1000000, editSlot = 0, bypassSlot, moveSlotUp, moveSlotDown, removeSlot, actions };
+    juce::PopupMenu menu;
+
+    for (int i = 0; i < slots; ++i)
+    {
+        const auto* plugin = effects.getPlugin (trackId, i);
+        const auto bypassed = effects.isBypassed (trackId, i);
+        const auto id = slotBase + i * actions;
+        juce::PopupMenu slot;
+        slot.addItem (id + editSlot, "Edit...");
+        slot.addItem (id + bypassSlot, "Bypass", true, bypassed);
+        slot.addItem (id + moveSlotUp, "Move Up", i > 0);
+        slot.addItem (id + moveSlotDown, "Move Down", i + 1 < slots);
+        slot.addSeparator();
+        slot.addItem (id + removeSlot, "Remove");
+        menu.addSubMenu (juce::String (i + 1) + ". " + plugin->getName() + (bypassed ? " (bypassed)" : ""), slot);
+    }
+
+    if (const auto latency = effects.getChainLatency (trackId); latency > 0)
+        menu.addItem (-1, "Latency " + juce::String (latency) + " frames, compensated", false);
+
+    if (slots > 0)
+        menu.addSeparator();
+
+    if (types.isEmpty())
+    {
+        menu.addItem (-2, "No effects: scan with Plug-ins... first", false);
+    }
+    else
+    {
+        juce::PopupMenu add;
+        juce::KnownPluginList::addToMenu (add, types, juce::KnownPluginList::sortByManufacturer);
+        menu.addSubMenu ("Add Effect", add);
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
+        [this, trackId, types, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
+        {
+            if (safe == nullptr || result == 0)
+                return;
+
+            if (result >= slotBase)
+            {
+                const auto slot = (result - slotBase) / actions;
+
+                switch ((result - slotBase) % actions)
+                {
+                    case editSlot:
+                        if (onEditPlugin != nullptr)
+                            if (auto* plugin = engine.getTrackEffects().getPlugin (trackId, slot))
+                                onEditPlugin (*plugin);
+                        break;
+                    case bypassSlot:   engine.setTrackPluginBypassed (trackId, slot, ! engine.getTrackEffects().isBypassed (trackId, slot)); break;
+                    case moveSlotUp:   engine.moveTrackPlugin (trackId, slot, slot - 1); break;
+                    case moveSlotDown: engine.moveTrackPlugin (trackId, slot, slot + 1); break;
+                    case removeSlot:   engine.removeTrackPlugin (trackId, slot); break;
+                    default: break;
+                }
+
+                return;
+            }
+
+            const auto chosen = juce::KnownPluginList::getIndexChosenByMenu (types, result);
+
+            if (! juce::isPositiveAndBelow (chosen, types.size()))
+                return;
+
+            const auto name = types[chosen].name;
+            engine.addTrackPlugin (trackId, types[chosen], [name] (const juce::String& error)
+            {
+                if (error.isNotEmpty())
+                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Could not load " + name, error);
+            });
+        });
+}
+
 void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     state = engine.session.getState();

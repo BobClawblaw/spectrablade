@@ -2,7 +2,7 @@
 
 #include "AudioEngine.h"
 
-/** The multitrack session: a ruler, a header per track (name, mute, solo, gain, pan) and the
+/** The multitrack session: a ruler, a header per track (name, effects, mute, solo, gain, pan) and the
     tracks' clips with their waveforms. Drag a clip to move it (onto another track, or below the
     last for a new one); drag its edges to trim it; double-click it to open its file in the
     editor. Click to place the cursor; drop audio files to add them as clips. */
@@ -19,6 +19,9 @@ public:
     std::function<void (const juce::File&)> onOpenInEditor;
     std::function<void (const juce::StringArray& files, int track, juce::int64 frame)> onFilesDropped;
     std::function<void()> onSelectionChanged;
+
+    /** Asks for a track effect's editor window. */
+    std::function<void (juce::AudioPluginInstance&)> onEditPlugin;
 
     juce::int64 getCursor() const noexcept        { return cursor; }
     void setCursor (juce::int64 frame);
@@ -77,6 +80,7 @@ private:
     void drawRuler (juce::Graphics&, juce::Rectangle<int>) const;
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;
     void selectTrack (int track);
+    void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
     void editTrack (juce::uint32 trackId, const juce::String& description, bool merge,
                     const std::function<void (SessionTrack&)>& change);
 

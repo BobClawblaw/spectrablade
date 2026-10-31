@@ -15,6 +15,7 @@
 #include "NoiseTests.h"
 #include "ClickTests.h"
 #include "SessionTests.h"
+#include "TrackEffectsTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -256,6 +257,31 @@ namespace
         }
 
         engine.clearRack();
+
+        // The same plug-in on a session track, saved and loaded back.
+        SessionState s;
+        s.sampleRate = 48000.0;
+        const auto trackId = s.addTrack().id;
+        engine.session.reset (s, {});
+
+        finished = false;
+        engine.addTrackPlugin (trackId, candidates[0], [&] (const juce::String& e) { errors = e; finished = true; });
+        runUntil ([&] { return finished; }, 30000);
+        check (finished && errors.isEmpty() && engine.getTrackEffects().getNumSlots (trackId) == 1 && engine.session.isDirty(),
+               "a real plug-in loads onto a session track");
+
+        engine.setTrackPluginBypassed (trackId, 0, true);
+        std::map<juce::uint32, std::shared_ptr<juce::XmlElement>> saved;
+        saved[trackId] = engine.getTrackEffects().createXml (trackId);
+        engine.clearTrackEffects();
+
+        finished = false;
+        engine.loadTrackEffects (saved, [&] (const juce::String& e) { errors = e; finished = true; });
+        runUntil ([&] { return finished; }, 30000);
+        check (finished && errors.isEmpty() && engine.getTrackEffects().getNumSlots (trackId) == 1
+                   && engine.getTrackEffects().isBypassed (trackId, 0),
+               "track effects restore with their bypass");
+        engine.clearTrackEffects();
     }
 }
 
@@ -279,6 +305,7 @@ int main (int argc, char* argv[])
         runNoiseTests();
         runClickTests();
         runSessionTests (engine.formatManager);
+        runTrackEffectsTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

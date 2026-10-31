@@ -101,8 +101,11 @@ public:
     void undo();
     void redo();
 
-    bool isDirty() const noexcept                 { return position != savedPosition; }
+    bool isDirty() const noexcept                 { return position != savedPosition || effectsChanged; }
     void markSaved (const juce::File& savedAs);
+
+    /** Track effects live outside the undoable state; changing them still needs saving. */
+    void markEffectsChanged();
 
     /** Frees states dropped from history once the audio thread has let go of them. */
     void releaseUnusedStates();
@@ -124,6 +127,7 @@ private:
     std::vector<Entry> history;
     int position = 0;
     int savedPosition = 0;
+    bool effectsChanged = false;
     std::vector<State> pendingRelease;
     juce::File file;
 
@@ -135,13 +139,16 @@ private:
     file where it can. */
 namespace SessionFile
 {
-    juce::String save (const SessionState&, const juce::File& target);
+    /** trackEffects gives each track's EFFECTS element (or null), stored inside its TRACK. */
+    juce::String save (const SessionState&, const juce::File& target,
+                       const std::function<std::unique_ptr<juce::XmlElement> (juce::uint32 trackId)>& trackEffects = {});
 
     struct Loaded
     {
         SessionState state;
         juce::String error;
         juce::StringArray missing;   // audio files that could not be read; their clips are left out
+        std::map<juce::uint32, std::shared_ptr<juce::XmlElement>> effects;   // EFFECTS elements, by new track id
     };
 
     /** Each audio file is read once, however many clips use it. Files at another sample rate

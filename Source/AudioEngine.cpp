@@ -44,7 +44,8 @@ void SessionSource::prepareToPlay (int blockSize, double)
 {
     // Room for the largest block the transport's resampler is likely to ask for, so the mixer
     // does not allocate on the audio thread.
-    scratch.setSize (2, juce::jmax (8192, 4 * blockSize));
+    buffers.reserve (juce::jmax (8192, 4 * blockSize));
+    nextFrame = -1;
 }
 
 void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
@@ -62,18 +63,23 @@ void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
     if (stop >= 0)
         count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) info.numSamples, stop - start);
 
-    SessionMixer::render (*state, start, *info.buffer, info.startSample, count, scratch);
+    // After a jump, effects with latency are run over the frames they read ahead, so they play
+    // in time from the first block.
+    if (start != nextFrame)
+        SessionMixer::prime (*state, start, buffers, inserts);
+
+    SessionMixer::render (*state, start, *info.buffer, info.startSample, count, buffers, &inserts);
 
     if (count < info.numSamples)
         info.buffer->clear (info.startSample + count, info.numSamples - count);
 
-    position = start + info.numSamples;
+    position = nextFrame = start + info.numSamples;
 }
 
 //==============================================================================
-DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s)
+DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s, SessionMixer::Inserts& inserts)
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
-      document (doc), session (s)
+      document (doc), session (s), sessionSource (s, inserts)
 {
     resetSource();
 }
@@ -157,8 +163,9 @@ AudioEngine::AudioEngine()
 {
     formatManager.registerBasicFormats();
     juce::addDefaultFormatsToManager (pluginFormatManager);
+    trackEffects.prepare (session.getSampleRate());
 
-    auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session);
+    auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session, trackEffects);
     player = playerProcessor.get();
     playerNode = graph.addNode (std::move (playerProcessor));
 
@@ -341,6 +348,9 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
         if (! juce::exactlyEqual (player->getSourceRate(), rate))
             player->resetSource();
 
+        if (! juce::exactlyEqual (trackEffects.getSampleRate(), session.getSampleRate()))
+            trackEffects.prepare (session.getSampleRate());
+
         return;
     }
 
@@ -459,31 +469,43 @@ int AudioEngine::currentBlockSize() const
     return 512;
 }
 
-void AudioEngine::addPlugin (const juce::PluginDescription& description, AddCallback onDone)
+void AudioEngine::createPlugin (const juce::PluginDescription& description, double rate,
+                                std::function<void (std::unique_ptr<juce::AudioPluginInstance>, const juce::String&)> onCreated)
 {
     // Asynchronous creation is required for AUv3 and keeps the UI responsive for slow plug-ins.
-    pluginFormatManager.createPluginInstanceAsync (description, currentSampleRate(), currentBlockSize(),
-        [this, isAlive = alive, done = std::move (onDone)] (std::unique_ptr<juce::AudioPluginInstance> instance,
-                                                             const juce::String& error)
+    pluginFormatManager.createPluginInstanceAsync (description, rate, currentBlockSize(),
+        [isAlive = alive, done = std::move (onCreated)] (std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                          const juce::String& error)
         {
             if (! *isAlive)
                 return;
 
             if (instance == nullptr)
             {
-                if (done != nullptr)
-                    done (error.isNotEmpty() ? error : juce::String ("The plug-in could not be created."));
+                done (nullptr, error.isNotEmpty() ? error : juce::String ("The plug-in could not be created."));
                 return;
             }
 
             instance->enableAllBuses();
-            rack.push_back (graph.addNode (std::move (instance)));
-            rebuildConnections();
-            sendChangeMessage();
-
-            if (done != nullptr)
-                done ({});
+            done (std::move (instance), {});
         });
+}
+
+void AudioEngine::addPlugin (const juce::PluginDescription& description, AddCallback onDone)
+{
+    createPlugin (description, currentSampleRate(),
+                  [this, done = std::move (onDone)] (std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error)
+                  {
+                      if (instance != nullptr)
+                      {
+                          rack.push_back (graph.addNode (std::move (instance)));
+                          rebuildConnections();
+                          sendChangeMessage();
+                      }
+
+                      if (done != nullptr)
+                          done (error);
+                  });
 }
 
 void AudioEngine::removeRackSlot (int index)
@@ -598,4 +620,125 @@ void AudioEngine::addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr
 
         addPluginsFromXml (slots, next + 1, errors, std::move (onDone));
     });
+}
+
+//==============================================================================
+void AudioEngine::addTrackPlugin (juce::uint32 trackId, const juce::PluginDescription& description, AddCallback onDone)
+{
+    createPlugin (description, session.getSampleRate(),
+                  [this, trackId, done = std::move (onDone)] (std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                              const juce::String& error)
+                  {
+                      if (instance != nullptr)
+                      {
+                          trackEffects.add (trackId, std::move (instance));
+                          session.markEffectsChanged();
+                      }
+
+                      if (done != nullptr)
+                          done (error);
+                  });
+}
+
+void AudioEngine::removeTrackPlugin (juce::uint32 trackId, int slot)
+{
+    auto* plugin = trackEffects.getPlugin (trackId, slot);
+
+    if (plugin == nullptr)
+        return;
+
+    if (onPluginAboutToBeRemoved != nullptr)
+        onPluginAboutToBeRemoved (plugin);
+
+    trackEffects.remove (trackId, slot);
+    session.markEffectsChanged();
+}
+
+void AudioEngine::setTrackPluginBypassed (juce::uint32 trackId, int slot, bool bypassed)
+{
+    trackEffects.setBypassed (trackId, slot, bypassed);
+    session.markEffectsChanged();
+}
+
+void AudioEngine::moveTrackPlugin (juce::uint32 trackId, int from, int to)
+{
+    trackEffects.move (trackId, from, to);
+    session.markEffectsChanged();
+}
+
+void AudioEngine::clearTrackEffects()
+{
+    if (onPluginAboutToBeRemoved != nullptr)
+        for (auto* plugin : trackEffects.getAllPlugins())
+            onPluginAboutToBeRemoved (plugin);
+
+    trackEffects.clear();
+}
+
+void AudioEngine::loadTrackEffects (std::map<juce::uint32, std::shared_ptr<juce::XmlElement>> effects, AddCallback onDone)
+{
+    // Flattened to (track, slot) pairs, loaded one after another so each chain keeps its order.
+    auto queue = std::make_shared<std::vector<std::pair<juce::uint32, std::shared_ptr<juce::XmlElement>>>>();
+
+    for (auto& [id, xml] : effects)
+        if (xml != nullptr)
+            for (auto* slot : xml->getChildWithTagNameIterator ("SLOT"))
+                queue->emplace_back (id, std::make_shared<juce::XmlElement> (*slot));
+
+    struct Loader
+    {
+        static void next (AudioEngine& engine, std::shared_ptr<bool> isAlive, decltype (queue) q, size_t index,
+                          juce::StringArray errors, AddCallback done)
+        {
+            if (! *isAlive)
+                return;
+
+            if (index >= q->size())
+            {
+                if (done != nullptr)
+                    done (errors.joinIntoString ("\n"));
+                return;
+            }
+
+            const auto [trackId, slot] = (*q)[index];
+            juce::PluginDescription description;
+
+            if (auto* descXml = slot->getChildByName ("PLUGIN"); descXml == nullptr || ! description.loadFromXml (*descXml))
+            {
+                errors.add ("A track effect is missing its plug-in description.");
+                next (engine, isAlive, q, index + 1, errors, std::move (done));
+                return;
+            }
+
+            engine.createPlugin (description, engine.session.getSampleRate(),
+                [&engine, isAlive, q, index, errors, done, description, trackId, slot]
+                (std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error) mutable
+                {
+                    if (instance == nullptr)
+                    {
+                        errors.add (description.name + ": " + error);
+                    }
+                    else
+                    {
+                        // State after preparing, as the rack does it.
+                        auto* plugin = instance.get();
+                        engine.trackEffects.add (trackId, std::move (instance));
+                        const auto added = engine.trackEffects.getNumSlots (trackId) - 1;
+                        engine.trackEffects.setBypassed (trackId, added, slot->getBoolAttribute ("bypassed"));
+
+                        if (auto* stateXml = slot->getChildByName ("STATE"))
+                        {
+                            juce::MemoryBlock state;
+
+                            if (state.fromBase64Encoding (stateXml->getAllSubText()))
+                                plugin->setStateInformation (state.getData(), (int) state.getSize());
+                        }
+                    }
+
+                    next (engine, isAlive, q, index + 1, errors, std::move (done));
+                });
+        }
+    };
+
+    Loader::next (*this, alive, queue, 0, {}, std::move (onDone));
 }

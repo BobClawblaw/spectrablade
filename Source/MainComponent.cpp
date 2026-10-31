@@ -381,11 +381,13 @@ MainComponent::MainComponent()
     };
     multitrack.onFilesDropped = [this] (const juce::StringArray& files, int track, juce::int64 frame) { addFilesToSession (files, track, frame); };
     multitrack.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
+    multitrack.onEditPlugin = [this] (juce::AudioPluginInstance& p) { showEditor (p); };
 
     if (auto* device = engine.deviceManager.getCurrentAudioDevice())
     {
         SessionState empty;
         empty.sampleRate = device->getCurrentSampleRate();
+        engine.clearTrackEffects();
         engine.session.reset (std::move (empty), {});
     }
 
@@ -1002,6 +1004,7 @@ void MainComponent::newSession()
     empty.sampleRate = engine.deviceManager.getCurrentAudioDevice() != nullptr
                            ? engine.deviceManager.getCurrentAudioDevice()->getCurrentSampleRate()
                            : engine.session.getSampleRate();
+    engine.clearTrackEffects();
     engine.session.reset (std::move (empty), {});
     multitrack.setCursor (0);
     setMultitrack (true);
@@ -1030,6 +1033,7 @@ void MainComponent::openSession (const juce::File& file)
     }
 
     engine.getPlayer().pause();
+    engine.clearTrackEffects();
     engine.session.reset (std::move (loaded.state), file);
     multitrack.setCursor (0);
     setMultitrack (true);
@@ -1039,6 +1043,14 @@ void MainComponent::openSession (const juce::File& file)
     if (! loaded.missing.isEmpty())
         showError ("Missing audio", "These files could not be read, so their clips were left out:\n\n"
                                         + loaded.missing.joinIntoString ("\n"));
+
+    engine.loadTrackEffects (std::move (loaded.effects), [this] (const juce::String& errors)
+    {
+        engine.session.sendChangeMessage();   // the track headers show the effects
+
+        if (errors.isNotEmpty())
+            showError ("Track effects", "Some track effects could not be loaded:\n\n" + errors);
+    });
 }
 
 void MainComponent::saveSession (std::function<void (bool)> done)
@@ -1051,7 +1063,7 @@ void MainComponent::saveSession (std::function<void (bool)> done)
         return;
     }
 
-    const auto error = SessionFile::save (*engine.session.getState(), file);
+    const auto error = SessionFile::save (*engine.session.getState(), file, [this] (juce::uint32 id) { return engine.getTrackEffects().createXml (id); });
 
     if (error.isNotEmpty())
         showError ("Save Session", error);
@@ -1083,7 +1095,7 @@ void MainComponent::saveSessionAs (std::function<void (bool)> done)
                               }
 
                               file = file.withFileExtension ("sbsession");
-                              const auto error = SessionFile::save (*engine.session.getState(), file);
+                              const auto error = SessionFile::save (*engine.session.getState(), file, [this] (juce::uint32 id) { return engine.getTrackEffects().createXml (id); });
 
                               if (error.isNotEmpty())
                                   showError ("Save Session", error);
@@ -2033,10 +2045,13 @@ void MainComponent::showPluginList()
 
 void MainComponent::showEditor (int slotIndex)
 {
-    auto* plugin = engine.getRackPlugin (slotIndex);
+    if (auto* plugin = engine.getRackPlugin (slotIndex))
+        showEditor (*plugin);
+}
 
-    if (plugin == nullptr)
-        return;
+void MainComponent::showEditor (juce::AudioProcessor& p)
+{
+    auto* plugin = &p;
 
     for (auto* w : editorWindows)
     {
