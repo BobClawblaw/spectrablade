@@ -33,7 +33,8 @@ namespace
         cmdConvertRate,
         cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth,
         cmdSpectralAttenuate, cmdSpectralRemove,
-        cmdLoudnessStats, cmdMatchLoudness
+        cmdLoudnessStats, cmdMatchLoudness,
+        cmdCaptureNoisePrint, cmdNoiseReduction
     };
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -187,7 +188,7 @@ private:
 
 //==============================================================================
 /** Runs work on a background thread behind a progress window, then finish() on the message thread
-    unless it was cancelled. Used for sample-rate conversion and loudness measurement. */
+    unless it was cancelled. Used for sample-rate conversion, loudness and noise reduction. */
 class MainComponent::BackgroundJob final : public juce::ThreadWithProgressWindow
 {
 public:
@@ -458,7 +459,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdMatchLoudness; ++id)
+    for (int id = cmdOpen; id <= cmdNoiseReduction; ++id)
         ids.add (id);
 }
 
@@ -532,6 +533,12 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdMatchLoudness: info.setInfo ("Match Loudness...", "Set the integrated loudness of the selection or file", "Effects", 0);
             info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdCaptureNoisePrint: info.setInfo ("Capture Noise Print", "Learn the noise from a selection of noise alone", "Effects", 0);
+            info.addDefaultKeypress ('p', juce::ModifierKeys::shiftModifier);
+            info.setActive (waveform.getSelection().getLength() >= NoiseReduction::frameSize); break;
+        case cmdNoiseReduction: info.setInfo ("Noise Reduction...", "Reduce the captured noise in the selection or file", "Effects", 0);
+            info.addDefaultKeypress ('p', cmd | juce::ModifierKeys::shiftModifier);
+            info.setActive (hasAudio && noisePrint.has_value() && backgroundJob == nullptr); break;
         case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
 
@@ -609,6 +616,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSpectralRemove: applySpectral (-std::numeric_limits<float>::infinity()); break;
         case cmdLoudnessStats: showLoudness(); break;
         case cmdMatchLoudness: askForLoudnessTarget(); break;
+        case cmdCaptureNoisePrint: captureNoisePrint(); break;
+        case cmdNoiseReduction: askForNoiseReduction(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdDeleteAllMarkers: engine.document.setMarkers ({}, "Delete All Markers"); break;
@@ -642,7 +651,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs }); break;
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdApplyRack }); break;
+                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
         case 4: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 5: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
@@ -1256,6 +1265,87 @@ void MainComponent::matchLoudness (double target, double ceiling)
                                              + Loudness::format (r.integrated + gain, "LUFS") + " instead of "
                                              + Loudness::format (target, "LUFS") + ".");
     });
+}
+
+void MainComponent::captureNoisePrint()
+{
+    const auto sel = waveform.getSelection();
+    auto& doc = engine.document;
+    noisePrint = NoiseReduction::capture (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), doc.getSampleRate());
+
+    if (! noisePrint.has_value())
+        showError ("Capture Noise Print", "Select at least " + formatTime (NoiseReduction::frameSize, doc.getSampleRate())
+                                              + " of noise alone, then capture it.");
+
+    commands.commandStatusChanged();
+}
+
+void MainComponent::askForNoiseReduction()
+{
+    if (! noisePrint.has_value())
+        return;
+
+    if (! juce::exactlyEqual (noisePrint->sampleRate, engine.document.getSampleRate()))
+    {
+        showError ("Noise Reduction", "The noise print was captured at " + juce::String (noisePrint->sampleRate / 1000.0, 1)
+                                          + " kHz. Capture a new one from this file.");
+        return;
+    }
+
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Noise Reduction",
+                                       "Lowers whatever matches the captured noise print by up to the reduction. Raise the "
+                                       "threshold if noise is left between sounds; lower it if quiet sounds are thinned.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("reduction", juce::String (settings->getDoubleValue ("noiseReduction", 12.0), 1), "Reduction (dB)");
+    box->addTextEditor ("threshold", juce::String (settings->getDoubleValue ("noiseThreshold", 3.0), 1), "Threshold above the print (dB)");
+
+    for (auto* name : { "reduction", "threshold" })
+        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
+
+    box->addButton ("Reduce", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        NoiseReduction::Settings s;
+        s.reductionDb = juce::jlimit (0.0f, 60.0f, box->getTextEditorContents ("reduction").getFloatValue());
+        s.thresholdDb = juce::jlimit (-10.0f, 20.0f, box->getTextEditorContents ("threshold").getFloatValue());
+        settings->setValue ("noiseReduction", s.reductionDb);
+        settings->setValue ("noiseThreshold", s.thresholdDb);
+        reduceNoise (s);
+    }), true);
+}
+
+void MainComponent::reduceNoise (NoiseReduction::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr || ! noisePrint.has_value())
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Reducing noise...",
+        [result, snapshot, rate, range, print = *noisePrint, s] (const std::function<bool (float)>& progress)
+        {
+            *result = NoiseReduction::reduce (*snapshot, range.getStart(), range.getEnd(), rate, print, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version, s]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Noise Reduction", "The audio changed during processing, so the result was discarded.");
+            else
+                applyEdit (*result, "Noise Reduction " + juce::String (s.reductionDb, 1) + " dB", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::applySimpleEffect (const juce::String& name,

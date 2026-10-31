@@ -49,6 +49,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
+    Source/NoiseReduction.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
@@ -88,6 +89,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/ConverterTests.cpp
     Tests/SpectralTests.cpp
     Tests/LoudnessTests.cpp
+    Tests/NoiseTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/AudioEdits.cpp
@@ -98,6 +100,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
+    Source/NoiseReduction.cpp
     Source/Recorder.cpp
     Source/PluginScanner.cpp)
 get_target_property(spectrablade_defs SpectraBlade COMPILE_DEFINITIONS)

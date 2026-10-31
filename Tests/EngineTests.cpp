@@ -12,6 +12,7 @@
 #include "ConverterTests.h"
 #include "SpectralTests.h"
 #include "LoudnessTests.h"
+#include "NoiseTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -273,6 +274,7 @@ int main (int argc, char* argv[])
         runConverterTests();
         runSpectralTests();
         runLoudnessTests();
+        runNoiseTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

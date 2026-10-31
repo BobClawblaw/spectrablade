@@ -4,6 +4,7 @@
 #include "AudioEngine.h"
 #include "LevelMeter.h"
 #include "Loudness.h"
+#include "NoiseReduction.h"
 #include "RackView.h"
 #include "WaveformView.h"
 
@@ -90,6 +91,11 @@ private:
     void askForLoudnessTarget();
     void matchLoudness (double target, double ceiling);
 
+    // Noise reduction
+    void captureNoisePrint();
+    void askForNoiseReduction();
+    void reduceNoise (NoiseReduction::Settings);
+
     // Transport and windows
     void togglePlay();
     void toggleRecord();
@@ -129,6 +135,7 @@ private:
     std::unique_ptr<PluginListWindow> pluginListWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
+    std::optional<NoiseReduction::Print> noisePrint;
     juce::File deadMansPedalFile;
 
     // The take in progress: where it goes in the document ([punchIn, punchOut), or open-ended when

@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 8: noise reduction**
+- Select a stretch of noise alone (room tone, hiss, hum between phrases) and choose Effects > Capture Noise Print (Shift+P). Then Effects > Noise Reduction (Cmd+Shift+P) lowers that noise in the selection, or the whole file, by up to the reduction you set (12 dB by default). A threshold (3 dB above the print by default) decides how far above the noise a sound must be to be kept. It is undoable and runs behind a progress window.
+- Each 4096-point frame (75% overlap, square-root Hann windows) gets a Wiener gain per frequency bin, with its signal-to-noise estimate smoothed over time (Ephraim and Malah's decision-directed method), so the noise that is left stays steady instead of warbling. The gain never drops below the reduction, so 0 dB changes nothing.
+- Measured by the tests on a -12 dBFS tone in -40 dBFS white noise: 12 dB asked lowers the noise by 11.84 dB, 24 dB asked by 23.20 dB, the tone's level changes by 0.001 dB, and the noise under the tone drops 11.39 dB too. At 0 dB the audio comes back within -138.5 dB, and audio more than a frame outside the range is bit-identical. Five minutes of stereo take 0.43 s on an M5 Ultra.
+
 **Milestone 7: loudness (EBU R128)**
 - Effects > Loudness Statistics measures the selection, or the whole file: integrated loudness (LUFS), loudness range (LU), maximum momentary and short-term loudness, true peak (dBTP) and sample peak, following ITU-R BS.1770-4 and EBU R128. K-weighting is derived for the file's own rate; 5.1 files leave out the LFE and weight the surrounds by 1.41.
 - Effects > Match Loudness sets the integrated loudness to a target (EBU R128 -23, ATSC A/85 -24, podcasts -16, streaming -14 LUFS) with one undoable gain change. It never pushes the true peak past a ceiling you set (-1 dBTP by default). When the ceiling allows less gain, it says how close it got. There is no limiter yet.
@@ -81,6 +86,7 @@ The tests run against the real machine:
 - Out-of-process scanning, using the built app as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.
 - The default audio device: output-pair routing on a multi-output interface. With `--live-input`, also arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
 - Spectrogram level calibration and image, and spectral edits: identity, removal depth, neighbouring tones, untouched audio, attenuation.
+- Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
 - Loudness against the EBU Tech 3341 and 3342 signals at two rates, 5.1 channel weights, gating, true peak between samples, measuring part of a file, and cancelling.
 - Sample-rate conversion: accuracy against ideal sines at four rate pairs, passband flatness, alias rejection, a round-trip null, an inexact ratio, cancelling, undo of a conversion, and speed.
 - Markers: the edit rules (delete, insert, replace, crop), undo and redo, and WAV, AIFF and FLAC round trips.
@@ -114,5 +120,5 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Noise reduction, click and pop repair
+1. Click and pop repair
 2. Multitrack session, last: clips, buses, sends, automation, delay compensation, recording and punch-in
