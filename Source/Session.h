@@ -1,32 +1,8 @@
 #pragma once
 
 #include "AudioDocument.h"
+#include "FadeShape.h"
 #include "Metronome.h"
-
-//==============================================================================
-/** A clip: a stretch of an audio file placed on a track. The audio is shared, never copied. */
-/** The curve a fade follows from silence to full level. */
-enum class FadeShape
-{
-    sCurve,        // raised cosine: gentle at both ends
-    linear,
-    equalPower,    // a quarter sine: two of these crossfading keep uncorrelated sound's power steady
-    slow,          // squared: starts slowly
-    fast           // rises quickly, then levels off
-};
-
-namespace FadeShapes
-{
-    constexpr std::array<FadeShape, 5> all { FadeShape::sCurve, FadeShape::linear, FadeShape::equalPower, FadeShape::slow, FadeShape::fast };
-
-    /** The level `frame` frames into a fade `length` frames long (1 from its end on). */
-    float level (FadeShape, juce::int64 frame, juce::int64 length);
-
-    /** "S-Curve", "Linear", ... as menus show them, and the names session files use. */
-    juce::String displayName (FadeShape);
-    juce::String id (FadeShape);
-    FadeShape fromId (const juce::String&);   // S-curve for one it doesn't know
-}
 
 /** A point on an envelope: the value at a frame (of the session, or for a clip's gain, of its audio). */
 struct AutomationPoint
@@ -62,6 +38,8 @@ struct Envelope
     bool operator== (const Envelope& o) const noexcept { return points == o.points; }
 };
 
+//==============================================================================
+/** A clip: a stretch of an audio file placed on a track. The audio is shared, never copied. */
 struct SessionClip
 {
     juce::uint32 id = 0;

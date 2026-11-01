@@ -290,6 +290,26 @@ namespace
                    && faded.getSample (0, 999) == signal.getSample (0, 999),
                "fade in starts at zero, ends at full level and leaves the rest alone");
 
+        // Shapes: five frames at full level, faded in linearly and out with a slow start.
+        juce::AudioBuffer<float> ones (1, 5);
+
+        for (int i = 0; i < 5; ++i)
+            ones.setSample (0, i, 1.0f);
+
+        const auto ramp = AudioEdits::fromBuffer (juce::AudioBuffer<float> (ones));
+        const auto linearIn = readAll (*AudioEdits::fadeIn (*ramp, 0, 5, FadeShape::linear));
+        const auto slowOut = readAll (*AudioEdits::fadeOut (*ramp, 0, 5, FadeShape::slow));
+        auto shapesExact = true;
+
+        for (int i = 0; i < 5; ++i)
+        {
+            const auto t = (float) i / 4.0f;
+            shapesExact = shapesExact && juce::exactlyEqual (linearIn.getSample (0, i), t)
+                          && juce::exactlyEqual (slowOut.getSample (0, i), (1.0f - t) * (1.0f - t));
+        }
+
+        check (shapesExact, "fade shapes: a linear fade in is 0, 0.25 ... 1 and a slow fade out 1, 0.5625 ... 0, exactly");
+
         auto silenced = readAll (*AudioEdits::silence (*original, 10, 20));
         check (silenced.getSample (1, 9) == signal.getSample (1, 9) && silenced.getSample (1, 10) == 0.0f
                    && silenced.getSample (1, 19) == 0.0f && silenced.getSample (1, 20) == signal.getSample (1, 20),

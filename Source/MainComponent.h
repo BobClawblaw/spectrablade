@@ -102,6 +102,7 @@ private:
     void insertSilence (juce::int64 frames);
     void trimSilence (float thresholdDb);
     void selectAudibleSpan();
+    void applyFade (bool out);
     void convertChannels (int numChannels);
     void askForDecibels (const juce::String& title, const juce::String& label, float initial,
                          std::function<void (float)> onOk);
@@ -224,6 +225,7 @@ private:
     TapTempo tapper;
     juce::RecentlyOpenedFilesList recentFiles;
     static constexpr int recentBaseId = 0x7000;   // menu ids for File > Open Recent, clear of the command ids
+    static constexpr int fadeShapeBaseId = 0x7100;   // menu ids for Effects > Fade Shape
     void noteRecent (const juce::File&);
     LoadReadout loadReadout { [this] { return LoadReadout::Reading { engine.deviceManager.getCpuUsage(), engine.deviceManager.getXRunCount() }; } };
 
@@ -231,6 +233,7 @@ private:
     MultitrackView multitrack { engine };
     SessionOverview overview { engine, multitrack };
     bool multitrackMode = false;
+    FadeShape fadeShape = FadeShape::sCurve;   // the editor's Fade In and Fade Out
     float silenceThresholdDb = -60.0f;   // Trim Silence's last level, also used by Select Audible Span
     RackView rackView { engine };
 

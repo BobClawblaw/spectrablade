@@ -42,12 +42,6 @@ namespace
         s.read (buffer, 0, start, buffer.getNumSamples());
         return buffer;
     }
-
-    /** Smooth S-curve gain for t in [0, 1]. */
-    float fadeCurve (float t)
-    {
-        return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * juce::jlimit (0.0f, 1.0f, t));
-    }
 }
 
 Snapshot fromBuffer (juce::AudioBuffer<float>&& buffer)
@@ -211,15 +205,15 @@ Snapshot swapChannels (const AudioSnapshot& s, juce::int64 start, juce::int64 en
     });
 }
 
-Snapshot fadeIn (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+Snapshot fadeIn (const AudioSnapshot& s, juce::int64 start, juce::int64 end, FadeShape shape)
 {
-    return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)
+    return processRange (s, start, end, [shape] (juce::AudioBuffer<float>& b)
     {
         const auto n = b.getNumSamples();
 
         for (int i = 0; i < n; ++i)
         {
-            const auto g = fadeCurve (n > 1 ? (float) i / (float) (n - 1) : 1.0f);
+            const auto g = FadeShapes::level (shape, i, n - 1);
 
             for (int ch = 0; ch < b.getNumChannels(); ++ch)
                 b.getWritePointer (ch)[i] *= g;
@@ -227,15 +221,15 @@ Snapshot fadeIn (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
     });
 }
 
-Snapshot fadeOut (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+Snapshot fadeOut (const AudioSnapshot& s, juce::int64 start, juce::int64 end, FadeShape shape)
 {
-    return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)
+    return processRange (s, start, end, [shape] (juce::AudioBuffer<float>& b)
     {
         const auto n = b.getNumSamples();
 
         for (int i = 0; i < n; ++i)
         {
-            const auto g = fadeCurve (n > 1 ? 1.0f - (float) i / (float) (n - 1) : 0.0f);
+            const auto g = n > 1 ? FadeShapes::level (shape, n - 1 - i, n - 1) : 0.0f;
 
             for (int ch = 0; ch < b.getNumChannels(); ++ch)
                 b.getWritePointer (ch)[i] *= g;

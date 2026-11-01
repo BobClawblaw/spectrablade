@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 105: fade shapes in the editor**
+- Effects > Fade Shape picks the curve the editor's Fade In and Fade Out follow: S-Curve (as before), Linear, Equal Power, Slow Start or Fast Start, the same shapes session clips use. The choice is ticked in the menu and kept between runs. The first frame of a fade in is silent and its last at full level, and a fade out the other way round.
+- The S-curve now goes through the shared shape function, which orders its float arithmetic differently from the old one; the two were not compared bit for bit, and the existing fade test still passed.
+- Measured by the tests: five frames at full level faded in linearly come out exactly 0, 0.25, 0.5, 0.75 and 1, and faded out with a slow start exactly 1, 0.5625, 0.25, 0.0625 and 0. The submenu, its tick and the kept setting were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 104: Select Audible Span, and the new effects kept to the editor**
 - Edit > Select Audible Span selects from the first frame to the last that is above the level Trim Silence last used (-60 dB until it is first used), and says so when the whole file is below it. Trim Silence now offers that last level too.
 - Fixed: Remove DC Offset, Swap Channels, Insert Silence, Trim Silence, Mix to Mono and Make Stereo (milestones 99 to 103) stayed on while the session was showing, where choosing one would have edited the open file behind it. They are now off in the session view, like the editor's other effects.
@@ -680,6 +685,7 @@ The tests run against the real machine:
 - Insert Silence: zeros at the frame, the rest moved on exactly.
 - Trim Silence: the audible span found exactly across blocks and channels, none in silence.
 - Mix to Mono and Make Stereo: exact averages and copies across blocks, and undo.
+- Editor fade shapes: linear in and slow-start out, exact at every frame.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -733,4 +739,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Fade In and Fade Out with a choice of curve: linear, S-curve and logarithmic
+1. Editor: Pan, moving a stereo file's balance or placing a mono one, over the selection or the whole file

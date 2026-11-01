@@ -28,6 +28,7 @@ namespace
     constexpr const char* inputFirstKey   = "inputFirstChannel";
     constexpr const char* inputCountKey   = "inputNumChannels";
     constexpr const char* displayKey      = "display";
+    constexpr const char* fadeShapeKey    = "editorFadeShape";
     constexpr const char* snappingKey     = "snapping";
     constexpr const char* crossfadingKey  = "crossfading";
     constexpr const char* zeroCrossingsKey = "zeroCrossings";
@@ -678,6 +679,7 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (waveform);
     waveform.setDisplay ((WaveformView::Display) juce::jlimit (0, 2, settings->getIntValue (displayKey, 0)));
+    fadeShape = FadeShapes::fromId (settings->getValue (fadeShapeKey));
     waveform.onFileDropped = [this] (const juce::File& f) { confirmDiscardChanges ([this, f] { openFile (f); }); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
@@ -855,6 +857,7 @@ void MainComponent::saveSettings()
     settings->setValue (inputFirstKey, engine.getInputFirstChannel());
     settings->setValue (inputCountKey, engine.getInputNumChannels());
     settings->setValue (displayKey, (int) waveform.getDisplay());
+    settings->setValue (fadeShapeKey, FadeShapes::id (fadeShape));
     settings->setValue (lastFileKey, engine.document.getFile().getFullPathName());
     settings->saveIfNeeded();
 }
@@ -1292,8 +1295,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCrop:       cropToSelection(); break;
         case cmdGain:       applyGain(); break;
         case cmdNormalize:  applyNormalize(); break;
-        case cmdFadeIn:     applySimpleEffect ("Fade In", &AudioEdits::fadeIn, true); break;
-        case cmdFadeOut:    applySimpleEffect ("Fade Out", &AudioEdits::fadeOut, true); break;
+        case cmdFadeIn:     applyFade (false); break;
+        case cmdFadeOut:    applyFade (true); break;
         case cmdSilence:    applySimpleEffect ("Silence", &AudioEdits::silence, true); break;
         case cmdInvert:     applySimpleEffect ("Invert", &AudioEdits::invert, false); break;
         case cmdReverse:    applySimpleEffect ("Reverse", &AudioEdits::reverse, false); break;
@@ -1526,8 +1529,19 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
-        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, cmdMixToMono, cmdMakeStereo, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
+        case 2:
+        {
+            add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut });
+            juce::PopupMenu shapes;
+
+            for (size_t i = 0; i < FadeShapes::all.size(); ++i)
+                shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
+
+            menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
+            add ({ 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, cmdMixToMono, cmdMakeStereo, 0,
+                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack });
+            break;
+        }
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
@@ -2982,6 +2996,14 @@ void MainComponent::noteRecent (const juce::File& file)
 
 void MainComponent::menuItemSelected (int menuItemId, int)
 {
+    if (juce::isPositiveAndBelow (menuItemId - fadeShapeBaseId, (int) FadeShapes::all.size()))
+    {
+        fadeShape = FadeShapes::all[(size_t) (menuItemId - fadeShapeBaseId)];
+        saveSettings();
+        menuItemsChanged();
+        return;
+    }
+
     if (menuItemId == recentBaseId + RecentFiles::maxFiles)
     {
         RecentFiles::clear (recentFiles, *appProperties.getUserSettings());
@@ -3292,6 +3314,15 @@ void MainComponent::selectAudibleSpan()
         waveform.setSelection (*audible);
     else
         showError ("Select Audible Span", "The whole file is at or below " + juce::String (silenceThresholdDb, 1) + " dB.");
+}
+
+void MainComponent::applyFade (bool out)
+{
+    const auto r = waveform.getSelection();
+
+    if (! r.isEmpty())
+        applyEdit ((out ? AudioEdits::fadeOut : AudioEdits::fadeIn) (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fadeShape),
+                   out ? "Fade Out" : "Fade In", r);
 }
 
 void MainComponent::convertChannels (int numChannels)

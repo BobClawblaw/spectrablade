@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioDocument.h"
+#include "FadeShape.h"
 
 /** Copied or cut audio. Holds references to blocks, so copying is free. */
 struct AudioClip
@@ -47,8 +48,10 @@ namespace AudioEdits
     /** Exchanges the first two channels over [start, end); with fewer than two it changes nothing. */
     Snapshot swapChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
-    Snapshot fadeIn (const AudioSnapshot&, juce::int64 start, juce::int64 end);
-    Snapshot fadeOut (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+    /** Fades [start, end) up from silence, or down to it, along the shape: the first frame of a
+        fade in is silent and its last at full level, and the other way round for a fade out. */
+    Snapshot fadeIn (const AudioSnapshot&, juce::int64 start, juce::int64 end, FadeShape = FadeShape::sCurve);
+    Snapshot fadeOut (const AudioSnapshot&, juce::int64 start, juce::int64 end, FadeShape = FadeShape::sCurve);
 
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
