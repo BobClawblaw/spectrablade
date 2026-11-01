@@ -2350,6 +2350,17 @@ int MultitrackView::addMarkersAtIntervals (juce::int64 step)
     return added;
 }
 
+int MultitrackView::regionsFromMarkers()
+{
+    auto next = *engine.session.getState();
+    const auto turned = MarkerEdits::regionsFromPoints (next.markers, next.getLength());
+
+    if (turned > 0)
+        engine.session.apply (std::move (next), "Regions from Markers");
+
+    return turned;
+}
+
 bool MultitrackView::selectRegionAtCursor()
 {
     const auto region = MarkerEdits::regionAt (engine.session.getState()->markers, cursor);

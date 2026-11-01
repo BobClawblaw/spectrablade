@@ -533,6 +533,15 @@ void runMultitrackViewTests (AudioEngine& engine)
         check (atSeconds && engine.session.getState()->markers == markersBefore,
                "view: markers at intervals through the whole session as one undo step, and undo takes them away");
 
+        // Regions from markers: the verse point runs to the end of the last clip; the chorus region stays.
+        const auto turnedInView = view.regionsFromMarkers();
+        const auto& regioned = engine.session.getState()->markers;
+        const auto verseRegion = std::find_if (regioned.begin(), regioned.end(), [] (const Marker& m) { return m.name == "Verse"; });
+        check (turnedInView == 1 && verseRegion != regioned.end() && verseRegion->start == 30000 && verseRegion->getEnd() == 144000
+                   && engine.session.getUndoDescription() == "Regions from Markers",
+               "view: regions from markers runs the last point to the end of the last clip, as one undo step");
+        engine.session.undo();
+
         // Going to a time far out of view scrolls there, keeping the zoom; one in view doesn't scroll.
         const auto viewBefore = view.getVisibleFrames();
         const auto zoomBefore = viewBefore.getLength();

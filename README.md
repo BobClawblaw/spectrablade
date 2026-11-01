@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 113: Regions from Markers**
+- Markers > Regions from Markers turns each point marker into a region running to the next point marker, or to the end (of the file, or of the session's last clip) after the last one, keeping its name and colour, as one undo step. Existing regions are left alone and don't end the new ones; a point at the very end stays a point. Together with Add Markers at Intervals and Save Each Region As (or Export Regions), a long recording can be cut into equal files.
+- Measured by the tests: points at 100, 300, 700 and 1,000 in a 1,000-frame file, with a region at 150, become regions 100 to 300, 300 to 700 (its colour kept) and 700 to 1,000, the point at the end staying a point and the region untouched. Through a real session view, the one point becomes a region to the end of the last clip as one undo step. The editor's command was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 112: Add Markers at Intervals**
 - Markers > Add Markers at Intervals asks for an interval in seconds or minutes and seconds and puts a point marker at that spacing through the selection (or the session's time selection), or the whole file or session, from its start. New markers are named in turn ("Marker 02", ...), frames that already hold a point marker are skipped, and it is one undo step. At most 1,000 are added at once; an interval that would give more, or is not a time above 0, adds nothing and says why.
 - Measured by the tests: every 100 frames through [50, 400) next to an existing marker at 150 adds three, at 50, 250 and 350, sorted and named in turn; a zero step and a range needing 1,001 are refused, and one needing exactly 1,000 adds all but the frames already taken. Through a real session view with no time selection, a one-second interval in a three-second session adds markers at 0, 1 and 2 seconds as one undo step that undo takes away. Bars and beats as an interval were not built. The editor's dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -722,6 +726,7 @@ The tests run against the real machine:
 - Save Each Region As: the open file's regions named and numbered as Export Regions does.
 - Select Region at Cursor: the innermost region, none at an end or outside, in the session view too.
 - Markers at intervals: placed, named and sorted, taken frames skipped, limits refused, one undo step in the session.
+- Regions from markers: each point to the next or the end, names and colours kept, in the session view too.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -775,4 +780,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers: Regions from Markers, turning the spans between point markers into regions
+1. Markers: Rename Markers in Sequence, giving the selected markers a typed base name and a number each

@@ -104,6 +104,7 @@ private:
     void selectBetweenMarkers();
     void selectRegionAtCursor();
     void showMarkersAtIntervals();
+    void regionsFromMarkers();
     void showGoToTime();
 
     // Effects

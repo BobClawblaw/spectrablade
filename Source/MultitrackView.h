@@ -92,6 +92,10 @@ public:
         undo step; returns how many were added (see MarkerEdits::addAtIntervals). */
     int addMarkersAtIntervals (juce::int64 step);
 
+    /** Turns the session's point markers into regions up to the next one, or the end of the last
+        clip, as one undo step; returns how many were turned (see MarkerEdits::regionsFromPoints). */
+    int regionsFromMarkers();
+
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;
     juce::uint32 getSelectedClip() const noexcept { return selectedClip; }

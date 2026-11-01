@@ -91,6 +91,19 @@ namespace
         const auto refused = MarkerEdits::addAtIntervals (scratch, { 0, 400 }, 0) == 0
                              && MarkerEdits::addAtIntervals (scratch, { 0, MarkerEdits::maxIntervalMarkers + 1 }, 1) == 0
                              && MarkerEdits::addAtIntervals (scratch, { 0, MarkerEdits::maxIntervalMarkers }, 1) == MarkerEdits::maxIntervalMarkers - 4;
+        // Regions from markers: each point to the next point (regions in between don't count), the
+        // last to the end; a point at the end stays a point; names and colours kept.
+        auto toRegions = Markers { { 100, 0, "Intro" }, { 300, 0, "Verse", 2 }, { 150, 50, "Hit" }, { 700, 0, "Coda" }, { 1000, 0, "End" } };
+        const auto turned = MarkerEdits::regionsFromPoints (toRegions, 1000);
+        juce::StringArray made;
+
+        for (auto& m : toRegions)
+            made.add (m.name + "@" + juce::String (m.start) + "+" + juce::String (m.length) + (m.colour >= 0 ? "c" + juce::String (m.colour) : juce::String()));
+
+        check (turned == 3 && made.joinIntoString (" ") == "Intro@100+200 Hit@150+50 Verse@300+400c2 Coda@700+300 End@1000+0",
+               "markers: regions from markers run each point to the next and the last to the end, keeping names and colours ("
+                   + made.joinIntoString (" ") + ")");
+
         check (added == 3 && placed.joinIntoString (" ") == "Region 01@0+1000 Marker 02@50 Marker 01@150 Marker 03@250 Marker 04@350" && refused,
                "markers: a marker every step through the range, sorted and named in turn, skipping taken frames; a zero step and too many refused ("
                    + placed.joinIntoString (" ") + ")");

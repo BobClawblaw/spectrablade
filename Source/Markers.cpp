@@ -89,6 +89,31 @@ std::optional<juce::int64> nextStop (const Markers& markers, juce::int64 from, b
     return target;
 }
 
+int regionsFromPoints (Markers& markers, juce::int64 end)
+{
+    std::vector<juce::int64> points;
+
+    for (auto& m : markers)
+        if (! m.isRegion())
+            points.push_back (m.start);
+
+    std::sort (points.begin(), points.end());
+    auto turned = 0;
+
+    for (auto& m : markers)
+    {
+        if (m.isRegion() || m.start >= end)
+            continue;
+
+        const auto next = std::upper_bound (points.begin(), points.end(), m.start);
+        m.length = (next != points.end() ? juce::jmin (*next, end) : end) - m.start;
+        ++turned;
+    }
+
+    sort (markers);
+    return turned;
+}
+
 int addAtIntervals (Markers& markers, juce::Range<juce::int64> range, juce::int64 step)
 {
     if (step <= 0 || range.isEmpty() || (range.getLength() + step - 1) / step > maxIntervalMarkers)

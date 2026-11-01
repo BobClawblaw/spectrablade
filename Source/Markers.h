@@ -49,6 +49,11 @@ namespace MarkerEdits
         regions overlap and the earliest of those of equal length; nothing when it is in none. */
     std::optional<juce::Range<juce::int64>> regionAt (const Markers&, juce::int64 frame);
 
+    /** Turns each point marker before end into a region running to the next point marker, or to
+        end after the last, keeping its name and colour; regions are left as they are. Returns how
+        many were turned. */
+    int regionsFromPoints (Markers&, juce::int64 end);
+
     /** Most markers addAtIntervals adds at once. */
     constexpr int maxIntervalMarkers = 1000;
 
