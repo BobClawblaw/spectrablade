@@ -126,7 +126,7 @@ private:
     void shortenPauses (juce::int64 keepFrames);
     void noiseGate (juce::int64 minFrames);
     void repairSelection();
-    void showFadeEdges();
+    void showFadeEdges (bool eachRegion);
     void showGainRamp();
     void showTremolo();
     void showEcho();

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 162: Fade Each Region**
+- Effects > Fade Each Region asks for a fade time (the one Fade Selection Edges last used, 10 ms to start) and fades every region of the file in at its start and out at its end, each fade at most half the region, with the fade shape chosen in Effects; the audio between regions is left alone. A region one frame long, or one overlapping a region already done, is left as it is, and it says how many were. It shares its dialog with Fade Selection Edges and its region loop with Normalize Each Region, and it is one undo step.
+- Measured by the tests: on a ramp, regions at 100–300 and 500–800 with 50-frame fades come out exactly as Fade Selection Edges makes each, frame for frame, with everything else untouched; a region overlapping the first and a one-frame region are skipped (2 counted). The dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 161: Normalize Each Region**
 - Effects > Normalize Each Region asks for a peak level (-0.1 dBFS to start) and normalizes every region of the file to it on its own, in time order, so takes marked as regions come out at even peaks; the audio between regions is left alone. A silent region, or one overlapping a region already done, is left as it is, and it says how many were. It is one undo step.
 - Measured by the tests: regions peaking at 0.25 and 0.5, normalized to 0.5, come out doubled and unchanged to within 1e-6, with everything between them and after them untouched; a region overlapping the second and a silent one are skipped (2 counted); point markers alone change nothing. The dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -966,6 +970,7 @@ The tests run against the real machine:
 - Echo: repeats every delay, each quieter by the feedback, stopping at the range's end.
 - Silence outside: everything but the range zeroed, the range bit for bit.
 - Normalize each region: each peak to the level on its own; overlapping and silent ones skipped.
+- Fade each region: each region faded as Fade Selection Edges fades it.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1019,4 +1024,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Fade Each Region, a short fade in and out at the edges of every region
+1. Editor: Select Previous Sound, stepping back through the takes as Select Next Sound steps forward

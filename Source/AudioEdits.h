@@ -220,6 +220,10 @@ namespace AudioEdits
         no region changed. */
     Snapshot normalizeRegions (const AudioSnapshot&, const Markers&, float targetDecibels, int& skipped);
 
+    /** The same with fadeEdges on each region: a fade in over its first fadeFrames and out over its
+        last, each at most half the region. */
+    Snapshot fadeRegions (const AudioSnapshot&, const Markers&, juce::int64 fadeFrames, FadeShape, int& skipped);
+
     /** Scales each channel of [start, end) on its own so its peak sits at targetDecibels; silent
         channels are left as they are. Returns nullptr when every channel is silent. */
     Snapshot normalizeChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end, float targetDecibels);

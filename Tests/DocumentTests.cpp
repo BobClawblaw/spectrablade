@@ -568,6 +568,19 @@ namespace
                    && ! AudioEdits::normalizeRegions (*rampSnap, { { 100, 0, "Point" } }, -1.0f, noneSkipped) && noneSkipped == 0,
                "normalize each region: each region's peak to the level on its own, the audio between untouched; overlapping and silent ones skipped");
 
+        auto fadeSkipped = 0;
+        const auto regionsFaded = readAll (*AudioEdits::fadeRegions (*rampSnap, { { 100, 200, "A" }, { 250, 100, "Over" }, { 500, 300, "B" }, { 900, 1, "Tiny" } },
+                                                                     50, FadeShape::linear, fadeSkipped));
+        const auto fadedA = readAll (*AudioEdits::fadeEdges (*rampSnap, 100, 300, 50, FadeShape::linear));
+        const auto fadedB = readAll (*AudioEdits::fadeEdges (*rampSnap, 500, 800, 50, FadeShape::linear));
+        auto regionFadesRight = regionsFaded.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && regionFadesRight; ++i)
+            regionFadesRight = juce::exactlyEqual (regionsFaded.getSample (0, i), i < 400 ? fadedA.getSample (0, i) : fadedB.getSample (0, i));
+
+        check (regionFadesRight && fadeSkipped == 2,
+               "fade each region: each region as Fade Selection Edges fades it, the rest untouched; overlapping and one-frame ones skipped");
+
         const auto panned = readAll (*AudioEdits::balanceRamp (*twoSnap, 100, 121, -1.0f, 1.0f));
         const auto allLeft = readAll (*AudioEdits::balance (*twoSnap, 100, 121, -1.0f));
         const auto panMiddle = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 0.0f));

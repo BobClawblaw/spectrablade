@@ -973,7 +973,10 @@ juce::Range<juce::int64> withMargins (juce::Range<juce::int64> r, juce::int64 ma
     return { juce::jmax ((juce::int64) 0, r.getStart() - margin), juce::jmin (total, r.getEnd() + margin) };
 }
 
-Snapshot normalizeRegions (const AudioSnapshot& s, const Markers& markers, float targetDecibels, int& skipped)
+// Runs `edit` on each region in time order, skipping (and counting) one that overlaps a region
+// already done or that the edit refuses.
+static Snapshot editEachRegion (const AudioSnapshot& s, const Markers& markers, int& skipped,
+                                const std::function<Snapshot (const AudioSnapshot&, juce::int64, juce::int64)>& edit)
 {
     auto regions = markers;
     regions.erase (std::remove_if (regions.begin(), regions.end(), [&s] (const Marker& m) { return ! m.isRegion() || m.start >= s.getNumFrames(); }),
@@ -985,7 +988,7 @@ Snapshot normalizeRegions (const AudioSnapshot& s, const Markers& markers, float
 
     for (const auto& m : regions)
     {
-        auto changed = m.start >= doneTo ? normalize (next != nullptr ? *next : s, m.start, m.getEnd(), targetDecibels) : nullptr;
+        auto changed = m.start >= doneTo ? edit (next != nullptr ? *next : s, m.start, m.getEnd()) : nullptr;
 
         if (changed == nullptr)
         {
@@ -998,5 +1001,17 @@ Snapshot normalizeRegions (const AudioSnapshot& s, const Markers& markers, float
     }
 
     return next;
+}
+
+Snapshot normalizeRegions (const AudioSnapshot& s, const Markers& markers, float targetDecibels, int& skipped)
+{
+    return editEachRegion (s, markers, skipped, [targetDecibels] (const AudioSnapshot& a, juce::int64 start, juce::int64 end)
+                           { return normalize (a, start, end, targetDecibels); });
+}
+
+Snapshot fadeRegions (const AudioSnapshot& s, const Markers& markers, juce::int64 fadeFrames, FadeShape shape, int& skipped)
+{
+    return editEachRegion (s, markers, skipped, [fadeFrames, shape] (const AudioSnapshot& a, juce::int64 start, juce::int64 end)
+                           { return fadeEdges (a, start, end, fadeFrames, shape); });
 }
 }
