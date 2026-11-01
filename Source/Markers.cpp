@@ -1,5 +1,7 @@
 #include "Markers.h"
 
+#include <set>
+
 namespace MarkerEdits
 {
 namespace
@@ -85,6 +87,32 @@ std::optional<juce::int64> nextStop (const Markers& markers, juce::int64 from, b
                 target = frame;
 
     return target;
+}
+
+int addAtIntervals (Markers& markers, juce::Range<juce::int64> range, juce::int64 step)
+{
+    if (step <= 0 || range.isEmpty() || (range.getLength() + step - 1) / step > maxIntervalMarkers)
+        return 0;
+
+    std::set<juce::int64> taken;
+
+    for (auto& m : markers)
+        if (! m.isRegion())
+            taken.insert (m.start);
+
+    auto added = 0;
+
+    for (auto frame = range.getStart(); frame < range.getEnd(); frame += step)
+    {
+        if (taken.count (frame) > 0)
+            continue;
+
+        markers.push_back ({ frame, 0, nextName (markers, false) });
+        ++added;
+    }
+
+    sort (markers);
+    return added;
 }
 
 std::optional<juce::Range<juce::int64>> regionAt (const Markers& markers, juce::int64 frame)

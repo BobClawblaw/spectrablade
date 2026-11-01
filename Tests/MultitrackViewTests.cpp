@@ -521,6 +521,18 @@ void runMultitrackViewTests (AudioEngine& engine)
         check (inRegion && ! view.selectRegionAtCursor() && view.getTimeSelection().isEmpty() && engine.session.getUndoDescription() == "Markers",
                "view: Select Region at Cursor selects the region the cursor is in, and nothing outside one; no edit");
 
+        // Markers at intervals over the whole session (no time selection): 0, 1 s and 2 s, one undo step.
+        const auto markersBefore = engine.session.getState()->markers;
+        const auto addedEvery = view.addMarkersAtIntervals (48000);
+        const auto& spacedMarkers = engine.session.getState()->markers;
+        const auto atSeconds = addedEvery == 3 && spacedMarkers.size() == markersBefore.size() + 3
+                               && std::count_if (spacedMarkers.begin(), spacedMarkers.end(), [] (const Marker& m)
+                                                 { return ! m.isRegion() && (m.start == 0 || m.start == 48000 || m.start == 96000); }) == 3
+                               && engine.session.getUndoDescription() == "Add 3 Markers";
+        engine.session.undo();
+        check (atSeconds && engine.session.getState()->markers == markersBefore,
+               "view: markers at intervals through the whole session as one undo step, and undo takes them away");
+
         // Going to a time far out of view scrolls there, keeping the zoom; one in view doesn't scroll.
         const auto viewBefore = view.getVisibleFrames();
         const auto zoomBefore = viewBefore.getLength();

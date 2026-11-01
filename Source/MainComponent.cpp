@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSelectRegion; ++id)
+    for (int id = cmdOpen; id <= cmdMarkersAtIntervals; ++id)
         ids.add (id);
 }
 
@@ -1231,6 +1231,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
         case cmdSelectBetweenMarkers: info.setInfo ("Select Between Markers", "Select from the marker at or before the cursor to the next one", "Markers", 0);
                             info.setActive (! doc.getMarkers().empty()); break;
+        case cmdMarkersAtIntervals: info.setInfo ("Add Markers at Intervals...", "Put a marker every so many seconds through the selection, or all of it", "Markers", 0);
+                            info.setActive (hasAudio); break;
         case cmdSelectRegion: info.setInfo ("Select Region at Cursor", "Select the region the cursor is in, the shortest where regions overlap", "Markers", 0);
                             info.setActive (std::any_of (doc.getMarkers().begin(), doc.getMarkers().end(), [] (const Marker& m) { return m.isRegion(); })); break;
         case cmdDeleteAllMarkers: info.setInfo ("Delete All Markers", "Remove every marker and region", "Markers", 0);
@@ -1281,6 +1283,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (true); break;
             case cmdPreviousMarker: case cmdNextMarker: case cmdSelectBetweenMarkers: case cmdDeleteAllMarkers:
                             info.setActive (! session.getState()->markers.empty()); break;
+            case cmdMarkersAtIntervals: info.setActive (hasClips); break;
             case cmdSelectRegion: info.setActive (std::any_of (session.getState()->markers.begin(), session.getState()->markers.end(),
                                                                [] (const Marker& m) { return m.isRegion(); })); break;
             default:        if (isEditorOnly (id)) info.setActive (false); break;
@@ -1500,6 +1503,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNextMarker: goToMarker (true); break;
         case cmdSelectBetweenMarkers: selectBetweenMarkers(); break;
         case cmdSelectRegion: selectRegionAtCursor(); break;
+        case cmdMarkersAtIntervals: showMarkersAtIntervals(); break;
         case cmdRegionFromClips: multitrack.addRegionFromSelectedClips(); break;
         case cmdUnsoloAll:  multitrack.clearAllSolos(); break;
         case cmdTrackAbove: multitrack.selectAdjacentTrack (false); break;
@@ -1567,7 +1571,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdGoToTime }); break;
-        case 6: add ({ cmdAddMarker, cmdRegionFromClips, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, 0, cmdDeleteAllMarkers }); break;
+        case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdMarkersAtIntervals, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
@@ -3504,6 +3508,47 @@ void MainComponent::selectBetweenMarkers()
 
     if (const auto span = MarkerEdits::spanAround (doc.getMarkers(), waveform.getCursor(), doc.getSnapshot()->getNumFrames()))
         waveform.setSelection (*span);
+}
+
+void MainComponent::showMarkersAtIntervals()
+{
+    auto* box = new juce::AlertWindow ("Add Markers at Intervals", "A marker every so many seconds (30) or minutes and seconds (1:30), "
+                                       "through the selection or all of it. At most " + juce::String (MarkerEdits::maxIntervalMarkers) + ".",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("step", "30");
+    box->addButton ("Add", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto rate = multitrackMode ? engine.session.getSampleRate() : engine.document.getSampleRate();
+        const auto step = TimeEntry::parse (box->getTextEditorContents ("step"), rate, nullptr);
+        auto added = 0;
+
+        if (step && *step > 0)
+        {
+            if (multitrackMode)
+            {
+                added = multitrack.addMarkersAtIntervals (*step);
+            }
+            else
+            {
+                auto& doc = engine.document;
+                auto markers = doc.getMarkers();
+                added = MarkerEdits::addAtIntervals (markers, selectionOrAll(), *step);
+
+                if (added > 0)
+                    doc.setMarkers (std::move (markers), "Add " + juce::String (added) + (added == 1 ? " Marker" : " Markers"));
+            }
+        }
+
+        if (added == 0)
+            showError ("Add Markers at Intervals", "No markers were added: the interval must be a time more than 0, give at most "
+                                                       + juce::String (MarkerEdits::maxIntervalMarkers) + " markers, and reach a frame without one.");
+    }), true);
 }
 
 void MainComponent::selectRegionAtCursor()

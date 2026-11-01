@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 112: Add Markers at Intervals**
+- Markers > Add Markers at Intervals asks for an interval in seconds or minutes and seconds and puts a point marker at that spacing through the selection (or the session's time selection), or the whole file or session, from its start. New markers are named in turn ("Marker 02", ...), frames that already hold a point marker are skipped, and it is one undo step. At most 1,000 are added at once; an interval that would give more, or is not a time above 0, adds nothing and says why.
+- Measured by the tests: every 100 frames through [50, 400) next to an existing marker at 150 adds three, at 50, 250 and 350, sorted and named in turn; a zero step and a range needing 1,001 are refused, and one needing exactly 1,000 adds all but the frames already taken. Through a real session view with no time selection, a one-second interval in a three-second session adds markers at 0, 1 and 2 seconds as one undo step that undo takes away. Bars and beats as an interval were not built. The editor's dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 111: Select Region at Cursor**
 - Markers > Select Region at Cursor selects the region the cursor is in, in the editor and in the session: from its start up to its end (a cursor exactly at the end is outside it). Where regions overlap it picks the shortest, so the innermost wins. It is not an edit. The command is on whenever there is a region.
 - Measured by the tests: among overlapping regions [50, 450), [150, 250) and [220, 240), frames 230, 200, 150 and 400 pick the innermost holding them; frames 20 and 450, and a point marker, give nothing. Through a real session view, the cursor inside a region selects it and a cursor outside every region selects nothing, with no undo step added. The editor's command and the menu were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -717,6 +721,7 @@ The tests run against the real machine:
 - Save Selection As: the selection's frames and markers, read back from the file.
 - Save Each Region As: the open file's regions named and numbered as Export Regions does.
 - Select Region at Cursor: the innermost region, none at an end or outside, in the session view too.
+- Markers at intervals: placed, named and sorted, taken frames skipped, limits refused, one undo step in the session.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -770,4 +775,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers: Add Markers at Regular Intervals, putting a marker every so many seconds (or bars) through the selection or the whole file
+1. Markers: Regions from Markers, turning the spans between point markers into regions

@@ -88,6 +88,10 @@ public:
     bool selectBetweenMarkers();
     bool selectRegionAtCursor();
 
+    /** Adds a marker every step frames through the time selection, or the whole session, as one
+        undo step; returns how many were added (see MarkerEdits::addAtIntervals). */
+    int addMarkersAtIntervals (juce::int64 step);
+
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;
     juce::uint32 getSelectedClip() const noexcept { return selectedClip; }

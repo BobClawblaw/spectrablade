@@ -78,6 +78,22 @@ namespace
                                && MarkerEdits::regionAt (spans, 150) == Span ({ 150, 250 }) && MarkerEdits::regionAt (spans, 400) == Span ({ 50, 450 });
         const auto outside = ! MarkerEdits::regionAt (spans, 20) && ! MarkerEdits::regionAt (spans, 450) && ! MarkerEdits::regionAt ({ { 5, 0, "p" } }, 5);
         check (innermost && outside, "markers: the region at a frame is the shortest holding it; none at a region's end, outside them or at a point");
+
+        // Markers at intervals: every 100 frames through [50, 400), skipping the existing one at 150.
+        auto spaced = Markers { { 150, 0, "Marker 01" }, { 0, 1000, "Region 01" } };
+        const auto added = MarkerEdits::addAtIntervals (spaced, { 50, 400 }, 100);
+        juce::StringArray placed;
+
+        for (auto& m : spaced)
+            placed.add (m.name + "@" + juce::String (m.start) + (m.isRegion() ? "+" + juce::String (m.length) : juce::String()));
+
+        Markers scratch = spaced;
+        const auto refused = MarkerEdits::addAtIntervals (scratch, { 0, 400 }, 0) == 0
+                             && MarkerEdits::addAtIntervals (scratch, { 0, MarkerEdits::maxIntervalMarkers + 1 }, 1) == 0
+                             && MarkerEdits::addAtIntervals (scratch, { 0, MarkerEdits::maxIntervalMarkers }, 1) == MarkerEdits::maxIntervalMarkers - 4;
+        check (added == 3 && placed.joinIntoString (" ") == "Region 01@0+1000 Marker 02@50 Marker 01@150 Marker 03@250 Marker 04@350" && refused,
+               "markers: a marker every step through the range, sorted and named in turn, skipping taken frames; a zero step and too many refused ("
+                   + placed.joinIntoString (" ") + ")");
     }
 
     void testUndo (AudioEngine& engine)

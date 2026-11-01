@@ -2338,6 +2338,18 @@ bool MultitrackView::selectBetweenMarkers()
     return span.has_value();
 }
 
+int MultitrackView::addMarkersAtIntervals (juce::int64 step)
+{
+    auto next = *engine.session.getState();
+    const auto range = timeSelection.isEmpty() ? juce::Range<juce::int64> (0, next.getLength()) : timeSelection;
+    const auto added = MarkerEdits::addAtIntervals (next.markers, range, step);
+
+    if (added > 0)
+        engine.session.apply (std::move (next), "Add " + juce::String (added) + (added == 1 ? " Marker" : " Markers"));
+
+    return added;
+}
+
 bool MultitrackView::selectRegionAtCursor()
 {
     const auto region = MarkerEdits::regionAt (engine.session.getState()->markers, cursor);
