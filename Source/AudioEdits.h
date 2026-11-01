@@ -43,6 +43,10 @@ namespace AudioEdits
                            const std::function<void (juce::AudioBuffer<float>&)>& process);
 
     Snapshot gain (const AudioSnapshot&, juce::int64 start, juce::int64 end, float decibels);
+
+    /** A gain that moves evenly in decibels from fromDecibels at the first frame of [start, end) to
+        toDecibels at the last. */
+    Snapshot gainRamp (const AudioSnapshot&, juce::int64 start, juce::int64 end, float fromDecibels, float toDecibels);
     Snapshot silence (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
     /** Puts frames of silence in at a frame, moving what follows later. frames must fit in an int. */

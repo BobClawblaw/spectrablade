@@ -190,6 +190,23 @@ Snapshot gain (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float
     return processRange (s, start, end, [factor] (auto& b) { b.applyGain (factor); });
 }
 
+Snapshot gainRamp (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float fromDecibels, float toDecibels)
+{
+    return processRange (s, start, end, [fromDecibels, toDecibels] (juce::AudioBuffer<float>& b)
+    {
+        const auto n = b.getNumSamples();
+        const auto step = n > 1 ? ((double) toDecibels - fromDecibels) / (n - 1) : 0.0;
+
+        for (int i = 0; i < n; ++i)
+        {
+            const auto factor = (float) std::pow (10.0, (fromDecibels + step * i) / 20.0);
+
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                b.getWritePointer (ch)[i] *= factor;
+        }
+    });
+}
+
 Snapshot silence (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (auto& b) { b.clear(); });

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 153: Gain Ramp**
+- Effects > Gain Ramp asks for a start and an end level (0 and -6 dB to start, each from -96 to +24 dB, remembered while the app runs) and changes the gain across the selection evenly in decibels, from the first level at its first frame to the second at its last, on every channel. Unlike a fade it can start or end at any level, so it can ease a section down or up by a few decibels. It is one undo step.
+- Measured by the tests: on a two-channel file of ones, a ramp from 0 to -20 dB over frames 10 to 30 gives frame 10 + k exactly the gain of -k dB to within 1e-6 (0.1 at frame 30) on both channels, and leaves every frame outside bit for bit. The dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 152: Markers to Zero Crossings**
 - Markers > Markers to Zero Crossings moves every marker of the open file, and both ends of every region, to the nearest zero crossing up to 5 ms away (the reach Selection to Zero Crossings uses), so splitting or saving at the markers doesn't click. A marker with no crossing in reach stays where it is. It says so when nothing moves, and it is one undo step.
 - Measured by the tests: on a square wave crossing every 50 frames with a reach of 20, a marker at 110 moves to 100 and a region 210+180 becomes 200+200, while a marker already on a crossing, one 25 frames from the nearest, and one past the end stay; the list stays in time order. The menu item was not tried by hand. The whole suite passed, the default-device test included.
@@ -921,6 +925,7 @@ The tests run against the real machine:
 - Delete markers in a range: those starting inside it go, the end excluded.
 - Move markers in a range: only those starting inside it, refused past either end; signed times read.
 - Markers to zero crossings: points and region ends moved to the nearest crossing in reach.
+- Gain ramp: even in decibels from the first frame to the last, the rest untouched.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -974,4 +979,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Gain Ramp, a gain that moves evenly in decibels from one level to another across the selection
+1. Effects: Pan Ramp, moving a stereo file's balance evenly from one position to another across the selection

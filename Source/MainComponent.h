@@ -127,6 +127,8 @@ private:
     void noiseGate (juce::int64 minFrames);
     void repairSelection();
     void showFadeEdges();
+    void showGainRamp();
+    float rampFromDb = 0.0f, rampToDb = -6.0f;
     void showCropMargins();
     void showMoveMarkers();
     double cropMarginSeconds = 0.5;

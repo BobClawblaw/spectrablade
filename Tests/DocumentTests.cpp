@@ -478,6 +478,23 @@ namespace
                    && ! AudioEdits::fadeEdges (*rampSnap, 200, 800, 0) && ! AudioEdits::fadeEdges (*rampSnap, 200, 201, 100),
                "fade selection edges: the same as a fade in at the start and a fade out at the end, each at most half the range; no fade refused");
 
+        juce::AudioBuffer<float> flat (2, 100);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 100; ++i)
+                flat.setSample (ch, i, 1.0f);
+
+        const auto ramped = readAll (*AudioEdits::gainRamp (*AudioEdits::fromBuffer (std::move (flat)), 10, 31, 0.0f, -20.0f));
+        auto rampRight = ramped.getNumSamples() == 100;
+
+        for (int ch = 0; ch < 2 && rampRight; ++ch)
+            for (int i = 0; i < 100 && rampRight; ++i)
+                rampRight = i < 10 || i >= 31 ? juce::exactlyEqual (ramped.getSample (ch, i), 1.0f)
+                                              : std::abs (ramped.getSample (ch, i) - std::pow (10.0f, -(float) (i - 10) / 20.0f)) < 1.0e-6f;
+
+        check (rampRight && std::abs (ramped.getSample (0, 30) - 0.1f) < 1.0e-6f && std::abs (ramped.getSample (1, 20) - std::pow (10.0f, -0.5f)) < 1.0e-6f,
+               "gain ramp: from 0 dB at the first frame to -20 dB at the last, even in decibels, on every channel; the rest untouched");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);
