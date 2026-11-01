@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 128: Loop Region**
+- Transport > Loop Region selects the region the cursor is in (the innermost, as Select Region at Cursor picks it), turns Loop Playback on and plays the region over and over from its start, in the editor or the session; if something was playing it starts again from the region. With the cursor in no region it says so. It is off while recording.
+- Not measured: the command lives in the app's command table, which is not in the test build, so only the region it picks is covered (by milestone 111's tests); playing, looping and the setting were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 127: Select Clips in Region**
 - Edit > Select Clips in Region (in the session) makes the region the cursor is in the time range and selects every clip that plays part of it, as Select Clips in Time Range does, on shown tracks only. With the cursor in no region it changes nothing. It is not an edit.
 - Measured by the tests, through a real session view: with the cursor in a region from 20,000 to 50,000 frames, the time range becomes that region and the four clips playing part of it are selected; with the cursor outside every region nothing changes. The command was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -850,4 +854,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Session: Loop Region, setting the loop to the region at the cursor and playing it
+1. Editor: Next and Previous Region, moving the selection from region to region

@@ -103,6 +103,10 @@ private:
     void goToMarker (bool forwards);
     void selectBetweenMarkers();
     void selectRegionAtCursor();
+    void loopRegion();
+
+    /** The open file's markers, or the session's while it shows. */
+    Markers markersShown() const;
     void showMarkersAtIntervals();
     void regionsFromMarkers();
     void showRenameMarkers();
