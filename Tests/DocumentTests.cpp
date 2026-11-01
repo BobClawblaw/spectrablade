@@ -284,6 +284,18 @@ namespace
                    && AudioEdits::resizeSelection ({ 5, 5 }, 1000, true) == R (5, 5),
                "resize selection: doubled from its start up to the end, halved down to one frame; an empty one stays");
 
+        // Zero crossings: a 100-frame square wave crosses at every 50th frame; ends 10 frames off
+        // move to them, an end 30 off with a reach of 20 stays.
+        juce::AudioBuffer<float> square (1, 1000);
+
+        for (int i = 0; i < 1000; ++i)
+            square.setSample (0, i, (i / 50) % 2 == 0 ? 0.5f : -0.5f);
+
+        const auto squareSnap = AudioEdits::fromBuffer (std::move (square));
+        check (AudioEdits::toZeroCrossings (squareSnap, { 110, 390 }, 20) == R (100, 400) && AudioEdits::toZeroCrossings (squareSnap, { 120, 425 }, 20) == R (100, 425)
+                   && AudioEdits::toZeroCrossings (squareSnap, { 5, 5 }, 20) == R (5, 5),
+               "selection to zero crossings: each end to the nearest crossing in reach, one with none in reach left; an empty one stays");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

@@ -100,6 +100,11 @@ namespace AudioEdits
         from the same start; the same range when it is empty. */
     juce::Range<juce::int64> resizeSelection (juce::Range<juce::int64>, juce::int64 total, bool longer);
 
+    /** The range with each end moved to the nearest zero crossing of the channels' sum at most
+        `within` frames away (as a session's Cut at Zero Crossings finds them); an end with none
+        nearby stays, and the range is kept from turning inside out. */
+    juce::Range<juce::int64> toZeroCrossings (Snapshot, juce::Range<juce::int64>, juce::int64 within);
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

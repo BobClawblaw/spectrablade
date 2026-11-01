@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 135: Selection to Zero Crossings**
+- Edit > Selection to Zero Crossings moves each end of the editor's selection to the nearest zero crossing of the channels' sum, up to 5 ms away, using the same search as the session's Cut at Zero Crossings, so a cut or paste of it doesn't click. An end with no crossing that near stays where it is.
+- Measured by the tests: on a square wave crossing zero every 50 frames, a selection from 110 to 390 becomes exactly 100 to 400; with an end 25 frames from the nearest crossings and a reach of 20, that end stays; an empty selection doesn't change. The command was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 134: Double and Halve Selection**
 - Edit > Double Selection (Alt Shift Up) and Halve Selection (Alt Shift Down) make the editor's selection twice or half as long, keeping its start: doubling stops at the end of the file, halving at one frame. With Step Selection, a loop length can be found by ear and stepped through.
 - Measured by the tests: a 200-frame selection at 100 doubles to 100 to 500 and halves to 100 to 200; one at 700 doubles only to the file's end at 1,000; a one-frame selection stays one frame; an empty one doesn't change. The keys and commands were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -831,6 +835,7 @@ The tests run against the real machine:
 - Copy selection time: start, end and length as text Go to Time reads back.
 - Step selection: by its own length, stopping at the ends.
 - Double and halve selection: from its start, to the end or down to one frame.
+- Selection to zero crossings: each end to the nearest crossing in reach, others left.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -884,4 +889,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Selection to Zero Crossings, moving both ends of the selection to the nearest zero crossings
+1. Editor: Crossfade Loop, blending the selection's end into its start so it loops without a click

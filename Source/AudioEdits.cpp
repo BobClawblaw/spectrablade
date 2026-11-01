@@ -562,4 +562,18 @@ juce::Range<juce::int64> resizeSelection (juce::Range<juce::int64> range, juce::
     const auto length = longer ? juce::jmin (total - range.getStart(), range.getLength() * 2) : juce::jmax ((juce::int64) 1, range.getLength() / 2);
     return range.withLength (length);
 }
+
+juce::Range<juce::int64> toZeroCrossings (Snapshot s, juce::Range<juce::int64> range, juce::int64 within)
+{
+    if (s == nullptr || range.isEmpty())
+        return range;
+
+    // The file as a clip at frame 0, so the session's search runs on it unchanged.
+    SessionClip whole;
+    whole.audio = std::move (s);
+    whole.length = whole.audio->getNumFrames();
+    const auto start = SessionEdits::zeroCrossingNear (whole, range.getStart(), within);
+    const auto end = SessionEdits::zeroCrossingNear (whole, range.getEnd(), within);
+    return end > start ? juce::Range<juce::int64> (start, end) : range;
+}
 }
