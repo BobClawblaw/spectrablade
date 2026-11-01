@@ -829,6 +829,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasClips); break;
             case cmdShowWaveform: case cmdShowSpectrogram: case cmdShowBoth:
                             info.setTicked (false); break;
+            case cmdGain:   info.shortName = "Clip Gain..."; info.description = "Set the selected clip's gain";
+                            info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdNormalize: info.shortName = "Normalize Clip..."; info.description = "Set the selected clip's gain from its peak level";
+                            info.setActive (multitrack.getSelectedClip() != 0); break;
             case cmdAddMarker: info.shortName = multitrack.getTimeSelection().isEmpty() ? "Add Marker" : "Add Region";
                             info.setActive (true); break;
             case cmdPreviousMarker: case cmdNextMarker: case cmdDeleteAllMarkers:
@@ -1939,6 +1943,26 @@ void MainComponent::askForDecibels (const juce::String& title, const juce::Strin
 
 void MainComponent::applyGain()
 {
+    if (multitrackMode)
+    {
+        const auto state = engine.session.getState();
+        const auto where = state->findClip (multitrack.getSelectedClip());
+
+        if (! where.has_value())
+            return;
+
+        const auto clipId = multitrack.getSelectedClip();
+        askForDecibels ("Clip Gain", "Gain (dB, " + juce::String ((int) SessionClip::minGainDb) + " to +" + juce::String ((int) SessionClip::maxGainDb) + ")",
+                        state->tracks[(size_t) where->first].clips[(size_t) where->second].gainDb, [this, clipId] (float db)
+        {
+            auto next = *engine.session.getState();
+
+            if (SessionEdits::setClipGain (next, clipId, db))
+                engine.session.apply (std::move (next), "Clip Gain");
+        });
+        return;
+    }
+
     askForDecibels ("Gain", "Gain (dB)", 0.0f, [this] (float db)
     {
         const auto r = selectionOrAll();
@@ -1949,6 +1973,24 @@ void MainComponent::applyGain()
 
 void MainComponent::applyNormalize()
 {
+    if (multitrackMode)
+    {
+        const auto clipId = multitrack.getSelectedClip();
+        askForDecibels ("Normalize Clip", "Peak level (dBFS)", -0.1f, [this, clipId] (float db)
+        {
+            auto next = *engine.session.getState();
+
+            if (! next.findClip (clipId).has_value())
+                return;
+
+            if (SessionEdits::normalizeClip (next, clipId, juce::jmin (db, 0.0f)))
+                engine.session.apply (std::move (next), "Normalize Clip");
+            else
+                showError ("Normalize Clip", "The clip is silent.");
+        });
+        return;
+    }
+
     askForDecibels ("Normalize", "Peak level (dBFS)", -0.1f, [this] (float db)
     {
         const auto r = selectionOrAll();

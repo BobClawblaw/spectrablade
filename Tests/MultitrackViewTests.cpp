@@ -490,6 +490,71 @@ void runMultitrackViewTests (AudioEngine& engine)
                "markers: the next stop is the nearest marker or region edge in that direction");
     }
 
+    // Clip gain: normalizing to the peak of the part a clip plays, its limits, and Command-dragging.
+    {
+        // Two channels of a slow sine, with a louder spike outside the part the clip plays.
+        juce::AudioBuffer<float> b (2, 96000);
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            b.setSample (0, i, 0.3f * std::sin ((float) i * 0.001f));
+            b.setSample (1, i, -0.45f * std::sin ((float) i * 0.0007f + 0.2f));
+        }
+
+        b.setSample (0, 100, 0.99f);
+        std::vector<AudioSnapshot::Segment> segments { { std::make_shared<const AudioBlock> (juce::AudioBuffer<float> (b)), 0, 96000 } };
+        auto audio = std::make_shared<const AudioSnapshot> (2, std::move (segments));
+
+        SessionState gained;
+        gained.sampleRate = rate;
+        gained.addTrack();
+        const auto id = SessionEdits::addClip (gained, 0, juce::File ("/tmp/gain.wav"), audio, 48000);
+        SessionEdits::trimClip (gained, id, 48000 + 1000, 48000 + 96000);
+
+        auto peak = 0.0f;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 1000; i < 96000; ++i)
+                peak = juce::jmax (peak, std::abs (b.getSample (ch, i)));
+
+        auto normalized = gained;
+        const auto changed = SessionEdits::normalizeClip (normalized, id, -1.0f);
+        const auto& c = normalized.tracks[0].clips[0];
+        const auto normalGain = -1.0f - juce::Decibels::gainToDecibels (peak, -1000.0f);
+        check (changed && juce::exactlyEqual (c.gainDb, normalGain) && normalGain > 5.9f && normalGain < 6.0f,
+               "clip gain: normalizing sets the gain from the loudest sample the clip plays, not what it leaves out ("
+                   + juce::String (c.gainDb, 3) + " dB)");
+
+        auto silent = gained;
+        silent.tracks[0].clips[0].audio = silence (96000);
+        auto limited = gained;
+        SessionEdits::setClipGain (limited, id, 40.0f);
+        const auto high = limited.tracks[0].clips[0].gainDb;
+        SessionEdits::setClipGain (limited, id, -200.0f);
+        check (! SessionEdits::normalizeClip (silent, id, 0.0f) && juce::exactlyEqual (silent.tracks[0].clips[0].gainDb, 0.0f)
+                   && juce::exactlyEqual (high, SessionClip::maxGainDb) && juce::exactlyEqual (limited.tracks[0].clips[0].gainDb, SessionClip::minGainDb)
+                   && ! SessionEdits::setClipGain (limited, 9999, 1.0f),
+               "clip gain: a silent clip is left alone, and the gain stays within its limits");
+
+        // Command-dragged 20 px up and then 8 px down from where it started: +5 dB, then -2 dB.
+        engine.session.reset (gained, {});
+        Mouse::settle();
+        const auto at = juce::Point<float> (x (100000), bodyY);
+        mouse.drag (at, at.translated (0.0f, -20.0f), juce::ModifierKeys::commandModifier);
+        const auto up = engine.session.getState()->tracks[0].clips[0].gainDb;
+        const auto upDescription = engine.session.getUndoDescription();
+        const auto upPosition = engine.session.getState()->tracks[0].clips[0].position;
+        engine.session.undo();
+        Mouse::settle();
+        mouse.drag (at, at.translated (30.0f, 8.0f), juce::ModifierKeys::commandModifier);
+        const auto down = engine.session.getState()->tracks[0].clips[0];
+        check (juce::exactlyEqual (up, 5.0f) && upDescription == "Clip Gain" && upPosition == 49000 && juce::exactlyEqual (down.gainDb, -2.0f)
+                   && down.position == 49000
+                   && mouse.cursorAt (at) == juce::MouseCursor::DraggingHandCursor,
+               "view: Command-dragging a clip up or down changes its gain by 0.25 dB a pixel, without moving it ("
+                   + juce::String (up, 2) + ", " + juce::String (down.gainDb, 2) + ")");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

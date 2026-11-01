@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 27: clip gain**
+- Command-drag a clip up or down to change its gain, 0.25 dB a pixel in steps of 0.1 dB, from -60 to +24 dB; the clip stays where it is. The waveform follows the gain, and a clip's title shows it when it isn't 0 dB ("+3.5 dB"). Each drag is one undo step ("Clip Gain").
+- While the session is showing, the Effects menu's first two items work on the selected clip: Clip Gain... types in its gain, and Normalize Clip... sets the gain so that the loudest sample of the part the clip plays reaches a peak level (-0.1 dBFS unless you change it). Neither touches the clip's file.
+- Measured by the tests: normalizing a trimmed stereo clip to -1 dBFS gives exactly the gain a brute-force scan of the part it plays calls for, ignoring a louder sample trimmed off; a silent clip is left alone; the gain stays within its limits. Through the real view, a clip Command-dragged 20 pixels up gets +5 dB as "Clip Gain", and 8 pixels down while moving sideways -2 dB, without moving. The two menu items and their dialogs were not run by the tests, and none of it was tried by hand.
+
 **Milestone 26: markers in sessions**
 - Sessions have markers and regions, as files do, shown in a lane under the multitrack ruler with a line down through the tracks. The Markers menu works on the session while it is showing: Add Marker (M) marks the play position while playing or recording, otherwise the cursor, or makes a region of the time range; Previous and Next Marker (Option Left and Right) move the cursor to the nearest marker or region edge; Delete All Markers removes them. Adding and deleting are undo steps.
 - In the lane, click a marker to move the cursor to it, or a region to select its range; drag one to move it; double-click to rename it; right-click to rename or delete it.
@@ -244,6 +249,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- Clip gain: normalizing against a brute-force peak, its limits, and Command-dragging a clip in the view.
 - Session markers: adding, going to, clicking and dragging them in the view, snapping to and with them, and session files.
 - The mixer window: track and bus peaks measured as the session mixes, and the strips editing the session (volume, pan, mute, solo, undo, automated tracks, meters).
 - The metronome: the beat grid and click, clicks through the real player (on, during a count-in, through a loop, at another device rate) bit for bit, snapping to beats and bars, and the tempo in session files.
@@ -288,4 +294,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: normalizing a clip and a clip gain handle, to set its level by dragging
+1. Multitrack, continued: duplicating clips and copying and pasting them between tracks

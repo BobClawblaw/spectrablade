@@ -398,6 +398,38 @@ bool crossfade (SessionState& s, juce::uint32 clipId)
     return changed;
 }
 
+bool setClipGain (SessionState& s, juce::uint32 clipId, float gainDb)
+{
+    auto* c = find (s, clipId);
+
+    if (c == nullptr)
+        return false;
+
+    c->gainDb = juce::jlimit (SessionClip::minGainDb, SessionClip::maxGainDb, gainDb);
+    return true;
+}
+
+bool normalizeClip (SessionState& s, juce::uint32 clipId, float peakDb)
+{
+    auto* c = find (s, clipId);
+
+    if (c == nullptr || c->audio == nullptr)
+        return false;
+
+    auto peak = 0.0f;
+
+    for (int ch = 0; ch < c->audio->getNumChannels(); ++ch)
+    {
+        const auto range = c->audio->getPeak (ch, c->offset, c->offset + c->length);
+        peak = juce::jmax (peak, std::abs (range.getStart()), std::abs (range.getEnd()));
+    }
+
+    if (peak <= 0.0f)
+        return false;
+
+    return setClipGain (s, clipId, peakDb - juce::Decibels::gainToDecibels (peak, -1000.0f));
+}
+
 bool setClipFades (SessionState& s, juce::uint32 clipId, juce::int64 fadeIn, juce::int64 fadeOut)
 {
     auto* c = find (s, clipId);

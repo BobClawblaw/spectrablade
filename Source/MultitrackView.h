@@ -6,7 +6,7 @@
     pan, and on tracks their sends) and the tracks' clips with their waveforms. Drag a clip to
     move it (onto another track, or below the last for a new one); drag its edges to trim it, and
     the handles at its top corners to set its fades; double-click it to open its file in the
-    editor; right-click it to choose among its takes. Click to place the cursor, drag across the
+    editor; right-click it to choose among its takes; Command-drag it up or down to change its gain. Click to place the cursor, drag across the
     timeline to select a time range; drop audio files to add them as clips. A track's R button
     arms it for recording.
 
@@ -134,6 +134,9 @@ public:
     bool isInterestedInFileDrag (const juce::StringArray&) override;
     void filesDropped (const juce::StringArray&, int x, int y) override;
 
+    /** How much a clip's gain changes for each pixel it is Command-dragged. */
+    static constexpr float clipGainPerPixel = 0.25f;
+
     static constexpr int headerWidth = 220, timeRulerHeight = 24, markerLaneHeight = 16,
                          rulerHeight = timeRulerHeight + markerLaneHeight, trackHeight = 104;
 
@@ -141,7 +144,7 @@ private:
     class TrackHeader;
     class SendsPanel;
 
-    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker };
+    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain };
 
     /** A point of a shown envelope, or a place on its line. */
     struct EnvelopeHit

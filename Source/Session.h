@@ -13,8 +13,10 @@ struct SessionClip
     juce::int64 position = 0;              // session frame where the clip starts
     juce::int64 offset = 0;                // first frame of the audio it plays
     juce::int64 length = 0;                // frames it plays
-    float gainDb = 0.0f;
+    float gainDb = 0.0f;                   // from minGainDb to maxGainDb
     juce::int64 fadeIn = 0, fadeOut = 0;   // frames, raised-cosine
+
+    static constexpr float minGainDb = -60.0f, maxGainDb = 24.0f;
 
     /** Other recordings of the same stretch (loop recording's passes), one of them in use. A
         take's audio is read `shift` frames on from where take 0's would be, so trims and splits
@@ -211,6 +213,13 @@ namespace SessionEdits
     /** Splits a clip in two at a session frame strictly inside it. The first part keeps the fade
         in, the second the fade out. */
     bool splitClip (SessionState&, juce::uint32 clipId, juce::int64 frame);
+
+    /** Sets a clip's gain, limited to SessionClip::minGainDb to maxGainDb. */
+    bool setClipGain (SessionState&, juce::uint32 clipId, float gainDb);
+
+    /** Sets a clip's gain so that the loudest sample of the audio it plays reaches peakDb (within
+        the gain's limits). False, changing nothing, when that audio is silent. */
+    bool normalizeClip (SessionState&, juce::uint32 clipId, float peakDb);
 
     /** Sets a clip's fade lengths in frames. The fade in is limited to the clip's length and the
         fade out to what the fade in leaves. */

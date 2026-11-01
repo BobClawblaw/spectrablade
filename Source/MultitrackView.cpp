@@ -1319,8 +1319,11 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
     g.fillRect (title);
     g.setColour (juce::Colours::white);
     g.setFont (12.0f);
-    const auto name = c.takes.size() > 1 ? c.name + "  (take " + juce::String (c.activeTake + 1) + " of " + juce::String ((int) c.takes.size()) + ")"
-                                          : c.name;
+    auto name = c.takes.size() > 1 ? c.name + "  (take " + juce::String (c.activeTake + 1) + " of " + juce::String ((int) c.takes.size()) + ")"
+                                    : c.name;
+
+    if (! juce::exactlyEqual (c.gainDb, 0.0f))
+        name << "  " << (c.gainDb > 0.0f ? "+" : "") << juce::String (c.gainDb, 1) << " dB";
     g.drawText (name, title.withTrimmedLeft (12).withTrimmedRight (10), juce::Justification::centredLeft, true);   // clear of the fade handles
 
     // Waveform: one peak per pixel column, each channel in its own band.
@@ -1962,14 +1965,14 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         dragClip = clip;
         dragTrack = hit->first;
         dragFrame = frameForX ((float) p.x);
-        drag = fadeHandleAt (p, hit->first, clip);
+        drag = e.mods.isCommandDown() ? Drag::clipGain : fadeHandleAt (p, hit->first, clip);
 
         if (drag == Drag::none)
             drag = p.x <= r.getX() + edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimStart
                  : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimEnd
                  : Drag::move;
 
-        dragDescription = drag == Drag::move ? "Move Clip" : drag == Drag::fadeIn ? "Clip Fade In"
+        dragDescription = drag == Drag::move ? "Move Clip" : drag == Drag::clipGain ? "Clip Gain" : drag == Drag::fadeIn ? "Clip Fade In"
                         : drag == Drag::fadeOut ? "Clip Fade Out" : "Trim Clip";
         selectTrack (hit->first);
         return;
@@ -2038,6 +2041,13 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
             SessionEdits::setEnvelope (next, next.tracks[(size_t) dragEnvelope.track].id, dragEnvelope.parameter, std::move (envelope));
             break;
         }
+        case Drag::clipGain:
+        {
+            // Up is louder, in steps of 0.1 dB.
+            const auto change = (float) (e.getMouseDownY() - p.y) * clipGainPerPixel;
+            SessionEdits::setClipGain (next, dragClip.id, std::round ((dragClip.gainDb + change) * 10.0f) / 10.0f);
+            break;
+        }
         case Drag::marker:
         {
             if (! juce::isPositiveAndBelow (dragMarker, (int) next.markers.size()))
@@ -2102,7 +2112,8 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
         const auto r = clipBounds (hit->first, clip);
-        cursorShape = fadeHandleAt (p, hit->first, clip) != Drag::none
+        cursorShape = e.mods.isCommandDown() ? juce::MouseCursor::UpDownResizeCursor
+                    : fadeHandleAt (p, hit->first, clip) != Drag::none
                           || (r.getWidth() > 3 * edgeGrab && (p.x <= r.getX() + edgeGrab || p.x >= r.getRight() - edgeGrab))
                           ? juce::MouseCursor::LeftRightResizeCursor
                           : juce::MouseCursor::DraggingHandCursor;
