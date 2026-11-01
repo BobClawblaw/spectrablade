@@ -97,7 +97,9 @@ public:
         gain.onValueChange = [this]
         {
             const auto db = (float) gain.getValue();
-            view.editTrack (trackId, "Track Volume", true, [db] (SessionTrack& t) { t.gainDb = db; });
+
+            if (! controlChanged (AutomationParameter::volume, db))
+                view.editTrack (trackId, "Track Volume", true, [db] (SessionTrack& t) { t.gainDb = db; });
         };
 
         pan.setRange (-100.0, 100.0, 1.0);
@@ -111,17 +113,47 @@ public:
         pan.onValueChange = [this]
         {
             const auto p = (float) pan.getValue() / 100.0f;
-            view.editTrack (trackId, "Track Pan", true, [p] (SessionTrack& t) { t.pan = p; });
+
+            if (! controlChanged (AutomationParameter::pan, p))
+                view.editTrack (trackId, "Track Pan", true, [p] (SessionTrack& t) { t.pan = p; });
         };
 
         for (auto* s : { &gain, &pan })
         {
             s->setSliderStyle (juce::Slider::LinearBar);
             s->setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
+            s->onDragEnd = [this]
+            {
+                view.finishAutomationPass();
+                view.rebuildHeaders();   // an automated control that wrote nothing goes back to its envelope
+            };
         }
 
         for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &arm, &mute, &solo, &gain, &pan, &sendsButton, &automationButton })
             addAndMakeVisible (c);
+    }
+
+    /** A control moved. While automation is being written and the session plays, it records
+        into the envelope; an automated control does nothing otherwise. False to edit the setting. */
+    bool controlChanged (AutomationParameter p, float value)
+    {
+        auto& player = view.engine.getPlayer();
+        const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session;
+
+        if (view.isAutomationPassUnderWay (trackId, p))
+        {
+            view.continueAutomationPass (player.getPositionFrames(), value);
+            return true;
+        }
+
+        if (view.isWritingAutomation() && playing)
+        {
+            view.startAutomationPass (trackId, p, player.getPositionFrames(), value);
+            return true;
+        }
+
+        const auto* t = view.shown().findTrack (trackId);
+        return t != nullptr && ! t->envelope (p).isEmpty();
     }
 
     void update (const SessionTrack& t, int index, bool selected)
@@ -156,16 +188,20 @@ public:
         // An automated volume or pan follows its envelope; the control shows its value at the cursor.
         const auto volumeAutomated = ! t.volumeEnvelope.isEmpty(), panAutomated = ! t.panEnvelope.isEmpty();
         automationButton.setToggleState (volumeAutomated || panAutomated, juce::dontSendNotification);
-        gain.setEnabled (! volumeAutomated);
-        pan.setEnabled (! panAutomated);
-        gain.setTooltip (volumeAutomated ? "Volume follows its envelope (shown at the cursor; A to edit it)" : "Track volume");
-        pan.setTooltip (panAutomated ? "Pan follows its envelope (shown at the cursor; A to edit it)" : "Pan");
+        const auto writing = view.isWritingAutomation();
+        gain.setEnabled (! volumeAutomated || writing);
+        pan.setEnabled (! panAutomated || writing);
+        const juce::String automatedTip = writing ? " follows its envelope; drag while playing to write it" : " follows its envelope (A to edit it)";
+        gain.setTooltip (volumeAutomated ? "Volume" + automatedTip : writing ? "Track volume; drag while playing to write automation" : "Track volume");
+        pan.setTooltip (panAutomated ? "Pan" + automatedTip : writing ? "Pan; drag while playing to write automation" : "Pan");
+
+        const auto frame = view.controlFrame();
 
         if (! gain.isMouseButtonDown())
-            gain.setValue (t.valueAt (AutomationParameter::volume, view.cursor), juce::dontSendNotification);
+            gain.setValue (t.valueAt (AutomationParameter::volume, frame), juce::dontSendNotification);
 
         if (! pan.isMouseButtonDown())
-            pan.setValue (std::round (t.valueAt (AutomationParameter::pan, view.cursor) * 100.0f), juce::dontSendNotification);
+            pan.setValue (std::round (t.valueAt (AutomationParameter::pan, frame) * 100.0f), juce::dontSendNotification);
 
         repaint();
     }
@@ -589,8 +625,102 @@ void MultitrackView::timerCallback()
         if (x > (float) area.getRight() - 20.0f)
             setView ((double) engine.getPlayer().getPositionFrames() - 20.0 * framesPerPixel, framesPerPixel);
 
+        // A control held still keeps writing its value as the play position moves on.
+        if (pass.has_value() && ! pass->points.empty())
+            continueAutomationPass (engine.getPlayer().getPositionFrames(), pass->points.back().value);
+
+        // Automated controls show their envelope's value as it plays.
+        controlsFollowPlay = std::any_of (shown().tracks.begin(), shown().tracks.end(),
+                                          [] (auto& t) { return ! t.volumeEnvelope.isEmpty() || ! t.panEnvelope.isEmpty(); });
+
+        if (controlsFollowPlay)
+            rebuildHeaders();
+
         repaint();
     }
+    else
+    {
+        finishAutomationPass();
+
+        if (std::exchange (controlsFollowPlay, false))
+            rebuildHeaders();   // back to the cursor's values
+    }
+}
+
+juce::int64 MultitrackView::controlFrame() const
+{
+    auto& player = engine.getPlayer();
+    return player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session ? player.getPositionFrames() : cursor;
+}
+
+void MultitrackView::setWritingAutomation (bool on)
+{
+    if (! on)
+        finishAutomationPass();
+
+    writingAutomation = on;
+    rebuildHeaders();
+}
+
+void MultitrackView::startAutomationPass (juce::uint32 trackId, AutomationParameter p, juce::int64 frame, float value)
+{
+    finishAutomationPass();
+
+    const auto current = engine.session.getState();
+
+    if (current->findTrack (trackId) == nullptr)
+        return;
+
+    pass = AutomationPass { trackId, p, *current, { { juce::jmax ((juce::int64) 0, frame), value } } };
+    applyAutomationPass (true);
+}
+
+void MultitrackView::continueAutomationPass (juce::int64 frame, float value)
+{
+    if (! pass.has_value())
+        return;
+
+    auto& points = pass->points;
+
+    if (frame < points.back().frame)
+    {
+        finishAutomationPass();
+        return;
+    }
+
+    const auto held = points.size() >= 2 && juce::exactlyEqual (points[points.size() - 2].value, points.back().value)
+                      && juce::exactlyEqual (points.back().value, value);
+
+    if (frame == points.back().frame || held)
+    {
+        // The same frame, or a value held still: the last point moves rather than adding one.
+        if (frame == points.back().frame && juce::exactlyEqual (points.back().value, value))
+            return;
+
+        points.back() = { frame, value };
+    }
+    else
+    {
+        points.push_back ({ frame, value });
+    }
+
+    applyAutomationPass (false);
+}
+
+void MultitrackView::finishAutomationPass()
+{
+    pass.reset();
+}
+
+void MultitrackView::applyAutomationPass (bool first)
+{
+    auto next = pass->base;
+    const auto returnFrames = (juce::int64) std::llround (returnSeconds * next.sampleRate);
+    SessionEdits::writeAutomation (next, pass->trackId, pass->parameter, pass->points, returnFrames);
+
+    // The first write is a step of its own; the rest of the pass merges into it.
+    engine.session.apply (std::move (next), pass->parameter == AutomationParameter::volume ? "Write Volume Automation"
+                                                                                           : "Write Pan Automation", ! first);
 }
 
 void MultitrackView::rebuildHeaders()

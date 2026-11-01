@@ -173,6 +173,40 @@ void runMultitrackViewTests (AudioEngine& engine)
     check (engine.session.getState()->tracks[0].volumeEnvelope.isEmpty() && engine.session.getUndoDescription() == "Delete Envelope Point",
            "view: Option-click deletes the point");
 
+    // Writing automation: a pass as the play position moves, with the control moved, held and
+    // moved again. It is one undo step, and a value held still makes no extra points.
+    view.setWritingAutomation (true);
+    view.startAutomationPass (trackId, AutomationParameter::volume, 50000, 0.0f);
+    view.continueAutomationPass (60000, -10.0f);
+    view.continueAutomationPass (60000, -12.0f);
+    view.continueAutomationPass (70000, -12.0f);
+    view.continueAutomationPass (80000, -12.0f);
+    view.continueAutomationPass (90000, -3.0f);
+    view.finishAutomationPass();
+    Mouse::settle();
+    const auto volumePoints = [&]
+    {
+        points = engine.session.getState()->tracks[0].volumeEnvelope.points;
+        return points;
+    };
+    const std::vector<AutomationPoint> wanted { { 50000, 0.0f }, { 50000, 0.0f }, { 60000, -12.0f }, { 80000, -12.0f }, { 90000, -3.0f }, { 94800, 0.0f } };
+    check (volumePoints() == wanted && engine.session.getUndoDescription() == "Write Volume Automation",
+           "view: a pass of automation is written as the play position moves (" + juce::String ((int) points.size()) + " points, 6 wanted)");
+
+    view.startAutomationPass (trackId, AutomationParameter::volume, 120000, -6.0f);
+    view.continueAutomationPass (130000, -6.0f);
+    view.continueAutomationPass (125000, 6.0f);   // playback jumped back: the pass ends
+    check (! view.isAutomationPassUnderWay (trackId, AutomationParameter::volume) && volumePoints().size() == 10,
+           "view: a second pass adds to the envelope, and a jump back in time ends it");
+
+    engine.session.undo();
+    Mouse::settle();
+    check (volumePoints() == wanted, "view: undo takes off the second pass alone");
+    engine.session.undo();
+    Mouse::settle();
+    check (volumePoints().empty(), "view: undo takes off the first pass in one step");
+    view.setWritingAutomation (false);
+
     // Drawing with fades, handles and both envelopes shown must not fail.
     SessionEdits::setEnvelope (initial, trackId, AutomationParameter::pan, { { { 0, -1.0f }, { 300000, 1.0f } } });
     engine.session.apply (initial, "Pan Envelope");

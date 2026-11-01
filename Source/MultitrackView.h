@@ -60,6 +60,24 @@ public:
     bool isCrossfading() const noexcept           { return crossfading; }
     void setCrossfading (bool on)                 { crossfading = on; }
 
+    /** With automation writing on, a track's volume or pan control stays live while playing,
+        even when automated: dragging it records a pass into its envelope (startAutomationPass to
+        finishAutomationPass), heard as it is written and undone as one step. */
+    bool isWritingAutomation() const noexcept     { return writingAutomation; }
+    void setWritingAutomation (bool);
+
+    /** A pass of automation: the control's value at play positions as it moves. Each call puts
+        the pass so far into the session; when the pass ends, the envelope goes back to what it
+        had over returnSeconds. A position before the last ends the pass (playback jumped). */
+    static constexpr double returnSeconds = 0.1;
+    void startAutomationPass (juce::uint32 trackId, AutomationParameter, juce::int64 frame, float value);
+    void continueAutomationPass (juce::int64 frame, float value);
+    void finishAutomationPass();
+    bool isAutomationPassUnderWay (juce::uint32 trackId, AutomationParameter p) const noexcept
+    {
+        return pass.has_value() && pass->trackId == trackId && pass->parameter == p;
+    }
+
     /** The envelope shown over a track's lane, if any. */
     std::optional<AutomationParameter> getShownEnvelope (juce::uint32 trackId) const;
     void showEnvelope (juce::uint32 trackId, std::optional<AutomationParameter>);
@@ -161,7 +179,23 @@ private:
     Envelope dragEnvelopeBase;             // its envelope, with the point, as the drag began
     juce::String dragDescription;          // the undo step a drag makes
 
-    bool snapping = true, crossfading = true;
+    bool snapping = true, crossfading = true, writingAutomation = false;
+
+    struct AutomationPass
+    {
+        juce::uint32 trackId = 0;
+        AutomationParameter parameter = AutomationParameter::volume;
+        SessionState base;                 // the session as the pass began
+        std::vector<AutomationPoint> points;
+    };
+
+    std::optional<AutomationPass> pass;
+    bool controlsFollowPlay = false;
+    void applyAutomationPass (bool first);
+
+    /** Where automated controls show their envelope's value: the play position while the session
+        plays, otherwise the cursor. */
+    juce::int64 controlFrame() const;
     std::map<juce::uint32, AutomationParameter> shownEnvelopes;
 
     juce::Component headerArea;

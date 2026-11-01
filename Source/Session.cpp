@@ -483,6 +483,33 @@ bool setEnvelope (SessionState& s, juce::uint32 trackId, AutomationParameter p, 
 
     return false;
 }
+
+bool writeAutomation (SessionState& s, juce::uint32 trackId, AutomationParameter p,
+                      const std::vector<AutomationPoint>& pass, juce::int64 returnFrames)
+{
+    const auto* found = s.findTrack (trackId);
+
+    if (found == nullptr || pass.empty())
+        return false;
+
+    const auto old = *found;
+    const auto start = pass.front().frame, back = pass.back().frame + juce::jmax ((juce::int64) 0, returnFrames);
+    Envelope e;
+
+    for (auto& point : old.envelope (p).points)
+        if (point.frame < start)
+            e.points.push_back (point);
+
+    e.points.push_back ({ start, old.valueAt (p, start) });
+    e.points.insert (e.points.end(), pass.begin(), pass.end());
+    e.points.push_back ({ back, old.valueAt (p, back) });
+
+    for (auto& point : old.envelope (p).points)
+        if (point.frame > back)
+            e.points.push_back (point);
+
+    return setEnvelope (s, trackId, p, std::move (e));
+}
 }
 
 //==============================================================================

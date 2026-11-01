@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 17: writing automation while playing**
+- Multitrack > Write Automation (W) turns writing on. While the session plays, dragging a track's or bus's volume or pan control writes what you do into its envelope, and you hear it as it is written. Held still, the control keeps writing its value as playback moves on. When you let go, the envelope goes back to what it had over 0.1 s, so the rest of it is untouched. On a track with no envelope yet, its setting holds before and after the pass.
+- With writing on, automated controls stay live, and while the session plays every automated control shows its envelope's value at the play position. Each pass is one undo step. A pass ends when you let go, when playback stops, or when it jumps back in time.
+- Points land at the player's position when the control moves, without allowing for the audio interface's output latency, so a pass sits that much earlier than what was heard when it was made.
+- Measured by the tests: over a ramp, the envelope outside a pass and its return is unchanged (worst 0.0000038 dB, float rounding of the new interpolation). Through the real view: a pass with the control moved, held and moved again makes exactly the points expected (a held value moves its last point instead of adding more), a second pass adds to the envelope as its own undo step, and a jump back ends a pass. The controls' wiring to the player was not tested by hand in the running app.
+
 **Milestone 16: crossfades between overlapping clips**
 - Move or trim a clip so that it partly overlaps another on its track and the two crossfade: the later clip fades in and the earlier fades out across exactly the overlap, as raised-cosine curves whose sum stays at the clips' level (to within a frame's offset, below). A clip overlapping clips on both sides crossfades with each. Clips wholly inside another are left alone, as are the fades of clips that stop overlapping. The crossfade comes with the move or trim as one undo step, and both curves are drawn across the overlap.
 - Multitrack > Crossfade Overlaps (X) turns this off and on; it is on by default and remembered.
@@ -24,7 +30,7 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - Multitrack > Snapping (S) is on by default and remembered. When something dragged comes within 8 pixels of a target, it lines up with it exactly: clip moves (by whichever edge is nearer a target), trims, fade handles, envelope points and time-range selection. The targets are clip edges, the cursor, the time range's edges, the session start and the ruler's marks.
 - Measured by the tests: constant pan envelopes (on tracks and a bus) and a constant bus volume envelope play bit for bit like their settings. Constant track volume envelopes match to float rounding (worst under 6e-8); the envelope is a separate multiply, where the fader's gain is fused into the add. A 0 to -40 dB ramp scales every frame by the envelope's gain there (worst under 7.5e-9). With envelopes on tracks and a bus, the mix is bit for bit the same in 1-, 37- and 512-frame blocks, with 300 and 500 frames of effect latency, and after a jump. A pan step moves a mono track from left to right at the step.
 - Also checked, through the real view with synthesised mouse events: dragging fade handles, a fade snapping to the cursor, a clip snapping to another's end (and not snapping with snapping off), and adding, moving and deleting envelope points. The envelope maths, fade limits, snap rules and the file round trip are tested on their own.
-- Not yet: automating effect parameters and recording automation while playing.
+- Not yet: automating effect parameters.
 
 **Release 0.1.0: the first build to install**
 - `dist/SpectraBlade-0.1.0.dmg` holds a universal app (Apple silicon and Intel), built for macOS 13 or later and tested on macOS 27. See [Installing](#installing), and [Packaging](#packaging) to make it.
@@ -175,7 +181,7 @@ The tests run against the real machine:
 - The default audio device: output-pair routing on a multi-output interface. With `--live-input`, also arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
 - Spectrogram level calibration and image, and spectral edits: identity, removal depth, neighbouring tones, untouched audio, attenuation.
 - Multitrack: the mixer (pan laws, gains, mute, solo, trims, fades, block-size independence), clip edits (split, trim, move, delete), undo with merged steps, session files (round trip after moving the folder, shared audio read once, rate conversion, missing files), and session playback through the player.
-- Automation and the multitrack view: volume and pan envelopes in the mixer (against the settings they replace, ramps, steps, block sizes, sends, latency) and in session files, fade limits, snapping rules, crossfades (the fades set and the level through them), and the view driven by the mouse (fade handles, snapping, envelope points, crossfading).
+- Automation and the multitrack view: volume and pan envelopes in the mixer (against the settings they replace, ramps, steps, block sizes, sends, latency) and in session files, fade limits, snapping rules, crossfades (the fades set and the level through them), writing automation passes, and the view driven by the mouse (fade handles, snapping, envelope points, crossfading) and by automation passes.
 - Track effects: delay compensation bit for bit across tracks with different latencies and block sizes, playing from a jump, bypass, reordering, removal, saving each chain in the session file, and a real Apple Audio Unit on a track.
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
@@ -221,4 +227,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: effect-parameter automation and recording automation while playing
+1. Multitrack, continued: automating effect parameters

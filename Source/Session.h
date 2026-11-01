@@ -168,6 +168,14 @@ namespace SessionEdits
     /** Replaces a track's volume or pan envelope; its points are kept in range and in time
         order. An empty envelope hands the parameter back to the track's setting. */
     bool setEnvelope (SessionState&, juce::uint32 trackId, AutomationParameter, Envelope);
+
+    /** Writes a pass of automation recorded while playing: points in time order. From the pass's
+        first frame to returnFrames after its last, the envelope's old points give way to the
+        pass, which starts from the old value there and ends by going back, over returnFrames,
+        to the old value. Outside that, the envelope (or, with none, the track's setting) stays
+        as it was. */
+    bool writeAutomation (SessionState&, juce::uint32 trackId, AutomationParameter,
+                          const std::vector<AutomationPoint>& pass, juce::int64 returnFrames);
 }
 
 //==============================================================================

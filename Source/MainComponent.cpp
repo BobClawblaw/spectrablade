@@ -38,7 +38,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade
+        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -633,7 +633,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdCrossfade; ++id)
+    for (int id = cmdOpen; id <= cmdWriteAutomation; ++id)
         ids.add (id);
 }
 
@@ -729,6 +729,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
         case cmdSnapping:   info.setInfo ("Snapping", "Line dragged clips, edges, fades and points up with clip edges, the cursor and the ruler", "Multitrack", 0);
                             info.addDefaultKeypress ('s', 0); info.setTicked (multitrack.isSnapping()); info.setActive (multitrackMode); break;
+        case cmdWriteAutomation: info.setInfo ("Write Automation", "While playing, dragging a track's volume or pan writes it into its envelope", "Multitrack", 0);
+                            info.addDefaultKeypress ('w', 0); info.setTicked (multitrack.isWritingAutomation()); info.setActive (multitrackMode); break;
         case cmdCrossfade:  info.setInfo ("Crossfade Overlaps", "Crossfade a clip moved or trimmed over part of another", "Multitrack", 0);
                             info.addDefaultKeypress ('x', 0); info.setTicked (multitrack.isCrossfading()); info.setActive (multitrackMode); break;
         case cmdMixDown:    info.setInfo ("Mix Down...", "Mix the session, or its time range, to an audio file", "Multitrack", 0);
@@ -861,6 +863,10 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdSplitClip:  multitrack.splitSelectedClip(); break;
         case cmdMixDown:    chooseMixDownFile(); break;
+        case cmdWriteAutomation:
+            multitrack.setWritingAutomation (! multitrack.isWritingAutomation());
+            commands.commandStatusChanged();
+            break;
         case cmdCrossfade:
             multitrack.setCrossfading (! multitrack.isCrossfading());
             appProperties.getUserSettings()->setValue (crossfadingKey, multitrack.isCrossfading());
@@ -910,7 +916,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, 0, cmdMixDown }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;

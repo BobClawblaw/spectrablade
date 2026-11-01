@@ -318,6 +318,46 @@ namespace
         }
     }
 
+    void testWriting()
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        auto& t = s.addTrack();
+        t.gainDb = -6.0f;
+        const auto id = t.id;
+        const auto track = [&s, id] { return *s.findTrack (id); };
+
+        // Onto a track with no envelope: its setting holds before the pass and after the return.
+        check (SessionEdits::writeAutomation (s, id, AutomationParameter::volume, { { 1000, -6.0f }, { 2000, -20.0f }, { 3000, -20.0f } }, 100),
+               "writing automation: a pass is written");
+        const auto written = track();
+        check (written.valueAt (AutomationParameter::volume, 500) == -6.0f && written.valueAt (AutomationParameter::volume, 1500) == -13.0f
+                   && written.valueAt (AutomationParameter::volume, 2500) == -20.0f && written.valueAt (AutomationParameter::volume, 3050) == -13.0f
+                   && written.valueAt (AutomationParameter::volume, 3100) == -6.0f && written.valueAt (AutomationParameter::volume, 9000) == -6.0f
+                   && written.panEnvelope.isEmpty(),
+               "writing automation: the setting holds before the pass, the pass plays, and it goes back to the setting over the return");
+
+        // Over a ramp: outside the pass and its return the envelope plays as it did.
+        SessionEdits::setEnvelope (s, id, AutomationParameter::volume, { { { 0, 0.0f }, { 10000, -40.0f } } });
+        const auto before = track();
+        SessionEdits::writeAutomation (s, id, AutomationParameter::volume, { { 2000, -8.0f }, { 3000, 0.0f }, { 4000, -16.0f } }, 500);
+        const auto after = track();
+        auto outside = 0.0f;
+
+        for (juce::int64 f = 0; f < 12000; f += 50)
+            if (f < 2000 || f >= 4500)
+                outside = juce::jmax (outside, std::abs (after.valueAt (AutomationParameter::volume, f) - before.valueAt (AutomationParameter::volume, f)));
+
+        check (outside < 1.0e-5f && after.valueAt (AutomationParameter::volume, 3000) == 0.0f && after.volumeEnvelope.points.size() == 7,
+               "writing automation: over a ramp, the envelope outside the pass is unchanged (worst " + juce::String (outside, 7) + " dB)");
+
+        // Values are kept in range, and a pass with no points writes nothing.
+        SessionEdits::writeAutomation (s, id, AutomationParameter::pan, { { 100, -3.0f }, { 200, 2.0f } }, 0);
+        check (track().valueAt (AutomationParameter::pan, 100) == -1.0f && track().panEnvelope.points[2].value == 1.0f
+                   && ! SessionEdits::writeAutomation (s, id, AutomationParameter::pan, {}, 0),
+               "writing automation: pan values are kept in range; an empty pass writes nothing");
+    }
+
     void testCrossfades()
     {
         // A from 1000 to 5000, B from 4000 to 8000, and C inside B.
@@ -418,6 +458,7 @@ void runAutomationTests (juce::AudioFormatManager& formats)
     testFades();
     testSnapping();
     testCrossfades();
+    testWriting();
     testMixing();
     testFile (formats);
 }
