@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 81: selecting the clips in the time range**
+- Edit > Select Clips in Time Range selects every clip that plays any part of the time range, on every shown track. A clip that only touches the range at its start or end is left out. It needs a time range, and it replaces the clip selection.
+- Measured by the tests, through the real view: a range catching the ends of two clips and the starts of two more, on two tracks, and not the clips on a hidden track; a range between clips, touching both, selecting none; and nothing happening without a range. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 80: selecting between markers**
 - Markers > Select Between Markers selects from the marker start or region end at or before the cursor to the next one after it. With none before, the selection starts at 0; with none after, it runs to the end of the last clip in a session, or the end of the file in the single-file editor. It does nothing with the cursor past that end, or with no markers. It is not an edit, so it adds no undo step.
 - Measured by the tests: the span around a frame among overlapping regions and points (between two stops, on a stop, at a region's end, before the first, after the last), and nothing with no markers, an empty span or the frame past the end; in the multitrack view, the time range set around the cursor, from the start, to the last clip's end and not past it, with no undo step. The single-file editor's use of it and the menu item were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -556,6 +560,7 @@ The tests run against the real machine:
 - Marker colours: choosing one, drawing it, edits and crops, and the session file.
 - Header meters' peak hold and clip light: holding, falling, lighting and clicking out.
 - Select Between Markers: spans around a frame, and the time range in the view.
+- Selecting the clips in the time range: overlapping, touching and hidden.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -609,4 +614,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: selecting every clip on the selected track, and every clip that overlaps the time range
+1. Audio engine: a load readout (how much of each audio callback's time the processing takes) and a count of dropouts, in the window's status line

@@ -1331,6 +1331,18 @@ void runMultitrackViewTests (AudioEngine& engine)
         const auto after = selection() == sorted ({ ids[0][1], ids[0][2], ids[1][1], ids[1][2] });
         check (all && onTrack && after,
                "selecting: all clips, a track's clips and the clips after the cursor, none of them on a hidden track");
+
+        // Clips playing any part of the time range: [20000, 50000) catches the ends of the first
+        // clips and the starts of the second; a range between clips, touching both, catches none.
+        view.setTimeSelection ({ 20000, 50000 });
+        const auto inRange = view.selectClipsInRange() && selection() == sorted ({ ids[0][0], ids[0][1], ids[1][0], ids[1][1] });
+        view.setTimeSelection ({ 24000, 48000 });
+        const auto between = view.selectClipsInRange() && view.getSelectedClips().empty();
+        view.selectAllClips();
+        view.setTimeSelection ({});
+        const auto noRange = ! view.selectClipsInRange() && view.getSelectedClips().size() == 6;
+        check (inRange && between && noRange,
+               "selecting: the clips that play part of the time range, not those only touching it, none on a hidden track; nothing without a range");
     }
 
     // Moving the selected clips to the cursor, keeping their spacing.

@@ -94,6 +94,10 @@ public:
     /** Selects every clip, on the shown tracks, that starts at or after the cursor. */
     void selectClipsAfterCursor();
 
+    /** Selects every clip, on the shown tracks, that plays any part of the time range; false
+        when there is no time range. */
+    bool selectClipsInRange();
+
     void deleteSelectedClip();     // every selected clip
 
     /** The selected clips, copied for pasting (their audio is shared, not duplicated), with

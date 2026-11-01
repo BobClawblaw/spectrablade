@@ -2618,6 +2618,16 @@ void MultitrackView::selectClipsAfterCursor()
     selectClipsWhere ([from = cursor] (const SessionTrack&, const SessionClip& c) { return c.position >= from; });
 }
 
+bool MultitrackView::selectClipsInRange()
+{
+    if (timeSelection.isEmpty())
+        return false;
+
+    selectClipsWhere ([range = timeSelection] (const SessionTrack&, const SessionClip& c)
+                      { return c.position < range.getEnd() && c.getEnd() > range.getStart(); });
+    return true;
+}
+
 void MultitrackView::selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted)
 {
     // Never clips on hidden or folded-away tracks, which can't be seen.
