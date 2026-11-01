@@ -66,6 +66,10 @@ public:
         marker at the cursor, as an undo step. */
     void addMarker();
 
+    /** Adds a point marker at a frame, as an undo step; double-clicking an empty spot in the
+        marker lane does this (snapped, with snapping on). */
+    void addMarkerAt (juce::int64 frame);
+
     /** Moves the cursor to the nearest marker or region edge after it (or before it). Returns
         false when there is none. */
     bool goToMarker (bool forwards);

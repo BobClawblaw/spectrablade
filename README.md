@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 83: double-clicking to add markers**
+- Double-click an empty spot in the marker lane to add a marker there, named like the others ("Marker 01", ...), as an undo step ("Add Marker 01"). With snapping on, it lands on a nearby clip edge, marker, the cursor or the time range's edges, as dragged markers do. Double-clicking a marker or region still renames it.
+- Measured by the tests, through the real view: a double-click with snapping off adding a point marker 208 frames from the frame aimed at (99,792 for 100,000: the frame under that pixel at the test's zoom), and one 3 px past a clip's end with snapping on landing exactly on it, each its own undo step. A real double-click (two clicks through the mouse) was not sent by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 82: audio load and dropouts**
 - The status line at the bottom of the window shows the audio load (the share of each audio callback's time spent processing, as the audio device manager averages it, in whole percent) and the number of dropouts (under- and overruns) since it was last clicked: "Load 12%  |  0 dropouts". It turns red while the load is over 80% or once there has been a dropout. Click it to count from 0 again. When the device changes, its count starts again from 0. It reads four times a second.
 - Measured by the tests: the text at 12%, 85% (red) and over 100% (shown as 100%); three dropouts turning it red; a reset clearing them and one more showing as "1 dropout"; a new device's lower count shown in full; and the readout reading the real device manager. Whether the device reports dropouts itself, the readout under real load, and its place in the window were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -566,6 +570,7 @@ The tests run against the real machine:
 - Select Between Markers: spans around a frame, and the time range in the view.
 - Selecting the clips in the time range: overlapping, touching and hidden.
 - Audio load readout: percent, warnings, dropout counts, resets and new devices.
+- Double-clicking the marker lane: a marker where clicked, and snapped.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -619,4 +624,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: double-clicking an empty spot in the marker lane adds a marker there
+1. Multitrack, continued: solo safe, so a track or bus keeps playing when others are soloed (for reverb returns and the like)

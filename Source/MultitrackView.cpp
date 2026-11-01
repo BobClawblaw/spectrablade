@@ -2241,6 +2241,17 @@ void MultitrackView::addMarker()
     engine.session.apply (std::move (next), "Add " + m.name);
 }
 
+void MultitrackView::addMarkerAt (juce::int64 frame)
+{
+    auto next = *engine.session.getState();
+    Marker m;
+    m.start = juce::jmax ((juce::int64) 0, frame);
+    m.name = MarkerEdits::nextName (next.markers, false);
+    next.markers.push_back (m);
+    MarkerEdits::sort (next.markers);
+    engine.session.apply (std::move (next), "Add " + m.name);
+}
+
 bool MultitrackView::goToMarker (bool forwards)
 {
     const auto target = MarkerEdits::nextStop (engine.session.getState()->markers, cursor, forwards);
@@ -3739,6 +3750,13 @@ void MultitrackView::mouseDoubleClick (const juce::MouseEvent& e)
     if (const auto index = markerAt (p); index >= 0)
     {
         renameMarker (index);
+        return;
+    }
+
+    // An empty spot in the marker lane: a new marker there.
+    if (p.x >= headerWidth && p.y >= timeRulerHeight && p.y < rulerHeight)
+    {
+        addMarkerAt (snapped (frameForX ((float) p.x), 0, true));
         return;
     }
 

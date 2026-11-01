@@ -513,6 +513,33 @@ void runMultitrackViewTests (AudioEngine& engine)
                "view: Select Between Markers selects around the cursor, from the session's start or to the last clip's end; nothing past it; no edit");
         view.setTimeSelection ({});
 
+        // Double-clicking an empty spot in the marker lane adds a marker there, snapped with
+        // snapping on (3 px past the clip's end lands on it).
+        const auto wasSnapping = view.isSnapping();
+        const auto doubleClick = [&] (float atX)
+        {
+            const juce::Point<float> at { atX, laneY };
+            view.mouseDoubleClick (mouse.event (at, at, {}, false));
+            Mouse::settle();
+        };
+        view.setSnapping (false);
+        doubleClick (x (100000));
+        const auto plain = engine.session.getState()->markers;
+        const auto plainStep = engine.session.getUndoDescription();
+        view.setSnapping (true);
+        view.setCursor (0);
+        doubleClick (x (144000) + 3.0f);
+        const auto snappedMarkers = engine.session.getState()->markers;
+        view.setSnapping (wasSnapping);
+        check (plain.size() == 3 && plain[2].name == "Marker 01" && std::abs (plain[2].start - 100000) <= 1000 && ! plain[2].isRegion()
+                   && plainStep == "Add Marker 01" && snappedMarkers.size() == 4 && snappedMarkers[3].start == 144000
+                   && snappedMarkers[3].name == "Marker 02",
+               "view: double-clicking an empty spot in the marker lane adds a marker there (" + juce::String (plain.size() == 3 ? plain[2].start : -1)
+                   + "), snapped to a clip's end with snapping on, as undo steps");
+        engine.session.undo();
+        engine.session.undo();
+        Mouse::settle();
+
         // Marker colours: chosen as undo steps, drawn on the ruler, kept through edits and files.
         auto coloured = *engine.session.getState();
         coloured.markers = { { 100000, 0, "Verse" }, { 200000, 50000, "Chorus" } };
