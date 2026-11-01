@@ -226,6 +226,33 @@ Snapshot copyChannel (const AudioSnapshot& s, juce::int64 start, juce::int64 end
     return processRange (s, start, end, [from, to] (auto& b) { b.copyFrom (to, 0, b, from, 0, b.getNumSamples()); });
 }
 
+Snapshot repair (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+{
+    if (start >= end || end - start > maxRepairFrames || start < 2 || end + 2 > s.getNumFrames())
+        return nullptr;
+
+    // The buffer holds two frames before the range and two after it; the curve runs from index 1
+    // to index n + 2 (the frames either side of the range) over n + 1 steps.
+    return processRange (s, start - 2, end + 2, [] (juce::AudioBuffer<float>& b)
+    {
+        const auto n = b.getNumSamples() - 4;
+        const auto steps = (double) (n + 1);
+
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        {
+            auto* x = b.getWritePointer (ch);
+            const double p0 = x[1], p1 = x[n + 2];
+            const double m0 = (x[1] - x[0]) * steps, m1 = (x[n + 3] - x[n + 2]) * steps;
+
+            for (int i = 1; i <= n; ++i)
+            {
+                const auto t = i / steps, t2 = t * t, t3 = t2 * t;
+                x[i + 1] = (float) ((2 * t3 - 3 * t2 + 1) * p0 + (t3 - 2 * t2 + t) * m0 + (3 * t2 - 2 * t3) * p1 + (t3 - t2) * m1);
+            }
+        }
+    });
+}
+
 Snapshot reverse (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (auto& b) { b.reverse (0, b.getNumSamples()); });

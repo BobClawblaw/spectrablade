@@ -54,6 +54,13 @@ namespace AudioEdits
 
     /** Replaces channel `to` with a copy of channel `from`; nullptr when either is missing or they are the same. */
     Snapshot copyChannel (const AudioSnapshot&, juce::int64 start, juce::int64 end, int from, int to);
+
+    /** Redraws [start, end) as a cubic curve from the frame before it to the frame after it, each end
+        keeping the slope of the two frames outside it: for a click or a short dropout. Refused
+        (nullptr) for an empty range, one longer than maxRepairFrames, or one without two frames on
+        each side. */
+    Snapshot repair (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+    constexpr juce::int64 maxRepairFrames = 4096;
     Snapshot reverse (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
     /** Takes each channel's average level over [start, end) out of it, so it sits centred on 0. */

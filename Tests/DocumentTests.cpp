@@ -434,6 +434,26 @@ namespace
                    && ! AudioEdits::stereoCorrelation (*rampSnap, 0, 1000),
                "stereo correlation: +1 for the same channels, -1 for one inverted, between for others; a dead channel or mono gives none");
 
+        // A straight line with a burst of clicks in 400..420: the repair puts the line back (to float
+        // rounding) and leaves every frame outside the range bit for bit.
+        juce::AudioBuffer<float> clicky (rampUp);
+
+        for (int i = 400; i < 420; ++i)
+            clicky.setSample (0, i, i % 2 == 0 ? 0.9f : -0.9f);
+
+        const auto clickySnap = AudioEdits::fromBuffer (std::move (clicky));
+        const auto repaired = readAll (*AudioEdits::repair (*clickySnap, 400, 420));
+        auto repairRight = repaired.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && repairRight; ++i)
+            repairRight = i >= 400 && i < 420 ? std::abs (repaired.getSample (0, i) - rampUp.getSample (0, i)) < 1.0e-6f
+                                              : juce::exactlyEqual (repaired.getSample (0, i), rampUp.getSample (0, i));
+
+        check (repairRight && ! AudioEdits::repair (*clickySnap, 1, 10) && ! AudioEdits::repair (*clickySnap, 990, 999)
+                   && ! AudioEdits::repair (*clickySnap, 500, 500) && AudioEdits::repair (*clickySnap, 2, 998) != nullptr
+                   && ! AudioEdits::repair (*longSnap, 100, 100 + AudioEdits::maxRepairFrames + 1),
+               "repair: clicks on a straight line redrawn back onto it, the frames around untouched; no room either side, empty or too long refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

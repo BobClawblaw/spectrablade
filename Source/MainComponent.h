@@ -125,6 +125,7 @@ private:
     void addMarkersAtSilences (juce::int64 minFrames);
     void shortenPauses (juce::int64 keepFrames);
     void noiseGate (juce::int64 minFrames);
+    void repairSelection();
     void addMarkersAtClipping();
     void addMarkersAt (const std::vector<juce::int64>& frames, const juce::String& title, const juce::String& noneFound);
     static constexpr double gateFadeSeconds = 0.01;
