@@ -598,4 +598,20 @@ Snapshot crossfadeLoop (const AudioSnapshot& s, juce::int64 start, juce::int64 e
         }
     });
 }
+
+Snapshot repeatRange (const AudioSnapshot& s, juce::int64 start, juce::int64 end, int times)
+{
+    const auto r = clampRange (s, start, end);
+
+    if (r.isEmpty() || times <= 0)
+        return nullptr;
+
+    const auto once = s.slice (r.getStart(), r.getEnd());
+    AudioClip copies { s.getNumChannels(), 0.0, {} };
+
+    for (int i = 0; i < times; ++i)
+        copies.segments.insert (copies.segments.end(), once.begin(), once.end());
+
+    return replaceWithClip (s, r.getEnd(), r.getEnd(), copies);
+}
 }

@@ -111,6 +111,10 @@ namespace AudioEdits
         more than half the range, or more than the audio before start. */
     Snapshot crossfadeLoop (const AudioSnapshot&, juce::int64 start, juce::int64 end, juce::int64 fade);
 
+    /** Puts `times` more copies of [start, end) right after it, moving what follows later. The
+        copies share the audio, so this takes no memory for samples. */
+    Snapshot repeatRange (const AudioSnapshot&, juce::int64 start, juce::int64 end, int times);
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

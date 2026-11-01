@@ -131,6 +131,8 @@ private:
     static constexpr int clipRun = 3;
     void applyFade (bool out);
     void showCrossfadeLoop();
+    void showRepeatSelection();
+    static constexpr int maxRepeats = 100;
     void showBalance();
     void showSetSelection();
     void convertChannels (int numChannels);

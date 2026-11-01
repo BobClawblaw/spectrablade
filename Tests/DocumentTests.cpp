@@ -318,6 +318,11 @@ namespace
                    && ! AudioEdits::crossfadeLoop (*rampSnap, 50, 800, 100),
                "crossfade loop: the end blended into the audio before the start, its last frame the one before the start; bad lengths refused");
 
+        const auto repeated = readAll (*AudioEdits::repeatRange (*rampSnap, 100, 300, 3));
+        check (identical (repeated, concat ({ range (rampUp, 0, 300), range (rampUp, 100, 300), range (rampUp, 100, 300), range (rampUp, 100, 300), range (rampUp, 300, 1000) }))
+                   && ! AudioEdits::repeatRange (*rampSnap, 100, 100, 3) && ! AudioEdits::repeatRange (*rampSnap, 100, 300, 0),
+               "repeat selection: copies right after the range, bit for bit, the rest moved on; an empty range or no copies refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

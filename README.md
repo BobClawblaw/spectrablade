@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 137: Repeat Selection**
+- Edit > Repeat Selection asks how many copies (1 to 100) and puts them right after the selection, moving the rest of the file and its markers later. The copies share the selection's audio rather than duplicating samples. It is one undo step, and the copies are selected afterwards.
+- Measured by the tests: three copies of frames 100 to 300 of a ramp give the first 300 frames, the copies bit for bit, then the rest of the ramp; an empty range or zero copies is refused. The dialog and the marker move were not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 136: Crossfade Loop**
 - Effects > Crossfade Loop asks for a crossfade time (50 ms to start) and blends the last part of the selection, with an equal-power crossfade, into the audio just before the selection's start, so that the selection's last frame is the frame before its start and looping it plays on without a click. The crossfade must be at most half the selection and no longer than the audio before it; otherwise it says so. It is one undo step, and the selection is kept for looping.
 - Measured by the tests: on a ramp, a 100-frame crossfade over frames 400 to 800 leaves every frame before 700 and from 800 on exactly as it was, makes frame 799 exactly frame 399, and changes the frames between; a zero crossfade, one longer than half the selection, and one longer than the audio before the start are refused. How it sounds when looped was not listened to, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -841,6 +845,7 @@ The tests run against the real machine:
 - Double and halve selection: from its start, to the end or down to one frame.
 - Selection to zero crossings: each end to the nearest crossing in reach, others left.
 - Crossfade loop: the end blended into the audio before the start, bad lengths refused.
+- Repeat selection: copies right after the range, bit for bit, empty requests refused.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -894,4 +899,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Repeat Selection, pasting the selection after itself a chosen number of times
+1. Editor: Fill Selection with Clipboard, repeating the clipboard to fill the selected span
