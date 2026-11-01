@@ -248,6 +248,21 @@ Snapshot silence (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
     return processRange (s, start, end, [] (auto& b) { b.clear(); });
 }
 
+Snapshot silenceOutside (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+{
+    const auto r = clampRange (s, start, end);
+
+    if (r.isEmpty() || (r.getStart() == 0 && r.getEnd() == s.getNumFrames()))
+        return nullptr;
+
+    auto next = r.getStart() > 0 ? silence (s, 0, r.getStart()) : nullptr;
+
+    if (r.getEnd() < s.getNumFrames())
+        next = silence (next != nullptr ? *next : s, r.getEnd(), s.getNumFrames());
+
+    return next;
+}
+
 Snapshot invert (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (auto& b) { b.applyGain (-1.0f); });

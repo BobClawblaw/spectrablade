@@ -528,6 +528,21 @@ namespace
         check (echoRight && ! AudioEdits::echo (*rampSnap, 0, 1000, 0, 0.5f) && ! AudioEdits::echo (*rampSnap, 0, 1000, 10, AudioEdits::maxEchoFeedback + 0.01f),
                "echo: repeats every delay, each half the last, on every channel, stopping at the range's end; no delay or too much feedback refused");
 
+        const auto onlyKept = [&] (juce::int64 from, juce::int64 to)
+        {
+            const auto out = readAll (*AudioEdits::silenceOutside (*twoSnap, from, to));
+            auto right = out.getNumSamples() == 1000;
+
+            for (int ch = 0; ch < 2 && right; ++ch)
+                for (int i = 0; i < 1000 && right; ++i)
+                    right = juce::exactlyEqual (out.getSample (ch, i), i >= from && i < to ? twoRamps.getSample (ch, i) : 0.0f);
+
+            return right;
+        };
+        check (onlyKept (300, 700) && onlyKept (0, 400) && onlyKept (600, 1000) && ! AudioEdits::silenceOutside (*twoSnap, 0, 1000)
+                   && ! AudioEdits::silenceOutside (*twoSnap, 500, 500),
+               "silence outside: everything but the range zeroed, the range bit for bit, the length kept; the whole file or nothing refused");
+
         const auto panned = readAll (*AudioEdits::balanceRamp (*twoSnap, 100, 121, -1.0f, 1.0f));
         const auto allLeft = readAll (*AudioEdits::balance (*twoSnap, 100, 121, -1.0f));
         const auto panMiddle = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 0.0f));

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 160: Silence Outside Selection**
+- Effects > Silence Outside Selection silences everything before and after the selection, keeping the file's length and every marker's place, so one part can be heard in its place in the file or saved with its timing. It is offered when the selection doesn't already cover the whole file, and it is one undo step.
+- Measured by the tests: on a two-channel file, keeping frames 300 to 700, 0 to 400 and 600 to 1,000 leaves those frames bit for bit and every other frame exactly 0, with the length kept; the whole file or an empty range is refused. The menu item was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 159: Echo**
 - Effects > Echo asks for a delay (250 ms to start, 1 to 5,000 ms) and a feedback (40 % to start, at most 95 %), both remembered while the app runs, and adds repeats to the selection (or the file): each frame gets the output one delay earlier, times the feedback, added to it, so every repeat is that much quieter than the one before. The repeats stop at the end of the selection, so a selection with room after the sound lets them ring. It is one undo step.
 - Measured by the tests: a click at frame 100 of a two-channel file, echoed over frames 100 to 450 with a 100-frame delay and 50 % feedback, gives exactly 1, 0.5, 0.25 and 0.125 at frames 100, 200, 300 and 400 (and the same scaled on the other channel), nothing else in the range, and a click at frame 900 outside it untouched; a zero delay or a feedback over 95 % is refused. How it sounds was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -956,6 +960,7 @@ The tests run against the real machine:
 - Next sound: the sound after the next silence, stepping on from each one's end.
 - Tremolo: a raised-cosine dip by the depth once a cycle, the rest untouched.
 - Echo: repeats every delay, each quieter by the feedback, stopping at the range's end.
+- Silence outside: everything but the range zeroed, the range bit for bit.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1009,4 +1014,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Silence Outside Selection, silencing everything but the selection and keeping the length
+1. Effects: Normalize Each Region, bringing every region's peak to the same level

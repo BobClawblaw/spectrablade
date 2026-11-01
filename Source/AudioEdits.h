@@ -60,6 +60,10 @@ namespace AudioEdits
     constexpr float maxEchoFeedback = 0.95f;
     Snapshot silence (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
+    /** Silences everything before start and from end on, keeping the length; nullptr when
+        [start, end) is empty or already covers the whole audio. */
+    Snapshot silenceOutside (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+
     /** Puts frames of silence in at a frame, moving what follows later. frames must fit in an int. */
     Snapshot insertSilence (const AudioSnapshot&, juce::int64 at, juce::int64 frames);
     Snapshot invert (const AudioSnapshot&, juce::int64 start, juce::int64 end);
