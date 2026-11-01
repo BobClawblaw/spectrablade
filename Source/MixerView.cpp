@@ -6,6 +6,7 @@ namespace
     const juce::Colour background (0xff15181d);
     const juce::Colour stripColour (0xff1b1e23);
     const juce::Colour busColour (0xff16191d);
+    const juce::Colour folderColour (0xff1e2229);
 
     /** How far up a meter a level (gain) reaches: -60 dB at the bottom, +6 dB at the top. */
     float meterProportion (float gain)
@@ -131,6 +132,14 @@ public:
     void update (const SessionTrack& t, int index, juce::int64 frame)
     {
         isBus = t.isBus;
+
+        // A folder's strip: its volume, mute and solo, which act on what is in it; no audio to meter.
+        if (std::exchange (isFolder, t.isFolder) != t.isFolder)
+        {
+            pan.setVisible (! isFolder);
+            meter.setVisible (! isFolder);
+        }
+
         colour = TrackColours::of (t, index);
         name.setText (t.name, juce::dontSendNotification);
         mute.setToggleState (t.mute, juce::dontSendNotification);
@@ -139,7 +148,8 @@ public:
         const auto volumeAutomated = ! t.volumeEnvelope.isEmpty(), panAutomated = ! t.panEnvelope.isEmpty();
         fader.setEnabled (! volumeAutomated);
         pan.setEnabled (! panAutomated);
-        fader.setTooltip (volumeAutomated ? "Volume follows its envelope" : "Volume");
+        fader.setTooltip (isFolder ? "Folder volume: added to the volume of each track and bus in it"
+                                   : volumeAutomated ? "Volume follows its envelope" : "Volume");
         pan.setTooltip (panAutomated ? "Pan follows its envelope" : "Pan");
 
         const auto db = t.valueAt (AutomationParameter::volume, frame);
@@ -156,7 +166,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (trackId == 0 ? juce::Colour (0xff20262e) : isBus ? busColour : stripColour);
+        g.fillAll (trackId == 0 ? juce::Colour (0xff20262e) : isBus ? busColour : isFolder ? folderColour : stripColour);
 
         if (trackId != 0)
         {
@@ -219,7 +229,7 @@ private:
     MixerView& view;
     juce::Colour colour;
     juce::Label name, readout;
-    bool isBus = false;
+    bool isBus = false, isFolder = false;
 };
 
 //==============================================================================
@@ -250,10 +260,9 @@ void MixerView::rebuild()
     const auto state = engine.session.getState();
     std::vector<std::pair<juce::uint32, bool>> tracks;
 
-    // Folders have no audio of their own, so no strip.
+    // A strip for each track, bus and folder, in their order: strip i is track i.
     for (auto& t : state->tracks)
-        if (! t.isFolder)
-            tracks.emplace_back (t.id, t.isBus);
+        tracks.emplace_back (t.id, t.isBus);
 
     // Strips are made again only when tracks come, go or move; otherwise they are just updated.
     if (tracks != shownTracks)

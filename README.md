@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 74: folder strips in the mixer**
+- Each folder now has a strip in the mixer, in its place among the tracks and buses: its volume, mute and solo, which act on everything in it (Milestones 71 and 72), with no pan and no meter, since a folder has no audio of its own.
+- This fixes a bug from Milestone 71: leaving folders out of the mixer put every strip after a folder one place off, so it showed, and changed, the next track's settings, and its meter showed the wrong track. Strips are again one for each track, bus and folder, in order.
+- Measured by the tests: with a track, then a folder at -6 dB holding a track at -3 dB panned right, three strips, the folder's showing -6 dB with its pan hidden and the track after it showing its own -3 dB and pan; the folder's fader and mute setting the folder and leaving the track's own alone, the track muted through it. None of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 73: folder stems**
 - Multitrack > Export Folder Stems... writes one file per folder, for each folder with a track with clips in it: its tracks and buses mixed together as they are set (volumes, pans, envelopes, clip settings and their own mutes), through their effects (fresh plug-ins for each stem), with the folder's volume. The folder's own mute and any solos are left out, as are tracks outside the folder and sends to buses outside it. Like Export Stems, it covers the time range if there is one, otherwise the session from its start, and the files are 32-bit float, named "Session - 01 Folder.wav" by the folder's place among them. It runs in the background with a progress bar and can be cancelled.
 - Measured by the tests: a folder holding a track and the bus it sends to, at -3 dB, muted itself and with a track outside soloed, rendering bit for bit as the session does with only the folder's tracks heard; a send to a bus outside the folder left out, and a muted track in it silent; and only folders with clips in them listed. Export Stems now loads effects the same way for each track alone, and its tests pass unchanged. Writing the files, the menu item and plug-ins in a folder stem were not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
@@ -516,6 +521,7 @@ The tests run against the real machine:
 - Clip gain lines: the mix, the line following edits, the session file, and editing points in the view.
 - Folders: mute, solo and volume through them, the edits, the session file, and adding and collapsing them in the view.
 - Folder stems: what each one renders, and which folders get one.
+- Folder strips in the mixer: in place, showing and setting the folder, the strips after it showing their own tracks.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -569,4 +575,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a strip in the mixer for each folder, with its volume, mute and solo
+1. Multitrack, continued: dragging a track's header onto a folder's to put it in

@@ -820,6 +820,44 @@ namespace
                "clip gain line: kept in a session file, and left out for a clip without one");
     }
 
+    void testFolderStrips (AudioEngine& engine)
+    {
+        // A, then a folder at -6 dB holding B at -3 dB: strip i is track i, a folder's showing its volume.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().gainDb = -1.0f;
+        auto& folder = s.addFolder();
+        folder.gainDb = -6.0f;
+        const auto folderId = folder.id;
+        auto& b = s.addTrack();
+        b.gainDb = -3.0f;
+        b.pan = 0.5f;
+        const auto bId = b.id;
+        SessionEdits::setTrackFolder (s, bId, folderId);
+        SessionEdits::moveTrack (s, 2, 1);
+        SessionEdits::moveTrack (s, 2, 1);   // A, folder, B
+        engine.session.reset (s, {});
+        MixerView mixer (engine);
+        mixer.setSize (MixerView::stripWidth * 5, 400);
+
+        const auto& t = engine.session.getState()->tracks;
+        const auto order = t.size() == 3 && t[1].id == folderId && t[2].id == bId;
+        const auto shows = mixer.getNumStrips() == 3 && juce::exactlyEqual ((float) mixer.findFader (folderId)->getValue(), -6.0f)
+                           && juce::exactlyEqual ((float) mixer.findFader (bId)->getValue(), -3.0f) && juce::exactlyEqual (mixer.findPan (bId)->getValue(), 50.0)
+                           && ! mixer.findPan (folderId)->isVisible() && mixer.findPan (bId)->isVisible();
+
+        mixer.findFader (folderId)->setValue (-2.0, juce::sendNotificationSync);
+        mixer.findMute (folderId)->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        const auto& after = engine.session.getState()->tracks;
+        const auto edits = juce::exactlyEqual (after[1].gainDb, -2.0f) && after[1].mute && juce::exactlyEqual (after[2].gainDb, -3.0f) && ! after[2].mute
+                           && engine.session.getState()->isMuted (after[2]);
+
+        check (order && shows && edits,
+               "mixer: a folder has a strip in its place, with its volume, mute and solo but no pan, and the strips after it show their own tracks");
+        engine.session.reset ({}, {});
+    }
+
     void testFolders (AudioEngine& engine)
     {
         // A in a folder, sending to a bus also in it; B outside.
@@ -1003,4 +1041,5 @@ void runMixerTests (AudioEngine& engine)
     testClipGroups (engine);
     testClipGainFile (engine);
     testFolders (engine);
+    testFolderStrips (engine);
 }
