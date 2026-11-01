@@ -60,7 +60,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -913,7 +913,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdInsertSilence; ++id)
+    for (int id = cmdOpen; id <= cmdTrimSilence; ++id)
         ids.add (id);
 }
 
@@ -959,6 +959,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio); break;
         case cmdSwapChannels: info.setInfo ("Swap Channels", "Exchange left and right in the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
+        case cmdTrimSilence: info.setInfo ("Trim Silence...", "Remove what is below a level from the start and end of the file", "Effects", 0);
+                            info.setActive (hasAudio); break;
         case cmdInsertSilence: info.setInfo ("Insert Silence...", "Put a chosen length of silence in at the cursor, or the start of the selection", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdApplyRack:  info.setInfo ("Apply Effects Rack", "Render the rack's effects into the audio", "Effects", 0);
@@ -1291,6 +1293,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRemoveDc:   applySimpleEffect ("Remove DC Offset", &AudioEdits::removeDcOffset, false); break;
         case cmdSwapChannels: applySimpleEffect ("Swap Channels", &AudioEdits::swapChannels, false); break;
         case cmdInsertSilence: showInsertSilence(); break;
+        case cmdTrimSilence: askForDecibels ("Trim Silence", "Threshold (dB)", -60.0f, [this] (float db) { trimSilence (db); }); break;
         case cmdApplyRack:  applyRackToSelection(); break;
         case cmdPlayPause:  togglePlay(); break;
         case cmdLoopPlayback:
@@ -1513,7 +1516,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
-        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInsertSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, 0,
+        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
@@ -3245,6 +3248,26 @@ void MainComponent::insertSilence (juce::int64 frames)
     const auto at = sel.isEmpty() ? waveform.getCursor() : sel.getStart();
     applyEdit (AudioEdits::insertSilence (*doc.getSnapshot(), at, frames), "Insert Silence", { at, at + frames },
                MarkerEdits::afterReplace (doc.getMarkers(), at, at, frames));
+}
+
+void MainComponent::trimSilence (float thresholdDb)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio())
+        return;
+
+    const auto snapshot = doc.getSnapshot();
+    const auto audible = AudioEdits::audibleRange (*snapshot, juce::Decibels::decibelsToGain (thresholdDb, -200.0f));
+    const auto level = juce::String (thresholdDb, 1) + " dB";
+
+    if (! audible)
+        showError ("Trim Silence", "The whole file is at or below " + level + ", so nothing was trimmed.");
+    else if (audible->getLength() == snapshot->getNumFrames())
+        showError ("Trim Silence", "Neither end is at or below " + level + ", so nothing was trimmed.");
+    else
+        applyEdit (AudioEdits::crop (*snapshot, audible->getStart(), audible->getEnd()), "Trim Silence", {},
+                   MarkerEdits::afterCrop (doc.getMarkers(), audible->getStart(), audible->getEnd()));
 }
 
 void MainComponent::selectBetweenMarkers()

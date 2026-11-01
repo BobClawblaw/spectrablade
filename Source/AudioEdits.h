@@ -53,6 +53,10 @@ namespace AudioEdits
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
+    /** The span from the first frame to the last whose level on any channel is above threshold
+        (a linear gain), or nothing when no frame is. */
+    std::optional<juce::Range<juce::int64>> audibleRange (const AudioSnapshot&, float threshold);
+
     /** Scales [start, end) so its peak sits at targetDecibels. Returns nullptr for silence. */
     Snapshot normalize (const AudioSnapshot&, juce::int64 start, juce::int64 end, float targetDecibels);
 

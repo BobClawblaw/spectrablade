@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 102: Trim Silence**
+- Effects > Trim Silence asks for a threshold (-60 dB to start with) and crops the file to the span from the first frame to the last whose level on any channel is above it, keeping the markers inside that span. A file that is all below the threshold, or has nothing below it at either end, is left as it is with a message saying why. It is one undo step.
+- Measured by the tests: in 300,000 frames of quiet hiss at about -66 dB, with one loud sample at frame 100,000 on the left channel and one at frame 200,000 on the right, the span found is exactly 100,000 to 200,001, across the 65,536-frame blocks the search reads; pure silence gives no span. The dialog, the crop itself and the markers were not exercised by the tests (the crop and its marker handling are the ones Crop already uses), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 101: Insert Silence**
 - Effects > Insert Silence asks for a length in seconds or minutes and seconds and puts that much silence in at the cursor, or at the start of the selection, moving the audio and markers after it later. The inserted silence is left selected, and it is one undo step. A length that does not parse, is not positive, or is too long for one buffer is refused with a message.
 - Measured by the tests: 500 frames inserted at frame 300 of a two-channel file give exactly the first 300 frames, 500 zeros, and the rest moved on unchanged. The dialog, the selection afterwards and the marker shift were not exercised by the tests (the marker shift reuses the edit already tested for paste), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -665,6 +669,7 @@ The tests run against the real machine:
 - Remove DC Offset: each channel centred exactly, nothing outside the range changed.
 - Swap Channels: exchanged exactly inside the range, mono unchanged.
 - Insert Silence: zeros at the frame, the rest moved on exactly.
+- Trim Silence: the audible span found exactly across blocks and channels, none in silence.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -718,4 +723,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Trim Silence, removing near-silent audio from the start and end of the file
+1. Editor: Mono to Stereo and Stereo to Mono, converting the file's channel count

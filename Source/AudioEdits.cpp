@@ -243,6 +243,53 @@ float peakLevel (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
     return peak;
 }
 
+std::optional<juce::Range<juce::int64>> audibleRange (const AudioSnapshot& s, float threshold)
+{
+    constexpr juce::int64 blockSize = 65536;
+    const auto total = s.getNumFrames();
+
+    // The first frame in [start, end) above the threshold (the last, unless fromStart), or -1.
+    const auto findIn = [&s, threshold] (juce::int64 start, juce::int64 end, bool fromStart) -> juce::int64
+    {
+        const auto block = readRange (s, start, end);
+        const auto n = block.getNumSamples();
+        juce::int64 found = -1;
+
+        for (int ch = 0; ch < block.getNumChannels(); ++ch)
+        {
+            const auto* samples = block.getReadPointer (ch);
+
+            if (fromStart)
+            {
+                for (int i = 0; i < n && (found < 0 || start + i < found); ++i)
+                    if (std::abs (samples[i]) > threshold) { found = start + i; break; }
+            }
+            else
+            {
+                for (int i = n - 1; i >= 0 && start + i > found; --i)
+                    if (std::abs (samples[i]) > threshold) { found = start + i; break; }
+            }
+        }
+
+        return found;
+    };
+
+    juce::int64 first = -1;
+
+    for (juce::int64 start = 0; start < total && first < 0; start += blockSize)
+        first = findIn (start, juce::jmin (total, start + blockSize), true);
+
+    if (first < 0)
+        return std::nullopt;
+
+    juce::int64 last = -1;
+
+    for (auto end = total; end > first && last < 0; end -= blockSize)
+        last = findIn (juce::jmax (first, end - blockSize), end, false);
+
+    return juce::Range<juce::int64> (first, last + 1);
+}
+
 Snapshot normalize (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float targetDecibels)
 {
     const auto peak = peakLevel (s, start, end);

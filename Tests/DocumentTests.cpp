@@ -230,6 +230,26 @@ namespace
 
         check (padExact, "insert silence: the length of zeros at the frame, what was after it moved on exactly");
 
+        // The audible span: zeros and a quiet 0.0005 hiss around frames 100k to 200k, found exactly
+        // across block boundaries; on the second channel only at the end; nothing in pure silence.
+        juce::AudioBuffer<float> padding (2, 300000);
+        padding.clear();
+
+        for (int i = 0; i < 300000; ++i)
+            padding.setSample (0, i, i % 2 == 0 ? 0.0005f : -0.0005f);
+
+        padding.setSample (0, 100000, 0.5f);
+        padding.setSample (1, 200000, -0.5f);
+        const auto threshold = juce::Decibels::decibelsToGain (-60.0f);
+        const auto span = AudioEdits::audibleRange (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (padding)), threshold);
+        check (span && span->getStart() == 100000 && span->getEnd() == 200001,
+               "audible range: the first and last frame above the level on any channel, across blocks");
+
+        juce::AudioBuffer<float> hush (2, 70000);
+        hush.clear();
+        check (! AudioEdits::audibleRange (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (hush)), threshold),
+               "audible range: nothing in pure silence");
+
         auto faded = readAll (*AudioEdits::fadeIn (*original, 1000, 2000));
         check (faded.getSample (0, 1000) == 0.0f && faded.getSample (0, 1999) == signal.getSample (0, 1999)
                    && faded.getSample (0, 999) == signal.getSample (0, 999),
