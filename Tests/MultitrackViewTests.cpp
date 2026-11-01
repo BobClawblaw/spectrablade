@@ -1,4 +1,5 @@
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/TrackEffects.h"
 #include "TestUtils.h"
@@ -965,6 +966,94 @@ void runMultitrackViewTests (AudioEngine& engine)
                "lanes: at 200 px a click finds the second lane's clip, headers follow the height, which stays within "
                    + juce::String (MultitrackView::minLaneHeight) + " to " + juce::String (MultitrackView::maxLaneHeight)
                    + " px, and short headers leave out their sliders");
+    }
+
+    // Locked clips: the edits refuse them, clips placed over them overlap, and through the view
+    // they can be selected but not dragged, nudged or deleted.
+    {
+        SessionState locking;
+        locking.sampleRate = rate;
+        locking.addTrack();
+        const auto fixed = SessionEdits::addClip (locking, 0, juce::File ("/tmp/fixed.wav"), silence (48000), 0);
+        const auto loose = SessionEdits::addClip (locking, 0, juce::File ("/tmp/loose.wav"), silence (36000), 60000);
+        const auto locked = SessionEdits::setClipLocked (locking, fixed, true) && ! SessionEdits::setClipLocked (locking, fixed, true);
+
+        auto tried = locking;
+        const auto refused = ! SessionEdits::moveClip (tried, fixed, 0, 1000) && ! SessionEdits::trimClip (tried, fixed, 100, 400)
+                             && ! SessionEdits::splitClip (tried, fixed, 24000) && ! SessionEdits::setClipGain (tried, fixed, -6.0f)
+                             && ! SessionEdits::setClipFades (tried, fixed, 100, 100) && ! SessionEdits::removeClip (tried, fixed)
+                             && ! SessionEdits::reverseClip (tried, fixed, juce::File ("/tmp/fixed Reversed.wav"), silence (48000))
+                             && ! SessionEdits::crossfade (tried, fixed);
+        const auto& kept = tried.tracks[0].clips[0];
+        check (locked && refused && kept.position == 0 && kept.length == 48000 && kept.fadeIn == 0 && tried.tracks[0].clips.size() == 2,
+               "locking: moving, trimming, splitting, gain, fades, reversing, crossfading and removing a locked clip are refused");
+
+        // A copy placed over it, then the unlocked clip moved onto its end and crossfaded.
+        auto over = locking;
+        const auto copy = SessionEdits::placeClip (over, 0, over.tracks[0].clips[0], 12000);
+        SessionEdits::moveClip (over, loose, 0, 40000);
+        SessionEdits::crossfade (over, loose);
+        const auto* placed = &over.tracks[0].clips.back();
+        const auto stillWhole = over.tracks[0].clips[0].id == fixed && over.tracks[0].clips[0].length == 48000
+                                && over.tracks[0].clips[0].fadeOut == 0;
+        check (stillWhole && placed->id == copy && ! placed->locked && over.tracks[0].clips.size() == 3,
+               "locking: a clip placed over a locked one overlaps it, unlocked; crossfading leaves the locked one's fades alone");
+
+        // Saved and loaded, with real audio for the clips to find.
+        const auto folder = juce::File::createTempFile ("locking");
+        folder.createDirectory();
+        const auto wav = folder.getChildFile ("fixed.wav");
+        auto onDisk = locking;
+
+        for (auto& c : onDisk.tracks[0].clips)
+            c.source = wav;
+
+        const auto file = folder.getChildFile ("locking.sbsession");
+        const auto wrote = AudioFileIO::save (*silence (48000), rate, wav, 24, engine.formatManager).isEmpty() && SessionFile::save (onDisk, file).isEmpty();
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        folder.deleteRecursively();
+        check (wrote && loaded.state.tracks.size() == 1 && loaded.state.tracks[0].clips.size() == 2
+                   && loaded.state.tracks[0].clips[0].locked && ! loaded.state.tracks[0].clips[1].locked,
+               "locking: session files keep which clips are locked");
+
+        engine.session.reset (locking, {});
+        view.zoomToRange ({ 0, 96000 });
+        Mouse::settle();
+        const auto lockFrames = view.getVisibleFrames();
+        const auto lockX = [&] (juce::int64 frame)
+        {
+            return (float) MultitrackView::headerWidth + (float) (((double) frame - lockFrames.getStart()) / (lockFrames.getLength() / timelineWidth));
+        };
+        const auto positions = [&]
+        {
+            std::vector<juce::int64> where;
+
+            for (auto& c : engine.session.getState()->tracks[0].clips)
+                where.push_back (c.position);
+
+            return where;
+        };
+
+        const auto before = positions();
+        const auto steps = engine.session.getUndoDescription();
+        mouse.drag ({ lockX (24000), bodyY }, { lockX (30000), bodyY });
+        const auto draggedLocked = positions() == before && view.getSelectedClip() == fixed && view.areSelectedClipsLocked();
+        mouse.click ({ lockX (70000), bodyY }, juce::ModifierKeys::shiftModifier);
+        mouse.drag ({ lockX (70000), bodyY }, { lockX (80000), bodyY });
+        view.nudge (true);
+        const auto groupStayed = positions() == before && engine.session.getUndoDescription() == steps && ! view.areSelectedClipsLocked();
+        check (draggedLocked && groupStayed,
+               "locking: through the view a locked clip is selected but not dragged, and clips selected with one don't move or nudge");
+
+        view.deleteSelectedClip();
+        const auto deletedLoose = engine.session.getState()->tracks[0].clips.size() == 1 && engine.session.getUndoDescription() == "Delete Clip";
+        mouse.click ({ lockX (24000), bodyY });
+        view.setSelectedClipsLocked (false);
+        Mouse::settle();
+        const auto unlocked = engine.session.getUndoDescription() == "Unlock Clip" && ! view.areSelectedClipsLocked();
+        mouse.drag ({ lockX (24000), bodyY }, { lockX (30000), bodyY });
+        check (deletedLoose && unlocked && engine.session.getState()->tracks[0].clips[0].position > 0,
+               "locking: deleting the selection leaves the locked clip; unlocked (an undo step) it drags again");
     }
 
     engine.session.reset ({}, {});

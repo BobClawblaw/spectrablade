@@ -218,6 +218,13 @@ namespace
         return where.has_value() ? &s.tracks[(size_t) where->first].clips[(size_t) where->second] : nullptr;
     }
 
+    // A clip the edits may change: there, and not locked.
+    SessionClip* findUnlocked (SessionState& s, juce::uint32 clipId)
+    {
+        auto* c = find (s, clipId);
+        return c != nullptr && ! c->locked ? c : nullptr;
+    }
+
     void limitFades (SessionClip& c)
     {
         c.fadeIn = juce::jlimit ((juce::int64) 0, c.length, c.fadeIn);
@@ -248,7 +255,7 @@ bool moveClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int64 po
 {
     const auto where = s.findClip (clipId);
 
-    if (! where.has_value() || toTrack < 0)
+    if (! where.has_value() || toTrack < 0 || findUnlocked (s, clipId) == nullptr)
         return false;
 
     auto& from = s.tracks[(size_t) where->first].clips;
@@ -278,7 +285,7 @@ bool moveClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int64 po
 
 bool trimClip (SessionState& s, juce::uint32 clipId, juce::int64 start, juce::int64 end)
 {
-    auto* c = find (s, clipId);
+    auto* c = findUnlocked (s, clipId);
 
     if (c == nullptr || c->audio == nullptr)
         return false;
@@ -299,7 +306,7 @@ bool splitClip (SessionState& s, juce::uint32 clipId, juce::int64 frame)
 {
     const auto where = s.findClip (clipId);
 
-    if (! where.has_value())
+    if (! where.has_value() || findUnlocked (s, clipId) == nullptr)
         return false;
 
     auto& clips = s.tracks[(size_t) where->first].clips;
@@ -326,7 +333,7 @@ bool splitClip (SessionState& s, juce::uint32 clipId, juce::int64 frame)
 
 bool chooseTake (SessionState& s, juce::uint32 clipId, int index)
 {
-    auto* c = find (s, clipId);
+    auto* c = findUnlocked (s, clipId);
 
     if (c == nullptr || ! juce::isPositiveAndBelow (index, (int) c->takes.size()) || index == c->activeTake)
         return false;
@@ -357,7 +364,7 @@ bool removeClip (SessionState& s, juce::uint32 clipId)
 {
     const auto where = s.findClip (clipId);
 
-    if (! where.has_value())
+    if (! where.has_value() || findUnlocked (s, clipId) == nullptr)
         return false;
 
     auto& clips = s.tracks[(size_t) where->first].clips;
@@ -365,11 +372,22 @@ bool removeClip (SessionState& s, juce::uint32 clipId)
     return true;
 }
 
+bool setClipLocked (SessionState& s, juce::uint32 clipId, bool locked)
+{
+    auto* c = find (s, clipId);
+
+    if (c == nullptr || c->locked == locked)
+        return false;
+
+    c->locked = locked;
+    return true;
+}
+
 bool crossfade (SessionState& s, juce::uint32 clipId)
 {
     const auto where = s.findClip (clipId);
 
-    if (! where.has_value())
+    if (! where.has_value() || findUnlocked (s, clipId) == nullptr)
         return false;
 
     auto& clips = s.tracks[(size_t) where->first].clips;
@@ -378,7 +396,7 @@ bool crossfade (SessionState& s, juce::uint32 clipId)
 
     for (auto& other : clips)
     {
-        if (other.id == clip.id)
+        if (other.id == clip.id || other.locked)
             continue;
 
         if (other.position < clip.position && other.getEnd() > clip.position && other.getEnd() < clip.getEnd())
@@ -401,7 +419,7 @@ bool crossfade (SessionState& s, juce::uint32 clipId)
 
 bool setClipGain (SessionState& s, juce::uint32 clipId, float gainDb)
 {
-    auto* c = find (s, clipId);
+    auto* c = findUnlocked (s, clipId);
 
     if (c == nullptr)
         return false;
@@ -412,7 +430,7 @@ bool setClipGain (SessionState& s, juce::uint32 clipId, float gainDb)
 
 bool normalizeClip (SessionState& s, juce::uint32 clipId, float peakDb)
 {
-    auto* c = find (s, clipId);
+    auto* c = findUnlocked (s, clipId);
 
     if (c == nullptr || c->audio == nullptr)
         return false;
@@ -433,7 +451,7 @@ bool normalizeClip (SessionState& s, juce::uint32 clipId, float peakDb)
 
 bool setClipFades (SessionState& s, juce::uint32 clipId, juce::int64 fadeIn, juce::int64 fadeOut)
 {
-    auto* c = find (s, clipId);
+    auto* c = findUnlocked (s, clipId);
 
     if (c == nullptr)
         return false;
@@ -454,6 +472,7 @@ juce::uint32 placeClip (SessionState& s, int track, const SessionClip& clip, juc
 
     auto copy = clip;
     copy.id = s.nextId++;
+    copy.locked = false;
     copy.position = juce::jmax ((juce::int64) 0, position);
     clearRange (s, track, copy.position, copy.getEnd());
     s.tracks[(size_t) track].clips.push_back (std::move (copy));
@@ -494,7 +513,7 @@ AudioDocument::Snapshot reversedAudio (const SessionClip& c)
 
 bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot reversed)
 {
-    auto* c = find (s, clipId);
+    auto* c = findUnlocked (s, clipId);
 
     if (c == nullptr || reversed == nullptr)
         return false;
@@ -521,7 +540,7 @@ bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
 
     for (auto& c : clips)
     {
-        if (end <= c.position || start >= c.getEnd())
+        if (end <= c.position || start >= c.getEnd() || c.locked)
         {
             kept.push_back (c);
             continue;
@@ -1052,6 +1071,9 @@ juce::String save (const SessionState& state, const juce::File& target,
             clip->setAttribute ("fadeIn", juce::String (c.fadeIn));
             clip->setAttribute ("fadeOut", juce::String (c.fadeOut));
 
+            if (c.locked)
+                clip->setAttribute ("locked", true);
+
             if (! c.takes.empty())
             {
                 clip->setAttribute ("activeTake", c.activeTake);
@@ -1199,6 +1221,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.gainDb = (float) clipXml->getDoubleAttribute ("gainDb");
             clip.fadeIn = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeIn").getLargeIntValue());
             clip.fadeOut = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeOut").getLargeIntValue());
+            clip.locked = clipXml->getBoolAttribute ("locked");
 
             // Takes, kept only when every one's audio is there; otherwise the clip plays the one it had.
             std::vector<SessionClip::Take> takes;

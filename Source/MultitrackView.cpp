@@ -1428,7 +1428,19 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
 
     if (! juce::exactlyEqual (c.gainDb, 0.0f))
         name << "  " << (c.gainDb > 0.0f ? "+" : "") << juce::String (c.gainDb, 1) << " dB";
-    g.drawText (name, title.withTrimmedLeft (12).withTrimmedRight (10), juce::Justification::centredLeft, true);   // clear of the fade handles
+    g.drawText (name, title.withTrimmedLeft (12).withTrimmedRight (c.locked ? 24 : 10), juce::Justification::centredLeft, true);   // clear of the fade handles
+
+    if (c.locked && title.getWidth() > 40)
+    {
+        // A padlock at the right of the title bar.
+        const auto box = title.removeFromRight (20).withSizeKeepingCentre (8, 10).toFloat();
+        const auto lockBody = box.withTrimmedTop (4.0f);
+        juce::Path shackle;
+        shackle.addCentredArc (box.getCentreX(), lockBody.getY(), 2.6f, 3.2f, 0.0f, -juce::MathConstants<float>::halfPi,
+                               juce::MathConstants<float>::halfPi, true);
+        g.strokePath (shackle, juce::PathStrokeType (1.3f));
+        g.fillRect (lockBody);
+    }
 
     // Waveform: one peak per pixel column, each channel in its own band.
     if (c.audio != nullptr && body.getHeight() > 4)
@@ -1478,7 +1490,7 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
     if (c.fadeOut > 0)
         drawFade ((float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut));
 
-    if (r.getWidth() > 3 * edgeGrab)
+    if (r.getWidth() > 3 * edgeGrab && ! c.locked)
     {
         g.setColour (juce::Colours::white.withAlpha (selected ? 0.95f : 0.6f));
 
@@ -2055,14 +2067,19 @@ bool MultitrackView::cutSelectedClip()
     if (! copySelectedClip())
         return false;
 
+    // Locked clips are copied but stay where they are.
     auto next = *engine.session.getState();
+    auto removed = 0;
 
     for (auto& copied : copiedClips)
-        SessionEdits::removeClip (next, copied.second.id);
+        removed += SessionEdits::removeClip (next, copied.second.id) ? 1 : 0;
 
-    selectClip (0, false);
-    engine.session.apply (std::move (next), copiedClips.size() > 1 ? "Cut " + juce::String ((int) copiedClips.size()) + " Clips"
-                                                                   : juce::String ("Cut Clip"));
+    if (removed > 0)
+    {
+        selectClip (0, false);
+        engine.session.apply (std::move (next), removed > 1 ? "Cut " + juce::String (removed) + " Clips" : juce::String ("Cut Clip"));
+    }
+
     return true;
 }
 
@@ -2171,6 +2188,31 @@ void MultitrackView::splitSelectedClip()
         engine.session.apply (std::move (next), "Split Clip");
 }
 
+bool MultitrackView::areSelectedClipsLocked() const
+{
+    const auto& s = shown();
+    const auto ids = getSelectedClips();
+
+    return ! ids.empty() && std::all_of (ids.begin(), ids.end(), [&s] (auto id)
+    {
+        const auto where = s.findClip (id);
+        return s.tracks[(size_t) where->first].clips[(size_t) where->second].locked;
+    });
+}
+
+void MultitrackView::setSelectedClipsLocked (bool locked)
+{
+    auto next = *engine.session.getState();
+    auto changed = 0;
+
+    for (auto id : getSelectedClips())
+        changed += SessionEdits::setClipLocked (next, id, locked) ? 1 : 0;
+
+    if (changed > 0)
+        engine.session.apply (std::move (next), juce::String (locked ? "Lock " : "Unlock ")
+                                                    + (changed > 1 ? juce::String (changed) + " Clips" : juce::String ("Clip")));
+}
+
 void MultitrackView::deleteSelectedTrack()
 {
     auto next = *engine.session.getState();
@@ -2221,6 +2263,12 @@ void MultitrackView::nudge (bool later)
     }
 
     auto next = *engine.session.getState();
+
+    // The clips move together or not at all.
+    for (auto id : ids)
+        if (const auto where = next.findClip (id); next.tracks[(size_t) where->first].clips[(size_t) where->second].locked)
+            return;
+
     const auto primary = next.findClip (isClipSelected (selectedClip) ? selectedClip : ids.front());
     const auto start = next.tracks[(size_t) primary->first].clips[(size_t) primary->second].position;
     auto earliest = start;
@@ -2396,6 +2444,10 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
                  : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimEnd
                  : Drag::move;
 
+        // A locked clip is only selected; so is a group being moved with one in it.
+        if (clip.locked || (drag == Drag::move && std::any_of (dragGroup.begin(), dragGroup.end(), [] (auto& c) { return c.locked; })))
+            drag = Drag::none;
+
         dragDescription = drag == Drag::move ? "Move Clip" : drag == Drag::clipGain ? "Clip Gain" : drag == Drag::fadeIn ? "Clip Fade In"
                         : drag == Drag::fadeOut ? "Clip Fade Out" : "Trim Clip";
         selectTrack (hit->first);
@@ -2561,7 +2613,8 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
         const auto r = clipBounds (hit->first, clip);
-        cursorShape = e.mods.isCommandDown() ? juce::MouseCursor::UpDownResizeCursor
+        cursorShape = clip.locked ? juce::MouseCursor::NormalCursor
+                    : e.mods.isCommandDown() ? juce::MouseCursor::UpDownResizeCursor
                     : fadeHandleAt (p, hit->first, clip) != Drag::none
                           || (r.getWidth() > 3 * edgeGrab && (p.x <= r.getX() + edgeGrab || p.x >= r.getRight() - edgeGrab))
                           ? juce::MouseCursor::LeftRightResizeCursor

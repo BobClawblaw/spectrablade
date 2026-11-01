@@ -106,6 +106,14 @@ public:
     void duplicateSelectedClip();
 
     void splitSelectedClip();      // at the cursor
+
+    /** True when there are selected clips and every one is locked. */
+    bool areSelectedClipsLocked() const;
+
+    /** Locks (or unlocks) every selected clip as one undo step ("Lock Clip", "Unlock 2 Clips").
+        Locked clips show a lock and can't be dragged, trimmed, faded, nudged, split or deleted
+        until they are unlocked; see SessionEdits::setClipLocked. */
+    void setSelectedClipsLocked (bool locked);
     void deleteSelectedTrack();
 
     /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise

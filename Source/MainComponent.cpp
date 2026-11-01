@@ -48,7 +48,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -694,7 +694,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdShorterTracks; ++id)
+    for (int id = cmdOpen; id <= cmdLockClip; ++id)
         ids.add (id);
 }
 
@@ -808,6 +808,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && ! multitrack.getTimeSelection().isEmpty()); break;
         case cmdReverseClip: info.setInfo ("Reverse Clip", "Play the selected clip back to front, from a new file", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
+        case cmdLockClip:   info.setInfo ("Lock Clip", "Keep the selected clips from being moved, trimmed or deleted, or let them be again", "Multitrack", 0);
+                            info.addDefaultKeypress ('l', cmd | shift); info.setTicked (multitrack.areSelectedClipsLocked());
+                            info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
         case cmdClipProperties: info.setInfo ("Clip Properties", "A window with the selected clip's name, start, length, gain and fades", "Multitrack", 0);
                             info.addDefaultKeypress ('i', cmd | shift); info.setTicked (clipPropertiesWindow != nullptr); break;
         case cmdExportStems: info.setInfo ("Export Stems...", "Write each track, alone through its effects, to a file of its own", "Multitrack", 0);
@@ -964,6 +967,7 @@ bool MainComponent::perform (const InvocationInfo& info)
             commands.commandStatusChanged();
             break;
         case cmdReverseClip: reverseSelectedClip(); break;
+        case cmdLockClip:   multitrack.setSelectedClipsLocked (! multitrack.areSelectedClipsLocked()); commands.commandStatusChanged(); break;
         case cmdNudgeEarlier: multitrack.nudge (false); break;
         case cmdNudgeLater: multitrack.nudge (true); break;
         case cmdMoveTrackUp: multitrack.moveTrack (multitrack.getSelectedTrack(), multitrack.getSelectedTrack() - 1); break;
@@ -1096,7 +1100,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1770,6 +1774,10 @@ void MainComponent::reverseSelectedClip()
 
     // The reversed audio is written to a file of its own, so the session can be saved and opened again.
     const auto& clip = state->tracks[(size_t) where->first].clips[(size_t) where->second];
+
+    if (clip.locked)
+        return;
+
     const auto reversed = SessionEdits::reversedAudio (clip);
     const auto folder = recordingsFolder();
     const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (clip.name) + " Reversed", ".wav", false);

@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 40: locking clips**
+- Multitrack > Lock Clip (Cmd Shift L) locks the selected clips, or unlocks them when they are all locked, as one undo step ("Lock Clip", "Unlock 2 Clips"). A locked clip shows a padlock in its title bar and no fade handles.
+- A locked clip can still be clicked, selected, copied and renamed, but it can't be dragged, trimmed, faded, Command-dragged for gain, nudged, split, reversed, normalized, given another take or deleted. Selected with other clips, it keeps them from being dragged or nudged too; Delete and Cut remove the others and leave it.
+- Clips pasted, duplicated, repeated or recorded over a locked clip overlap it rather than cutting it, and a crossfade leaves its fades alone. Copies of a locked clip start unlocked. Deleting its track still deletes it.
+- Measured by the tests: moving, trimming, splitting, gain, fades, reversing, crossfading and removing refused on a locked clip (normalizing and choosing a take were not tested); a copy placed over one overlapping it, unlocked, and a crossfade leaving its fades; session files saved and loaded with real audio keeping which clips are locked; through the real view, dragging a locked clip only selecting it, a group with one in it not dragging or nudging, Delete removing only the unlocked clip, and unlocking as an undo step after which it drags again. The padlock and the menu item were not checked by the tests, and none of it was tried by hand. The default-device test didn't finish on this build: opening the audio interface hung in CoreAudio, inside JUCE's device setup, after two test runs had opened it at once. Every other check passed.
+
 **Milestone 39: track colours**
 - Right-click a track's or bus's header (its background) and choose Colour: Automatic, or one of eight (Teal, Blue, Violet, Orange, Green, Red, Yellow, Pink). The track's header, its clips in the lanes and a bar along the top of its mixer strip take that colour. Choosing a colour is an undo step ("Track Colour").
 - Automatic is what tracks had before: the first six colours in turn by the track's place in the list, so an automatic track's colour changes when it moves, and grey for buses. A chosen colour stays with the track as it moves.
@@ -315,6 +321,7 @@ The tests run against the real machine:
 - Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Track colours: automatic and chosen colours, the undo step, and session files.
+- Locking clips: every refused edit, clips placed over locked ones, session files, and the view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -368,4 +375,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: locking clips so that they can't be moved, trimmed or deleted by accident
+1. Multitrack, continued: muting single clips, so they stay in place but don't play
