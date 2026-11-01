@@ -4340,8 +4340,14 @@ void MainComponent::showLoudness()
         text->setMultiLine (true);
         text->setReadOnly (true);
         text->setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
+        if (const auto correlation = AudioEdits::stereoCorrelation (*engine.document.getSnapshot(), range.getStart(), range.getEnd()))
+        {
+            all.add ({});
+            all.add ("Stereo correlation:    " + juce::String (*correlation >= 0.0 ? "+" : "") + juce::String (*correlation, 3));
+        }
+
         text->setText (all.joinIntoString ("\n"));
-        text->setSize (360, 120 + 72 * (int) levels.size());
+        text->setSize (360, 150 + 72 * (int) levels.size());
         box->addCustomComponent (text);
         box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
         box->enterModalState (true, juce::ModalCallbackFunction::create ([text] (int) { delete text; }), true);

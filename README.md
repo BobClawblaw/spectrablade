@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 143: Stereo Correlation**
+- Loudness Statistics now also shows, for a stereo file, how alike its two channels are over the selection or the whole file: +1 when they are the same, about 0 when they are unrelated, and -1 when one is the other inverted (a sign that Invert Left or Invert Right Channel is needed). It is left out for mono files and when a channel is silent.
+- Measured by the tests: two identical sine channels give +1 and a sine against its inverse gives -1, each within 1e-9; two different ramps give a value between; a silent channel or a mono file gives none. The dialog line was not seen by hand. The whole suite passed, the default-device test included.
+
 **Milestone 142: Noise Gate**
 - Effects > Noise Gate asks for a level and a time (the same settings as Find Silence) and silences every stretch, in the selection or the whole file, where every channel stays at or below the level for at least that time. Each stretch fades out over its first 10 ms and back in over its last 10 ms (less when the stretch is shorter than 20 ms), so the sound on either side is not touched. It says so when nothing is quiet enough, and it is one undo step.
 - Measured by the tests: on a file loud, then a quiet hiss from frame 300 to 700, then loud, gating with 50-frame fades leaves the loud parts bit for bit, zeroes frames 350 to 650, and only lowers the hiss in the fades; gating only frames 0 to 500 stops at frame 500, fading back in before it; a level below the hiss, or a time longer than the hiss, is refused. How it sounds on real recordings was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -871,6 +875,7 @@ The tests run against the real machine:
 - Silence one channel: only that channel zeroed, only in the range.
 - Copy one channel to the other: the target replaced in the range, the source untouched.
 - Noise gate: quiet stretches faded and zeroed, the sound around them bit for bit.
+- Stereo correlation: +1 for the same channels, -1 for one inverted, none for mono.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -924,4 +929,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Selection Statistics for the selection only, peak and RMS of just the selected frames
+1. Editor: Mark Clipping, a marker at the start of every clipped run in the file

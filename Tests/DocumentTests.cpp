@@ -407,6 +407,28 @@ namespace
                    && ! AudioEdits::gateQuiet (*hissySnap, 0, 1000, 0.01f, 500, 50),
                "noise gate: the quiet stretch faded out and in and zeroed between, the sound around it bit for bit, the range kept to; nothing quiet enough refused");
 
+        juce::AudioBuffer<float> sameTwice (2, 1000), mirrored (2, 1000), oneDead (2, 1000);
+        oneDead.clear();
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            const auto v = std::sin ((float) i * 0.05f);
+            sameTwice.setSample (0, i, v);
+            sameTwice.setSample (1, i, v);
+            mirrored.setSample (0, i, v);
+            mirrored.setSample (1, i, -v);
+            oneDead.setSample (0, i, v);
+        }
+
+        const auto corrSame = AudioEdits::stereoCorrelation (*AudioEdits::fromBuffer (std::move (sameTwice)), 0, 1000);
+        const auto corrMirror = AudioEdits::stereoCorrelation (*AudioEdits::fromBuffer (std::move (mirrored)), 0, 1000);
+        const auto corrRamps = AudioEdits::stereoCorrelation (*twoSnap, 0, 1000);
+        check (corrSame && std::abs (*corrSame - 1.0) < 1.0e-9 && corrMirror && std::abs (*corrMirror + 1.0) < 1.0e-9
+                   && corrRamps && *corrRamps > -1.0 && *corrRamps < 1.0
+                   && ! AudioEdits::stereoCorrelation (*AudioEdits::fromBuffer (std::move (oneDead)), 0, 1000)
+                   && ! AudioEdits::stereoCorrelation (*rampSnap, 0, 1000),
+               "stereo correlation: +1 for the same channels, -1 for one inverted, between for others; a dead channel or mono gives none");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

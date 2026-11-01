@@ -81,6 +81,11 @@ namespace AudioEdits
     /** The levels of each channel over [start, end), summed in double precision a block at a time. */
     std::vector<ChannelLevels> channelLevels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
+    /** How alike the two channels of stereo audio are over [start, end): the sum of left times right
+        over the square root of the sums of their squares, from +1 (the same) through 0 (unrelated)
+        to -1 (one the other inverted). Nothing unless the audio is stereo and both channels have sound. */
+    std::optional<double> stereoCorrelation (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+
     /** The first run of at least minRun frames at or after `from` where some channel is at or
         above level (absolute), as [first, last + 1); nothing when there is none. A frame counts
         when any channel reaches the level. */

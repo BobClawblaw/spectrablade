@@ -440,6 +440,35 @@ std::vector<ChannelLevels> channelLevels (const AudioSnapshot& s, juce::int64 st
     return levels;
 }
 
+std::optional<double> stereoCorrelation (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+{
+    if (s.getNumChannels() != 2)
+        return std::nullopt;
+
+    constexpr juce::int64 blockSize = 65536;
+    const auto r = clampRange (s, start, end);
+    double both = 0.0, left = 0.0, right = 0.0;
+
+    for (auto from = r.getStart(); from < r.getEnd(); from += blockSize)
+    {
+        const auto block = readRange (s, from, juce::jmin (r.getEnd(), from + blockSize));
+        const auto* l = block.getReadPointer (0);
+        const auto* rr = block.getReadPointer (1);
+
+        for (int i = 0; i < block.getNumSamples(); ++i)
+        {
+            both += (double) l[i] * rr[i];
+            left += (double) l[i] * l[i];
+            right += (double) rr[i] * rr[i];
+        }
+    }
+
+    if (left <= 0.0 || right <= 0.0)
+        return std::nullopt;
+
+    return juce::jlimit (-1.0, 1.0, both / std::sqrt (left * right));
+}
+
 namespace
 {
     /** The first run of at least minRun frames from `from` on for which matches (block, index) holds. */
