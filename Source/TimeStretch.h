@@ -15,6 +15,9 @@ namespace TimeStretch
     int frameLength (double sampleRate);
 
     /** The input stretched to round (numSamples * ratio) samples (ratio within shortest to
-        longest), every channel cut at the same places so they stay in step. */
-    juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate);
+        longest), every channel cut at the same places so they stay in step. progress hears how
+        far it is (0 to 1) as it goes; when it returns false, stretching stops and an empty
+        buffer comes back. */
+    juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate,
+                                      const std::function<bool (float)>& progress = {});
 }

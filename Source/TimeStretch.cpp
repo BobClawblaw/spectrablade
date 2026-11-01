@@ -8,7 +8,8 @@ int frameLength (double sampleRate)
     return 1 << juce::roundToInt (std::log2 (wanted));
 }
 
-juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate)
+juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate,
+                                  const std::function<bool (float)>& progress)
 {
     ratio = juce::jlimit (shortest, longest, ratio);
     const auto channels = input.getNumChannels();
@@ -61,6 +62,9 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
 
         if (outStart >= outLength)
             break;
+
+        if (progress != nullptr && k % 64 == 0 && ! progress ((float) juce::jmax (0, outStart) / (float) outLength))
+            return {};
 
         const auto nominal = (int) std::llround ((double) outStart / ratio);
         auto chosen = nominal;

@@ -896,7 +896,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdZeroCrossings: info.setInfo ("Cut at Zero Crossings", "Move splits and dragged clip edges to the nearest zero crossing, up to 5 ms away", "Multitrack", 0);
                             info.setTicked (multitrack.isFindingZeroCrossings()); info.setActive (multitrackMode); break;
         case cmdStretchClip: info.setInfo ("Stretch Clip...", "Make the selected clip longer or shorter without changing its pitch", "Multitrack", 0);
-                            info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
+                            info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
         case cmdCloseGaps:  info.setInfo ("Close Gaps", "Move the selected track's clips back so each starts where the one before ends", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdHideTrack:  info.setInfo ("Hide Track", "Leave the selected track or bus out of the lanes; it still plays", "Multitrack", 0);
@@ -1947,22 +1947,43 @@ void MainComponent::stretchSelectedClip (double ratio)
     if (clip.locked)
         return;
 
-    const auto stretched = SessionEdits::stretchedAudio (clip, ratio, state->sampleRate);
+    if (clip.audio == nullptr || backgroundJob != nullptr)
+        return;
+
+    // Stretched and written on a thread of its own, with a progress window and Cancel.
     const auto folder = recordingsFolder();
     const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (clip.name) + " Stretched", ".wav", false);
-    auto error = stretched == nullptr ? juce::String ("The clip has no audio.")
-                                      : ! folder.createDirectory() ? "Could not make the folder " + folder.getFullPathName()
-                                                                   : AudioFileIO::save (*stretched, state->sampleRate, file, 32, engine.formatManager);
+    const auto rate = state->sampleRate;
+    auto stretched = std::make_shared<AudioDocument::Snapshot>();
+    auto error = std::make_shared<juce::String>();
 
-    if (error.isNotEmpty())
-    {
-        showError ("Stretch Clip", error);
-        return;
-    }
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Stretching " + clip.name + "...",
+        [this, clip, ratio, rate, folder, file, stretched, error] (const std::function<bool (float)>& progress)
+        {
+            *stretched = SessionEdits::stretchedAudio (clip, ratio, rate, progress);
 
-    auto next = *state;
-    SessionEdits::stretchClip (next, clipId, file, stretched);
-    engine.session.apply (std::move (next), "Stretch Clip");
+            if (*stretched == nullptr)
+                return false;
+
+            *error = ! folder.createDirectory() ? "Could not make the folder " + folder.getFullPathName()
+                                                : AudioFileIO::save (**stretched, rate, file, 32, engine.formatManager);
+            return true;
+        },
+        [this, clipId, file, stretched, error]
+        {
+            if (error->isNotEmpty())
+            {
+                showError ("Stretch Clip", *error);
+                return;
+            }
+
+            auto next = *engine.session.getState();
+
+            if (SessionEdits::stretchClip (next, clipId, file, *stretched))
+                engine.session.apply (std::move (next), "Stretch Clip");
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::chooseStemsFolder()

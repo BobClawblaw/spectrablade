@@ -282,8 +282,10 @@ namespace SessionEdits
     bool reverseClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot reversed);
 
     /** The part of the clip's audio that plays, stretched to `ratio` times its length (within
-        TimeStretch::shortest to longest) at the same pitch. Null with no audio. */
-    AudioDocument::Snapshot stretchedAudio (const SessionClip&, double ratio, double sampleRate);
+        TimeStretch::shortest to longest) at the same pitch. Null with no audio, or when
+        progress (as TimeStretch::stretch has it) cancels. */
+    AudioDocument::Snapshot stretchedAudio (const SessionClip&, double ratio, double sampleRate,
+                                            const std::function<bool (float)>& progress = {});
 
     /** Makes a clip play stretched audio (from stretchedAudio(), saved as file), all of it, from
         where it starts; its fades scale with it, and its takes go. False for a locked clip. */

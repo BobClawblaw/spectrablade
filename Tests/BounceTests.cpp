@@ -132,6 +132,15 @@ namespace
         const auto ms = juce::Time::getMillisecondCounterHiRes() - started;
         check (stretched.getNumSamples() == 720000, "time stretch: 10 s of stereo to 15 s in " + juce::String (ms, 0) + " ms");
 
+        // Progress as it goes, and cancelling part way.
+        std::vector<float> heard;
+        const auto whole = TimeStretch::stretch (tone, 1.5, rate, [&heard] (float p) { heard.push_back (p); return true; });
+        auto calls = 0;
+        const auto cancelled = TimeStretch::stretch (tone, 1.5, rate, [&calls] (float) { return ++calls < 3; });
+        check (whole.getNumSamples() == 144000 && heard.size() > 1 && std::is_sorted (heard.begin(), heard.end()) && heard.front() >= 0.0f
+                   && heard.back() < 1.0f && cancelled.getNumSamples() == 0 && calls == 3,
+               "time stretch: progress rises from 0 towards 1 as it goes, and stopping it part way gives nothing");
+
         // On a clip: the part it plays, its fades scaled, and not when locked.
         SessionState s;
         s.sampleRate = rate;

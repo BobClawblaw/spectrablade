@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 52: stretching in the background**
+- Stretch Clip now runs on a thread of its own behind a progress window with Cancel, as mixing down and bouncing do, so a long clip no longer holds the window up. Cancelling leaves the clip as it was and writes no file. Reversing a clip stays immediate: it only copies the audio back to front.
+- Measured by the tests: the stretch's progress rising from 0 towards 1, and stopping it part way giving nothing, with every Milestone 51 measurement unchanged (10 s of stereo to 15 s took 869 ms this run). The progress window and Cancel were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 51: stretching clips**
 - Multitrack > Stretch Clip... asks for the selected clip's new length, from 50% to 200% of what it is now, and makes it that long at the same pitch. The part of the clip that plays is stretched into a 32-bit float WAV of its own ("Vocal Stretched.wav") in the session's recordings folder, and the clip plays all of it from where it started; its fades scale with it and its takes go. It is an undo step ("Stretch Clip"), and refused on a locked clip.
 - The stretching is waveform-similarity overlap-add (WSOLA), written from Verhelst and Roelands' 1993 paper: Hann-windowed frames of about 40 ms laid half a frame apart, each taken from within 10 ms of where it falls in the original, where it best continues the frame before (by the products of every channel, so channels out of phase don't cancel). All channels are cut at the same places.
@@ -385,7 +389,7 @@ The tests run against the real machine:
 - Moving the selected clips to the cursor, together, and not when locked.
 - Closing gaps on a track, around locked clips and keeping overlaps.
 - Zero crossings: finding them, and splits landing on them.
-- Time stretch: lengths, pitch and level kept on a tone, channels in step, and the clip edit.
+- Time stretch: lengths, pitch and level kept on a tone, channels in step, progress and cancelling, and the clip edit.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -439,4 +443,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: stretching, reversing and bouncing in the background with a progress bar and Cancel, so long clips don't hold the window up
+1. Multitrack, continued: changing a clip's pitch in semitones without changing its length, from the same stretching and a resampler

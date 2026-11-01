@@ -599,14 +599,15 @@ bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     return true;
 }
 
-AudioDocument::Snapshot stretchedAudio (const SessionClip& c, double ratio, double sampleRate)
+AudioDocument::Snapshot stretchedAudio (const SessionClip& c, double ratio, double sampleRate, const std::function<bool (float)>& progress)
 {
     if (c.audio == nullptr || c.length <= 0)
         return nullptr;
 
     juce::AudioBuffer<float> part (c.audio->getNumChannels(), (int) c.length);
     c.audio->read (part, 0, c.offset, (int) c.length);
-    return AudioEdits::fromBuffer (TimeStretch::stretch (part, ratio, sampleRate));
+    auto stretched = TimeStretch::stretch (part, ratio, sampleRate, progress);
+    return stretched.getNumSamples() > 0 ? AudioEdits::fromBuffer (std::move (stretched)) : nullptr;
 }
 
 bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched)
