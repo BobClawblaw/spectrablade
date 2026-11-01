@@ -4,6 +4,7 @@
 #include "AudioEngine.h"
 #include "ClickRepair.h"
 #include "LevelMeter.h"
+#include "LoadReadout.h"
 #include "Loudness.h"
 #include "MultitrackView.h"
 #include "NoiseReduction.h"
@@ -210,6 +211,7 @@ private:
     juce::ComboBox inputChoice;
     LevelMeter inputMeter;
     juce::Label fileLabel, deviceLabel, timeLabel, selectionLabel;
+    LoadReadout loadReadout { [this] { return LoadReadout::Reading { engine.deviceManager.getCpuUsage(), engine.deviceManager.getXRunCount() }; } };
 
     WaveformView waveform { engine };
     MultitrackView multitrack { engine };

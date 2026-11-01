@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 82: audio load and dropouts**
+- The status line at the bottom of the window shows the audio load (the share of each audio callback's time spent processing, as the audio device manager averages it, in whole percent) and the number of dropouts (under- and overruns) since it was last clicked: "Load 12%  |  0 dropouts". It turns red while the load is over 80% or once there has been a dropout. Click it to count from 0 again. When the device changes, its count starts again from 0. It reads four times a second.
+- Measured by the tests: the text at 12%, 85% (red) and over 100% (shown as 100%); three dropouts turning it red; a reset clearing them and one more showing as "1 dropout"; a new device's lower count shown in full; and the readout reading the real device manager. Whether the device reports dropouts itself, the readout under real load, and its place in the window were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 81: selecting the clips in the time range**
 - Edit > Select Clips in Time Range selects every clip that plays any part of the time range, on every shown track. A clip that only touches the range at its start or end is left out. It needs a time range, and it replaces the clip selection.
 - Measured by the tests, through the real view: a range catching the ends of two clips and the starts of two more, on two tracks, and not the clips on a hidden track; a range between clips, touching both, selecting none; and nothing happening without a range. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -561,6 +565,7 @@ The tests run against the real machine:
 - Header meters' peak hold and clip light: holding, falling, lighting and clicking out.
 - Select Between Markers: spans around a frame, and the time range in the view.
 - Selecting the clips in the time range: overlapping, touching and hidden.
+- Audio load readout: percent, warnings, dropout counts, resets and new devices.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -614,4 +619,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Audio engine: a load readout (how much of each audio callback's time the processing takes) and a count of dropouts, in the window's status line
+1. Multitrack, continued: double-clicking an empty spot in the marker lane adds a marker there

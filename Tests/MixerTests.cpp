@@ -7,6 +7,7 @@
 #include "../Source/ClipList.h"
 #include "../Source/ClipProperties.h"
 #include "../Source/KeyShortcuts.h"
+#include "../Source/LoadReadout.h"
 #include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
@@ -1058,6 +1059,47 @@ namespace
     }
 }
 
+namespace
+{
+    void testLoadReadout (AudioEngine& engine)
+    {
+        LoadReadout::Reading now { 0.123, 0 };
+        LoadReadout readout ([&now] { return now; });
+        const auto quiet = readout.getText() == "Load 12%  |  0 dropouts" && ! readout.isWarning();
+
+        now = { 0.85, 0 };
+        readout.refresh();
+        const auto busy = readout.getText() == "Load 85%  |  0 dropouts" && readout.isWarning();
+
+        now = { 0.2, 3 };
+        readout.refresh();
+        const auto dropped = readout.getText() == "Load 20%  |  3 dropouts" && readout.isWarning();
+
+        readout.resetDropouts();
+        const auto reset = readout.getDropouts() == 0 && ! readout.isWarning();
+        now = { 0.2, 4 };
+        readout.refresh();
+        const auto one = readout.getText() == "Load 20%  |  1 dropout" && readout.isWarning();
+
+        // A new device counts from 0 again, and every one of its dropouts shows.
+        now = { 0.2, 2 };
+        readout.refresh();
+        const auto newDevice = readout.getDropouts() == 2;
+        now = { 1.7, 2 };
+        readout.refresh();
+        const auto capped = readout.getText().startsWith ("Load 100%");
+
+        check (quiet && busy && dropped && reset && one && newDevice && capped,
+               "load readout: the load in percent, red over 80% or after dropouts; dropouts counted from a reset, and from 0 on a new device");
+
+        // Wired to the real device manager: the default device's count, whatever it is, from 0.
+        LoadReadout real ([&engine] { return LoadReadout::Reading { engine.deviceManager.getCpuUsage(), engine.deviceManager.getXRunCount() }; });
+        real.resetDropouts();
+        check (real.getDropouts() == 0 && real.getText().startsWith ("Load "),
+               "load readout: reads the audio device manager's load and dropouts");
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
     testClipProperties (engine);
@@ -1079,4 +1121,5 @@ void runMixerTests (AudioEngine& engine)
     testFolders (engine);
     testFolderStrips (engine);
     testSessionNotes (engine);
+    testLoadReadout (engine);
 }

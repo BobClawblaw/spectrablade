@@ -668,6 +668,8 @@ MainComponent::MainComponent()
     for (auto* l : { &fileLabel, &deviceLabel, &timeLabel, &selectionLabel })
         addAndMakeVisible (l);
 
+    addAndMakeVisible (loadReadout);
+
     deviceLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     selectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     timeLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 15.0f, juce::Font::plain));
@@ -893,6 +895,7 @@ void MainComponent::resized()
     status.removeFromLeft (6);
     inputMeter.setBounds (status.removeFromLeft (160).reduced (0, 3));
     status.removeFromLeft (12);
+    loadReadout.setBounds (status.removeFromRight (180));
     deviceLabel.setBounds (status.removeFromRight (status.getWidth() / 2));
     fileLabel.setBounds (status);
     r.removeFromBottom (8);

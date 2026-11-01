@@ -61,6 +61,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Recorder.cpp
     Source/SessionCollect.cpp
     Source/SessionNotes.cpp
+    Source/LoadReadout.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
     Source/SessionOverview.cpp
@@ -145,6 +146,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Recorder.cpp
     Source/SessionCollect.cpp
     Source/SessionNotes.cpp
+    Source/LoadReadout.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
     Source/SessionOverview.cpp
