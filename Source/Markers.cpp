@@ -142,6 +142,27 @@ int removeStartingIn (Markers& markers, juce::Range<juce::int64> range)
     return (int) (before - markers.size());
 }
 
+int moveStartingIn (Markers& markers, juce::Range<juce::int64> range, juce::int64 offset, juce::int64 total)
+{
+    const auto inside = [range] (const Marker& m) { return range.contains (m.start); };
+
+    if (offset == 0 || std::any_of (markers.begin(), markers.end(), [&] (const Marker& m)
+                                    { return inside (m) && (m.start + offset < 0 || m.getEnd() + offset > total); }))
+        return 0;
+
+    auto moved = 0;
+
+    for (auto& m : markers)
+        if (inside (m))
+        {
+            m.start += offset;
+            ++moved;
+        }
+
+    sort (markers);
+    return moved;
+}
+
 bool renameInSequence (Markers& markers, const juce::String& base)
 {
     const auto trimmed = base.trim();

@@ -67,6 +67,10 @@ namespace MarkerEdits
     /** Removes every marker and region that starts inside range; returns how many went. */
     int removeStartingIn (Markers&, juce::Range<juce::int64> range);
 
+    /** Moves every marker and region that starts inside range by offset frames. Refused (0, nothing
+        moved) when one would then start before 0 or end after total; otherwise returns how many moved. */
+    int moveStartingIn (Markers&, juce::Range<juce::int64> range, juce::int64 offset, juce::int64 total);
+
     /** Names every marker and region, in time order, "<base> 01", "<base> 02", ... (three digits
         from 100 on). The base is trimmed; an empty one changes nothing and returns false. */
     bool renameInSequence (Markers&, const juce::String& base);

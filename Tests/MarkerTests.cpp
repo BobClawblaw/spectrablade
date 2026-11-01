@@ -135,6 +135,16 @@ namespace
         check (gone == 2 && left == "A@100+0 C@400+0 Early@50+100" && MarkerEdits::removeStartingIn (thinned, { 500, 500 }) == 0,
                "markers: deleting in a range takes those starting inside it, the end excluded, and keeps ones reaching into it (" + left + ")");
 
+        auto shifted = Markers { { 100, 0, "A" }, { 200, 100, "R" }, { 300, 0, "B" }, { 500, 0, "C" } };
+        const auto moved = MarkerEdits::moveStartingIn (shifted, { 150, 400 }, 250, 1000);
+        const auto afterMove = describePieces (shifted);
+        auto refusedMoves = shifted;
+        check (moved == 2 && afterMove == "A@100+0 R@450+100 C@500+0 B@550+0"
+                   && MarkerEdits::moveStartingIn (refusedMoves, { 400, 600 }, 600, 1000) == 0 && describePieces (refusedMoves) == afterMove
+                   && MarkerEdits::moveStartingIn (refusedMoves, { 0, 200 }, -101, 1000) == 0 && MarkerEdits::moveStartingIn (refusedMoves, { 0, 200 }, 0, 1000) == 0
+                   && MarkerEdits::moveStartingIn (refusedMoves, { 0, 200 }, -100, 1000) == 1 && refusedMoves.front().start == 0,
+               "markers: moving in a range shifts only those starting inside it, kept sorted; past the start or end, or by nothing, refused (" + afterMove + ")");
+
         // Renaming in sequence: time order, regions included, colours kept; an empty name refused.
         auto renamed = toRegions;
         juce::StringArray names;

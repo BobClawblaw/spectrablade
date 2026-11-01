@@ -83,6 +83,15 @@ namespace TimeEntry
                          : juce::String ((int) minutes) + ":" + rest;
     }
 
+    /** A time that may start with "-" (earlier) or "+" (later), as frames; otherwise as parse. */
+    inline std::optional<juce::int64> parseOffset (const juce::String& typed, double sampleRate)
+    {
+        const auto text = typed.trim();
+        const auto sign = text.startsWithChar ('-') ? -1 : 1;
+        const auto frames = parse (text.startsWithChar ('-') || text.startsWithChar ('+') ? text.substring (1) : text, sampleRate);
+        return frames ? std::optional<juce::int64> (sign * *frames) : std::nullopt;
+    }
+
     /** A range as one line for the clipboard: start, end and length, tab-separated. */
     inline juce::String describe (juce::Range<juce::int64> range, double sampleRate)
     {

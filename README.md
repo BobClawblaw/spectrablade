@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 151: Move Markers in Selection**
+- Markers > Move Markers in Selection asks for a time, with a minus sign to move earlier ("-0.5"), and moves the markers and regions that start inside the selection by it, in the editor and in a session. In the editor nothing may move before the start or past the end of the file; in a session nothing may move before 0. Otherwise it says so and moves none. It is one undo step.
+- Measured by the tests: moving [150, 400) by 250 frames moves a region at 200 and a marker at 300 and leaves markers at 100 and 500, with the list kept in time order; a move past the end or before 0, or by nothing, moves none, and a move to exactly 0 is allowed. A typed "-0.5", "+1:00" and " 2 " read as -0.5, 60 and 2 seconds; "--1" and "-" are refused. The dialog was not tried by hand in either mode. The whole suite passed, the default-device test included.
+
 **Milestone 150: Delete Markers in Selection**
 - Markers > Delete Markers in Selection removes the markers and regions that start inside the selection, in the editor and in a session (the time selection), and keeps those that start before it, even regions reaching into it. It is offered only when one starts inside the selection, and it is one undo step.
 - Measured by the tests: in [200, 400) it removes a region and a marker starting at 200 and 300, keeps a marker at 400 (the end is not inside), one at 100 and a region from 50 reaching in; an empty range removes nothing. The menu item was not tried by hand in either mode. The whole suite passed, the default-device test included.
@@ -911,6 +915,7 @@ The tests run against the real machine:
 - Crop margins: the range widened either side, kept inside the file.
 - Pieces between markers: the file split at its point markers, a Start piece before the first.
 - Delete markers in a range: those starting inside it go, the end excluded.
+- Move markers in a range: only those starting inside it, refused past either end; signed times read.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -964,4 +969,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers: Move Markers in Selection, shifting the markers that start inside it by a typed time
+1. Markers: Snap Markers to Zero Crossings, moving each point marker to the nearest crossing

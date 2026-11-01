@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -918,7 +918,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDeleteMarkersInSelection; ++id)
+    for (int id = cmdOpen; id <= cmdMoveMarkersInSelection; ++id)
         ids.add (id);
 }
 
@@ -1321,6 +1321,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (std::any_of (doc.getMarkers().begin(), doc.getMarkers().end(), [] (const Marker& m) { return m.isRegion(); })); break;
         case cmdDeleteAllMarkers: info.setInfo ("Delete All Markers", "Remove every marker and region", "Markers", 0);
                             info.setActive (! doc.getMarkers().empty()); break;
+        case cmdMoveMarkersInSelection: info.setInfo ("Move Markers in Selection...", "Move the markers and regions that start inside the selection by a typed time", "Markers", 0);
+                            info.setActive (std::any_of (doc.getMarkers().begin(), doc.getMarkers().end(),
+                                                         [sel = waveform.getSelection()] (const Marker& m) { return sel.contains (m.start); })); break;
         case cmdDeleteMarkersInSelection: info.setInfo ("Delete Markers in Selection", "Remove the markers and regions that start inside the selection", "Markers", 0);
                             info.setActive (std::any_of (doc.getMarkers().begin(), doc.getMarkers().end(),
                                                          [sel = waveform.getSelection()] (const Marker& m) { return sel.contains (m.start); })); break;
@@ -1374,7 +1377,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
             case cmdRegionsFromMarkers: info.setActive (std::any_of (session.getState()->markers.begin(), session.getState()->markers.end(),
                                                                      [] (const Marker& m) { return ! m.isRegion(); })); break;
             case cmdRenameMarkers: info.setActive (! session.getState()->markers.empty()); break;
-            case cmdDeleteMarkersInSelection:
+            case cmdDeleteMarkersInSelection: case cmdMoveMarkersInSelection:
                             info.setActive (std::any_of (session.getState()->markers.begin(), session.getState()->markers.end(),
                                                          [sel = multitrack.getTimeSelection()] (const Marker& m) { return sel.contains (m.start); })); break;
             case cmdFitRegions: info.shortName = "Fit Regions to Clips"; info.description = "Shrink every region to the clips inside it";
@@ -1665,6 +1668,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdTrackBelow: multitrack.selectAdjacentTrack (true); break;
         case cmdUnmuteAll:  multitrack.clearAllMutes(); break;
         case cmdGoToTime: showGoToTime(); break;
+        case cmdMoveMarkersInSelection: showMoveMarkers(); break;
         case cmdDeleteMarkersInSelection:
             if (multitrackMode)
             {
@@ -1742,7 +1746,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdGoToTime }); break;
-        case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, 0, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
+        case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, 0, cmdMoveMarkersInSelection, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
@@ -3945,6 +3949,55 @@ void MainComponent::showCrossfadeLoop()
             applyEdit (std::move (next), "Crossfade Loop", sel);
         else
             showError ("Crossfade Loop", "The crossfade must be longer than 0, at most half the selection, and no longer than the audio before it.");
+    }), true);
+}
+
+void MainComponent::showMoveMarkers()
+{
+    auto* box = new juce::AlertWindow ("Move Markers in Selection", "Move the markers and regions that start inside the selection by this time: "
+                                       "seconds (0.5) or minutes and seconds (1:30), with a minus sign to move them earlier.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("offset", "0.1", "Move by");
+    box->addButton ("Move", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto title = juce::String ("Move Markers in Selection");
+        const auto rate = multitrackMode ? engine.session.getState()->sampleRate : engine.document.getSampleRate();
+        const auto offset = TimeEntry::parseOffset (box->getTextEditorContents ("offset"), rate);
+
+        if (! offset || *offset == 0)
+        {
+            showError (title, "Type a time other than 0, such as 0.5 or -0.5.");
+            return;
+        }
+
+        const auto describe = [] (int moved) { return "Move " + juce::String (moved) + (moved == 1 ? " Marker" : " Markers"); };
+        const auto refused = "That would move a marker or region past the start or the end.";
+
+        if (multitrackMode)
+        {
+            auto next = *engine.session.getState();
+            const auto total = std::numeric_limits<juce::int64>::max() / 2;
+
+            if (const auto moved = MarkerEdits::moveStartingIn (next.markers, multitrack.getTimeSelection(), *offset, total); moved > 0)
+                engine.session.apply (std::move (next), describe (moved));
+            else
+                showError (title, refused);
+        }
+        else
+        {
+            auto markers = engine.document.getMarkers();
+
+            if (const auto moved = MarkerEdits::moveStartingIn (markers, waveform.getSelection(), *offset, engine.document.getNumFrames()); moved > 0)
+                engine.document.setMarkers (std::move (markers), describe (moved));
+            else
+                showError (title, refused);
+        }
     }), true);
 }
 

@@ -128,6 +128,7 @@ private:
     void repairSelection();
     void showFadeEdges();
     void showCropMargins();
+    void showMoveMarkers();
     double cropMarginSeconds = 0.5;
     double edgeFadeMs = 10.0;
     void addMarkersAtClipping();
