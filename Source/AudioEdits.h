@@ -96,6 +96,10 @@ namespace AudioEdits
         with its length kept; the same range when it is empty or already there. */
     juce::Range<juce::int64> stepSelection (juce::Range<juce::int64>, juce::int64 total, bool later);
 
+    /** A selection twice as long (cut at the file's end) or half as long (at least one frame),
+        from the same start; the same range when it is empty. */
+    juce::Range<juce::int64> resizeSelection (juce::Range<juce::int64>, juce::int64 total, bool longer);
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

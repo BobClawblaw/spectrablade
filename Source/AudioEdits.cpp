@@ -553,4 +553,13 @@ juce::Range<juce::int64> stepSelection (juce::Range<juce::int64> range, juce::in
     const auto start = juce::jlimit ((juce::int64) 0, total - range.getLength(), range.getStart() + (later ? range.getLength() : -range.getLength()));
     return range.movedToStartAt (start);
 }
+
+juce::Range<juce::int64> resizeSelection (juce::Range<juce::int64> range, juce::int64 total, bool longer)
+{
+    if (range.isEmpty())
+        return range;
+
+    const auto length = longer ? juce::jmin (total - range.getStart(), range.getLength() * 2) : juce::jmax ((juce::int64) 1, range.getLength() / 2);
+    return range.withLength (length);
+}
 }
