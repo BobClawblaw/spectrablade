@@ -317,6 +317,18 @@ namespace
                    && AudioEdits::pauseCuts (found, 1000000).empty() && AudioEdits::pauseCuts (found, 0).front() == juce::Range<juce::int64> (1000, 1100),
                "shorten pauses: each pause longer than the time cut to it from its middle, keeping both ends; the rest untouched");
 
+        // Fitting regions: one from inside the long pause into the sound after it starts where the
+        // sound does; one inside the pause (nothing audible) and a point stay; one already tight stays.
+        Markers fitted { { 65000, 85000, "Over" }, { 70000, 1000, "Quiet" }, { 500, 0, "Point" }, { 0, 1000, "Tight" } };
+        const auto fitCount = AudioEdits::fitRegionsToSound (*gapSnap, fitted, quietLevel);
+        const auto over = std::find_if (fitted.begin(), fitted.end(), [] (const Marker& m) { return m.name == "Over"; });
+        const auto quiet = std::find_if (fitted.begin(), fitted.end(), [] (const Marker& m) { return m.name == "Quiet"; });
+        const auto tight = std::find_if (fitted.begin(), fitted.end(), [] (const Marker& m) { return m.name == "Tight"; });
+        check (fitCount == 1 && over->start == 130000 && over->getEnd() == 150000 && quiet->start == 70000 && quiet->length == 1000
+                   && tight->start == 0 && tight->length == 1000,
+               "fit regions: a region trimmed to the sound inside it; silent, point and already tight ones left alone ("
+                   + juce::String (over->start) + "+" + juce::String (over->length) + ")");
+
         // Balance: half right lowers the left by 3 dB, the right untouched.
         const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
         const auto halfRight = SessionMixer::panGains (0.5f, 2);

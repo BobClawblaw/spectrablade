@@ -520,4 +520,28 @@ std::vector<juce::Range<juce::int64>> pauseCuts (const std::vector<juce::Range<j
 
     return cuts;
 }
+
+int fitRegionsToSound (const AudioSnapshot& s, Markers& markers, float threshold)
+{
+    auto changed = 0;
+
+    for (auto& m : markers)
+    {
+        if (! m.isRegion() || m.start >= s.getNumFrames())
+            continue;
+
+        const auto end = juce::jmin (m.getEnd(), s.getNumFrames());
+
+        if (const auto audible = audibleRange (*crop (s, m.start, end), threshold);
+            audible && (audible->getStart() > 0 || audible->getEnd() < end - m.start))
+        {
+            m.start += audible->getStart();
+            m.length = audible->getLength();
+            ++changed;
+        }
+    }
+
+    MarkerEdits::sort (markers);
+    return changed;
+}
 }

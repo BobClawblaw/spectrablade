@@ -99,6 +99,10 @@ namespace AudioEdits
         (a linear gain), or nothing when no frame is. */
     std::optional<juce::Range<juce::int64>> audibleRange (const AudioSnapshot&, float threshold);
 
+    /** The markers with each region shrunk to the audible range inside it (as audibleRange finds
+        it); a region with nothing above the threshold is left as it is. Returns how many changed. */
+    int fitRegionsToSound (const AudioSnapshot&, Markers&, float threshold);
+
     /** Scales [start, end) so its peak sits at targetDecibels. Returns nullptr for silence. */
     Snapshot normalize (const AudioSnapshot&, juce::int64 start, juce::int64 end, float targetDecibels);
 
