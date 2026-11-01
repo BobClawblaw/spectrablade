@@ -238,6 +238,12 @@ public:
         each other. */
     bool pasteTime();
 
+    /** Puts a copy of the time range (clips, envelopes and markers on every track) in right
+        after it, moving what follows on, as one undo step ("Duplicate Time"); the copy becomes
+        the time range, so doing it again repeats it once more. Leaves the copied time as it was.
+        False without a time range. */
+    bool duplicateTimeSelection();
+
     /** Hides a track or bus from the lanes (it still plays, and stays in the mixer) or shows it
         again, as an undo step ("Hide Track", "Show Track"). Right-click a header to hide it. */
     void setTrackHidden (juce::uint32 trackId, bool hidden);

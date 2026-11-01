@@ -3229,6 +3229,20 @@ bool MultitrackView::pasteTime()
     return true;
 }
 
+bool MultitrackView::duplicateTimeSelection()
+{
+    const auto range = timeSelection;
+    auto next = *engine.session.getState();
+
+    if (range.isEmpty() || ! SessionEdits::pasteTime (next, SessionEdits::copyTime (next, range.getStart(), range.getEnd()), range.getEnd()))
+        return false;
+
+    engine.session.apply (std::move (next), "Duplicate Time");
+    setTimeSelection (range + range.getLength());
+    setCursor (range.getEnd());
+    return true;
+}
+
 juce::uint32 MultitrackView::duplicateSelectedTrack()
 {
     auto next = *engine.session.getState();

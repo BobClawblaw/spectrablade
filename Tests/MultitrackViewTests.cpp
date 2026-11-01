@@ -1467,6 +1467,45 @@ void runMultitrackViewTests (AudioEngine& engine)
                "trim to cursor: the selected clips the cursor is in start or end there, as one undo step; not locked clips, nor clips it isn't inside");
     }
 
+    // Duplicating the time range: a copy right after it, moving what follows on.
+    {
+        SessionState piece;
+        piece.sampleRate = rate;
+        piece.addTrack();
+        piece.addTrack();
+        SessionEdits::addClip (piece, 0, juce::File ("/tmp/hook.wav"), silence (8000), 10000);   // [10000, 18000)
+        const auto later = SessionEdits::addClip (piece, 1, juce::File ("/tmp/later.wav"), silence (4000), 30000);
+        piece.markers = { { 12000, 0, "Hook" } };
+        engine.session.reset (piece, {});
+        Mouse::settle();
+        const auto pasteBefore = view.canPasteTime();
+        const auto clipStarts = [&] (int lane)
+        {
+            std::vector<juce::int64> v;
+
+            for (auto& c : engine.session.getState()->tracks[(size_t) lane].clips)
+                v.push_back (c.position);
+
+            std::sort (v.begin(), v.end());
+            return v;
+        };
+
+        view.setTimeSelection ({ 8000, 20000 });
+        const auto once = view.duplicateTimeSelection() && clipStarts (0) == std::vector<juce::int64> { 10000, 22000 }
+                          && clip (later).position == 42000 && engine.session.getState()->markers.size() == 2
+                          && engine.session.getState()->markers[1].start == 24000 && engine.session.getState()->markers[1].name == "Hook"
+                          && view.getTimeSelection() == juce::Range<juce::int64> (20000, 32000) && view.getCursor() == 20000
+                          && engine.session.getUndoDescription() == "Duplicate Time" && view.canPasteTime() == pasteBefore;
+        const auto twice = view.duplicateTimeSelection() && clipStarts (0) == std::vector<juce::int64> { 10000, 22000, 34000 }
+                           && clip (later).position == 54000;
+        engine.session.undo();
+        engine.session.undo();
+        view.setTimeSelection ({});
+        const auto without = ! view.duplicateTimeSelection() && clipStarts (0) == std::vector<juce::int64> { 10000 } && clip (later).position == 30000;
+        check (once && twice && without,
+               "duplicate time: the range's clips and markers repeated right after it, what follows moved on, the copy selected for the next; the copied time untouched");
+    }
+
     // Selecting the next and previous clip along a track.
     {
         SessionState row;

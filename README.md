@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 95: duplicating time**
+- Multitrack > Duplicate Time (Cmd Option D) puts a copy of the time range in right after it, on every track: clips, envelopes and markers, moving everything after it on, as Copy Time then Paste Time at the range's end would, in one undo step ("Duplicate Time"). The copy becomes the time range and the cursor goes to its start, so doing it again repeats the section once more. What Copy Time copied is left as it was.
+- Measured by the tests, through the real view: a clip and a marker in the range repeated 12,000 frames on, a clip on another track after the range moved on by the same, the copy selected, and the copied time untouched; doing it again making a third copy and moving the later clip on again; and nothing without a time range. The menu item and key were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 94: the clip list as CSV**
 - File > Export Clip List as CSV... writes every clip in the session, in the clip list's order (by start, then by track), to a CSV file: its track, name, start, end and length in seconds, the full path of its file, whether it is locked or muted ("yes" or empty), and its start and length in frames. It follows RFC 4180 like the marker export: a header line, CRLF line ends, and fields holding a comma, quote or line break quoted with quotes doubled. The search box doesn't filter it. It is offered in a session that has clips.
 - Measured by the tests: three clips on two tracks, added out of time order, written in the list's order with a track name holding a comma, a clip name and file path holding quotes, and a locked, muted clip, compared with the expected text character for character; and an empty session giving just the header. The menu item and the file chooser were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -630,6 +634,7 @@ The tests run against the real machine:
 - Trim to cursor: starts and ends, several tracks, locked clips, edges and undo steps.
 - Next and previous clip: time order along a track, the ends, and starting from the cursor.
 - The clip list as CSV: order, times, flags and quoting.
+- Duplicate time: clips and markers repeated, later clips moved on, and repeating it.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -683,4 +688,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: Duplicate Time Range, repeating the clips and markers in the time range right after it
+1. Markers: Add Region from Clips, a region spanning the selected clips
