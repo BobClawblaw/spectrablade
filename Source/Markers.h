@@ -45,6 +45,10 @@ namespace MarkerEdits
         after it). */
     std::optional<juce::Range<juce::int64>> spanAround (const Markers&, juce::int64 frame, juce::int64 end);
 
+    /** The region frame is in (from its start, up to but not at its end), the shortest where
+        regions overlap and the earliest of those of equal length; nothing when it is in none. */
+    std::optional<juce::Range<juce::int64>> regionAt (const Markers&, juce::int64 frame);
+
     /** A name not used yet: "Marker 01", "Region 01", ... */
     juce::String nextName (const Markers&, bool region);
 

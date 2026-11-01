@@ -73,6 +73,11 @@ namespace
                           && ! MarkerEdits::spanAround ({ { 0, 0, "z" } }, 0, 0) && ! MarkerEdits::spanAround (spans, 1200, 1000);
         check (between && onStop && regionEnd && first && last && none,
                "markers: the span around a frame runs from the stop at or before it to the next, from 0 or to the end where there is none");
+
+        const auto innermost = MarkerEdits::regionAt (spans, 230) == Span ({ 220, 240 }) && MarkerEdits::regionAt (spans, 200) == Span ({ 150, 250 })
+                               && MarkerEdits::regionAt (spans, 150) == Span ({ 150, 250 }) && MarkerEdits::regionAt (spans, 400) == Span ({ 50, 450 });
+        const auto outside = ! MarkerEdits::regionAt (spans, 20) && ! MarkerEdits::regionAt (spans, 450) && ! MarkerEdits::regionAt ({ { 5, 0, "p" } }, 5);
+        check (innermost && outside, "markers: the region at a frame is the shortest holding it; none at a region's end, outside them or at a point");
     }
 
     void testUndo (AudioEngine& engine)

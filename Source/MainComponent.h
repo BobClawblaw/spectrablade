@@ -102,6 +102,7 @@ private:
     void addMarker();
     void goToMarker (bool forwards);
     void selectBetweenMarkers();
+    void selectRegionAtCursor();
     void showGoToTime();
 
     // Effects

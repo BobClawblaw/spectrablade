@@ -513,6 +513,14 @@ void runMultitrackViewTests (AudioEngine& engine)
                "view: Select Between Markers selects around the cursor, from the session's start or to the last clip's end; nothing past it; no edit");
         view.setTimeSelection ({});
 
+        // Select Region at Cursor: the chorus from inside it; nothing in the verse, which is a point.
+        view.setCursor (70000);
+        const auto inRegion = view.selectRegionAtCursor() && view.getTimeSelection() == juce::Range<juce::int64> (60000, 80000);
+        view.setTimeSelection ({});
+        view.setCursor (40000);
+        check (inRegion && ! view.selectRegionAtCursor() && view.getTimeSelection().isEmpty() && engine.session.getUndoDescription() == "Markers",
+               "view: Select Region at Cursor selects the region the cursor is in, and nothing outside one; no edit");
+
         // Going to a time far out of view scrolls there, keeping the zoom; one in view doesn't scroll.
         const auto viewBefore = view.getVisibleFrames();
         const auto zoomBefore = viewBefore.getLength();

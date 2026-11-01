@@ -86,6 +86,7 @@ public:
     /** Makes the time range run from the marker (or region edge) at or before the cursor to the
         next one after it, or to the end of the last clip. False when there is no such range. */
     bool selectBetweenMarkers();
+    bool selectRegionAtCursor();
 
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;

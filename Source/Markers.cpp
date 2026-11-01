@@ -87,6 +87,17 @@ std::optional<juce::int64> nextStop (const Markers& markers, juce::int64 from, b
     return target;
 }
 
+std::optional<juce::Range<juce::int64>> regionAt (const Markers& markers, juce::int64 frame)
+{
+    std::optional<juce::Range<juce::int64>> found;
+
+    for (auto& m : markers)
+        if (m.isRegion() && m.start <= frame && frame < m.getEnd() && (! found || m.length < found->getLength()))
+            found = juce::Range<juce::int64> (m.start, m.getEnd());
+
+    return found;
+}
+
 std::optional<juce::Range<juce::int64>> spanAround (const Markers& markers, juce::int64 frame, juce::int64 end)
 {
     if (markers.empty())

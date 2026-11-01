@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 111: Select Region at Cursor**
+- Markers > Select Region at Cursor selects the region the cursor is in, in the editor and in the session: from its start up to its end (a cursor exactly at the end is outside it). Where regions overlap it picks the shortest, so the innermost wins. It is not an edit. The command is on whenever there is a region.
+- Measured by the tests: among overlapping regions [50, 450), [150, 250) and [220, 240), frames 230, 200, 150 and 400 pick the innermost holding them; frames 20 and 450, and a point marker, give nothing. Through a real session view, the cursor inside a region selects it and a cursor outside every region selects nothing, with no undo step added. The editor's command and the menu were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 110: Save Each Region As**
 - File > Save Each Region As asks for a folder and saves every region of the open file to a WAV file of its own, named and numbered as the session's Export Regions names them ("Take - 01 Verse.wav"), in the background with a progress bar that can cancel. Each file keeps the markers inside its region, the region itself included, moved to start from 0. The files are written at the open file's bit depth when WAV can hold it, otherwise as 32-bit float, and like Export Regions it replaces files of the same name.
 - Measured by the tests: an open file's markers give the same regions and numbering as a session's, with point markers left out; saving each range is the Save Selection As writer measured in milestone 109. The menu item, the folder dialog and the job were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -712,6 +716,7 @@ The tests run against the real machine:
 - Paste Mix: added in place, the file lengthened only past its end.
 - Save Selection As: the selection's frames and markers, read back from the file.
 - Save Each Region As: the open file's regions named and numbered as Export Regions does.
+- Select Region at Cursor: the innermost region, none at an end or outside, in the session view too.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -765,4 +770,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Select Region at Cursor, selecting the region the cursor is in (the innermost, where regions overlap)
+1. Markers: Add Markers at Regular Intervals, putting a marker every so many seconds (or bars) through the selection or the whole file

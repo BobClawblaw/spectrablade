@@ -2338,6 +2338,16 @@ bool MultitrackView::selectBetweenMarkers()
     return span.has_value();
 }
 
+bool MultitrackView::selectRegionAtCursor()
+{
+    const auto region = MarkerEdits::regionAt (engine.session.getState()->markers, cursor);
+
+    if (region)
+        setTimeSelection (*region);
+
+    return region.has_value();
+}
+
 void MultitrackView::renameMarker (int index)
 {
     const auto& markers = engine.session.getState()->markers;
