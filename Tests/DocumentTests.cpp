@@ -341,6 +341,25 @@ namespace
                    && ! AudioEdits::fillWithClip (*longSnap, 0, AudioEdits::maxFillCopies + 1, tiny),
                "paste to fill: the clipboard repeated over the range, the last copy cut short, the length kept; empty or too many copies refused");
 
+        juce::AudioBuffer<float> twoRamps (2, 1000);
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            twoRamps.setSample (0, i, (float) i / 1000.0f);
+            twoRamps.setSample (1, i, 0.5f - (float) i / 2000.0f);
+        }
+
+        const auto twoSnap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (twoRamps));
+        const auto rightFlipped = readAll (*AudioEdits::invertChannel (*twoSnap, 200, 700, 1));
+        auto onlyRight = rightFlipped.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && onlyRight; ++i)
+            onlyRight = juce::exactlyEqual (rightFlipped.getSample (0, i), twoRamps.getSample (0, i))
+                        && juce::exactlyEqual (rightFlipped.getSample (1, i), (i >= 200 && i < 700 ? -1.0f : 1.0f) * twoRamps.getSample (1, i));
+
+        check (onlyRight && ! AudioEdits::invertChannel (*twoSnap, 0, 1000, 2) && ! AudioEdits::invertChannel (*rampSnap, 0, 1000, 1),
+               "invert one channel: only that channel's polarity flipped, only in the range; a channel the audio lacks refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

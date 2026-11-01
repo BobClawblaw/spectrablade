@@ -200,6 +200,14 @@ Snapshot invert (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
     return processRange (s, start, end, [] (auto& b) { b.applyGain (-1.0f); });
 }
 
+Snapshot invertChannel (const AudioSnapshot& s, juce::int64 start, juce::int64 end, int channel)
+{
+    if (channel < 0 || channel >= s.getNumChannels())
+        return nullptr;
+
+    return processRange (s, start, end, [channel] (auto& b) { b.applyGain (channel, 0, b.getNumSamples(), -1.0f); });
+}
+
 Snapshot reverse (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (auto& b) { b.reverse (0, b.getNumSamples()); });
