@@ -229,9 +229,50 @@ public:
         repaint();
     }
 
+    /** Moves the meter on to these peaks (input: from the track's input while armed). */
+    void pushLevels (float left, float right, bool input)
+    {
+        // Falls by about 4 dB a tick at 30 a second, as the mixer's meters do.
+        constexpr float fall = 0.63f;
+        const auto before = std::pair (levels[0], levels[1]);
+        levels[0] = juce::jmax (left, levels[0] * fall);
+        levels[1] = juce::jmax (right, levels[1] * fall);
+
+        if (levels[0] < 0.001f && levels[1] < 0.001f)
+            levels[0] = levels[1] = 0.0f;
+
+        if (before != std::pair (levels[0], levels[1]) || showingInput != input)
+        {
+            showingInput = input;
+            repaint (meterArea());
+        }
+    }
+
+    float getLevel (int channel) const noexcept     { return levels[juce::jlimit (0, 1, channel)]; }
+    bool isShowingInput() const noexcept            { return showingInput; }
+
+    juce::Rectangle<int> meterArea() const          { return { getWidth() - 9, 6, 6, getHeight() - 13 }; }
+
     void paint (juce::Graphics& g) override
     {
         g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (isBus ? 0xff16191d : isFolder ? 0xff1e2229 : 0xff1b1e23));
+
+        // Two bars, left and right, -60 dB at the bottom to +6 dB at the top: red-tinted while
+        // they show the input.
+        if (! isFolder)
+        {
+            const auto area = meterArea().toFloat();
+            g.setColour (juce::Colour (0xff0e1013));
+            g.fillRect (area);
+
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const auto proportion = juce::jlimit (0.0f, 1.0f, (juce::Decibels::gainToDecibels (levels[ch], -60.0f) + 60.0f) / 66.0f);
+                const auto bar = juce::Rectangle<float> (area.getX() + (float) ch * 3.0f, area.getBottom() - proportion * area.getHeight(), 3.0f, proportion * area.getHeight());
+                g.setColour (showingInput ? juce::Colour (0xffe0705a) : juce::Colour (0xff4fc3a1));
+                g.fillRect (bar.withTrimmedRight (1.0f));
+            }
+        }
         g.setColour (colour);
         g.fillRect (inFolder ? folderIndent : 0, 0, isBus ? 8 : 4, getHeight());
 
@@ -273,7 +314,7 @@ public:
 
     void resized() override
     {
-        auto r = getLocalBounds().withTrimmedLeft (10 + (inFolder ? folderIndent : 0) + (isFolder ? 18 : 0)).reduced (4, 6);
+        auto r = getLocalBounds().withTrimmedLeft (10 + (inFolder ? folderIndent : 0) + (isFolder ? 18 : 0)).withTrimmedRight (isFolder ? 0 : 8).reduced (4, 6);
         auto top = r.removeFromTop (24);
         solo.setBounds (top.removeFromRight (26));
         top.removeFromRight (4);
@@ -431,6 +472,8 @@ private:
     juce::Colour colour;
     bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false;
     int members = 0;
+    float levels[2] {};
+    bool showingInput = false;
     static constexpr int folderIndent = 8;
 };
 
@@ -908,6 +951,7 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 void MultitrackView::timerCallback()
 {
     engine.session.releaseUnusedStates();
+    updateHeaderMeters();
 
     if (engine.getPlayer().isPlaying() && engine.getPlayer().getMode() == DocumentPlayerProcessor::Mode::session)
     {
@@ -3108,6 +3152,56 @@ void MultitrackView::setTrackGroup (juce::uint32 trackId, int group)
 {
     editTrack (trackId, group == 0 ? juce::String ("Ungroup Track") : "Group " + juce::String (group), false,
                [group] (SessionTrack& t) { t.group = juce::jlimit (0, SessionTrack::maxGroups, group); });
+}
+
+void MultitrackView::updateHeaderMeters()
+{
+    const auto& tracks = shown().tracks;
+    auto& mix = engine.getPlayer().getLevels();
+
+    for (size_t i = 0; i < headers.size() && i < tracks.size(); ++i)
+    {
+        const auto& t = tracks[i];
+
+        if (t.isFolder)
+            continue;
+
+        // The headers read their own copy of the peaks (reader 1), so the mixer's and the input
+        // meter's stay theirs.
+        if (! t.isBus && isArmed (t.id))
+        {
+            if (auto* recorder = engine.getRecorderFor (t.input); recorder != nullptr && recorder->isInputActive())
+            {
+                const auto left = recorder->takePeak (0, 1);
+                headers[i]->pushLevels (left, recorder->getMappedInput().second == 2 ? recorder->takePeak (1, 1) : left, true);
+                continue;
+            }
+
+            headers[i]->pushLevels (0.0f, 0.0f, true);
+            continue;
+        }
+
+        const auto [left, right] = mix.take ((int) i, 1);
+        headers[i]->pushLevels (left, right, false);
+    }
+}
+
+float MultitrackView::getHeaderLevel (juce::uint32 trackId, int channel) const
+{
+    for (auto& h : headers)
+        if (h->trackId == trackId)
+            return h->getLevel (channel);
+
+    return 0.0f;
+}
+
+bool MultitrackView::isHeaderShowingInput (juce::uint32 trackId) const
+{
+    for (auto& h : headers)
+        if (h->trackId == trackId)
+            return h->isShowingInput();
+
+    return false;
 }
 
 bool MultitrackView::dropsIntoFolder (int from, int to) const

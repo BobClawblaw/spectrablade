@@ -28,8 +28,11 @@ public:
     /** Where the chosen input is among the callback's (active) inputs: first and count, or -1, 0. */
     std::pair<int, int> getMappedInput() const noexcept { return { mappedFirst.load(), mappedCount.load() }; }
 
-    /** Peak level of input channel 0 or 1 since the last call (for meters). */
-    float takePeak (int channel);
+    /** Peak level of input channel 0 or 1 since the last call by this reader (for meters):
+        reader 0 is the meter under the editor, 1 the track headers', so neither takes the
+        other's peaks. */
+    static constexpr int peakReaders = 2;
+    float takePeak (int channel, int reader = 0);
 
     struct Take
     {
@@ -83,7 +86,7 @@ private:
     std::atomic<juce::int64> anchorRecorded { -1 }, anchorPlayed { -1 };
     juce::int64 lastPlayPosition = -1;
     int steadyBlocks = 0;
-    std::atomic<float> peaks[2] { { 0.0f }, { 0.0f } };
+    std::atomic<float> peaks[peakReaders][2] { { { 0.0f }, { 0.0f } }, { { 0.0f }, { 0.0f } } };
 
     juce::AbstractFifo fifo { 1 };
     juce::AudioBuffer<float> ring;

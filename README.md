@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 77: header level meters**
+- Each track header has a thin two-bar meter at its right edge. A playing track shows its level into the mix (after its effects, volume and pan); an armed track shows its input instead, tinted red, with a mono input filling both bars. Bars fall back by about a third every screen refresh. Folders have none.
+- The headers read the peaks without taking them from the mixer's meters or the recording meter: the recorder and the mixer now keep a separate peak for each reader.
+- Measured by the tests: the recorder giving both readers a block's peaks and then nothing; a header showing a track's level, the mixer still getting the same peaks afterwards, the level falling to 0.63 of itself at the next refresh, an armed track switching to its input, and nothing for a folder. How the meters look and move while playing or recording was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 76: session notes**
 - Multitrack > Session Notes opens a window with a page of free text kept with the session: lyrics, which take is which, things to do. Typing changes the notes as an undo step ("Session Notes"); further typing joins that step until something else is done. Undo and redo show in the window as they happen, and the notes are saved with the session exactly as written (nothing is written when there are none).
 - Measured by the tests: the window showing the session's notes; two rounds of typing making one undo step, and undoing it showing the notes as they were; and notes with blank lines, a tab, trailing spaces, accented letters and the characters XML treats specially, through a session file unchanged. The window itself (opening, closing, the menu tick) was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -532,6 +537,7 @@ The tests run against the real machine:
 - Folder strips in the mixer: in place, showing and setting the folder, the strips after it showing their own tracks.
 - Dropping a header on a folder: going in from below and above, and plain moves.
 - Session notes: typing and undo in the window, and the session file.
+- Header meters: separate peak readers in the recorder and mixer, a track's level and fall, and an armed track's input.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -585,4 +591,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a level meter in each track's header, showing its input while armed and its output while playing
+1. Multitrack, continued: marker colours, chosen per marker and shown on the ruler and in the marker list

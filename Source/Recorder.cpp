@@ -81,9 +81,9 @@ void Recorder::updateMapping()
     mappedFirst = index;
 }
 
-float Recorder::takePeak (int channel)
+float Recorder::takePeak (int channel, int reader)
 {
-    return juce::isPositiveAndBelow (channel, 2) ? peaks[channel].exchange (0.0f) : 0.0f;
+    return juce::isPositiveAndBelow (channel, 2) && juce::isPositiveAndBelow (reader, peakReaders) ? peaks[reader][channel].exchange (0.0f) : 0.0f;
 }
 
 //==============================================================================
@@ -202,8 +202,9 @@ void Recorder::audioDeviceIOCallbackWithContext (const float* const* inputs, int
             const auto low = juce::FloatVectorOperations::findMinimum (inputs[first + c], numSamples);
             const auto peak = juce::jmax (level, -low);
 
-            if (peak > peaks[c].load())
-                peaks[c] = peak;
+            for (auto& readerPeaks : peaks)
+                if (peak > readerPeaks[c].load())
+                    readerPeaks[c] = peak;
         }
 
         if (recording.load())

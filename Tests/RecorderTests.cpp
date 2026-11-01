@@ -241,8 +241,29 @@ namespace
     }
 }
 
+namespace
+{
+    void testPeakReaders()
+    {
+        // The meter under the editor and the track headers each take the input's peaks.
+        std::atomic<juce::int64> played { 0 };
+        Recorder recorder (played);
+        recorder.setInput (0, 2);
+        FakeDevice device (recorder, bits ({ 0, 1 }));
+        device.cycle ([] (int ch, int i) { return i == 10 ? (ch == 0 ? -0.75f : 0.5f) : 0.0f; });
+
+        const auto first = recorder.takePeak (0, 0), right = recorder.takePeak (1, 0), headers = recorder.takePeak (0, 1);
+        const auto again = recorder.takePeak (0, 0), headersAgain = recorder.takePeak (0, 1);
+        check (juce::exactlyEqual (first, 0.75f) && juce::exactlyEqual (right, 0.5f) && juce::exactlyEqual (headers, 0.75f)
+                   && juce::exactlyEqual (again, 0.0f) && juce::exactlyEqual (headersAgain, 0.0f)
+                   && juce::exactlyEqual (recorder.takePeak (0, 2), 0.0f),
+               "recorder: each meter takes the input's peaks for itself, without taking the other's");
+    }
+}
+
 void runRecorderTests()
 {
+    testPeakReaders();
     testMapping();
     testCapture();
     testAnchor();

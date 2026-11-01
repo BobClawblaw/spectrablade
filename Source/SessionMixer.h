@@ -50,19 +50,20 @@ namespace SessionMixer
 
     /** Peak levels of the tracks and buses as they go into the mix (after their volume and pan),
         by their place in the session, for meters. The audio thread raises them; the message
-        thread takes them, which starts them again from 0. Tracks past maxTracks aren't metered. */
+        thread takes them, which starts them again from 0. Tracks past maxTracks aren't metered.
+        Each reader (0 the mixer, 1 the track headers) has its own, so neither takes the other's. */
     class Levels
     {
     public:
-        static constexpr int maxTracks = 256;
+        static constexpr int maxTracks = 256, readers = 2;
 
         void raise (int track, float left, float right) noexcept;
 
-        /** The left and right peaks since the last take. */
-        std::pair<float, float> take (int track) noexcept;
+        /** The left and right peaks since this reader's last take. */
+        std::pair<float, float> take (int track, int reader = 0) noexcept;
 
     private:
-        std::array<std::atomic<float>, 2 * maxTracks> peaks {};
+        std::array<std::atomic<float>, 2 * maxTracks * readers> peaks {};
     };
 
     /** Working buffers and the delay lines that line paths up, kept between blocks. Grown as

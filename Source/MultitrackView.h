@@ -250,6 +250,13 @@ public:
     /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */
     void moveTrack (int from, int to);
 
+    /** Moves each header's meter on: an armed track shows its input, any other track or bus
+        its level into the mix (after its volume and pan); a folder has none. Called 30 times a
+        second; the level shown falls back over half a second. */
+    void updateHeaderMeters();
+    float getHeaderLevel (juce::uint32 trackId, int channel) const;
+    bool isHeaderShowingInput (juce::uint32 trackId) const;
+
     /** Where a header dragged from `from` lands on the track at `to`: onto a folder, a track or
         bus goes in it, just below it ("Move to Folder"); otherwise it moves there (moveTrack). */
     void dropTrack (int from, int to);

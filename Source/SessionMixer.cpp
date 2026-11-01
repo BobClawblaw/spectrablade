@@ -21,23 +21,29 @@ void Levels::raise (int track, float left, float right) noexcept
     if (! juce::isPositiveAndBelow (track, maxTracks))
         return;
 
-    for (auto [slot, value] : { std::pair { 2 * track, left }, std::pair { 2 * track + 1, right } })
+    for (int reader = 0; reader < readers; ++reader)
     {
-        auto& peak = peaks[(size_t) slot];
-        auto current = peak.load (std::memory_order_relaxed);
+        const auto first = 2 * (reader * maxTracks + track);
 
-        while (value > current && ! peak.compare_exchange_weak (current, value, std::memory_order_relaxed))
+        for (auto [slot, value] : { std::pair { first, left }, std::pair { first + 1, right } })
         {
+            auto& peak = peaks[(size_t) slot];
+            auto current = peak.load (std::memory_order_relaxed);
+
+            while (value > current && ! peak.compare_exchange_weak (current, value, std::memory_order_relaxed))
+            {
+            }
         }
     }
 }
 
-std::pair<float, float> Levels::take (int track) noexcept
+std::pair<float, float> Levels::take (int track, int reader) noexcept
 {
-    if (! juce::isPositiveAndBelow (track, maxTracks))
+    if (! juce::isPositiveAndBelow (track, maxTracks) || ! juce::isPositiveAndBelow (reader, readers))
         return {};
 
-    return { peaks[(size_t) (2 * track)].exchange (0.0f), peaks[(size_t) (2 * track + 1)].exchange (0.0f) };
+    const auto slot = (size_t) (2 * (reader * maxTracks + track));
+    return { peaks[slot].exchange (0.0f), peaks[slot + 1].exchange (0.0f) };
 }
 
 namespace

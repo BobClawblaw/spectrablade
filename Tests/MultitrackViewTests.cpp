@@ -1744,6 +1744,47 @@ void runMultitrackViewTests (AudioEngine& engine)
     }
 
     {
+        // Header meters: a track's level into the mix, read without taking the mixer's; an armed
+        // track's input instead; none for a folder.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addTrack();
+        s.addFolder();
+        engine.session.reset (s, {});
+        MultitrackView meterView (engine);
+        meterView.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 4 * MultitrackView::trackHeight + 12);
+        Mouse::settle();
+        const auto& t = engine.session.getState()->tracks;
+        auto& levels = engine.getPlayer().getLevels();
+
+        for (int i = 0; i < 3; ++i)
+        {
+            levels.take (i, 0);
+            levels.take (i, 1);
+        }
+
+        levels.raise (1, 0.5f, 0.25f);
+        levels.raise (2, 0.9f, 0.9f);
+        meterView.updateHeaderMeters();
+        const auto shown = juce::exactlyEqual (meterView.getHeaderLevel (t[1].id, 0), 0.5f) && juce::exactlyEqual (meterView.getHeaderLevel (t[1].id, 1), 0.25f)
+                           && juce::exactlyEqual (meterView.getHeaderLevel (t[0].id, 0), 0.0f) && juce::exactlyEqual (meterView.getHeaderLevel (t[2].id, 0), 0.0f)
+                           && ! meterView.isHeaderShowingInput (t[1].id);
+        const auto mixerStill = levels.take (1, 0) == std::pair (0.5f, 0.25f);
+        meterView.updateHeaderMeters();
+        const auto falls = std::abs (meterView.getHeaderLevel (t[1].id, 0) - 0.5f * 0.63f) < 1.0e-6f;
+
+        meterView.setArmed (t[0].id, true);
+        meterView.updateHeaderMeters();
+        const auto input = meterView.isHeaderShowingInput (t[0].id) && ! meterView.isHeaderShowingInput (t[1].id);
+        meterView.setArmed (t[0].id, false);
+        levels.take (2, 0);
+
+        check (shown && mixerStill && falls && input,
+               "header meters: a track's level into the mix, the mixer still getting its own, falling back; an armed track's input; nothing for a folder");
+    }
+
+    {
         // A frozen track: an icy wash over the lane where its frozen audio plays, past its clips.
         SessionState s;
         s.sampleRate = rate;
