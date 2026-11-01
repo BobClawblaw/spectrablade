@@ -60,6 +60,19 @@ namespace
         check (MarkerEdits::nextName ({ { 0, 0, "Marker 01" }, { 5, 0, "Marker 03" } }, false) == "Marker 02"
                    && MarkerEdits::nextName ({}, true) == "Region 01",
                "markers: new names fill the first free number");
+
+        // Spans between stops: marker starts and region ends, [150, 250) and [220, 240) among them.
+        using Span = std::optional<juce::Range<juce::int64>>;
+        const auto spans = sorted (sample);
+        const auto between = MarkerEdits::spanAround (spans, 205, 1000) == Span ({ 200, 220 });
+        const auto onStop = MarkerEdits::spanAround (spans, 200, 1000) == Span ({ 200, 220 });
+        const auto regionEnd = MarkerEdits::spanAround (spans, 245, 1000) == Span ({ 240, 250 });
+        const auto first = MarkerEdits::spanAround (spans, 10, 1000) == Span ({ 0, 50 });
+        const auto last = MarkerEdits::spanAround (spans, 500, 1000) == Span ({ 450, 1000 });
+        const auto none = ! MarkerEdits::spanAround ({}, 10, 1000) && ! MarkerEdits::spanAround (spans, 460, 450)
+                          && ! MarkerEdits::spanAround ({ { 0, 0, "z" } }, 0, 0) && ! MarkerEdits::spanAround (spans, 1200, 1000);
+        check (between && onStop && regionEnd && first && last && none,
+               "markers: the span around a frame runs from the stop at or before it to the next, from 0 or to the end where there is none");
     }
 
     void testUndo (AudioEngine& engine)

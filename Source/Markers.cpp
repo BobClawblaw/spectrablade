@@ -87,6 +87,20 @@ std::optional<juce::int64> nextStop (const Markers& markers, juce::int64 from, b
     return target;
 }
 
+std::optional<juce::Range<juce::int64>> spanAround (const Markers& markers, juce::int64 frame, juce::int64 end)
+{
+    if (markers.empty())
+        return {};
+
+    const auto from = nextStop (markers, frame + 1, false).value_or (0);
+    const auto to = nextStop (markers, frame, true).value_or (end);
+
+    if (to <= from || frame >= to)
+        return {};
+
+    return juce::Range<juce::int64> (from, to);
+}
+
 juce::String nextName (const Markers& markers, bool region)
 {
     const juce::String base (region ? "Region " : "Marker ");

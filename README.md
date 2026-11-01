@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 80: selecting between markers**
+- Markers > Select Between Markers selects from the marker start or region end at or before the cursor to the next one after it. With none before, the selection starts at 0; with none after, it runs to the end of the last clip in a session, or the end of the file in the single-file editor. It does nothing with the cursor past that end, or with no markers. It is not an edit, so it adds no undo step.
+- Measured by the tests: the span around a frame among overlapping regions and points (between two stops, on a stop, at a region's end, before the first, after the last), and nothing with no markers, an empty span or the frame past the end; in the multitrack view, the time range set around the cursor, from the start, to the last clip's end and not past it, with no undo step. The single-file editor's use of it and the menu item were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 79: peak hold and clip lights on the header meters**
 - Each bar of a header meter now marks its highest recent peak with a short line, which holds for 1.5 s (45 screen refreshes) and then falls back as the bar does. A new peak above it takes over at once. Switching the meter between a track's input and its level into the mix starts the holds afresh.
 - A light on top of the meter turns red once either bar reaches 0 dB, and stays on after the bars fall, until the meter is clicked. A held peak at 0 dB or over is drawn red too.
@@ -551,6 +555,7 @@ The tests run against the real machine:
 - Header meters: separate peak readers in the recorder and mixer, a track's level and fall, and an armed track's input.
 - Marker colours: choosing one, drawing it, edits and crops, and the session file.
 - Header meters' peak hold and clip light: holding, falling, lighting and clicking out.
+- Select Between Markers: spans around a frame, and the time range in the view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -604,4 +609,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: Select Between Markers, making the time range run from the marker before the cursor to the one after it
+1. Multitrack, continued: selecting every clip on the selected track, and every clip that overlaps the time range

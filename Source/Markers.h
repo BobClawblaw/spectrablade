@@ -39,6 +39,12 @@ namespace MarkerEdits
     /** The nearest marker start or region end after from (or before it, going backwards). */
     std::optional<juce::int64> nextStop (const Markers&, juce::int64 from, bool forwards);
 
+    /** The span from the nearest marker start or region end at or before frame to the nearest
+        one after it: from 0 when there is none before, to end when there is none after. Nothing
+        when there are no markers or frame is not inside the span (at or past end with no stop
+        after it). */
+    std::optional<juce::Range<juce::int64>> spanAround (const Markers&, juce::int64 frame, juce::int64 end);
+
     /** A name not used yet: "Marker 01", "Region 01", ... */
     juce::String nextName (const Markers&, bool region);
 

@@ -90,6 +90,7 @@ private:
     // Markers
     void addMarker();
     void goToMarker (bool forwards);
+    void selectBetweenMarkers();
 
     // Effects
     void askForDecibels (const juce::String& title, const juce::String& label, float initial,

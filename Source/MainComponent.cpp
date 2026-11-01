@@ -60,7 +60,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -908,7 +908,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSessionNotes; ++id)
+    for (int id = cmdOpen; id <= cmdSelectBetweenMarkers; ++id)
         ids.add (id);
 }
 
@@ -1166,6 +1166,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress (juce::KeyPress::leftKey, alt); info.setActive (! doc.getMarkers().empty()); break;
         case cmdNextMarker: info.setInfo ("Next Marker", "Move the cursor to the next marker", "Markers", 0);
                             info.addDefaultKeypress (juce::KeyPress::rightKey, alt); info.setActive (! doc.getMarkers().empty()); break;
+        case cmdSelectBetweenMarkers: info.setInfo ("Select Between Markers", "Select from the marker at or before the cursor to the next one", "Markers", 0);
+                            info.setActive (! doc.getMarkers().empty()); break;
         case cmdDeleteAllMarkers: info.setInfo ("Delete All Markers", "Remove every marker and region", "Markers", 0);
                             info.setActive (! doc.getMarkers().empty()); break;
 
@@ -1212,7 +1214,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrack.getSelectedClip() != 0); break;
             case cmdAddMarker: info.shortName = multitrack.getTimeSelection().isEmpty() ? "Add Marker" : "Add Region";
                             info.setActive (true); break;
-            case cmdPreviousMarker: case cmdNextMarker: case cmdDeleteAllMarkers:
+            case cmdPreviousMarker: case cmdNextMarker: case cmdSelectBetweenMarkers: case cmdDeleteAllMarkers:
                             info.setActive (! session.getState()->markers.empty()); break;
             default:        if (isEditorOnly (id)) info.setActive (false); break;
         }
@@ -1407,6 +1409,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdClickRepair: askForClickRepair(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
+        case cmdSelectBetweenMarkers: selectBetweenMarkers(); break;
         case cmdDeleteAllMarkers:
             if (multitrackMode)
             {
@@ -1454,7 +1457,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
-        case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
+        case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
@@ -3058,6 +3061,20 @@ void MainComponent::goToMarker (bool forwards)
 
     if (const auto target = MarkerEdits::nextStop (engine.document.getMarkers(), waveform.getCursor(), forwards))
         waveform.setCursor (*target);
+}
+
+void MainComponent::selectBetweenMarkers()
+{
+    if (multitrackMode)
+    {
+        multitrack.selectBetweenMarkers();
+        return;
+    }
+
+    const auto& doc = engine.document;
+
+    if (const auto span = MarkerEdits::spanAround (doc.getMarkers(), waveform.getCursor(), doc.getSnapshot()->getNumFrames()))
+        waveform.setSelection (*span);
 }
 
 void MainComponent::copy()

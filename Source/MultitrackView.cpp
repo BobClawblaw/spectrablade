@@ -2251,6 +2251,17 @@ bool MultitrackView::goToMarker (bool forwards)
     return target.has_value();
 }
 
+bool MultitrackView::selectBetweenMarkers()
+{
+    const auto& s = *engine.session.getState();
+    const auto span = MarkerEdits::spanAround (s.markers, cursor, s.getLength());
+
+    if (span)
+        setTimeSelection (*span);
+
+    return span.has_value();
+}
+
 void MultitrackView::renameMarker (int index)
 {
     const auto& markers = engine.session.getState()->markers;

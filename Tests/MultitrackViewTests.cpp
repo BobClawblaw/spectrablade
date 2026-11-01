@@ -493,6 +493,26 @@ void runMultitrackViewTests (AudioEngine& engine)
                    && MarkerEdits::nextStop ({ { 10, 5, "R" } }, 15, false) == 10,
                "markers: the next stop is the nearest marker or region edge in that direction");
 
+        // Select Between Markers: the time range around the cursor, to the end of the last clip
+        // past the last marker; not an edit.
+        auto spanned = *engine.session.getState();
+        spanned.markers = { { 30000, 0, "Verse" }, { 60000, 20000, "Chorus" } };
+        engine.session.apply (std::move (spanned), "Markers");
+        Mouse::settle();
+        const auto lastClipEnd = engine.session.getState()->getLength();
+        view.setCursor (50000);
+        const auto middle = view.selectBetweenMarkers() && view.getTimeSelection() == juce::Range<juce::int64> (30000, 60000);
+        view.setCursor (100000);
+        const auto toEnd = view.selectBetweenMarkers() && view.getTimeSelection() == juce::Range<juce::int64> (80000, lastClipEnd);
+        view.setCursor (10000);
+        const auto fromStart = view.selectBetweenMarkers() && view.getTimeSelection() == juce::Range<juce::int64> (0, 30000);
+        view.setTimeSelection ({});
+        view.setCursor (lastClipEnd + 1000);
+        const auto pastEnd = ! view.selectBetweenMarkers() && view.getTimeSelection().isEmpty();
+        check (lastClipEnd == 144000 && middle && toEnd && fromStart && pastEnd && engine.session.getUndoDescription() == "Markers",
+               "view: Select Between Markers selects around the cursor, from the session's start or to the last clip's end; nothing past it; no edit");
+        view.setTimeSelection ({});
+
         // Marker colours: chosen as undo steps, drawn on the ruler, kept through edits and files.
         auto coloured = *engine.session.getState();
         coloured.markers = { { 100000, 0, "Verse" }, { 200000, 50000, "Chorus" } };

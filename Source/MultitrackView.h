@@ -70,6 +70,10 @@ public:
         false when there is none. */
     bool goToMarker (bool forwards);
 
+    /** Makes the time range run from the marker (or region edge) at or before the cursor to the
+        next one after it, or to the end of the last clip. False when there is no such range. */
+    bool selectBetweenMarkers();
+
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;
     juce::uint32 getSelectedClip() const noexcept { return selectedClip; }
