@@ -12,6 +12,7 @@
 #include "MultitrackView.h"
 #include "NoiseReduction.h"
 #include "ParametricEq.h"
+#include "Dynamics.h"
 #include "RackView.h"
 #include "SessionOverview.h"
 #include "SessionRecording.h"
@@ -134,6 +135,10 @@ private:
     void showEcho();
     void showEqBand();
     void toggleParametricEq();
+    void showCompressor();
+    void showLimiter();
+    Dynamics::Compressor compressorSettings;
+    Dynamics::Limiter limiterSettings;
     void applyParametricEq (const std::vector<Equalizer::Band>&);
     ParametricEq::Settings eqSettings = ParametricEq::defaultSettings();
     int eqBandType = 0;

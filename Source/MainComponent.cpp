@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -70,7 +70,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdParametricEq);
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdLimiter);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -991,7 +991,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdParametricEq; ++id)
+    for (int id = cmdOpen; id <= cmdLimiter; ++id)
         ids.add (id);
 }
 
@@ -1062,6 +1062,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio); break;
         case cmdParametricEq: info.setInfo ("Parametric EQ", "A window of five EQ bands over their response curve, applied to the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio || eqWindow != nullptr); info.setTicked (eqWindow != nullptr); break;
+        case cmdCompressor: info.setInfo ("Compressor...", "Turn down what goes over a threshold by a ratio, in the selection or the whole file", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdLimiter:    info.setInfo ("Limiter...", "Keep every sample under a ceiling, with gain before it to make the audio louder", "Effects", 0);
+                            info.setActive (hasAudio); break;
         case cmdTremolo:    info.setInfo ("Tremolo...", "Make the level rise and fall at a chosen rate and depth, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdGainRamp:   info.setInfo ("Gain Ramp...", "Change the gain evenly from one level to another across the selection", "Effects", 0);
@@ -1528,6 +1532,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdEcho:       showEcho(); break;
         case cmdEqBand:     showEqBand(); break;
         case cmdParametricEq: toggleParametricEq(); break;
+        case cmdCompressor: showCompressor(); break;
+        case cmdLimiter:    showLimiter(); break;
         case cmdFadeRegions: showFadeEdges (true); break;
         case cmdNormalizeRegions:
             askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, [this] (float db)
@@ -1871,7 +1877,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -4421,6 +4427,89 @@ void MainComponent::applyParametricEq (const std::vector<Equalizer::Band>& bands
 
     if (auto next = Equalizer::apply (*doc.getSnapshot(), r.getStart(), r.getEnd(), doc.getSampleRate(), bands))
         applyEdit (std::move (next), "Parametric EQ", waveform.getSelection());
+}
+
+void MainComponent::showCompressor()
+{
+    auto* box = new juce::AlertWindow ("Compressor", "Above the threshold, each ratio dB in comes out as 1 dB, eased in over the knee's width. "
+                                       "The gain falls with the attack time and recovers with the release time, the same on every channel. "
+                                       "Threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    const auto field = [box] (const char* id, double value, int decimals, const char* label)
+    {
+        box->addTextEditor (id, juce::String (value, decimals), label);
+        box->getTextEditor (id)->setInputRestrictions (8, "-.0123456789");
+    };
+    field ("threshold", compressorSettings.thresholdDb, 1, "Threshold (dB)");
+    field ("ratio", compressorSettings.ratio, 1, "Ratio (to 1)");
+    field ("knee", compressorSettings.kneeDb, 1, "Knee (dB)");
+    field ("attack", compressorSettings.attackMs, 2, "Attack (ms)");
+    field ("release", compressorSettings.releaseMs, 0, "Release (ms)");
+    field ("makeup", compressorSettings.makeupDb, 1, "Makeup gain (dB)");
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
+        const Dynamics::Compressor settings { value ("threshold"), value ("ratio"), value ("knee"), value ("attack"), value ("release"), value ("makeup") };
+
+        if (! Dynamics::isValid (settings))
+        {
+            showError ("Compressor", "A setting is out of range: threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, "
+                                     "attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.");
+            return;
+        }
+
+        compressorSettings = settings;
+        const auto r = selectionOrAll();
+
+        if (auto next = Dynamics::compress (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), settings))
+            applyEdit (std::move (next), "Compressor", waveform.getSelection());
+    }), true);
+}
+
+void MainComponent::showLimiter()
+{
+    auto* box = new juce::AlertWindow ("Limiter", "No sample comes out above the ceiling. Gain before the limiter makes the audio louder into it. "
+                                       "The gain starts falling the look-ahead time before each peak and recovers with the release time. "
+                                       "Gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    const auto field = [box] (const char* id, double value, int decimals, const char* label)
+    {
+        box->addTextEditor (id, juce::String (value, decimals), label);
+        box->getTextEditor (id)->setInputRestrictions (8, "-.0123456789");
+    };
+    field ("gain", limiterSettings.inputGainDb, 1, "Gain before (dB)");
+    field ("ceiling", limiterSettings.ceilingDb, 1, "Ceiling (dBFS)");
+    field ("release", limiterSettings.releaseMs, 0, "Release (ms)");
+    field ("lookahead", limiterSettings.lookaheadMs, 1, "Look-ahead (ms)");
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
+        const Dynamics::Limiter settings { value ("gain"), value ("ceiling"), value ("release"), value ("lookahead") };
+
+        if (! Dynamics::isValid (settings))
+        {
+            showError ("Limiter", "A setting is out of range: gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms.");
+            return;
+        }
+
+        limiterSettings = settings;
+        const auto r = selectionOrAll();
+
+        if (auto next = Dynamics::limit (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), settings))
+            applyEdit (std::move (next), "Limiter", waveform.getSelection());
+    }), true);
 }
 
 void MainComponent::showTremolo()

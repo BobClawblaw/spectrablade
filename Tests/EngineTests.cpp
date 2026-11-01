@@ -13,6 +13,7 @@
 #include "SpectralTests.h"
 #include "LoudnessTests.h"
 #include "EqTests.h"
+#include "DynamicsTests.h"
 #include "NoiseTests.h"
 #include "ClickTests.h"
 #include "SessionTests.h"
@@ -335,6 +336,7 @@ int main (int argc, char* argv[])
         runSpectralTests();
         runLoudnessTests();
         runEqTests();
+        runDynamicsTests();
         runNoiseTests();
         runClickTests();
         runSessionTests (engine.formatManager);

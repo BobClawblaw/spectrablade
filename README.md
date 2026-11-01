@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 167: Compressor and Limiter**
+- Effects > Compressor asks for a threshold, a ratio, a knee, an attack, a release and a makeup gain (-20 dB, 4:1, 6 dB, 10 ms, 100 ms and 0 dB to start, all remembered while the app runs) and compresses the selection, or the whole file. Above the threshold, each ratio dB in comes out as 1 dB, eased in over the knee's width centred on the threshold. At each frame the level is the loudest channel's sample magnitude, and the gain in dB moves toward the curve's gain for it, falling with the attack time and rising with the release time (each the time to go 63 % of the way), the same on every channel so a stereo image stays put. It is one undo step.
+- Effects > Limiter asks for a gain before it, a ceiling, a release and a look-ahead (0 dB, -1 dBFS, 50 ms and 5 ms to start, remembered while the app runs) and keeps every sample of the selection, or the whole file, at or below the ceiling. The gain each frame needs is the least needed anywhere in the look-ahead after it, averaged over the look-ahead, so the gain eases down before a peak and is already down when it arrives; it recovers with the release time. The ceiling holds for samples, not for the waveform between them. With no gain before it, audio more than the look-ahead before anything that needs limiting is kept bit for bit. It is one undo step.
+- Measured by the tests at 48 kHz: the compressor's curve is 0 below the knee, -3/4 of each dB over above it (4:1), and -0.9375 dB at the middle of a 10 dB knee. On steps between -40 and -6 dB, the gain is unchanged below the knee, settles at the curve's -10.5 dB to within 1e-4 dB, is 63 % of the way down after the attack time and 63 % of the way back after the release time (to 0.01 dB), and is the same on both channels; makeup adds exactly its gain, frames outside the range are bit for bit, and a ratio under 1, no attack or an empty range is refused. The limiter keeps every sample of a +6 dBFS sine and of random peaks up to +12 dBFS at or below a -1 dBFS ceiling, holds the steady sine's peaks at -1 dBFS (to 0.1 dB), and leaves the quiet audio before them bit for bit; with 30 dB of gain before it, a -40 dB stretch comes up exactly 30 dB and a -6 dB stretch sits at the -3 dBFS ceiling (to 1e-4 dB), falling only in the look-ahead before it; a ceiling above 0 or no release is refused. How either sounds was not listened to, and the dialogs were not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 166: Dragging the EQ's points**
 - In the Parametric EQ window, each band switched on has a point on the curve at its frequency. Drag it across to set the frequency and up or down to set the gain: the gain is chosen so the curve passes under the mouse there, allowing for the other bands (a bell makes all its gain at its frequency, a shelf half), within the -24 to +24 dB the sliders allow. A high-pass or low-pass point moves in frequency only. Turning the wheel over a point raises or lowers the band's Q by a tenth a step. The pointer shows a hand over a point. The sliders follow the point as it moves.
 - Fixed from Milestone 165: after any change to a band's row, a band at 0 dB read back about 1e-15 dB (the gain slider steps from its bottom end), so Apply counted it as a band that changes something. The gain is now read to the slider's 0.1 dB step, so it is exactly 0.
@@ -992,6 +997,7 @@ The tests run against the real machine:
 - EQ band: each band's designed response, sines changed by it, a range filtered as in a whole-file pass with the rest bit for bit.
 - Parametric EQ: bands read from the panel's controls, the curve the sum of the active bands, its scales, no band at Nyquist.
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
+- Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1045,7 +1051,7 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: a compressor and limiter, so Match Loudness can raise quiet audio past its peak ceiling
+1. Effects: Match Loudness reaching its target through the limiter when the peak ceiling stops it, with true-peak limiting
 2. Effects: the built-in effects in the rack and on tracks, played live, with a preview before applying
 3. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
 4. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
