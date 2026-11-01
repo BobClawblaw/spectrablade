@@ -215,6 +215,11 @@ namespace AudioEdits
     /** Scales [start, end) so its peak sits at targetDecibels. Returns nullptr for silence. */
     Snapshot normalize (const AudioSnapshot&, juce::int64 start, juce::int64 end, float targetDecibels);
 
+    /** Normalizes each region in the markers to targetDecibels on its own, in time order. A region
+        overlapping one already done, or silent, is skipped and counted in `skipped`. Nullptr when
+        no region changed. */
+    Snapshot normalizeRegions (const AudioSnapshot&, const Markers&, float targetDecibels, int& skipped);
+
     /** Scales each channel of [start, end) on its own so its peak sits at targetDecibels; silent
         channels are left as they are. Returns nullptr when every channel is silent. */
     Snapshot normalizeChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end, float targetDecibels);

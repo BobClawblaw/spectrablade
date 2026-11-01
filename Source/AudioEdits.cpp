@@ -972,4 +972,31 @@ juce::Range<juce::int64> withMargins (juce::Range<juce::int64> r, juce::int64 ma
     margin = juce::jmax ((juce::int64) 0, margin);
     return { juce::jmax ((juce::int64) 0, r.getStart() - margin), juce::jmin (total, r.getEnd() + margin) };
 }
+
+Snapshot normalizeRegions (const AudioSnapshot& s, const Markers& markers, float targetDecibels, int& skipped)
+{
+    auto regions = markers;
+    regions.erase (std::remove_if (regions.begin(), regions.end(), [&s] (const Marker& m) { return ! m.isRegion() || m.start >= s.getNumFrames(); }),
+                   regions.end());
+    MarkerEdits::sort (regions);
+    skipped = 0;
+    Snapshot next;
+    juce::int64 doneTo = 0;
+
+    for (const auto& m : regions)
+    {
+        auto changed = m.start >= doneTo ? normalize (next != nullptr ? *next : s, m.start, m.getEnd(), targetDecibels) : nullptr;
+
+        if (changed == nullptr)
+        {
+            ++skipped;
+            continue;
+        }
+
+        next = std::move (changed);
+        doneTo = m.getEnd();
+    }
+
+    return next;
+}
 }

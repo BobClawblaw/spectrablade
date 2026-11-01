@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 161: Normalize Each Region**
+- Effects > Normalize Each Region asks for a peak level (-0.1 dBFS to start) and normalizes every region of the file to it on its own, in time order, so takes marked as regions come out at even peaks; the audio between regions is left alone. A silent region, or one overlapping a region already done, is left as it is, and it says how many were. It is one undo step.
+- Measured by the tests: regions peaking at 0.25 and 0.5, normalized to 0.5, come out doubled and unchanged to within 1e-6, with everything between them and after them untouched; a region overlapping the second and a silent one are skipped (2 counted); point markers alone change nothing. The dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 160: Silence Outside Selection**
 - Effects > Silence Outside Selection silences everything before and after the selection, keeping the file's length and every marker's place, so one part can be heard in its place in the file or saved with its timing. It is offered when the selection doesn't already cover the whole file, and it is one undo step.
 - Measured by the tests: on a two-channel file, keeping frames 300 to 700, 0 to 400 and 600 to 1,000 leaves those frames bit for bit and every other frame exactly 0, with the length kept; the whole file or an empty range is refused. The menu item was not tried by hand. The whole suite passed, the default-device test included.
@@ -961,6 +965,7 @@ The tests run against the real machine:
 - Tremolo: a raised-cosine dip by the depth once a cycle, the rest untouched.
 - Echo: repeats every delay, each quieter by the feedback, stopping at the range's end.
 - Silence outside: everything but the range zeroed, the range bit for bit.
+- Normalize each region: each peak to the level on its own; overlapping and silent ones skipped.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1014,4 +1019,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Normalize Each Region, bringing every region's peak to the same level
+1. Effects: Fade Each Region, a short fade in and out at the edges of every region

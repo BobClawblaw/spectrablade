@@ -543,6 +543,31 @@ namespace
                    && ! AudioEdits::silenceOutside (*twoSnap, 500, 500),
                "silence outside: everything but the range zeroed, the range bit for bit, the length kept; the whole file or nothing refused");
 
+        // Regions at 0..200 (peak 0.25), 300..500 (peak 0.5), 400..600 overlapping it, and 700..800
+        // (silent): the first two are brought to -6.0206 dB (0.5), the others skipped.
+        juce::AudioBuffer<float> unevenTakes (1, 1000);
+        unevenTakes.clear();
+
+        for (int i = 0; i < 200; ++i)
+            unevenTakes.setSample (0, i, i % 2 == 0 ? 0.25f : -0.125f);
+
+        for (int i = 300; i < 600; ++i)
+            unevenTakes.setSample (0, i, i % 2 == 0 ? 0.5f : -0.25f);
+
+        auto regionsSkipped = 0;
+        const auto evened = readAll (*AudioEdits::normalizeRegions (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (unevenTakes)),
+                                                                    { { 0, 200, "A" }, { 300, 200, "B" }, { 400, 200, "Over" }, { 700, 100, "Quiet" }, { 900, 0, "Point" } },
+                                                                    juce::Decibels::gainToDecibels (0.5f), regionsSkipped));
+        auto evenRight = evened.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && evenRight; ++i)
+            evenRight = std::abs (evened.getSample (0, i) - (i < 200 ? 2.0f : 1.0f) * unevenTakes.getSample (0, i)) < 1.0e-6f;
+
+        auto noneSkipped = 0;
+        check (evenRight && regionsSkipped == 2
+                   && ! AudioEdits::normalizeRegions (*rampSnap, { { 100, 0, "Point" } }, -1.0f, noneSkipped) && noneSkipped == 0,
+               "normalize each region: each region's peak to the level on its own, the audio between untouched; overlapping and silent ones skipped");
+
         const auto panned = readAll (*AudioEdits::balanceRamp (*twoSnap, 100, 121, -1.0f, 1.0f));
         const auto allLeft = readAll (*AudioEdits::balance (*twoSnap, 100, 121, -1.0f));
         const auto panMiddle = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 0.0f));
