@@ -81,6 +81,11 @@ namespace AudioEdits
         at the last; nullptr unless the audio has two channels. */
     Snapshot balanceRamp (const AudioSnapshot&, juce::int64 start, juce::int64 end, float fromPan, float toPan);
 
+    /** Scales the side signal (half the difference of the channels) by width, keeping the mid (half
+        their sum): 0 makes both channels the mid, 1 leaves the audio as it is (to float rounding),
+        2 doubles the side. Nullptr unless the audio has two channels or for a negative width. */
+    Snapshot stereoWidth (const AudioSnapshot&, juce::int64 start, juce::int64 end, float width);
+
     /** Exchanges the first two channels over [start, end); with fewer than two it changes nothing. */
     Snapshot swapChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

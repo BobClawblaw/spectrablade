@@ -512,6 +512,24 @@ namespace
         check (panRight && ! AudioEdits::balanceRamp (*rampSnap, 0, 1000, -1.0f, 1.0f),
                "pan ramp: the first frame as Balance all left, the middle centred, the last all right, the rest untouched; mono refused");
 
+        const auto narrowed = readAll (*AudioEdits::stereoWidth (*twoSnap, 0, 500, 0.0f));
+        const auto kept = readAll (*AudioEdits::stereoWidth (*twoSnap, 0, 1000, 1.0f));
+        const auto widened = readAll (*AudioEdits::stereoWidth (*twoSnap, 0, 1000, 2.0f));
+        auto widthRight = narrowed.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && widthRight; ++i)
+        {
+            const auto l = twoRamps.getSample (0, i), r = twoRamps.getSample (1, i);
+            const auto mid = 0.5f * (l + r), side = 0.5f * (l - r);
+            widthRight = (i < 500 ? juce::exactlyEqual (narrowed.getSample (0, i), narrowed.getSample (1, i)) && std::abs (narrowed.getSample (0, i) - mid) < 1.0e-6f
+                                  : juce::exactlyEqual (narrowed.getSample (0, i), l) && juce::exactlyEqual (narrowed.getSample (1, i), r))
+                         && std::abs (kept.getSample (0, i) - l) < 1.0e-6f && std::abs (kept.getSample (1, i) - r) < 1.0e-6f
+                         && std::abs (widened.getSample (0, i) - (mid + 2.0f * side)) < 1.0e-6f && std::abs (widened.getSample (1, i) - (mid - 2.0f * side)) < 1.0e-6f;
+        }
+
+        check (widthRight && ! AudioEdits::stereoWidth (*rampSnap, 0, 1000, 0.5f) && ! AudioEdits::stereoWidth (*twoSnap, 0, 1000, -1.0f),
+               "stereo width: 0 makes both channels the mid, 1 keeps them, 2 doubles the side, only in the range; mono or a negative width refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

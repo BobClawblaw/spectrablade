@@ -129,6 +129,8 @@ private:
     void showFadeEdges();
     void showGainRamp();
     void showPanRamp();
+    void showStereoWidth();
+    int stereoWidthPercent = 50;
     float rampFromDb = 0.0f, rampToDb = -6.0f;
     void showCropMargins();
     void showMoveMarkers();

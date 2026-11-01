@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 155: Stereo Width**
+- Effects > Stereo Width asks for a width (50 % to start, remembered while the app runs) and scales the difference between a stereo file's channels by it, in the selection or the whole file, keeping their sum: 0 % makes the file mono in both channels, 100 % leaves it, and up to 200 % widens it. It is offered only for stereo files, and it is one undo step.
+- Measured by the tests: on two different ramps, a width of 0 over the first half makes both channels equal and their mean (to 1e-6) and leaves the second half bit for bit; a width of 1 gives back the input to within 1e-6, and 2 gives the mid plus and minus twice the side to within 1e-6; a mono file or a negative width is refused. How it sounds was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 154: Pan Ramp**
 - Effects > Pan Ramp asks for a start and an end position (-100, all left, and 100, all right, to start) and moves a stereo file's balance evenly from one to the other across the selection, frame by frame, with the same pan law as Balance and a session track's pan. It is offered only for stereo files, and it is one undo step.
 - Measured by the tests: a ramp from all left to all right over 21 frames gives the first frame exactly what Balance all left gives, the middle frame exactly Balance centred, and the last exactly Balance all right, on both channels, and leaves every frame outside bit for bit; a mono file is refused. How it sounds was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -931,6 +935,7 @@ The tests run against the real machine:
 - Markers to zero crossings: points and region ends moved to the nearest crossing in reach.
 - Gain ramp: even in decibels from the first frame to the last, the rest untouched.
 - Pan ramp: Balance's pan law moved evenly from one position to the other.
+- Stereo width: the side scaled and the mid kept, only in the range.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -984,4 +989,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Stereo Width, narrowing or widening a stereo file by scaling the difference between its channels
+1. Markers: Regions over Sounds, a region over each stretch of sound between silences, to split takes

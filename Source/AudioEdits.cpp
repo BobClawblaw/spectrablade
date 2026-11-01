@@ -329,6 +329,26 @@ Snapshot balanceRamp (const AudioSnapshot& s, juce::int64 start, juce::int64 end
     });
 }
 
+Snapshot stereoWidth (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float width)
+{
+    if (s.getNumChannels() != 2 || width < 0.0f)
+        return nullptr;
+
+    return processRange (s, start, end, [width] (juce::AudioBuffer<float>& b)
+    {
+        auto* left = b.getWritePointer (0);
+        auto* right = b.getWritePointer (1);
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const auto mid = 0.5f * (left[i] + right[i]);
+            const auto side = 0.5f * (left[i] - right[i]) * width;
+            left[i] = mid + side;
+            right[i] = mid - side;
+        }
+    });
+}
+
 Snapshot swapChannels (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)
