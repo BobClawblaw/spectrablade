@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 98: moving between tracks with the keys**
+- Multitrack > Select Track Above (Up) and Select Track Below (Down) move the track selection to the next shown track, skipping hidden tracks and the members of collapsed folders, and scroll its lane into view. With no track selected, Down selects the first and Up the last. At the top or bottom nothing changes. The clip selection stays as it was.
+- Measured by the tests, through a real view showing three of six tracks: Down from nothing visiting tracks 1, 2, 3, 5 and 6, skipping the hidden fourth, and stopping at the last; the header at the top of the lanes then being the last track's (a click on it keeps that track selected); and Up visiting them back to the first. The keys were not pressed by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 97: unsolo all and unmute all**
 - Multitrack > Unsolo All and Unmute All clear the solo or mute of every track, bus and folder at once, each as one undo step. Each is offered only when something is soloed or muted.
 - Measured by the tests: a session with a soloed track, a muted track, a soloed bus and a muted, soloed folder; Unsolo All clearing every solo and leaving the mutes; Unmute All clearing the mutes; neither doing anything a second time; and two undos bringing every solo and mute back. The menu items were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -645,6 +649,7 @@ The tests run against the real machine:
 - Duplicate time: clips and markers repeated, later clips moved on, and repeating it.
 - Region from clips: spans, names and no selection.
 - Unsolo and unmute all: tracks, buses and folders, and undo.
+- Moving between tracks: down and up, hidden tracks, and scrolling the lane and header into view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -698,4 +703,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a Select Track submenu and Up and Down keys for moving the selection between tracks
+1. Editor: Remove DC Offset, taking each channel's average level out of the selection or the whole file

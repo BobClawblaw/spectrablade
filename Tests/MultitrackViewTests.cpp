@@ -1506,6 +1506,51 @@ void runMultitrackViewTests (AudioEngine& engine)
                "duplicate time: the range's clips and markers repeated right after it, what follows moved on, the copy selected for the next; the copied time untouched");
     }
 
+    // Moving the track selection up and down, past hidden tracks, the lane and its header scrolled into view.
+    {
+        SessionState many;
+        many.sampleRate = rate;
+
+        for (int i = 0; i < 6; ++i)
+            many.addTrack();
+
+        many.tracks[3].hidden = true;
+        engine.session.reset (many, {});
+        MultitrackView tall (engine);
+        tall.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 3 * MultitrackView::trackHeight + 12);
+        tall.setVisible (true);
+        Mouse::settle();
+
+        std::vector<int> visited;
+
+        while (tall.selectAdjacentTrack (true))
+            visited.push_back (tall.getSelectedTrack());
+
+        // The header at the top of the lanes is now the last track's: clicking it keeps that track.
+        const auto top = juce::Point<int> (40, MultitrackView::rulerHeight + 10);
+        auto* header = tall.getComponentAt (top);
+        auto headerOk = false;
+
+        if (header != nullptr && header != &tall)
+        {
+            const auto local = header->getLocalPoint (&tall, top).toFloat();
+            const auto now = juce::Time::getCurrentTime();
+            header->mouseDown ({ juce::Desktop::getInstance().getMainMouseSource(), local, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+                                 juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                 juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                                 juce::MouseInputSource::defaultTiltY, header, header, now, local, now, 1, false });
+            headerOk = tall.getSelectedTrack() == 5;
+        }
+
+        std::vector<int> back;
+
+        while (tall.selectAdjacentTrack (false))
+            back.push_back (tall.getSelectedTrack());
+
+        check (visited == std::vector<int> { 0, 1, 2, 4, 5 } && headerOk && back == std::vector<int> { 4, 2, 1, 0 },
+               "track selection: down and up through the shown tracks, skipping a hidden one, its lane and header scrolled into view together");
+    }
+
     // Clearing every solo or mute at once.
     {
         SessionState loud;

@@ -3025,7 +3025,6 @@ bool MultitrackView::showClip (juce::uint32 clipId)
     if ((double) clip.position < viewStart || (double) clip.position >= viewStart + width)
         setView ((double) clip.position - width * 0.1, framesPerPixel);
 
-    const auto visible = juce::jmax (1, timelineArea().getHeight());
     if (const auto t = shown().tracks[(size_t) where->first]; ! shown().isShown (t))
     {
         const auto* folder = shown().findTrack (t.folderId);
@@ -3040,13 +3039,46 @@ bool MultitrackView::showClip (juce::uint32 clipId)
         changeListenerCallback (&engine.session);   // lay the lanes out with it now
     }
 
-    const auto top = rowOf (where->first) * laneHeight;
+    scrollToTrack (where->first);
+    return true;
+}
+
+void MultitrackView::scrollToTrack (int track)
+{
+    const auto visible = juce::jmax (1, timelineArea().getHeight());
+    const auto top = rowOf (track) * laneHeight;
 
     if (top < scrollY || top + laneHeight > scrollY + visible)
         scrollY = top;
 
-    updateScrollBars();
+    updateScrollBars();   // lays the headers out too
     repaint();
+}
+
+bool MultitrackView::selectAdjacentTrack (bool down)
+{
+    const auto& s = shown();
+    std::vector<int> visible;
+
+    for (int i = 0; i < (int) s.tracks.size(); ++i)
+        if (s.isShown (s.tracks[(size_t) i]))
+            visible.push_back (i);
+
+    if (visible.empty())
+        return false;
+
+    const auto at = std::find (visible.begin(), visible.end(), getSelectedTrack());
+    int target;
+
+    if (at == visible.end())
+        target = down ? visible.front() : visible.back();
+    else if (down ? std::next (at) != visible.end() : at != visible.begin())
+        target = down ? *std::next (at) : *std::prev (at);
+    else
+        return false;
+
+    selectTrack (target);
+    scrollToTrack (target);
     return true;
 }
 

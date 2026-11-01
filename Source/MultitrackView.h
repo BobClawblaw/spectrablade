@@ -182,6 +182,10 @@ public:
         on the selected track, or the last starting before it. False when there is none. */
     bool selectAdjacentClip (bool forwards);
 
+    /** Selects the shown track below the selected one (or above it), scrolling its lane into
+        view; with none selected, the first (or last). False at the end. */
+    bool selectAdjacentTrack (bool down);
+
     /** Puts the cursor at a marker (a region also becomes the time range, as clicking it in the
         marker lane does) and scrolls it into view, keeping the zoom. False when there is none. */
     bool showMarker (int index);
@@ -490,6 +494,7 @@ private:
     void showMarkerMenu (int index);
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;
     void selectTrack (int track);
+    void scrollToTrack (int track);    // its lane in view
     void selectClip (juce::uint32 clipId, bool adding);   // adding: Shift-click, which toggles it
     void showInputMenu (juce::uint32 trackId, juce::Component& target);
     void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
