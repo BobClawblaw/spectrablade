@@ -1467,6 +1467,50 @@ void runMultitrackViewTests (AudioEngine& engine)
                "trim to cursor: the selected clips the cursor is in start or end there, as one undo step; not locked clips, nor clips it isn't inside");
     }
 
+    // Selecting the next and previous clip along a track.
+    {
+        SessionState row;
+        row.sampleRate = rate;
+        row.addTrack();
+        row.addTrack();
+        const auto middle = SessionEdits::addClip (row, 0, juce::File ("/tmp/m.wav"), silence (4000), 30000);
+        const auto first = SessionEdits::addClip (row, 0, juce::File ("/tmp/f.wav"), silence (4000), 10000);
+        const auto last = SessionEdits::addClip (row, 0, juce::File ("/tmp/l.wav"), silence (4000), 50000);
+        SessionEdits::addClip (row, 1, juce::File ("/tmp/o.wav"), silence (4000), 20000);
+        engine.session.reset (row, {});
+        Mouse::settle();
+
+        view.showClip (first);
+        std::vector<juce::uint32> visited;
+
+        while (view.selectAdjacentClip (true))
+            visited.push_back (view.getSelectedClip());
+
+        const auto back = view.selectAdjacentClip (false) && view.getSelectedClip() == middle && view.getCursor() == 30000
+                          && view.getSelectedClips().size() == 1;
+        check (visited == std::vector<juce::uint32> { middle, last } && back,
+               "next clip: steps along the selected clip's track in time order, stopping at the last; previous steps back, cursor at its start");
+
+        // With no clip selected: from the cursor on the selected track.
+        const auto none = [&]
+        {
+            view.setTimeSelection ({ 60000, 70000 });
+            view.selectClipsInRange();
+            view.setTimeSelection ({});
+        };
+        none();
+        view.setCursor (25000);
+        const auto after = view.getSelectedClip() == 0 && view.selectAdjacentClip (true) && view.getSelectedClip() == middle;
+        none();
+        view.setCursor (25000);
+        const auto before = view.selectAdjacentClip (false) && view.getSelectedClip() == first;
+        none();
+        view.setCursor (60000);
+        const auto nothing = ! view.selectAdjacentClip (true) && view.getSelectedClip() == 0;
+        check (after && before && nothing,
+               "next clip: with none selected, the first clip at or after the cursor on the selected track, or the last before it; nothing past the end");
+    }
+
     // Closing the gaps on a track: in time order, around a locked clip, leaving overlaps.
     {
         SessionState gappy;

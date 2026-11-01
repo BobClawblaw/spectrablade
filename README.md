@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 93: next and previous clip**
+- Edit > Select Next Clip (Tab) and Select Previous Clip (Shift Tab) step along the selected clip's track in time order, selecting the next or previous clip alone, putting the cursor at its start and scrolling it into view, as clicking it in the clip list does. With no clip selected they start from the cursor on the selected track: the first clip starting at or after it, or the last starting before it. At either end of the track nothing changes.
+- Measured by the tests, through the real view: three clips added out of time order stepped through in time order and stopping at the last, with a clip on another track never chosen; stepping back with the cursor at that clip's start; and with nothing selected, the clips after and before the cursor, and nothing past the last. The keys and menu items were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 92: trimming to the cursor**
 - Multitrack > Trim Start to Cursor (Option [) and Trim End to Cursor (Option ]) trim each selected clip the cursor is inside so it starts or ends at the cursor, its audio staying where it is in time. Clips the cursor isn't inside (at an edge counts as outside) and locked clips stay as they are. All the trims are one undo step ("Trim Start to Cursor", or "Trim Start of Clips to Cursor" for several). The cursor is used exactly, without moving to a zero crossing.
 - Measured by the tests, through the real view: two selected clips on different tracks trimmed to start at the cursor (their audio offsets moving on by 4,000 and 2,000 frames), a clip past the cursor and a locked clip spanning it left alone, as one undo step; the same for ends; one clip alone named in the singular; and the cursor at a clip's edge or between clips trimming nothing and adding no step. The keys and menu items were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -620,6 +624,7 @@ The tests run against the real machine:
 - Go to time: the time forms, bars and beats across tempo changes, refusals, and scrolling there.
 - Open recent: order, the limit of ten, settings, missing files and clearing.
 - Trim to cursor: starts and ends, several tracks, locked clips, edges and undo steps.
+- Next and previous clip: time order along a track, the ends, and starting from the cursor.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -673,4 +678,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: Select Next Clip and Select Previous Clip along the selected clip's track
+1. Clip list: Export as CSV, like the marker list's export, for track sheets and edit notes

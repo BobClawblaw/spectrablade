@@ -2938,6 +2938,46 @@ bool MultitrackView::deleteMarker (int index)
     return true;
 }
 
+bool MultitrackView::selectAdjacentClip (bool forwards)
+{
+    const auto& s = shown();
+    const auto selected = s.findClip (selectedClip);
+    const auto trackIndex = selected.has_value() ? selected->first : getSelectedTrack();
+
+    if (! juce::isPositiveAndBelow (trackIndex, (int) s.tracks.size()))
+        return false;
+
+    // The track's clips in time order (by id where two start together).
+    std::vector<const SessionClip*> clips;
+
+    for (auto& c : s.tracks[(size_t) trackIndex].clips)
+        clips.push_back (&c);
+
+    std::sort (clips.begin(), clips.end(), [] (auto* a, auto* b) { return std::tie (a->position, a->id) < std::tie (b->position, b->id); });
+    const SessionClip* target = nullptr;
+
+    if (selected.has_value())
+    {
+        const auto at = std::find_if (clips.begin(), clips.end(), [this] (auto* c) { return c->id == selectedClip; });
+        const auto index = (int) std::distance (clips.begin(), at) + (forwards ? 1 : -1);
+
+        if (juce::isPositiveAndBelow (index, (int) clips.size()))
+            target = clips[(size_t) index];
+    }
+    else if (forwards)
+    {
+        const auto it = std::find_if (clips.begin(), clips.end(), [this] (auto* c) { return c->position >= cursor; });
+        target = it != clips.end() ? *it : nullptr;
+    }
+    else
+    {
+        const auto it = std::find_if (clips.rbegin(), clips.rend(), [this] (auto* c) { return c->position < cursor; });
+        target = it != clips.rend() ? *it : nullptr;
+    }
+
+    return target != nullptr && showClip (target->id);
+}
+
 bool MultitrackView::showClip (juce::uint32 clipId)
 {
     const auto where = shown().findClip (clipId);

@@ -60,7 +60,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -913,7 +913,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdTrimEndToCursor; ++id)
+    for (int id = cmdOpen; id <= cmdPreviousClip; ++id)
         ids.add (id);
 }
 
@@ -1114,6 +1114,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdSelectClipsAfter: info.setInfo ("Select Clips After Cursor", "Select every clip that starts at or after the cursor", "Edit", 0);
                             info.setActive (multitrackMode); break;
+        case cmdNextClip:   info.setInfo ("Select Next Clip", "Select the next clip along the selected clip's track", "Edit", 0);
+                            info.addDefaultKeypress (juce::KeyPress::tabKey, 0); info.setActive (multitrackMode); break;
+        case cmdPreviousClip: info.setInfo ("Select Previous Clip", "Select the clip before along the selected clip's track", "Edit", 0);
+                            info.addDefaultKeypress (juce::KeyPress::tabKey, shift); info.setActive (multitrackMode); break;
         case cmdSelectClipsInRange: info.setInfo ("Select Clips in Time Range", "Select every clip that plays part of the time range", "Edit", 0);
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
         case cmdMoveClipsToCursor: info.setInfo ("Move Clips to Cursor", "Move the selected clips together so the earliest starts at the cursor", "Multitrack", 0);
@@ -1345,6 +1349,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSelectTrackClips: multitrack.selectClipsOnTrack(); break;
         case cmdSelectClipsAfter: multitrack.selectClipsAfterCursor(); break;
         case cmdSelectClipsInRange: multitrack.selectClipsInRange(); break;
+        case cmdNextClip: multitrack.selectAdjacentClip (true); break;
+        case cmdPreviousClip: multitrack.selectAdjacentClip (false); break;
         case cmdMoveClipsToCursor: multitrack.moveSelectedClipsToCursor(); break;
         case cmdTrimStartToCursor: multitrack.trimSelectedClipsToCursor (true); break;
         case cmdTrimEndToCursor: multitrack.trimSelectedClipsToCursor (false); break;
@@ -1475,7 +1481,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers }); break;
-        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdCrop, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,

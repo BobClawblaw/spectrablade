@@ -172,6 +172,11 @@ public:
         view, keeping the zoom. False when there is no such clip. */
     bool showClip (juce::uint32 clipId);
 
+    /** Shows (as showClip does) the clip after the selected one on its track, in time order, or
+        the one before it. With no clip selected, the first clip starting at or after the cursor
+        on the selected track, or the last starting before it. False when there is none. */
+    bool selectAdjacentClip (bool forwards);
+
     /** Puts the cursor at a marker (a region also becomes the time range, as clicking it in the
         marker lane does) and scrolls it into view, keeping the zoom. False when there is none. */
     bool showMarker (int index);
