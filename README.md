@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 104: Select Audible Span, and the new effects kept to the editor**
+- Edit > Select Audible Span selects from the first frame to the last that is above the level Trim Silence last used (-60 dB until it is first used), and says so when the whole file is below it. Trim Silence now offers that last level too.
+- Fixed: Remove DC Offset, Swap Channels, Insert Silence, Trim Silence, Mix to Mono and Make Stereo (milestones 99 to 103) stayed on while the session was showing, where choosing one would have edited the open file behind it. They are now off in the session view, like the editor's other effects.
+- Measured by the tests: the span itself is the audible range already measured for Trim Silence. The new command, the remembered level and the commands being off in the session view were not exercised by the tests (the app's command table is not in the test build), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 103: Mix to Mono and Make Stereo**
 - Effects > Mix to Mono averages the channels of the whole file into one; Effects > Make Stereo copies a mono file's channel to left and right. Each is offered only when it would change the channel count, is one undo step, and keeps the selection and markers where they were. The file is converted 65,536 frames at a time, so a long file never needs one buffer for all of it.
 - Measured by the tests: 70,000 frames of 0.5 on the left and 0.25 on the right mix to exactly 0.375 on every frame, across the block boundary; that mono result made stereo is exactly 0.375 on both channels; and in a document the conversion leaves one channel, with undo bringing the two back bit-identically. The menu items, and how the waveform and playback look and sound after a conversion, were not checked by the tests or by hand. The whole suite passed, the default-device test included.
@@ -728,4 +733,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Select All Between Silences, selecting the audible span Trim Silence would keep
+1. Editor: Fade In and Fade Out with a choice of curve: linear, S-curve and logarithmic

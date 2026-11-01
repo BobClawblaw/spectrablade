@@ -101,6 +101,7 @@ private:
     void showInsertSilence();
     void insertSilence (juce::int64 frames);
     void trimSilence (float thresholdDb);
+    void selectAudibleSpan();
     void convertChannels (int numChannels);
     void askForDecibels (const juce::String& title, const juce::String& label, float initial,
                          std::function<void (float)> onOk);
@@ -230,6 +231,7 @@ private:
     MultitrackView multitrack { engine };
     SessionOverview overview { engine, multitrack };
     bool multitrackMode = false;
+    float silenceThresholdDb = -60.0f;   // Trim Silence's last level, also used by Select Audible Span
     RackView rackView { engine };
 
     std::unique_ptr<juce::FileChooser> chooser;
