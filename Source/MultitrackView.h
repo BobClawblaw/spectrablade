@@ -133,6 +133,11 @@ public:
         the cursor, as one undo step. False when there are none, one is locked, or they are there. */
     bool moveSelectedClipsToCursor();
 
+    /** Trims the selected clips the cursor is inside so they start (or end) at the cursor, as
+        one undo step; locked clips and clips the cursor isn't inside stay as they are. Returns
+        how many were trimmed. */
+    int trimSelectedClipsToCursor (bool start);
+
     /** True when there are selected clips and every one is locked. */
     bool areSelectedClipsLocked() const;
 

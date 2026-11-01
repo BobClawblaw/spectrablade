@@ -1414,6 +1414,59 @@ void runMultitrackViewTests (AudioEngine& engine)
                "move to cursor: the selected clips move together, the earliest to the cursor, as one undo step; not when there already or locked");
     }
 
+    // Trimming the selected clips the cursor is in to the cursor.
+    {
+        SessionState spans;
+        spans.sampleRate = rate;
+        spans.addTrack();
+        spans.addTrack();
+        spans.addTrack();
+        const auto a = SessionEdits::addClip (spans, 0, juce::File ("/tmp/a.wav"), silence (8000), 10000);   // [10000, 18000)
+        const auto b = SessionEdits::addClip (spans, 1, juce::File ("/tmp/b.wav"), silence (8000), 12000);   // [12000, 20000)
+        const auto c = SessionEdits::addClip (spans, 0, juce::File ("/tmp/c.wav"), silence (8000), 30000);   // past the cursor
+        const auto d = SessionEdits::addClip (spans, 2, juce::File ("/tmp/d.wav"), silence (8000), 11000);   // locked
+        SessionEdits::setClipLocked (spans, d, true);
+        engine.session.reset (spans, {});
+        Mouse::settle();
+        const auto span = [&] (juce::uint32 id)
+        {
+            const auto& found = clip (id);
+            return std::tuple (found.position, found.getEnd(), found.offset);
+        };
+
+        view.selectAllClips();
+        view.setCursor (14000);
+        const auto starts = view.trimSelectedClipsToCursor (true) == 2 && span (a) == std::tuple<juce::int64, juce::int64, juce::int64> (14000, 18000, 4000)
+                            && span (b) == std::tuple<juce::int64, juce::int64, juce::int64> (14000, 20000, 2000)
+                            && span (c) == std::tuple<juce::int64, juce::int64, juce::int64> (30000, 38000, 0)
+                            && span (d) == std::tuple<juce::int64, juce::int64, juce::int64> (11000, 19000, 0)
+                            && engine.session.getUndoDescription() == "Trim Start of Clips to Cursor";
+        engine.session.undo();
+        Mouse::settle();
+
+        view.selectAllClips();
+        view.setCursor (16000);
+        const auto ends = view.trimSelectedClipsToCursor (false) == 2 && span (a) == std::tuple<juce::int64, juce::int64, juce::int64> (10000, 16000, 0)
+                          && span (b) == std::tuple<juce::int64, juce::int64, juce::int64> (12000, 16000, 0)
+                          && engine.session.getUndoDescription() == "Trim End of Clips to Cursor";
+        engine.session.undo();
+        Mouse::settle();
+
+        // One clip alone; at a clip's edge, or outside every clip, nothing is trimmed and no step added.
+        view.showClip (a);
+        view.setCursor (15000);
+        const auto one = view.trimSelectedClipsToCursor (true) == 1 && engine.session.getUndoDescription() == "Trim Start to Cursor";
+        engine.session.undo();
+        Mouse::settle();
+        view.selectAllClips();
+        view.setCursor (10000);
+        const auto atEdge = view.trimSelectedClipsToCursor (true) == 0 && ! engine.session.canUndo();
+        view.setCursor (25000);
+        const auto outside = view.trimSelectedClipsToCursor (false) == 0 && ! engine.session.canUndo();
+        check (starts && ends && one && atEdge && outside,
+               "trim to cursor: the selected clips the cursor is in start or end there, as one undo step; not locked clips, nor clips it isn't inside");
+    }
+
     // Closing the gaps on a track: in time order, around a locked clip, leaving overlaps.
     {
         SessionState gappy;

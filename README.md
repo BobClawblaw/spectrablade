@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 92: trimming to the cursor**
+- Multitrack > Trim Start to Cursor (Option [) and Trim End to Cursor (Option ]) trim each selected clip the cursor is inside so it starts or ends at the cursor, its audio staying where it is in time. Clips the cursor isn't inside (at an edge counts as outside) and locked clips stay as they are. All the trims are one undo step ("Trim Start to Cursor", or "Trim Start of Clips to Cursor" for several). The cursor is used exactly, without moving to a zero crossing.
+- Measured by the tests, through the real view: two selected clips on different tracks trimmed to start at the cursor (their audio offsets moving on by 4,000 and 2,000 frames), a clip past the cursor and a locked clip spanning it left alone, as one undo step; the same for ends; one clip alone named in the singular; and the cursor at a clip's edge or between clips trimming nothing and adding no step. The keys and menu items were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 91: open recent**
 - File > Open Recent lists the last ten audio files and sessions opened, newest first, and is kept between launches. Opening one that is already listed moves it to the top. Files that have since gone are left off the menu, and Clear Menu empties it. Choosing a session asks about unsaved session changes first, and choosing an audio file asks about unsaved changes to the open file, as Open Session and Open do. Recovered copies of sessions are not listed. The menu is unavailable while recording.
 - Measured by the tests: twelve files noted giving the newest ten, newest first; one noted again moving to the top; a fresh list reading the same ten back from the settings; a deleted file left off the menu while the others keep the ids of their places in the list, with Clear Menu last; and clearing emptying the list and the settings. Choosing items from the real menu bar and opening through it were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -615,6 +619,7 @@ The tests run against the real machine:
 - Tap tempo: averaging, rounding, the window of taps, restarts, limits and undo steps.
 - Go to time: the time forms, bars and beats across tempo changes, refusals, and scrolling there.
 - Open recent: order, the limit of ten, settings, missing files and clearing.
+- Trim to cursor: starts and ends, several tracks, locked clips, edges and undo steps.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -668,4 +673,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: Trim Start to Cursor and Trim End to Cursor for the selected clips
+1. Multitrack, continued: Select Next Clip and Select Previous Clip along the selected clip's track

@@ -3269,6 +3269,27 @@ bool MultitrackView::moveSelectedClipsToCursor()
     return ! ids.empty() && moveSelectedClips (cursor - earliest, ids.size() > 1 ? "Move Clips to Cursor" : "Move Clip to Cursor", false);
 }
 
+int MultitrackView::trimSelectedClipsToCursor (bool start)
+{
+    auto next = *engine.session.getState();
+    auto trimmed = 0;
+
+    for (auto id : getSelectedClips())
+    {
+        const auto where = next.findClip (id);
+        const auto c = next.tracks[(size_t) where->first].clips[(size_t) where->second];
+
+        if (cursor > c.position && cursor < c.getEnd()
+            && SessionEdits::trimClip (next, id, start ? cursor : c.position, start ? c.getEnd() : cursor))
+            ++trimmed;
+    }
+
+    if (trimmed > 0)
+        engine.session.apply (std::move (next), juce::String (start ? "Trim Start" : "Trim End") + (trimmed > 1 ? " of Clips" : "") + " to Cursor");
+
+    return trimmed;
+}
+
 bool MultitrackView::moveSelectedClips (juce::int64 delta, const juce::String& description, bool merge)
 {
     const auto ids = getSelectedClips();
