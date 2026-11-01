@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 132: Copy Selection Time**
+- Edit > Copy Selection Time puts the selection's (or the session's time range's) start, end and length on the clipboard as one line of text, tab-separated, each written as Go to Time reads it ("1:23.500", with hours from an hour on), ready to paste into a spreadsheet or a note.
+- Measured by the tests: 1.5 to 3.5 seconds at 48 kHz is written "0:01.500", "0:03.500" and "0:02.000"; an hour and a bit reads "1:02:05.001" and ten minutes "10:00.000"; a written time read back by Go to Time is the same frame. The clipboard itself was not written by the tests (they would overwrite the person's clipboard), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 131: clip list count line**
 - Below the clip list a line counts the session's clips, with how many are locked and muted, and adds up the length of the clips shown ("3 clips, 1 locked, 1 muted; 0.850 s in all"), saying how many are shown while the search hides some. It follows edits and undo with the list.
 - Measured by the tests, through a real clip list: three clips (one locked and muted) of 0.5, 0.25 and 0.1 seconds read "3 clips, 1 locked, 1 muted; 0.850 s in all", and a search for one of them "1 shown, 0.250 s in all". The layout was not looked at, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -816,6 +820,7 @@ The tests run against the real machine:
 - Next and previous region: by start, points passed over, in the session view too.
 - Marker list count and buttons: counts with the search, Delete for the highlighted marker only.
 - Clip list count line: clips, locked and muted, and the shown clips' total length.
+- Copy selection time: start, end and length as text Go to Time reads back.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -869,4 +874,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Copy Selection Time, putting the selection's start, end and length on the clipboard as text
+1. Editor: Nudge Selection, moving the selection earlier or later by a set step with the arrow keys

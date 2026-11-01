@@ -73,6 +73,22 @@ namespace TimeEntry
         return (juce::int64) std::llround (total * sampleRate);
     }
 
+    /** A time as Go to Time reads it back: "m:ss.mmm", or "h:mm:ss.mmm" from an hour on. */
+    inline juce::String format (juce::int64 frames, double sampleRate)
+    {
+        const auto ms = (juce::int64) std::llround ((double) juce::jmax ((juce::int64) 0, frames) / juce::jmax (1.0, sampleRate) * 1000.0);
+        const auto minutes = ms / 60000, hours = minutes / 60;
+        const auto rest = juce::String::formatted ("%02d.%03d", (int) ((ms / 1000) % 60), (int) (ms % 1000));
+        return hours > 0 ? juce::String::formatted ("%d:%02d:", (int) hours, (int) (minutes % 60)) + rest
+                         : juce::String ((int) minutes) + ":" + rest;
+    }
+
+    /** A range as one line for the clipboard: start, end and length, tab-separated. */
+    inline juce::String describe (juce::Range<juce::int64> range, double sampleRate)
+    {
+        return format (range.getStart(), sampleRate) + "\t" + format (range.getEnd(), sampleRate) + "\t" + format (range.getLength(), sampleRate);
+    }
+
     /** The range a typed start and length name in a file `total` frames long, its end cut to the
         file's; nothing when either can't be read, the length is 0, or the start is at or past the end. */
     inline std::optional<juce::Range<juce::int64>> parseRange (const juce::String& start, const juce::String& length,

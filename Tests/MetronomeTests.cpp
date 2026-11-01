@@ -501,6 +501,11 @@ namespace
                "set selection: start and length typed as times, the end cut to the file's");
         check (! span ("10", "1") && ! span ("1", "0") && ! span ("abc", "1") && ! span ("1", "") && ! span ("-1", "1"),
                "set selection: a start at or past the end, a zero length and unreadable times are refused");
+
+        check (TimeEntry::describe ({ 72000, 168000 }, 48000.0) == "0:01.500\t0:03.500\t0:02.000"
+                   && TimeEntry::format (48000 * 3725 + 24, 48000.0) == "1:02:05.001" && TimeEntry::format (48000 * 600, 48000.0) == "10:00.000"
+                   && TimeEntry::parse (TimeEntry::format (4008000, 48000.0), 48000.0) == Frame (4008000),
+               "copy selection time: start, end and length as text that Go to Time reads back; hours from an hour on");
     }
 }
 
