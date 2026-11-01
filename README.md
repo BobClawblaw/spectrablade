@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 150: Delete Markers in Selection**
+- Markers > Delete Markers in Selection removes the markers and regions that start inside the selection, in the editor and in a session (the time selection), and keeps those that start before it, even regions reaching into it. It is offered only when one starts inside the selection, and it is one undo step.
+- Measured by the tests: in [200, 400) it removes a region and a marker starting at 200 and 300, keeps a marker at 400 (the end is not inside), one at 100 and a region from 50 reaching in; an empty range removes nothing. The menu item was not tried by hand in either mode. The whole suite passed, the default-device test included.
+
 **Milestone 149: Save Pieces Between Markers**
 - File > Save Pieces Between Markers As asks for a folder and splits the file at its point markers, saving each piece to a file of its own, named as Save Each Region As names them ("Take - 01 Intro.wav"): one piece from each marker to the next, or to the end, named after the marker, and a "Start" piece before the first marker when that is not at frame 0. Regions are ignored. It runs in the background like Save Each Region As and shares its code, and it is offered only when the file has a point marker.
 - Measured by the tests: markers at 100, 300, 700 and 1,000 (the end) with a region at 150 give Start 0+100, Intro 100+200, Verse 300+400 and Coda 700+300; a first marker at frame 0 gets no Start piece; only a region and a marker at the end give no pieces. The files themselves are written by the same code as Save Each Region As, which is tested; this command was not tried by hand. The whole suite passed, the default-device test included.
@@ -906,6 +910,7 @@ The tests run against the real machine:
 - Audible range in a range: only the sound inside it, in document frames.
 - Crop margins: the range widened either side, kept inside the file.
 - Pieces between markers: the file split at its point markers, a Start piece before the first.
+- Delete markers in a range: those starting inside it go, the end excluded.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -959,4 +964,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Delete Markers in Selection, removing only the markers and regions that start inside it
+1. Markers: Move Markers in Selection, shifting the markers that start inside it by a typed time

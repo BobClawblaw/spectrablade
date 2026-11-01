@@ -135,6 +135,13 @@ Markers piecesBetweenPoints (const Markers& markers, juce::int64 end)
     return pieces;
 }
 
+int removeStartingIn (Markers& markers, juce::Range<juce::int64> range)
+{
+    const auto before = markers.size();
+    markers.erase (std::remove_if (markers.begin(), markers.end(), [range] (const Marker& m) { return range.contains (m.start); }), markers.end());
+    return (int) (before - markers.size());
+}
+
 bool renameInSequence (Markers& markers, const juce::String& base)
 {
     const auto trimmed = base.trim();

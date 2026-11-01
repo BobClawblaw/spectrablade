@@ -129,6 +129,12 @@ namespace
                    && MarkerEdits::piecesBetweenPoints ({ { 150, 50, "Hit" }, { 1000, 0, "End" } }, 1000).empty(),
                "markers: pieces between markers cover the file from the start, one per point, regions ignored (" + pieces + ")");
 
+        auto thinned = Markers { { 100, 0, "A" }, { 200, 500, "Long" }, { 300, 0, "B" }, { 400, 0, "C" }, { 50, 100, "Early" } };
+        const auto gone = MarkerEdits::removeStartingIn (thinned, { 200, 400 });
+        const auto left = describePieces (thinned);
+        check (gone == 2 && left == "A@100+0 C@400+0 Early@50+100" && MarkerEdits::removeStartingIn (thinned, { 500, 500 }) == 0,
+               "markers: deleting in a range takes those starting inside it, the end excluded, and keeps ones reaching into it (" + left + ")");
+
         // Renaming in sequence: time order, regions included, colours kept; an empty name refused.
         auto renamed = toRegions;
         juce::StringArray names;

@@ -64,6 +64,9 @@ namespace MarkerEdits
         there are no point markers before end. */
     Markers piecesBetweenPoints (const Markers&, juce::int64 end);
 
+    /** Removes every marker and region that starts inside range; returns how many went. */
+    int removeStartingIn (Markers&, juce::Range<juce::int64> range);
+
     /** Names every marker and region, in time order, "<base> 01", "<base> 02", ... (three digits
         from 100 on). The base is trimmed; an empty one changes nothing and returns false. */
     bool renameInSequence (Markers&, const juce::String& base);
