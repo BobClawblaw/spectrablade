@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 85: a menu on the mixer's strips**
+- Right-click a strip in the mixer window (its background or name) for Solo Safe and a Colour submenu, as in the track headers, each an undo step. A solo-safe strip shows the same yellow bar under its S button, and its solo tooltip says so. The master strip has no menu.
+- Measured by the tests: the menu offering Solo Safe unticked and the colours, nothing for an unknown strip; choosing Solo Safe making the bus solo safe as an undo step, after which it shows ticked; choosing Violet setting that bus's colour only, ticked, with Automatic unticked; and choosing Solo Safe again clearing it ("Not Solo Safe"). The right-click itself and the bar were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 84: solo safe**
 - Right-click a track, bus or folder header and choose Solo Safe to keep it playing when other tracks are soloed: a reverb return stays on while you solo the vocal, say. A solo-safe bus still plays only what reaches it from tracks that are playing. Mute still silences a solo-safe track, and with nothing soloed it changes nothing. A folder's solo safe covers its members. A yellow bar under the S button marks it, and the solo button's tooltip says so.
 - Solo Safe and Not Solo Safe are undo steps, and the session file keeps the setting (nothing is written for tracks without it). It does not follow a track's group.
@@ -577,6 +581,7 @@ The tests run against the real machine:
 - Audio load readout: percent, warnings, dropout counts, resets and new devices.
 - Double-clicking the marker lane: a marker where clicked, and snapped.
 - Solo safe: mixing beside a solo, mute, folders, undo and the session file.
+- The mixer strip menu: solo safe and colour, ticks and undo steps.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -630,4 +635,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Mixer window: a right-click menu on each strip (solo safe, colour, hide), with solo safe shown on the strip
+1. Clip list: a search box that shows only the clips whose name or file contains what is typed

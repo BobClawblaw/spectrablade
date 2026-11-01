@@ -1097,6 +1097,60 @@ namespace
                "solo safe: set and cleared as undo steps, through a folder for its members, and kept in session files");
     }
 
+    /** The item with this text in a menu or its submenus, or null. */
+    const juce::PopupMenu::Item* findItem (const juce::PopupMenu& menu, const juce::String& text)
+    {
+        for (juce::PopupMenu::MenuItemIterator it (menu, true); it.next();)
+            if (it.getItem().text == text)
+                return &it.getItem();
+
+        return nullptr;
+    }
+
+    void testStripMenu (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = 48000.0;
+        s.addTrack();
+        s.addBus();
+        engine.session.reset (s, {});
+        MixerView mixer (engine);
+        const auto busId = engine.session.getState()->tracks[1].id;
+        const auto settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+
+        auto menu = mixer.getStripMenu (busId);
+        const auto* safe = findItem (menu, "Solo Safe");
+        const auto offered = safe != nullptr && ! safe->isTicked && findItem (menu, "Violet") != nullptr && mixer.getStripMenu (999).getNumItems() == 0;
+
+        if (safe != nullptr)
+            safe->action();
+
+        settle();
+        const auto made = engine.session.getState()->tracks[1].soloSafe && engine.session.getUndoDescription() == "Solo Safe";
+        menu = mixer.getStripMenu (busId);
+        safe = findItem (menu, "Solo Safe");
+        const auto ticked = safe != nullptr && safe->isTicked;
+
+        if (const auto* violet = findItem (menu, "Violet"))
+            violet->action();
+
+        settle();
+        const auto coloured = engine.session.getState()->tracks[1].colour == 2 && engine.session.getUndoDescription() == "Track Colour"
+                              && engine.session.getState()->tracks[0].colour == -1;
+        menu = mixer.getStripMenu (busId);
+        const auto* violet = findItem (menu, "Violet");
+        const auto* automatic = findItem (menu, "Automatic");
+        const auto colourTicked = violet != nullptr && violet->isTicked && automatic != nullptr && ! automatic->isTicked;
+
+        if (safe = findItem (menu, "Solo Safe"); safe != nullptr)
+            safe->action();
+
+        settle();
+        const auto cleared = ! engine.session.getState()->tracks[1].soloSafe && engine.session.getUndoDescription() == "Not Solo Safe";
+        check (offered && made && ticked && coloured && colourTicked && cleared,
+               "mixer: a strip's menu makes it solo safe and back and sets its colour, as undo steps, ticking what is set");
+    }
+
     void testLoadReadout (AudioEngine& engine)
     {
         LoadReadout::Reading now { 0.123, 0 };
@@ -1159,4 +1213,5 @@ void runMixerTests (AudioEngine& engine)
     testSessionNotes (engine);
     testLoadReadout (engine);
     testSoloSafe (engine);
+    testStripMenu (engine);
 }

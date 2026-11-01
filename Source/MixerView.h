@@ -7,6 +7,7 @@
 
     The controls edit the session as the track headers do (each change an undo step, a fader's
     drag one step); an automated volume or pan follows its envelope and can't be moved here.
+    Right-click a strip to make it solo safe or change its colour.
     Meters show peaks after each track's volume and pan, falling back over about half a second. */
 class MixerView final : public juce::Component,
                         private juce::ChangeListener,
@@ -26,6 +27,10 @@ public:
     juce::Slider* findPan (juce::uint32 trackId) const;
     juce::Button* findMute (juce::uint32 trackId) const;
     juce::Button* findSolo (juce::uint32 trackId) const;
+
+    /** The menu a strip shows when right-clicked: Solo Safe, and a Colour submenu (each an undo
+        step); empty for an unknown id. */
+    juce::PopupMenu getStripMenu (juce::uint32 trackId) const;
 
     /** The level a meter shows (gain, not dB): a track's or bus's, or with id 0 the master's. */
     float getShownLevel (juce::uint32 trackId, int channel) const;

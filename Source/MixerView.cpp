@@ -74,6 +74,7 @@ public:
     {
         name.setJustificationType (juce::Justification::centred);
         name.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+        name.setInterceptsMouseClicks (false, false);
         addAndMakeVisible (name);
         addAndMakeVisible (meter);
         addAndMakeVisible (readout);
@@ -144,6 +145,8 @@ public:
         name.setText (t.name, juce::dontSendNotification);
         mute.setToggleState (t.mute, juce::dontSendNotification);
         solo.setToggleState (t.solo, juce::dontSendNotification);
+        solo.setTooltip (t.soloSafe ? "Solo: play only soloed tracks (this one is solo safe: it plays anyway)" : "Solo: play only soloed tracks");
+        soloSafe = t.soloSafe;
 
         const auto volumeAutomated = ! t.volumeEnvelope.isEmpty(), panAutomated = ! t.panEnvelope.isEmpty();
         fader.setEnabled (! volumeAutomated);
@@ -174,8 +177,51 @@ public:
             g.fillRect (0, 0, getWidth() - 1, 3);
         }
 
+        // Solo safe: a bar under the solo button, as in the track headers.
+        if (soloSafe && trackId != 0)
+        {
+            g.setColour (juce::Colour (0xffe3c74f));
+            g.fillRect (solo.getX() + 3, solo.getBottom() + 1, solo.getWidth() - 6, 2);
+        }
+
         g.setColour (juce::Colour (0xff2a2f37));
         g.drawVerticalLine (getWidth() - 1, 0.0f, (float) getHeight());
+    }
+
+    /** Right-click: solo safe and the colour. */
+    juce::PopupMenu createMenu()
+    {
+        juce::PopupMenu menu;
+        const auto* t = view.engine.session.getState()->findTrack (trackId);
+
+        if (t == nullptr)
+            return menu;
+
+        menu.addItem ("Solo Safe", true, t->soloSafe, [this, safe = t->soloSafe]
+        {
+            edit (safe ? "Not Solo Safe" : "Solo Safe", false, [safe] (SessionTrack& track) { track.soloSafe = ! safe; });
+        });
+
+        juce::PopupMenu colours;
+        colours.addItem ("Automatic", true, t->colour < 0, [this] { edit ("Track Colour", false, [] (SessionTrack& track) { track.colour = -1; }); });
+
+        for (int c = 0; c < (int) TrackColours::palette.size(); ++c)
+        {
+            juce::PopupMenu::Item item (TrackColours::palette[(size_t) c].name);
+            item.setTicked (t->colour == c);
+            item.setColour (juce::Colour (TrackColours::palette[(size_t) c].argb));
+            item.setAction ([this, c] { edit ("Track Colour", false, [c] (SessionTrack& track) { track.colour = c; }); });
+            colours.addItem (std::move (item));
+        }
+
+        menu.addSubMenu ("Colour", colours);
+        return menu;
+    }
+
+    void mouseDown (const juce::MouseEvent& e) override
+    {
+        if (trackId != 0 && e.mods.isPopupMenu())
+            createMenu().showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
     void resized() override
@@ -229,7 +275,7 @@ private:
     MixerView& view;
     juce::Colour colour;
     juce::Label name, readout;
-    bool isBus = false, isFolder = false;
+    bool isBus = false, isFolder = false, soloSafe = false;
 };
 
 //==============================================================================
@@ -297,6 +343,12 @@ MixerView::Strip* MixerView::findStrip (juce::uint32 trackId) const
 juce::Slider* MixerView::findFader (juce::uint32 trackId) const   { auto* s = findStrip (trackId); return s != nullptr ? &s->fader : nullptr; }
 juce::Slider* MixerView::findPan (juce::uint32 trackId) const     { auto* s = findStrip (trackId); return s != nullptr ? &s->pan : nullptr; }
 juce::Button* MixerView::findMute (juce::uint32 trackId) const    { auto* s = findStrip (trackId); return s != nullptr ? &s->mute : nullptr; }
+juce::PopupMenu MixerView::getStripMenu (juce::uint32 trackId) const
+{
+    auto* s = findStrip (trackId);
+    return s != nullptr ? s->createMenu() : juce::PopupMenu();
+}
+
 juce::Button* MixerView::findSolo (juce::uint32 trackId) const    { auto* s = findStrip (trackId); return s != nullptr ? &s->solo : nullptr; }
 
 float MixerView::getShownLevel (juce::uint32 trackId, int channel) const
