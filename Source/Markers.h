@@ -8,11 +8,12 @@ struct Marker
     juce::int64 start = 0;
     juce::int64 length = 0;
     juce::String name;
+    int colour = -1;                               // a TrackColours palette index, or -1 for the default
 
     bool isRegion() const noexcept                { return length > 0; }
     juce::int64 getEnd() const noexcept           { return start + length; }
 
-    bool operator== (const Marker& o) const       { return start == o.start && length == o.length && name == o.name; }
+    bool operator== (const Marker& o) const       { return start == o.start && length == o.length && name == o.name && colour == o.colour; }
     bool operator!= (const Marker& o) const       { return ! operator== (o); }
 };
 

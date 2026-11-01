@@ -34,4 +34,13 @@ namespace TrackColours
     {
         return juce::isPositiveAndBelow (c.colour, (int) palette.size()) ? juce::Colour (palette[(size_t) c.colour].argb) : of (t, index);
     }
+
+    /** A marker's colour: its own, or else orange for a point and blue for a region. */
+    inline juce::Colour of (const Marker& m)
+    {
+        if (juce::isPositiveAndBelow (m.colour, (int) palette.size()))
+            return juce::Colour (palette[(size_t) m.colour].argb);
+
+        return m.isRegion() ? juce::Colour (0xff58a6ff) : juce::Colour (0xffff8a3d);
+    }
 }

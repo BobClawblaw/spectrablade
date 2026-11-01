@@ -11,8 +11,6 @@ namespace
     const juce::Colour laneLine (0xff2a2f37);
     const juce::Colour cursorColour (0xffffd34d);
     const juce::Colour playColour (0xffffffff);
-    const juce::Colour markerColour (0xffff8a3d);
-    const juce::Colour regionColour (0xff58a6ff);
 
     constexpr int edgeGrab = 6;   // pixels from a clip's edge that trim instead of move
 
@@ -2127,6 +2125,7 @@ void MultitrackView::drawMarkers (juce::Graphics& g, juce::Rectangle<int> area) 
         const auto& m = markers[i];
         const auto x1 = xForFrame (m.start);
         const auto active = drag == Drag::marker && (int) i == dragMarker;
+        const auto colour = TrackColours::of (m);
 
         if (m.isRegion())
         {
@@ -2136,9 +2135,9 @@ void MultitrackView::drawMarkers (juce::Graphics& g, juce::Rectangle<int> area) 
                 continue;
 
             const auto bar = juce::Rectangle<float> (x1, lane.getY() + 2.0f, juce::jmax (2.0f, x2 - x1), lane.getHeight() - 4.0f);
-            g.setColour (regionColour.withAlpha (active ? 0.75f : 0.45f));
+            g.setColour (colour.withAlpha (active ? 0.75f : 0.45f));
             g.fillRoundedRectangle (bar, 2.0f);
-            g.setColour (regionColour.withAlpha (0.45f));
+            g.setColour (colour.withAlpha (0.45f));
             g.drawVerticalLine ((int) x1, top, bottom);
             g.drawVerticalLine ((int) x2, top, bottom);
             g.setColour (juce::Colours::white);
@@ -2151,9 +2150,9 @@ void MultitrackView::drawMarkers (juce::Graphics& g, juce::Rectangle<int> area) 
 
             juce::Path flag;
             flag.addTriangle (x1, lane.getY() + 2.0f, x1 + 7.0f, lane.getCentreY(), x1, lane.getBottom() - 2.0f);
-            g.setColour (active ? markerColour.brighter (0.4f) : markerColour);
+            g.setColour (active ? colour.brighter (0.4f) : colour);
             g.fillPath (flag);
-            g.setColour (markerColour.withAlpha (0.55f));
+            g.setColour (colour.withAlpha (0.55f));
             g.drawVerticalLine ((int) x1, top, bottom);
             g.setColour (juce::Colours::white);
             g.drawText (m.name, juce::Rectangle<float> (x1 + 9.0f, lane.getY(), 120.0f, lane.getHeight()), juce::Justification::centredLeft, true);
@@ -2224,6 +2223,21 @@ void MultitrackView::renameMarker (int index)
     }), true);
 }
 
+bool MultitrackView::setMarkerColour (const Marker& marker, int colour)
+{
+    // Found again by value: the markers may have changed while the menu was open.
+    auto next = *engine.session.getState();
+    const auto it = std::find (next.markers.begin(), next.markers.end(), marker);
+    colour = juce::isPositiveAndBelow (colour, (int) TrackColours::palette.size()) ? colour : -1;
+
+    if (it == next.markers.end() || it->colour == colour)
+        return false;
+
+    it->colour = colour;
+    engine.session.apply (std::move (next), "Colour " + marker.name);
+    return true;
+}
+
 void MultitrackView::askForTrackNote (juce::uint32 trackId)
 {
     const auto* track = shown().findTrack (trackId);
@@ -2256,6 +2270,20 @@ void MultitrackView::showMarkerMenu (int index)
     const auto old = engine.session.getState()->markers[(size_t) index];
     juce::PopupMenu menu;
     menu.addItem ("Rename...", [this, index] { renameMarker (index); });
+
+    juce::PopupMenu colours;
+    colours.addItem ("Default", true, old.colour < 0, [this, old] { setMarkerColour (old, -1); });
+
+    for (int c = 0; c < (int) TrackColours::palette.size(); ++c)
+    {
+        juce::PopupMenu::Item item (TrackColours::palette[(size_t) c].name);
+        item.setTicked (old.colour == c);
+        item.setColour (juce::Colour (TrackColours::palette[(size_t) c].argb));
+        item.setAction ([this, old, c] { setMarkerColour (old, c); });
+        colours.addItem (std::move (item));
+    }
+
+    menu.addSubMenu ("Colour", colours);
     menu.addItem ("Delete " + old.name, [this, old]
     {
         // Found again by value: the markers may have changed while the menu was open.

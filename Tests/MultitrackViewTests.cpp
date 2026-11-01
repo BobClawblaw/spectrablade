@@ -492,6 +492,53 @@ void runMultitrackViewTests (AudioEngine& engine)
                    && ! MarkerEdits::nextStop ({ { 10, 5, "R" } }, 15, true).has_value()
                    && MarkerEdits::nextStop ({ { 10, 5, "R" } }, 15, false) == 10,
                "markers: the next stop is the nearest marker or region edge in that direction");
+
+        // Marker colours: chosen as undo steps, drawn on the ruler, kept through edits and files.
+        auto coloured = *engine.session.getState();
+        coloured.markers = { { 100000, 0, "Verse" }, { 200000, 50000, "Chorus" } };
+        engine.session.apply (std::move (coloured), "Markers");
+        Mouse::settle();
+        const auto verse = engine.session.getState()->markers[0];
+        const auto set = view.setMarkerColour (verse, 1);
+        const auto setStep = engine.session.getUndoDescription();
+        const auto again = view.setMarkerColour (engine.session.getState()->markers[0], 1);
+        const auto gone = view.setMarkerColour (verse, 2);
+        const auto chorus = engine.session.getState()->markers[1];
+        const auto clamped = view.setMarkerColour (chorus, 99) || engine.session.getState()->markers[1].colour != -1;
+        auto nowMarkers = engine.session.getState()->markers;
+        check (set && setStep == "Colour Verse" && ! again && ! gone && ! clamped && nowMarkers[0].colour == 1 && nowMarkers[1].colour == -1,
+               "marker colours: choosing one is an undo step; the same colour, a marker that is gone or a colour past the palette changes nothing");
+
+        view.setTimeSelection ({});
+        Mouse::settle();
+        const auto picture = view.createComponentSnapshot (view.getLocalBounds());
+        const auto flagX = juce::roundToInt (x (100000)) + 2;
+        const auto laneMid = MultitrackView::timeRulerHeight + MultitrackView::markerLaneHeight / 2;
+        const auto drawn = picture.getPixelAt (flagX, laneMid) == juce::Colour (TrackColours::palette[1].argb)
+                           && TrackColours::of (nowMarkers[1]) == juce::Colour (0xff58a6ff) && TrackColours::of (Marker { 1, 0, "p" }) == juce::Colour (0xffff8a3d);
+
+        const auto moved = MarkerEdits::afterReplace (nowMarkers, 0, 1000, 0);
+        const auto cropped = MarkerEdits::afterCrop (nowMarkers, 150000, 260000);
+        const auto kept = moved.size() == 2 && moved[0].colour == 1 && cropped.size() == 1 && cropped[0].colour == -1
+                          && MarkerEdits::afterCrop (nowMarkers, 50000, 220000)[0].colour == 1;
+
+        auto colouredFile = *engine.session.getState();
+        colouredFile.markers[1].colour = 7;
+        const auto colourFile = juce::File::createTempFile (".sbsession");
+        const auto colourError = SessionFile::save (colouredFile, colourFile);
+        const auto colourLoaded = SessionFile::load (colourFile, engine.formatManager);
+        auto text = colourFile.loadFileAsString();
+        colourFile.replaceWithText (text.replace ("colour=\"7\"", "colour=\"42\""));
+        const auto pastPalette = SessionFile::load (colourFile, engine.formatManager);
+        colourFile.deleteFile();
+        const auto filed = colourError.isEmpty() && colourLoaded.state.markers == colouredFile.markers
+                           && pastPalette.state.markers.size() == 2 && pastPalette.state.markers[1].colour == 7
+                           && text.contains ("colour=\"1\"") && text.contains ("colour=\"7\"");
+
+        engine.session.undo();
+        const auto undone = engine.session.getState()->markers[0].colour == -1;
+        check (drawn && kept && filed && undone,
+               "marker colours: the flag drawn in its colour, defaults orange and blue, kept by time edits and crops, saved and loaded, undone");
     }
 
     // Clip gain: normalizing to the peak of the part a clip plays, its limits, and Command-dragging.

@@ -158,6 +158,10 @@ public:
     /** Asks for a marker's new name; renaming is an undo step. */
     void renameMarker (int index);
 
+    /** Gives a marker (found by value) a palette colour, or -1 for the default, as an undo step
+        ("Colour <name>"). False when it is gone or already has that colour. */
+    bool setMarkerColour (const Marker&, int colour);
+
     /** Deletes a marker as an undo step ("Delete <name>"). False when there is none. */
     bool deleteMarker (int index);
 

@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 78: marker colours**
+- A marker's or region's right-click menu has a Colour submenu with the eight track colours and Default. Choosing one is an undo step ("Colour <name>"). The flag or bar and the line through the tracks are drawn in it, and the marker list shows it as a strip before the name. Default keeps markers orange and regions blue, as before.
+- The colour is saved with the session (nothing is written for Default; a number past the palette reads as the last colour), and moves with the marker through deleting or inserting time, cropping and pasting.
+- Markers in the single-file editor keep their fixed colours: WAV cue and AIFF marker chunks have no place for one.
+- Measured by the tests: the undo step; nothing done for the colour a marker already has, a marker that is gone, or a colour past the palette; the flag drawn in its colour on the ruler; the default colours; the colour kept through deleting time and cropping; the session file round trip, and a colour past the palette read as the last; and undo. The menu and the strip in the marker list were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 77: header level meters**
 - Each track header has a thin two-bar meter at its right edge. A playing track shows its level into the mix (after its effects, volume and pan); an armed track shows its input instead, tinted red, with a mono input filling both bars. Bars fall back by about a third every screen refresh. Folders have none.
 - The headers read the peaks without taking them from the mixer's meters or the recording meter: the recorder and the mixer now keep a separate peak for each reader.
@@ -538,6 +544,7 @@ The tests run against the real machine:
 - Dropping a header on a folder: going in from below and above, and plain moves.
 - Session notes: typing and undo in the window, and the session file.
 - Header meters: separate peak readers in the recorder and mixer, a track's level and fall, and an armed track's input.
+- Marker colours: choosing one, drawing it, edits and crops, and the session file.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -591,4 +598,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: marker colours, chosen per marker and shown on the ruler and in the marker list
+1. Multitrack, continued: a peak-hold mark on the header meters, and a clip light that stays on until clicked

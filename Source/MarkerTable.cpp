@@ -1,5 +1,7 @@
 #include "MarkerTable.h"
 
+#include "TrackColours.h"
+
 MarkerTable::MarkerTable (Session& s, Actions a) : session (s), actions (std::move (a))
 {
     auto& header = table.getHeader();
@@ -93,9 +95,18 @@ void MarkerTable::paintRowBackground (juce::Graphics& g, int, int, int, bool isS
 
 void MarkerTable::paintCell (juce::Graphics& g, int row, int column, int width, int height, bool)
 {
+    // The name cell starts with the marker's colour.
+    if (column == name)
+        if (const auto& markers = session.getState()->markers; juce::isPositiveAndBelow (row, (int) markers.size()))
+        {
+            g.setColour (TrackColours::of (markers[(size_t) row]));
+            g.fillRect (2, 3, 3, height - 6);
+        }
+
     g.setColour (juce::Colours::white);
     g.setFont (13.0f);
-    g.drawText (getText (row, column), 6, 0, width - 12, height,
+    const auto left = column == name ? 10 : 6;
+    g.drawText (getText (row, column), left, 0, width - left - 6, height,
                 column == name ? juce::Justification::centredLeft : juce::Justification::centredRight, true);
 }
 

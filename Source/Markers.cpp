@@ -31,7 +31,7 @@ Markers afterReplace (const Markers& markers, juce::int64 start, juce::int64 end
             if (m.start <= start)
                 result.push_back (m);
             else if (m.start >= end)
-                result.push_back ({ m.start + delta, 0, m.name });
+                result.push_back ({ m.start + delta, 0, m.name, m.colour });
 
             continue;
         }
@@ -42,7 +42,7 @@ Markers afterReplace (const Markers& markers, juce::int64 start, juce::int64 end
         const auto b = m.getEnd() <= start ? m.getEnd() : m.getEnd() >= end ? m.getEnd() + delta : start;
 
         if (b > a)
-            result.push_back ({ a, b - a, m.name });
+            result.push_back ({ a, b - a, m.name, m.colour });
     }
 
     sort (result);
@@ -58,7 +58,7 @@ Markers afterCrop (const Markers& markers, juce::int64 start, juce::int64 end)
         if (! m.isRegion())
         {
             if (m.start >= start && m.start <= end)
-                result.push_back ({ m.start - start, 0, m.name });
+                result.push_back ({ m.start - start, 0, m.name, m.colour });
 
             continue;
         }
@@ -67,7 +67,7 @@ Markers afterCrop (const Markers& markers, juce::int64 start, juce::int64 end)
         const auto b = juce::jmin (m.getEnd(), end);
 
         if (b > a)
-            result.push_back ({ a - start, b - a, m.name });
+            result.push_back ({ a - start, b - a, m.name, m.colour });
     }
 
     sort (result);

@@ -1961,6 +1961,9 @@ juce::String save (const SessionState& state, const juce::File& target,
 
         if (m.isRegion())
             marker->setAttribute ("length", juce::String (m.length));
+
+        if (m.colour >= 0)
+            marker->setAttribute ("colour", m.colour);
     }
 
     juce::TemporaryFile temp (target);
@@ -2154,6 +2157,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         m.name = markerXml->getStringAttribute ("name");
         m.start = juce::jmax ((juce::int64) 0, markerXml->getStringAttribute ("start").getLargeIntValue());
         m.length = juce::jmax ((juce::int64) 0, markerXml->getStringAttribute ("length").getLargeIntValue());
+        m.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, markerXml->getIntAttribute ("colour", -1));
         state.markers.push_back (m);
     }
 
