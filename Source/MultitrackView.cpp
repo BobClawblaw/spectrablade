@@ -166,10 +166,19 @@ public:
         group = t.group;
         isSelected = selected;
         isBus = t.isBus;
-        sendsButton.setVisible (! isBus);
-        arm.setVisible (! isBus);
+        isFolder = t.isFolder;
+        collapsed = t.collapsed;
+        inFolder = t.folderId != 0;
+        members = (int) std::count_if (view.shown().tracks.begin(), view.shown().tracks.end(), [&t] (auto& m) { return m.folderId == t.id; });
+
+        // A folder has only its name, mute and solo.
+        for (auto* c : std::initializer_list<juce::Component*> { &effectsButton, &gain, &pan, &automationButton })
+            c->setVisible (! isFolder);
+
+        sendsButton.setVisible (! isBus && ! isFolder);
+        arm.setVisible (! isBus && ! isFolder);
         arm.setToggleState (view.isArmed (trackId), juce::dontSendNotification);
-        inputButton.setVisible (! isBus);
+        inputButton.setVisible (! isBus && ! isFolder);
         inputButton.setButtonText (t.input.isDefault() ? juce::String ("In")
                                    : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
                                                            : juce::String (t.input.first + 1));
@@ -217,9 +226,34 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (isBus ? 0xff16191d : 0xff1b1e23));
+        g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (isBus ? 0xff16191d : isFolder ? 0xff1e2229 : 0xff1b1e23));
         g.setColour (colour);
-        g.fillRect (0, 0, isBus ? 8 : 4, getHeight());
+        g.fillRect (inFolder ? folderIndent : 0, 0, isBus ? 8 : 4, getHeight());
+
+        // A member of a folder: a rule down its left, inset under the folder's triangle.
+        if (inFolder)
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.15f));
+            g.fillRect (0, 0, 3, getHeight());
+        }
+
+        if (isFolder)
+        {
+            const auto box = triangleArea().toFloat().withSizeKeepingCentre (10.0f, 10.0f);
+            juce::Path triangle;
+
+            if (collapsed)
+                triangle.addTriangle (box.getTopLeft(), box.getBottomLeft(), { box.getRight(), box.getCentreY() });
+            else
+                triangle.addTriangle (box.getTopLeft(), box.getTopRight(), { box.getCentreX(), box.getBottom() });
+
+            g.setColour (juce::Colours::lightgrey);
+            g.fillPath (triangle);
+            g.setFont (12.0f);
+            g.setColour (juce::Colours::grey);
+            g.drawText (juce::String (members) + (members == 1 ? " track" : " tracks") + (collapsed ? ", collapsed" : ""),
+                        getLocalBounds().withTrimmedLeft (34).withTrimmedTop (36).withHeight (16), juce::Justification::centredLeft);
+        }
 
         if (group != 0)
         {
@@ -234,12 +268,18 @@ public:
 
     void resized() override
     {
-        auto r = getLocalBounds().withTrimmedLeft (10).reduced (4, 6);
+        auto r = getLocalBounds().withTrimmedLeft (10 + (inFolder ? folderIndent : 0) + (isFolder ? 18 : 0)).reduced (4, 6);
         auto top = r.removeFromTop (24);
         solo.setBounds (top.removeFromRight (26));
         top.removeFromRight (4);
         mute.setBounds (top.removeFromRight (26));
         top.removeFromRight (4);
+
+        if (isFolder)
+        {
+            name.setBounds (top);
+            return;
+        }
 
         if (! isBus)
         {
@@ -279,7 +319,12 @@ public:
 
         if (e.mods.isPopupMenu())
             showGroupMenu();
+        else if (isFolder && triangleArea().contains (e.getPosition()))
+            view.setFolderCollapsed (trackId, ! collapsed);
     }
+
+    /** Where a folder's collapse triangle is. */
+    juce::Rectangle<int> triangleArea() const    { return { 8, 6, 20, 24 }; }
 
     void showGroupMenu()
     {
@@ -308,6 +353,24 @@ public:
         }
 
         juce::PopupMenu menu;
+
+        // Folders hold tracks and buses, not other folders.
+        if (! t->isFolder)
+        {
+            juce::PopupMenu folders;
+            folders.addItem ("None", true, t->folderId == 0, [this] { view.setTrackFolder (trackId, 0); });
+
+            for (auto& f : view.engine.session.getState()->tracks)
+                if (f.isFolder)
+                    folders.addItem (f.name, true, t->folderId == f.id, [this, id = f.id] { view.setTrackFolder (trackId, id); });
+
+            menu.addSubMenu ("Folder", folders);
+        }
+        else
+        {
+            menu.addItem (t->collapsed ? "Expand" : "Collapse", [this, c = t->collapsed] { view.setFolderCollapsed (trackId, ! c); });
+        }
+
         menu.addSubMenu ("Group", groups);
         menu.addSubMenu ("Colour", colours);
         menu.addItem ("Note...", [this] { view.askForTrackNote (trackId); });
@@ -355,7 +418,9 @@ private:
     juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
     juce::Slider gain, pan;
     juce::Colour colour;
-    bool isSelected = false, isBus = false;
+    bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false;
+    int members = 0;
+    static constexpr int folderIndent = 8;
 };
 
 //==============================================================================
@@ -805,17 +870,17 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     state = engine.session.getState();
 
-    // Clips that went, or whose track was hidden, leave the selection.
+    // Clips that went, or whose track was hidden or folded away, leave the selection.
     for (auto it = selectedClips.begin(); it != selectedClips.end();)
     {
         const auto where = state->findClip (*it);
-        it = where.has_value() && ! state->tracks[(size_t) where->first].hidden ? std::next (it) : selectedClips.erase (it);
+        it = where.has_value() && state->isShown (state->tracks[(size_t) where->first]) ? std::next (it) : selectedClips.erase (it);
     }
 
-    if (const auto* t = state->findTrack (selectedTrackId); t != nullptr && t->hidden)
+    if (const auto* t = state->findTrack (selectedTrackId); t != nullptr && ! state->isShown (*t))
         selectedTrackId = 0;
 
-    if (const auto where = state->findClip (selectedClip); ! where.has_value() || state->tracks[(size_t) where->first].hidden)
+    if (const auto where = state->findClip (selectedClip); ! where.has_value() || ! state->isShown (state->tracks[(size_t) where->first]))
         selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
 
     for (auto it = armed.begin(); it != armed.end();)
@@ -994,7 +1059,7 @@ void MultitrackView::layoutHeaders()
 
     for (size_t i = 0; i < headers.size(); ++i)
     {
-        const auto hidden = i < tracks.size() && tracks[i].hidden;
+        const auto hidden = i < tracks.size() && ! shown().isShown (tracks[i]);
         headers[i]->setVisible (! hidden);
         headers[i]->setBounds (0, rowOf ((int) i) * laneHeight - scrollY, headerArea.getWidth(), hidden ? 0 : laneHeight);
     }
@@ -1023,7 +1088,7 @@ int MultitrackView::rowOf (int track) const
     auto row = 0;
 
     for (int t = 0; t < juce::jmin (track, (int) tracks.size()); ++t)
-        row += tracks[(size_t) t].hidden ? 0 : 1;
+        row += shown().isShown (tracks[(size_t) t]) ? 1 : 0;
 
     return row + juce::jmax (0, track - (int) tracks.size());
 }
@@ -1043,7 +1108,7 @@ int MultitrackView::trackAt (int y) const
     auto row = (y - rulerHeight + scrollY) / laneHeight;
 
     for (int t = 0; t < (int) tracks.size(); ++t)
-        if (! tracks[(size_t) t].hidden && row-- == 0)
+        if (shown().isShown (tracks[(size_t) t]) && row-- == 0)
             return t;
 
     return (int) tracks.size() + row;
@@ -1746,7 +1811,7 @@ void MultitrackView::paint (juce::Graphics& g)
 
         for (int t = 0; t < (int) s.tracks.size(); ++t)
         {
-            if (s.tracks[(size_t) t].hidden)
+            if (! s.isShown (s.tracks[(size_t) t]))
                 continue;
 
             const auto lane = juce::Rectangle<int> (area.getX(), laneTop (t), area.getWidth(), laneHeight);
@@ -1772,6 +1837,43 @@ void MultitrackView::paint (juce::Graphics& g)
                 g.drawText (feeders.isEmpty() ? "Bus: nothing sends here yet. Use a track's Sends button."
                                               : "Bus: from " + feeders.joinIntoString (", "),
                             lane.reduced (12, 0), juce::Justification::centredLeft);
+            }
+
+            // A folder's lane: where its members have clips, one thin bar per member.
+            if (track.isFolder)
+            {
+                std::vector<int> members;
+
+                for (int m = 0; m < (int) s.tracks.size(); ++m)
+                    if (s.tracks[(size_t) m].folderId == track.id)
+                        members.push_back (m);
+
+                const auto band = lane.reduced (0, 6).toFloat();
+                const auto barHeight = members.empty() ? 0.0f : juce::jmin (8.0f, band.getHeight() / (float) members.size());
+
+                for (size_t i = 0; i < members.size(); ++i)
+                {
+                    const auto& member = s.tracks[(size_t) members[i]];
+                    const auto y = band.getY() + barHeight * (float) i;
+
+                    for (auto& c : member.clips)
+                    {
+                        const auto x0 = juce::jmax ((float) lane.getX(), xForFrame (c.position)), x1 = juce::jmin ((float) lane.getRight(), xForFrame (c.getEnd()));
+
+                        if (x1 > x0)
+                        {
+                            g.setColour (TrackColours::of (c, member, members[i]).withAlpha (c.muted ? 0.25f : 0.6f));
+                            g.fillRect (juce::Rectangle<float> (x0, y + 1.0f, x1 - x0, juce::jmax (1.0f, barHeight - 2.0f)));
+                        }
+                    }
+                }
+
+                if (members.empty())
+                {
+                    g.setColour (juce::Colours::grey);
+                    g.setFont (13.0f);
+                    g.drawText ("Folder: empty. Right-click a track's header to put it in.", lane.reduced (12, 0), juce::Justification::centredLeft);
+                }
             }
 
             for (auto& c : track.clips)
@@ -1849,7 +1951,7 @@ void MultitrackView::paint (juce::Graphics& g)
             std::vector<int> lanes;
 
             for (int t = 0; t < (int) s.tracks.size(); ++t)
-                if (isArmed (s.tracks[(size_t) t].id) && ! s.tracks[(size_t) t].hidden)
+                if (isArmed (s.tracks[(size_t) t].id) && s.isShown (s.tracks[(size_t) t]))
                     lanes.push_back (t);
 
             if (lanes.empty())
@@ -2356,12 +2458,13 @@ void MultitrackView::selectClipsAfterCursor()
 
 void MultitrackView::selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted)
 {
-    // Never clips on hidden tracks, which can't be seen.
+    // Never clips on hidden or folded-away tracks, which can't be seen.
     selectedClips.clear();
+    const auto& s = *engine.session.getState();
 
-    for (auto& t : engine.session.getState()->tracks)
+    for (auto& t : s.tracks)
         for (auto& c : t.clips)
-            if (! t.hidden && wanted (t, c))
+            if (s.isShown (t) && wanted (t, c))
                 selectedClips.insert (c.id);
 
     if (! isClipSelected (selectedClip))
@@ -2631,9 +2734,17 @@ bool MultitrackView::showClip (juce::uint32 clipId)
         setView ((double) clip.position - width * 0.1, framesPerPixel);
 
     const auto visible = juce::jmax (1, timelineArea().getHeight());
-    if (shown().tracks[(size_t) where->first].hidden)
+    if (const auto t = shown().tracks[(size_t) where->first]; ! shown().isShown (t))
     {
-        setTrackHidden (shown().tracks[(size_t) where->first].id, false);
+        const auto* folder = shown().findTrack (t.folderId);
+        const auto folderId = folder != nullptr && folder->collapsed ? folder->id : 0;
+
+        if (t.hidden)
+            setTrackHidden (t.id, false);
+
+        if (folderId != 0)
+            setFolderCollapsed (folderId, false);
+
         changeListenerCallback (&engine.session);   // lay the lanes out with it now
     }
 
@@ -2686,6 +2797,40 @@ void MultitrackView::setSelectedClipsFlag (bool (*set) (SessionState&, juce::uin
 void MultitrackView::setTrackHidden (juce::uint32 trackId, bool hidden)
 {
     editTrack (trackId, hidden ? "Hide Track" : "Show Track", false, [hidden] (SessionTrack& t) { t.hidden = hidden; });
+}
+
+juce::uint32 MultitrackView::addFolder()
+{
+    auto next = *engine.session.getState();
+    const auto folderId = next.addFolder().id;
+    const auto selected = std::find_if (next.tracks.begin(), next.tracks.end(), [this] (auto& t) { return t.id == selectedTrackId; });
+
+    if (selected != next.tracks.end() && ! selected->isFolder)
+    {
+        const auto to = (int) std::distance (next.tracks.begin(), selected);
+        SessionEdits::setTrackFolder (next, selectedTrackId, folderId);
+        SessionEdits::moveTrack (next, (int) next.tracks.size() - 1, to);
+    }
+
+    engine.session.apply (std::move (next), "Add Folder");
+    selectedTrackId = folderId;
+    return folderId;
+}
+
+void MultitrackView::setFolderCollapsed (juce::uint32 folderId, bool collapsed)
+{
+    const auto* folder = engine.session.getState()->findTrack (folderId);
+
+    if (folder != nullptr && folder->isFolder && folder->collapsed != collapsed)
+        editTrack (folderId, collapsed ? "Collapse Folder" : "Expand Folder", false, [collapsed] (SessionTrack& t) { t.collapsed = collapsed; });
+}
+
+void MultitrackView::setTrackFolder (juce::uint32 trackId, juce::uint32 folderId)
+{
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::setTrackFolder (next, trackId, folderId))
+        engine.session.apply (std::move (next), folderId != 0 ? "Move to Folder" : "Take Out of Folder");
 }
 
 bool MultitrackView::showAllTracks()

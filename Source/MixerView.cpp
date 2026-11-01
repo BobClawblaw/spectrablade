@@ -250,8 +250,10 @@ void MixerView::rebuild()
     const auto state = engine.session.getState();
     std::vector<std::pair<juce::uint32, bool>> tracks;
 
+    // Folders have no audio of their own, so no strip.
     for (auto& t : state->tracks)
-        tracks.emplace_back (t.id, t.isBus);
+        if (! t.isFolder)
+            tracks.emplace_back (t.id, t.isBus);
 
     // Strips are made again only when tracks come, go or move; otherwise they are just updated.
     if (tracks != shownTracks)

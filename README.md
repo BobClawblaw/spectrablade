@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 71: track folders**
+- Multitrack > Add Folder adds a folder just above the selected track or bus, with it inside (or at the end, empty, when a folder or nothing is selected). Right-click any track's or bus's header to put it in a folder, or take it out, with the Folder submenu. Folders don't nest. Each is an undo step.
+- A folder has no audio of its own, only a name, mute and solo: muting it mutes everything in it, and soloing it solos everything in it, exactly as their own buttons would (a soloed track still brings the buses it sends to). Its lane shows where its tracks have clips, one thin bar per track. Click the triangle on its header (or choose Collapse in its menu) to fold its tracks out of the lanes: they keep playing and stay in the mixer, their clips leave the selection, and going to one of their clips (from the clip list, say) opens the folder again. Tracks in a folder are drawn inset, with a rule down their left.
+- Folders have no strip in the mixer, take no clips (a clip dropped, pasted or recorded onto one goes onto a new track), and can't send or be saved as track templates. A track's place in a folder doesn't depend on where it is in the list; Add Folder puts the folder right above the track it takes in. Removing a folder leaves its tracks where they are, out of any folder. Folders, whether collapsed, and who is in them are saved with the session.
+- Measured by the tests: a folder muted mixing bit for bit as its track and bus muted by their own buttons, and soloed as them soloed; a collapsed folder's tracks mixing as before; the refused cases (a folder into a folder, into a track, a missing folder, where it already is, sends from a folder); a clip for a folder landing on a new track; removing a folder freeing its tracks; folders through a session file; and, through the view, Add Folder taking in the selected track above it, the header's triangle collapsing the folder (its track leaving the lanes and the selection, the track below taking its row), going to its clip expanding it, and moving a track in and out, each as an undo step. How the folder lane and headers look, and the menus, were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 70: clip gain lines**
 - Each clip can have a gain line: gain in dB, from -60 to +24, on top of the clip's own gain, changing over the clip in straight lines (in dB) between points. Multitrack > Clip Gain Lines shows every clip's line across its body, 0 dB half way up: click a line to add a point at the line's value, drag a point to move it (it stays between its neighbours and inside the part of the clip heard), Alt-click a point to remove it. Each is an undo step. Hidden, a clip with points still shows its line, fainter. Locked clips and clips on frozen tracks can't be changed. Where a shown track envelope's line is under the mouse too, the track envelope takes the click.
 - The points sit on the clip's audio, not the session's time, so the line stays with the sound when the clip is moved, trimmed or split (both parts keep it), and a take change shifts it with the take. Reversing a clip turns its line round and stretching or pitch-shifting scales it, both from the part heard. Playback, mixdowns, bounces, stems, regions and freezing all use it, and it is saved with the session.
@@ -499,6 +505,7 @@ The tests run against the real machine:
 - Freezing a track: the mix bit for bit, refused edits, the session file, collecting, and the lane.
 - Clip groups: the edits, the session file, and selecting and dragging a group in the view.
 - Clip gain lines: the mix, the line following edits, the session file, and editing points in the view.
+- Folders: mute and solo through them, the edits, the session file, and adding and collapsing them in the view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -552,4 +559,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: track folders, tracks gathered under a folder that can be collapsed, with the folder's mute and solo over them
+1. Multitrack, continued: a folder's volume, so a folder's tracks can be turned up or down together through one fader

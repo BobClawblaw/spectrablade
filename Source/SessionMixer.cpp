@@ -50,21 +50,22 @@ namespace
 
     bool plays (const SessionState& state, const SessionTrack& track)
     {
-        if (track.mute)
+        // A folder's mute and solo act on its members, as if their own.
+        if (track.isFolder || state.isMuted (track))
             return false;
 
-        if (! state.anySolo() || track.solo)
+        if (! state.anySolo() || state.isSoloed (track))
             return true;
 
         // A soloed bus brings the tracks feeding it; a soloed track brings the buses it feeds.
         if (track.isBus)
             return std::any_of (state.tracks.begin(), state.tracks.end(),
-                                [&] (auto& t) { return t.solo && ! t.mute && t.findSend (track.id) != nullptr; });
+                                [&] (auto& t) { return state.isSoloed (t) && ! state.isMuted (t) && t.findSend (track.id) != nullptr; });
 
         return std::any_of (track.sends.begin(), track.sends.end(), [&] (auto& send)
         {
             const auto* bus = state.findTrack (send.busId);
-            return bus != nullptr && bus->solo;
+            return bus != nullptr && state.isSoloed (*bus);
         });
     }
 

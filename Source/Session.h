@@ -182,6 +182,12 @@ struct SessionTrack
     int group = 0;                         // 0 for none, or 1 to maxGroups: volume, mute and solo changes follow through it
     int colour = -1;                       // a place in TrackColours::palette, or -1 for one by its place in the list
     bool hidden = false;                   // left out of the lanes (it still plays and shows in the mixer)
+
+    /** A folder gathers tracks and buses: no audio of its own, but its mute and solo act on
+        them all, and collapsed it leaves them out of the lanes (they still play). */
+    bool isFolder = false;
+    bool collapsed = false;                // a folder's members out of the lanes
+    juce::uint32 folderId = 0;             // the folder this track or bus is in, or 0
     juce::String note;                     // free text, shown in the header's tooltip
     TrackInput input;                      // what it records from (tracks only)
 
@@ -194,7 +200,7 @@ struct SessionTrack
     bool isFrozen() const noexcept                { return frozenAudio != nullptr; }
 
     /** False for a bus or a frozen track: clips meant for it go onto a new track instead. */
-    bool takesClips() const noexcept              { return ! isBus && ! isFrozen(); }
+    bool takesClips() const noexcept              { return ! isBus && ! isFolder && ! isFrozen(); }
 
     static constexpr int maxGroups = 8;
     std::vector<SessionClip> clips;
@@ -238,11 +244,21 @@ struct SessionState
     Metronome::TempoMap tempoMap() const noexcept { return { tempo, beatsPerBar, tempoChanges, sampleRate }; }
     bool anySolo() const;
 
+    /** Muted or soloed itself or through its folder. */
+    bool isMuted (const SessionTrack&) const;
+    bool isSoloed (const SessionTrack&) const;
+
+    /** In the lanes: not hidden, nor in a collapsed folder. */
+    bool isShown (const SessionTrack&) const;
+
     /** Adds an empty track named "Track n" and returns it. */
     SessionTrack& addTrack();
 
     /** Adds a bus named "Bus n" and returns it. */
     SessionTrack& addBus();
+
+    /** Adds an empty, open folder named "Folder n" and returns it. */
+    SessionTrack& addFolder();
 
     /** The track (or bus) with this id, or null. */
     const SessionTrack* findTrack (juce::uint32 trackId) const;
@@ -401,7 +417,12 @@ namespace SessionEdits
         it. False when either place is out of range or they are the same. */
     bool moveTrack (SessionState&, int from, int to);
 
-    /** Removes a track or bus; removing a bus removes the sends to it. */
+    /** Puts a track or bus in a folder, or with folderId 0 takes it out. False for a folder
+        (they don't nest), or when it is already so. */
+    bool setTrackFolder (SessionState&, juce::uint32 trackId, juce::uint32 folderId);
+
+    /** Removes a track, bus or folder; removing a bus removes the sends to it, and removing a
+        folder leaves its members out of any. */
     bool removeTrack (SessionState&, int track);
 
     /** Puts a copy of a track or bus right after it, named "Name Copy": its clips (sharing their

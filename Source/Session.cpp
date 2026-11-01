@@ -27,6 +27,24 @@ bool SessionState::anySolo() const
     return std::any_of (tracks.begin(), tracks.end(), [] (const SessionTrack& t) { return t.solo; });
 }
 
+bool SessionState::isMuted (const SessionTrack& t) const
+{
+    const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;
+    return t.mute || (folder != nullptr && folder->mute);
+}
+
+bool SessionState::isSoloed (const SessionTrack& t) const
+{
+    const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;
+    return t.solo || (folder != nullptr && folder->solo);
+}
+
+bool SessionState::isShown (const SessionTrack& t) const
+{
+    const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;
+    return ! t.hidden && (folder == nullptr || ! folder->collapsed);
+}
+
 namespace
 {
     /** prefix + n, counting up from n past names already in use. */
@@ -48,7 +66,17 @@ SessionTrack& SessionState::addTrack()
 {
     SessionTrack t;
     t.id = nextId++;
-    t.name = freeName (*this, "Track ", (int) std::count_if (tracks.begin(), tracks.end(), [] (auto& x) { return ! x.isBus; }) + 1);
+    t.name = freeName (*this, "Track ", (int) std::count_if (tracks.begin(), tracks.end(), [] (auto& x) { return ! x.isBus && ! x.isFolder; }) + 1);
+    tracks.push_back (std::move (t));
+    return tracks.back();
+}
+
+SessionTrack& SessionState::addFolder()
+{
+    SessionTrack t;
+    t.id = nextId++;
+    t.isFolder = true;
+    t.name = freeName (*this, "Folder ", (int) std::count_if (tracks.begin(), tracks.end(), [] (auto& x) { return x.isFolder; }) + 1);
     tracks.push_back (std::move (t));
     return tracks.back();
 }
@@ -1383,9 +1411,26 @@ bool removeTrack (SessionState& s, int track)
     s.tracks.erase (s.tracks.begin() + track);
 
     for (auto& t : s.tracks)
+    {
         t.sends.erase (std::remove_if (t.sends.begin(), t.sends.end(), [removed] (auto& send) { return send.busId == removed; }),
                        t.sends.end());
 
+        if (t.folderId == removed)
+            t.folderId = 0;
+    }
+
+    return true;
+}
+
+bool setTrackFolder (SessionState& s, juce::uint32 trackId, juce::uint32 folderId)
+{
+    const auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+    const auto* folder = folderId != 0 ? s.findTrack (folderId) : nullptr;
+
+    if (track == s.tracks.end() || track->isFolder || track->folderId == folderId || (folderId != 0 && (folder == nullptr || ! folder->isFolder)))
+        return false;
+
+    track->folderId = folderId;
     return true;
 }
 
@@ -1394,7 +1439,7 @@ bool setSend (SessionState& s, juce::uint32 trackId, const SessionSend& send)
     const auto* bus = s.findTrack (send.busId);
     auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
 
-    if (bus == nullptr || ! bus->isBus || track == s.tracks.end() || track->isBus)
+    if (bus == nullptr || ! bus->isBus || track == s.tracks.end() || track->isBus || track->isFolder)
         return false;
 
     for (auto& existing : track->sends)
@@ -1747,6 +1792,15 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.isBus)
             track->setAttribute ("bus", true);
 
+        if (t.isFolder)
+            track->setAttribute ("folder", true);
+
+        if (t.isFolder && t.collapsed)
+            track->setAttribute ("collapsed", true);
+
+        if (t.folderId != 0 && indexOf.count (t.folderId) > 0)
+            track->setAttribute ("inFolder", indexOf[t.folderId]);
+
         for (auto& send : t.sends)
         {
             auto* sendXml = track->createNewChildElement ("SEND");
@@ -1957,7 +2011,9 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
     for (auto* trackXml : root->getChildWithTagNameIterator ("TRACK"))
     {
-        auto& track = trackXml->getBoolAttribute ("bus") ? state.addBus() : state.addTrack();
+        auto& track = trackXml->getBoolAttribute ("bus") ? state.addBus() : trackXml->getBoolAttribute ("folder") ? state.addFolder() : state.addTrack();
+        track.collapsed = track.isFolder && trackXml->getBoolAttribute ("collapsed");
+        track.folderId = (juce::uint32) trackXml->getIntAttribute ("inFolder", -1);   // an index until every track is read
         track.name = trackXml->getStringAttribute ("name", track.name);
 
         for (auto* sendXml : trackXml->getChildWithTagNameIterator ("SEND"))
@@ -2096,12 +2152,16 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
                                                juce::jlimit (20.0, 400.0, changeXml->getDoubleAttribute ("tempo", 120.0)),
                                                juce::jlimit (1, 16, changeXml->getIntAttribute ("beatsPerBar", 4)) });
 
-    // Indices to ids; sends to anything but a bus are dropped.
+    // Indices to ids; sends to anything but a bus, and places in anything but a folder, are dropped.
     const auto pending = state.tracks;
 
     for (size_t i = 0; i < pending.size(); ++i)
     {
         state.tracks[i].sends.clear();
+        state.tracks[i].folderId = 0;
+
+        if (pending[i].folderId < pending.size())
+            SessionEdits::setTrackFolder (state, state.tracks[i].id, pending[pending[i].folderId].id);
 
         for (auto send : pending[i].sends)
         {

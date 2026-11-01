@@ -215,6 +215,17 @@ public:
     /** Shows every hidden track again, as one undo step. False when none was hidden. */
     bool showAllTracks();
 
+    /** Adds a folder as an undo step ("Add Folder"): above the selected track or bus, with it
+        inside, or at the end when a folder or nothing is selected. Returns its id. */
+    juce::uint32 addFolder();
+
+    /** Collapses a folder, leaving its members out of the lanes (they still play), or expands
+        it, as an undo step. A click on a folder header's triangle does this. */
+    void setFolderCollapsed (juce::uint32 folderId, bool collapsed);
+
+    /** Puts a track or bus in a folder (0: out of any) as an undo step. Right-click a header. */
+    void setTrackFolder (juce::uint32 trackId, juce::uint32 folderId);
+
     /** Sets a track's or bus's note (empty to clear it) as an undo step ("Track Note"). Right-
         click a header and choose Note... to type one; the header shows it as its tooltip. */
     void setTrackNote (juce::uint32 trackId, const juce::String& note);

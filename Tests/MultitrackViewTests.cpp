@@ -1650,6 +1650,83 @@ void runMultitrackViewTests (AudioEngine& engine)
     }
 
     {
+        // Folders: Add Folder puts the selected track in a new folder above it; collapsed, the
+        // folder's members leave the lanes and the selection, and going to one's clip opens it.
+        SessionState three;
+        three.sampleRate = rate;
+
+        for (auto trackName : { "A", "B", "C" })
+            three.addTrack().name = trackName;
+
+        std::vector<juce::uint32> clipIds;
+
+        for (int t = 0; t < 3; ++t)
+            clipIds.push_back (SessionEdits::addClip (three, t, juce::File ("/tmp/folder.wav"), silence (96000), 0));
+
+        engine.session.reset (three, {});
+        MultitrackView folderView (engine);
+        folderView.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 5 * MultitrackView::trackHeight + 12);
+        folderView.setVisible (true);   // so a point finds the header under it
+        folderView.zoomToRange ({ 0, 96000 });
+        Mouse folderMouse { folderView };
+        Mouse::settle();
+        const auto frames = folderView.getVisibleFrames();
+        const auto clipX = (float) MultitrackView::headerWidth + (float) ((48000.0 - frames.getStart()) / (frames.getLength() / timelineWidth));
+        const auto rowY = [] (int row) { return (float) (MultitrackView::rulerHeight + row * MultitrackView::trackHeight + 60); };
+        const auto shownHeaders = [&]
+        {
+            auto count = 0;
+
+            for (auto* area : folderView.getChildren())
+                for (auto* child : area->getChildren())
+                    count += child->getNumChildComponents() > 3 && child->isVisible() ? 1 : 0;
+
+            return count;
+        };
+
+        folderMouse.click ({ clipX, rowY (1) });
+        const auto folderId = folderView.addFolder();
+        Mouse::settle();
+        const auto st = [&]() -> const SessionState& { return *engine.session.getState(); };
+        const auto added = engine.session.getUndoDescription() == "Add Folder" && st().tracks.size() == 4 && st().tracks[1].id == folderId
+                           && st().tracks[1].isFolder && st().tracks[1].name == "Folder 1" && st().tracks[2].name == "B"
+                           && st().tracks[2].folderId == folderId && st().tracks[0].folderId == 0 && shownHeaders() == 4;
+
+        folderMouse.click ({ clipX, rowY (2) });
+        const auto pickedB = folderView.getSelectedClip() == clipIds[1];
+
+        // A click on the folder header's triangle collapses it.
+        auto* header = folderView.getComponentAt (juce::Point<int> (14, MultitrackView::rulerHeight + MultitrackView::trackHeight + 18));
+        const auto now = juce::Time::getCurrentTime();
+        const juce::MouseEvent press { juce::Desktop::getInstance().getMainMouseSource(), { 14.0f, 18.0f }, juce::ModifierKeys::leftButtonModifier,
+                                       juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation, juce::MouseInputSource::defaultRotation,
+                                       juce::MouseInputSource::defaultTiltX, juce::MouseInputSource::defaultTiltY, header, header, now, { 14.0f, 18.0f }, now, 1, false };
+
+        if (header != nullptr)
+            header->mouseDown (press);
+
+        Mouse::settle();
+        const auto collapsed = st().tracks[1].collapsed && engine.session.getUndoDescription() == "Collapse Folder" && shownHeaders() == 3
+                               && folderView.getSelectedClips().empty();
+        folderMouse.click ({ clipX, rowY (2) });
+        const auto cTakesRow = folderView.getSelectedClip() == clipIds[2];
+
+        folderView.showClip (clipIds[1]);
+        Mouse::settle();
+        const auto opened = ! st().tracks[1].collapsed && shownHeaders() == 4 && folderView.getSelectedClip() == clipIds[1];
+
+        folderView.setTrackFolder (st().tracks[3].id, folderId);
+        const auto moved = engine.session.getUndoDescription() == "Move to Folder" && st().tracks[3].folderId == folderId;
+        folderView.setTrackFolder (st().tracks[3].id, 0);
+        const auto out = engine.session.getUndoDescription() == "Take Out of Folder" && st().tracks[3].folderId == 0;
+
+        check (added && pickedB, "folders: Add Folder puts the selected track in a new folder just above it, as an undo step");
+        check (header != nullptr && collapsed && cTakesRow && opened,
+               "folders: the triangle collapses a folder, its tracks leaving the lanes and the selection; going to one's clip expands it again");
+        check (moved && out, "folders: putting a track in a folder and taking it out are undo steps");
+    }
+
+    {
         // A frozen track: an icy wash over the lane where its frozen audio plays, past its clips.
         SessionState s;
         s.sampleRate = rate;

@@ -819,6 +819,85 @@ namespace
                "clip gain line: kept in a session file, and left out for a clip without one");
     }
 
+    void testFolders (AudioEngine& engine)
+    {
+        // A in a folder, sending to a bus also in it; B outside.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().name = "A";
+        s.addTrack().name = "B";
+        const auto busId = s.addBus().id;
+        const auto folderId = s.addFolder().id;
+        const auto a = s.tracks[0].id, b = s.tracks[1].id;
+        SessionEdits::addClip (s, 0, juce::File ("/takes/a.wav"), constant (1, 4800, 0.25f), 0);
+        SessionEdits::addClip (s, 1, juce::File ("/takes/b.wav"), constant (1, 4800, 0.5f), 0);
+        SessionEdits::setSend (s, a, { busId, -6.0f, false });
+        const auto inFolder = SessionEdits::setTrackFolder (s, a, folderId) && SessionEdits::setTrackFolder (s, busId, folderId);
+        const auto refused = ! SessionEdits::setTrackFolder (s, folderId, folderId) && ! SessionEdits::setTrackFolder (s, a, folderId)
+                             && ! SessionEdits::setTrackFolder (s, a, b) && ! SessionEdits::setTrackFolder (s, a, 999)
+                             && ! SessionEdits::setSend (s, folderId, { busId, 0.0f, false });
+        const auto render = [] (const SessionState& state)
+        {
+            juce::AudioBuffer<float> out (2, 2048);
+            SessionMixer::Buffers buffers;
+            SessionMixer::render (state, 0, out, 0, 2048, buffers);
+            return out;
+        };
+        const auto only = [&] (std::initializer_list<juce::uint32> playing)
+        {
+            auto copy = s;
+
+            for (auto& t : copy.tracks)
+                t.mute = ! t.isFolder && std::find (playing.begin(), playing.end(), t.id) == playing.end();
+
+            return render (copy);
+        };
+        const auto same = [] (const juce::AudioBuffer<float>& x, const juce::AudioBuffer<float>& y)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                if (std::memcmp (x.getReadPointer (ch), y.getReadPointer (ch), sizeof (float) * 2048) != 0)
+                    return false;
+
+            return true;
+        };
+
+        auto muted = s;
+        muted.tracks[3].mute = true;
+        auto soloed = s;
+        soloed.tracks[3].solo = true;
+        auto collapsedState = s;
+        collapsedState.tracks[3].collapsed = true;
+        const auto mutes = same (render (muted), only ({ b })) && muted.isMuted (muted.tracks[0]) && ! muted.isMuted (muted.tracks[1]);
+        const auto solos = same (render (soloed), only ({ a, busId })) && soloed.isSoloed (soloed.tracks[2]);
+        const auto collapsedPlays = same (render (collapsedState), render (s)) && ! collapsedState.isShown (collapsedState.tracks[0])
+                                    && collapsedState.isShown (collapsedState.tracks[1]) && collapsedState.isShown (collapsedState.tracks[3]);
+
+        // No clips on a folder, and removing it leaves its members out of any.
+        auto edits = s;
+        const auto clipOnFolder = SessionEdits::addClip (edits, 3, juce::File ("/takes/c.wav"), constant (1, 100, 0.1f), 0);
+        const auto newTrack = edits.tracks.size() == 5 && edits.tracks[4].clips.size() == 1 && edits.tracks[4].clips[0].id == clipOnFolder
+                              && edits.tracks[3].clips.empty() && edits.tracks[4].name == "Track 3";
+        SessionEdits::removeTrack (edits, 3);
+        const auto released = edits.tracks[0].folderId == 0 && edits.tracks[2].folderId == 0;
+
+        // Saved and loaded: the folder, collapsed, and who is in it.
+        collapsedState.addFolder();
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (collapsedState, file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        file.deleteFile();
+        const auto& lt = loaded.state.tracks;
+        const auto kept = lt.size() == 5 && lt[3].isFolder && lt[3].collapsed && lt[3].name == "Folder 1" && lt[0].folderId == lt[3].id
+                          && lt[2].folderId == lt[3].id && lt[1].folderId == 0 && lt[4].isFolder && ! lt[4].collapsed && lt[4].name == "Folder 2"
+                          && lt[0].sends.size() == 1;
+
+        check (inFolder && refused, "folders: tracks and buses go in a folder; not a folder, nor into a track, a missing folder or where it is");
+        check (mutes && solos && collapsedPlays,
+               "folders: a folder's mute and solo act on its tracks and buses, bit for bit as their own would, and collapsed they still play");
+        check (newTrack && released, "folders: a clip for a folder goes on a new track, and removing a folder frees its tracks");
+        check (error.isEmpty() && loaded.error.isEmpty() && kept, "folders: kept in a session file, collapsed or not, with their tracks");
+    }
+
     /** Two commands with default keys, as the main window has many. */
     struct TwoCommands final : public juce::ApplicationCommandTarget
     {
@@ -886,4 +965,5 @@ void runMixerTests (AudioEngine& engine)
     testFrozenFile (engine);
     testClipGroups (engine);
     testClipGainFile (engine);
+    testFolders (engine);
 }
