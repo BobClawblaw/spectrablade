@@ -60,6 +60,7 @@ target_sources(SpectraBlade PRIVATE
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
     Source/WaveformView.cpp
+    Source/MixerView.cpp
     Source/MultitrackView.cpp
     Source/RackView.cpp)
 
@@ -107,6 +108,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/EffectAutomationTests.cpp
     Tests/TrackRecordingTests.cpp
     Tests/MetronomeTests.cpp
+    Tests/MixerTests.cpp
     Tests/PluginTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
@@ -127,6 +129,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Recorder.cpp
     Source/SessionRecording.cpp
     Source/PluginScanner.cpp
+    Source/MixerView.cpp
     Source/MultitrackView.cpp)
 # Plug-in bundles that misbehave on purpose, for the scan tests (see Tests/TestBundle.cpp).
 foreach(bundle IntelOnlyBundle HangingBundle CrashingBundle)

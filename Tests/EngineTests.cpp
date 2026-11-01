@@ -23,6 +23,7 @@
 #include "EffectAutomationTests.h"
 #include "TrackRecordingTests.h"
 #include "MetronomeTests.h"
+#include "MixerTests.h"
 #include "PluginTests.h"
 #include "TestUtils.h"
 
@@ -342,6 +343,7 @@ int main (int argc, char* argv[])
         runEffectAutomationTests (engine.formatManager);
         runTrackRecordingTests (engine.formatManager);
         runMetronomeTests (engine.formatManager);
+        runMixerTests (engine);
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

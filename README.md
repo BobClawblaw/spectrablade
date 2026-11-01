@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 25: a mixer window**
+- Multitrack > Mixer (Cmd Shift M) opens a window with a strip for each track and bus, in the session's order: its name, pan, mute and solo, a volume fader (-60 to +12 dB, double-click for 0 dB) with its level in dB, and a meter. A master strip on the right meters what goes to the outputs, after the effects rack. With many tracks the strips scroll sideways.
+- The strips edit the session just as the track headers do: each change is an undo step ("Track Volume", "Track Pan", "Mute", "Solo"), a fader's drag one step, and undo, redo or an edit elsewhere shows on the strips at once. A track or bus with a volume or pan envelope follows it as the session plays, and its fader or pan can't be moved here.
+- Track meters show the peak of each side after the track's pan and volume (a muted track shows nothing), bus meters after the bus's volume and pan, measured as the session mixes. The meters fall back over about half a second; a red line marks anything over 0 dB until you click the meter.
+- Measured by the tests: through the mixer, the peaks of a mono and a stereo track, a bus fed by a send and a muted track are exactly the levels the mixer computes for them; under a volume envelope the peak follows the envelope. In the mixer window, the strips show each track's volume, pan and mute; a fader, pan, mute and solo edit the session as undo steps, undo shows on the strips, an automated volume can't be moved, a new track gets a strip, and a meter shows its track's peak and falls back. The master meter was not checked by the tests (they play only silence), and the window was not tried by hand.
+
 **Milestone 24: bars and beats**
 - Multitrack > Bars and Beats (B) counts the ruler in bars and beats of the session's tempo ("5" is bar 5, "5.3" its third beat), labelled every beat when zoomed in and every bar, or 2, 4, 8... bars, further out. The bar and beat lines over the tracks now come with this option rather than with the metronome.
 - With snapping on, anything dragged (a clip, its edges, a fade, an envelope point, the time range) snaps to the beats instead of the ruler's seconds while beats are at least 8 pixels apart, and to the labelled bars when zoomed out further. Beats are the frames the metronome clicks on, so a clip snapped to a beat starts with its click. Clip edges, the cursor and the time range stay targets too, and the nearest wins.
@@ -231,6 +237,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- The mixer window: track and bus peaks measured as the session mixes, and the strips editing the session (volume, pan, mute, solo, undo, automated tracks, meters).
 - The metronome: the beat grid and click, clicks through the real player (on, during a count-in, through a loop, at another device rate) bit for bit, snapping to beats and bars, and the tempo in session files.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
 - Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
@@ -273,4 +280,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a mixer window, with a strip for each track and bus (meters, volume, pan, mute, solo)
+1. Multitrack, continued: markers in sessions, to jump to and to snap to

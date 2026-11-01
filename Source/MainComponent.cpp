@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "AudioFileIO.h"
 #include "Metronome.h"
+#include "MixerView.h"
 #include "OfflineRender.h"
 #include "PluginScanner.h"
 #include "SampleRateConverter.h"
@@ -40,7 +41,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats
+        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, cmdMixer
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -79,6 +80,29 @@ namespace
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, title, message);
     }
 }
+
+//==============================================================================
+/** The mixer, in a window of its own beside the main one. */
+class MainComponent::MixerWindow final : public juce::DocumentWindow
+{
+public:
+    MixerWindow (AudioEngine& audioEngine, std::function<void()> onClose)
+        : DocumentWindow ("Mixer", juce::Colours::darkgrey, DocumentWindow::closeButton | DocumentWindow::minimiseButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new MixerView (audioEngine), false);
+        setResizable (true, false);
+        setResizeLimits (MixerView::stripWidth * 2 + 12, 300, 4000, 2000);
+        centreWithSize (MixerView::stripWidth * 8 + 12, 420);
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    std::function<void()> closeCallback;
+};
 
 //==============================================================================
 /** Shows a plug-in's own editor, or a generic parameter editor when it has none. */
@@ -553,8 +577,9 @@ MainComponent::~MainComponent()
    #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (nullptr);
    #endif
-    if (isRecording())
-        engine.getRecorder().stop();   // the take is lost: the app is closing
+    for (auto* r : engine.getRecorders())     // takes are lost: the app is closing
+        if (r->isRecording())
+            r->stop();
 
     saveSettings();
     renderJob = nullptr;
@@ -566,6 +591,7 @@ MainComponent::~MainComponent()
     engine.knownPlugins.removeChangeListener (this);
     editorWindows.clear();
     pluginListWindow = nullptr;
+    mixerWindow = nullptr;
 }
 
 void MainComponent::saveSettings()
@@ -635,7 +661,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdBarsAndBeats; ++id)
+    for (int id = cmdOpen; id <= cmdMixer; ++id)
         ids.add (id);
 }
 
@@ -735,6 +761,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('c', 0); info.setTicked (engine.getPlayer().isMetronomeOn()); info.setActive (multitrackMode); break;
         case cmdCountIn:    info.setInfo ("Count-In", "Record after one bar of clicks instead of the preroll", "Multitrack", 0);
                             info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
+        case cmdMixer:      info.setInfo ("Mixer", "A window with a strip for each track and bus, and the master meter", "Multitrack", 0);
+                            info.addDefaultKeypress ('m', cmd | shift); info.setTicked (mixerWindow != nullptr); break;
         case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
                             info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
         case cmdTempo:      info.setInfo ("Tempo...", "The session's tempo and beats in a bar", "Multitrack", 0);
@@ -893,6 +921,9 @@ bool MainComponent::perform (const InvocationInfo& info)
             multitrack.setShowBars (! multitrack.isShowingBars());
             commands.commandStatusChanged();
             break;
+        case cmdMixer:
+            toggleMixer();
+            break;
         case cmdInputMonitoring:
             inputMonitoring = ! inputMonitoring;
             updateInputs();
@@ -955,7 +986,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdMixDown }); break;
+        case 4: add ({ cmdMixer, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1401,6 +1432,21 @@ void MainComponent::askForMixDownFormat (const juce::File& file)
             const auto tail = (juce::int64) std::llround (tails[(size_t) box->getComboBoxComponent ("tail")->getSelectedItemIndex()] * rate);
             mixDown (file, depth, range.withEnd (range.getEnd() + tail));
         }), true);
+}
+
+void MainComponent::toggleMixer()
+{
+    // Deleted later, not inside its own close button's callback.
+    if (mixerWindow != nullptr)
+        mixerWindow = nullptr;
+    else
+        mixerWindow = std::make_unique<MixerWindow> (engine, [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+                                                                     {
+                                                                         if (safe != nullptr)
+                                                                             safe->toggleMixer();
+                                                                     }); });
+
+    commands.commandStatusChanged();
 }
 
 void MainComponent::showTempoDialog()

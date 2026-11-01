@@ -198,6 +198,7 @@ DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s
                                        .withOutput ("Click", juce::AudioChannelSet::stereo(), true)),
       document (doc), session (s), sessionSource (s, inserts)
 {
+    sessionSource.setLevels (&levels);
     resetSource();
 }
 
@@ -397,6 +398,56 @@ private:
 };
 
 //==============================================================================
+/** Passes the mix through on its way to the outputs and keeps its peaks, for the master meter. */
+class AudioEngine::MasterMeter final : public juce::AudioProcessor
+{
+public:
+    MasterMeter() : AudioProcessor (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
+                                                     .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
+
+    std::pair<float, float> take()                { return { peaks[0].exchange (0.0f), peaks[1].exchange (0.0f) }; }
+
+    const juce::String getName() const override   { return "Master Meter"; }
+    void prepareToPlay (double, int) override     {}
+    void releaseResources() override              {}
+
+    void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
+    {
+        for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+        {
+            const auto range = juce::FloatVectorOperations::findMinAndMax (buffer.getReadPointer (ch), buffer.getNumSamples());
+            const auto peak = juce::jmax (-range.getStart(), range.getEnd());
+            auto current = peaks[ch].load();
+
+            while (peak > current && ! peaks[ch].compare_exchange_weak (current, peak))
+            {
+            }
+        }
+    }
+
+    double getTailLengthSeconds() const override  { return 0.0; }
+    bool acceptsMidi() const override             { return false; }
+    bool producesMidi() const override            { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override               { return false; }
+    int getNumPrograms() override                 { return 1; }
+    int getCurrentProgram() override              { return 0; }
+    void setCurrentProgram (int) override         {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+
+private:
+    std::atomic<float> peaks[2] { { 0.0f }, { 0.0f } };
+};
+
+std::pair<float, float> AudioEngine::takeMasterPeaks()
+{
+    return static_cast<MasterMeter*> (meterNode->getProcessor())->take();
+}
+
+//==============================================================================
 AudioEngine::AudioEngine()
 {
     formatManager.registerBasicFormats();
@@ -409,6 +460,7 @@ AudioEngine::AudioEngine()
 
     using IO = juce::AudioProcessorGraph::AudioGraphIOProcessor;
     outputNode = graph.addNode (std::make_unique<IO> (IO::audioOutputNode));
+    meterNode = graph.addNode (std::make_unique<MasterMeter>());
     recorder = std::make_unique<Recorder> (player->getPlayedFrame());
     monitorTap = std::make_unique<MonitorTap> (*player);
 
@@ -728,8 +780,8 @@ void AudioEngine::rebuildConnections()
     for (auto& c : graph.getConnections())
         graph.removeConnection (c, juce::AudioProcessorGraph::UpdateKind::none);
 
-    // Chain: player -> each rack slot in order -> output. Bypassed slots stay in the chain;
-    // the graph calls their bypass processing so latency compensation keeps working.
+    // Chain: player -> each rack slot in order -> master meter -> output. Bypassed slots stay in
+    // the chain; the graph calls their bypass processing so latency compensation keeps working.
     auto* source = playerNode.get();
 
     auto connectStereo = [this] (Node* from, Node* to, int toFirstChannel)
@@ -753,6 +805,10 @@ void AudioEngine::rebuildConnections()
         connectStereo (source, slot.get(), 0);
         source = slot.get();
     }
+
+    // Then the master meter, which passes the mix on as it is.
+    connectStereo (source, meterNode.get(), 0);
+    source = meterNode.get();
 
     // The graph's output channels are the device's *active* output channels, in order,
     // so map the absolute device channel to its position among the active ones.

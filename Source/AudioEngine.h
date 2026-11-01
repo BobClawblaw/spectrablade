@@ -53,6 +53,9 @@ public:
     /** While stopped: the live input alone (the clips silent) through the session at the cursor. */
     void renderLive (const juce::AudioSourceChannelInfo&);
 
+    /** Meters the tracks and buses into these levels as it mixes. */
+    void setLevels (SessionMixer::Levels* levels)             { buffers.levels = levels; }
+
     /** The loop set by setLoop (start, end; end <= start: none). */
     std::pair<juce::int64, juce::int64> getLoop() const noexcept { return { loopStart.load(), loopEnd.load() }; }
 
@@ -131,6 +134,9 @@ public:
     /** A count-in: clicks before this session frame even with the metronome off (-1: none). */
     void setCountIn (juce::int64 endFrame)        { countInEnd = endFrame; }
 
+    /** The session's tracks' and buses' levels as they play, by their place in the session. */
+    SessionMixer::Levels& getLevels() noexcept    { return levels; }
+
     /** A track and the inputs it monitors: 1 or 2 from firstInput, numbered as the device
         callback numbers its (active) inputs. */
     struct MonitoredTrack
@@ -185,6 +191,7 @@ private:
     juce::int64 stopAt = -1;
     double sourceRate = 0.0;
     std::atomic<juce::int64> playedFrame { 0 };
+    SessionMixer::Levels levels;
     std::atomic<bool> metronome { false };
     std::atomic<juce::int64> countInEnd { -1 };
     Session::State clickState;                 // audio thread's own reference, for the tempo
@@ -206,7 +213,7 @@ private:
 
 //==============================================================================
 /** Owns the audio device, the plug-in formats and the processing graph:
-    document player -> effect rack (in order) -> a chosen stereo pair of device outputs.
+    document player -> effect rack (in order) -> master meter -> a chosen stereo pair of device outputs.
 
     All public methods must be called on the message thread.
 */
@@ -264,6 +271,10 @@ public:
 
     /** Every recorder: the first, then one for each extra input. */
     std::vector<Recorder*> getRecorders();
+
+    /** The peaks (left, right) of what went to the outputs since the last call, after the effects
+        rack (without the metronome's click), for the master meter. */
+    std::pair<float, float> takeMasterPeaks();
 
     /** Input monitoring: these tracks play what comes in on their inputs (none: off). */
     void setMonitoredTracks (const std::vector<std::pair<juce::uint32, TrackInput>>&);
@@ -331,7 +342,8 @@ private:
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer graphPlayer;
     DocumentPlayerProcessor* player = nullptr;
-    Node::Ptr playerNode, outputNode;
+    Node::Ptr playerNode, outputNode, meterNode;
+    class MasterMeter;
     std::vector<Node::Ptr> rack;
     int outputPairFirstChannel = 0;
     int inputFirstChannel = 0, inputNumChannels = 0;

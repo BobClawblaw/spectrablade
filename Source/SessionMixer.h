@@ -48,6 +48,23 @@ namespace SessionMixer
         virtual void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames) = 0;
     };
 
+    /** Peak levels of the tracks and buses as they go into the mix (after their volume and pan),
+        by their place in the session, for meters. The audio thread raises them; the message
+        thread takes them, which starts them again from 0. Tracks past maxTracks aren't metered. */
+    class Levels
+    {
+    public:
+        static constexpr int maxTracks = 256;
+
+        void raise (int track, float left, float right) noexcept;
+
+        /** The left and right peaks since the last take. */
+        std::pair<float, float> take (int track) noexcept;
+
+    private:
+        std::array<std::atomic<float>, 2 * maxTracks> peaks {};
+    };
+
     /** Working buffers and the delay lines that line paths up, kept between blocks. Grown as
         needed: give them room up front. A session change that adds a bus or a held-back path
         allocates once, when it first plays. */
@@ -64,6 +81,7 @@ namespace SessionMixer
         };
 
         std::map<std::pair<juce::uint32, juce::uint32>, Delay> delays;   // (track, destination: 0 = the mix)
+        Levels* levels = nullptr;          // metered when set
 
         void reserve (int frames)
         {

@@ -16,8 +16,38 @@ std::pair<float, float> panGains (float pan, int sourceChannels)
     return { pan > 0.0f ? std::cos (pan * halfPi) : 1.0f, pan < 0.0f ? std::cos (-pan * halfPi) : 1.0f };
 }
 
+void Levels::raise (int track, float left, float right) noexcept
+{
+    if (! juce::isPositiveAndBelow (track, maxTracks))
+        return;
+
+    for (auto [slot, value] : { std::pair { 2 * track, left }, std::pair { 2 * track + 1, right } })
+    {
+        auto& peak = peaks[(size_t) slot];
+        auto current = peak.load (std::memory_order_relaxed);
+
+        while (value > current && ! peak.compare_exchange_weak (current, value, std::memory_order_relaxed))
+        {
+        }
+    }
+}
+
+std::pair<float, float> Levels::take (int track) noexcept
+{
+    if (! juce::isPositiveAndBelow (track, maxTracks))
+        return {};
+
+    return { peaks[(size_t) (2 * track)].exchange (0.0f), peaks[(size_t) (2 * track + 1)].exchange (0.0f) };
+}
+
 namespace
 {
+    float peakOf (const juce::AudioBuffer<float>& b, int channel, int numFrames)
+    {
+        const auto range = juce::FloatVectorOperations::findMinAndMax (b.getReadPointer (channel), numFrames);
+        return juce::jmax (-range.getStart(), range.getEnd());
+    }
+
     float fadeGain (juce::int64 frame, juce::int64 fade)
     {
         return frame >= fade ? 1.0f : 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * (float) frame / (float) fade);
@@ -281,6 +311,10 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             volume = 1.0f;
         }
 
+        if (buffers.levels != nullptr)
+            buffers.levels->raise ((int) (&track - state.tracks.data()), peakOf (buffers.track, 0, numFrames) * volume,
+                                   peakOf (buffers.track, 1, numFrames) * volume);
+
         addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume);
 
         for (auto& s : track.sends)
@@ -299,12 +333,18 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (inserts != nullptr && inserts->isActive (bus.id))
             inserts->process (bus, start + latencyOf (inserts, bus.id), input, numFrames);
 
+        const auto index = (int) (&bus - state.tracks.data());
+
         if (bus.volumeEnvelope.isEmpty() && bus.panEnvelope.isEmpty())
         {
             const auto volume = juce::Decibels::decibelsToGain (bus.gainDb, -150.0f);
             const auto [left, right] = panGains (bus.pan, 2);
             dest.addFrom (0, destStart, input, 0, 0, numFrames, volume * left);
             dest.addFrom (1, destStart, input, 1, 0, numFrames, volume * right);
+
+            if (buffers.levels != nullptr)
+                buffers.levels->raise (index, peakOf (input, 0, numFrames) * (volume * left), peakOf (input, 1, numFrames) * (volume * right));
+
             continue;
         }
 
@@ -321,13 +361,20 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         auto* outLeft = dest.getWritePointer (0, destStart);
         auto* outRight = dest.getWritePointer (1, destStart);
 
+        auto peakLeft = 0.0f, peakRight = 0.0f;
+
         for (int i = 0; i < numFrames; ++i)
         {
             const auto volume = juce::Decibels::decibelsToGain (volumes[i], -150.0f);
             const auto [left, right] = panGains (pans[i], 2);
             outLeft[i] += inLeft[i] * (volume * left);
             outRight[i] += inRight[i] * (volume * right);
+            peakLeft = juce::jmax (peakLeft, std::abs (inLeft[i] * (volume * left)));
+            peakRight = juce::jmax (peakRight, std::abs (inRight[i] * (volume * right)));
         }
+
+        if (buffers.levels != nullptr)
+            buffers.levels->raise (index, peakLeft, peakRight);
     }
 }
 
