@@ -1,4 +1,5 @@
 #include <JuceHeader.h>
+#include "../Source/AudioEdits.h"
 #include "../Source/AudioFileIO.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/TrackColours.h"
@@ -1325,6 +1326,60 @@ void runMultitrackViewTests (AudioEngine& engine)
         const auto viaView = view.closeGapsOnSelectedTrack() && engine.session.getUndoDescription() == "Close Gaps"
                              && ! view.closeGapsOnSelectedTrack();
         check (viaView, "close gaps: on the selected track as one undo step, and nothing the second time");
+    }
+
+    // Zero crossings: a square wave changing sign every 50 frames, and a channel that keeps the
+    // sum from ever crossing.
+    {
+        juce::AudioBuffer<float> square (2, 1000);
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            square.setSample (0, i, (i / 50) % 2 == 0 ? 0.5f : -0.5f);
+            square.setSample (1, i, 0.0f);
+        }
+
+        auto lifted = square;
+
+        for (int i = 0; i < 1000; ++i)
+            lifted.setSample (1, i, 0.6f);
+
+        SessionClip squareClip;
+        squareClip.audio = AudioEdits::fromBuffer (std::move (square));
+        squareClip.position = 1000;
+        squareClip.offset = 100;   // session frame 1000 plays audio frame 100
+        squareClip.length = 800;
+        auto steady = squareClip;
+        steady.audio = AudioEdits::fromBuffer (std::move (lifted));
+
+        // Audio sign changes at 150, 200, 250...: session frames 1050, 1100, 1150.
+        check (SessionEdits::zeroCrossingNear (squareClip, 1062, 240) == 1050 && SessionEdits::zeroCrossingNear (squareClip, 1080, 240) == 1100
+                   && SessionEdits::zeroCrossingNear (squareClip, 1062, 5) == 1062 && SessionEdits::zeroCrossingNear (steady, 1062, 240) == 1062
+                   && SessionEdits::zeroCrossingNear (squareClip, 905, 10) == 905,
+               "zero crossings: the nearest one within reach, by the channels' sum, inside the audio, else the frame itself");
+
+        SessionState crossing;
+        crossing.sampleRate = rate;
+        crossing.addTrack();
+        squareClip.id = crossing.nextId++;
+        crossing.tracks[0].clips.push_back (squareClip);
+        engine.session.reset (crossing, {});
+        view.zoomToRange ({ 900, 1900 });
+        Mouse::settle();
+        const auto zeroFrames = view.getVisibleFrames();
+        mouse.click ({ (float) MultitrackView::headerWidth + (float) ((1300.0 - zeroFrames.getStart()) / (zeroFrames.getLength() / timelineWidth)), bodyY });
+        view.setCursor (1062);
+        view.setFindingZeroCrossings (true);
+        view.splitSelectedClip();
+        Mouse::settle();
+        const auto atCrossing = engine.session.getState()->tracks[0].clips.size() == 2 && engine.session.getState()->tracks[0].clips[0].getEnd() == 1050;
+        engine.session.undo();
+        Mouse::settle();
+        view.setFindingZeroCrossings (false);
+        view.splitSelectedClip();
+        Mouse::settle();
+        check (atCrossing && engine.session.getState()->tracks[0].clips[0].getEnd() == 1062,
+               "zero crossings: with the option on a split lands on the nearest crossing, without it at the cursor");
     }
 
     engine.session.reset ({}, {});

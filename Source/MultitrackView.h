@@ -184,6 +184,12 @@ public:
     void moveTrack (int from, int to);
 
     bool isSnapping() const noexcept              { return snapping; }
+
+    /** With this on, splits and dragged clip edges move to the nearest zero crossing of the
+        clip's audio, up to zeroCrossingReach seconds away, so the cut doesn't click. */
+    bool isFindingZeroCrossings() const noexcept  { return zeroCrossings; }
+    void setFindingZeroCrossings (bool on)        { zeroCrossings = on; }
+    static constexpr double zeroCrossingReach = 0.005;
     void setSnapping (bool on)                    { snapping = on; }
     bool isCrossfading() const noexcept           { return crossfading; }
 
@@ -371,7 +377,8 @@ private:
     Envelope dragEnvelopeBase;             // its envelope, with the point, as the drag began
     juce::String dragDescription;          // the undo step a drag makes
 
-    bool snapping = true, crossfading = true, writingAutomation = false;
+    bool snapping = true, crossfading = true, writingAutomation = false, zeroCrossings = false;
+    juce::int64 toZeroCrossing (const SessionClip&, juce::int64 frame) const;
 
     struct AutomationPass
     {

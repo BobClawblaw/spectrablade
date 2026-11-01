@@ -22,6 +22,7 @@ namespace
     constexpr const char* displayKey      = "display";
     constexpr const char* snappingKey     = "snapping";
     constexpr const char* crossfadingKey  = "crossfading";
+    constexpr const char* zeroCrossingsKey = "zeroCrossings";
     constexpr const char* prerollKey      = "preroll";
     constexpr const char* postrollKey     = "postroll";
     constexpr const char* laneHeightKey   = "laneHeight";
@@ -49,7 +50,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -576,6 +577,7 @@ MainComponent::MainComponent()
     addChildComponent (multitrack);
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
+    multitrack.setFindingZeroCrossings (settings->getBoolValue (zeroCrossingsKey, false));
     multitrack.setLaneHeight (settings->getIntValue (laneHeightKey, MultitrackView::trackHeight));
     rolls.preroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (prerollKey, rolls.preroll));
     rolls.postroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (postrollKey, rolls.postroll));
@@ -720,7 +722,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdCloseGaps; ++id)
+    for (int id = cmdOpen; id <= cmdZeroCrossings; ++id)
         ids.add (id);
 }
 
@@ -890,6 +892,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode); break;
         case cmdMoveClipsToCursor: info.setInfo ("Move Clips to Cursor", "Move the selected clips together so the earliest starts at the cursor", "Multitrack", 0);
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
+        case cmdZeroCrossings: info.setInfo ("Cut at Zero Crossings", "Move splits and dragged clip edges to the nearest zero crossing, up to 5 ms away", "Multitrack", 0);
+                            info.setTicked (multitrack.isFindingZeroCrossings()); info.setActive (multitrackMode); break;
         case cmdCloseGaps:  info.setInfo ("Close Gaps", "Move the selected track's clips back so each starts where the one before ends", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdHideTrack:  info.setInfo ("Hide Track", "Leave the selected track or bus out of the lanes; it still plays", "Multitrack", 0);
@@ -1059,6 +1063,11 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSelectClipsAfter: multitrack.selectClipsAfterCursor(); break;
         case cmdMoveClipsToCursor: multitrack.moveSelectedClipsToCursor(); break;
         case cmdCloseGaps:  multitrack.closeGapsOnSelectedTrack(); break;
+        case cmdZeroCrossings:
+            multitrack.setFindingZeroCrossings (! multitrack.isFindingZeroCrossings());
+            appProperties.getUserSettings()->setValue (zeroCrossingsKey, multitrack.isFindingZeroCrossings());
+            commands.commandStatusChanged();
+            break;
         case cmdSnapping:
             multitrack.setSnapping (! multitrack.isSnapping());
             appProperties.getUserSettings()->setValue (snappingKey, multitrack.isSnapping());
@@ -1158,7 +1167,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;

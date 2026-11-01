@@ -2299,9 +2299,23 @@ void MultitrackView::duplicateSelectedClip()
 void MultitrackView::splitSelectedClip()
 {
     auto next = *engine.session.getState();
+    const auto where = next.findClip (selectedClip);
 
-    if (SessionEdits::splitClip (next, selectedClip, cursor))
+    if (! where.has_value())
+        return;
+
+    const auto at = toZeroCrossing (next.tracks[(size_t) where->first].clips[(size_t) where->second], cursor);
+
+    if (SessionEdits::splitClip (next, selectedClip, at))
         engine.session.apply (std::move (next), "Split Clip");
+}
+
+juce::int64 MultitrackView::toZeroCrossing (const SessionClip& c, juce::int64 frame) const
+{
+    if (! zeroCrossings)
+        return frame;
+
+    return SessionEdits::zeroCrossingNear (c, frame, (juce::int64) std::llround (zeroCrossingReach * shown().sampleRate));
 }
 
 namespace
@@ -2764,10 +2778,10 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
             break;
         }
         case Drag::trimStart:
-            SessionEdits::trimClip (next, dragClip.id, snapped (dragClip.position + delta, dragClip.id), dragClip.getEnd());
+            SessionEdits::trimClip (next, dragClip.id, toZeroCrossing (dragClip, snapped (dragClip.position + delta, dragClip.id)), dragClip.getEnd());
             break;
         case Drag::trimEnd:
-            SessionEdits::trimClip (next, dragClip.id, dragClip.position, snapped (dragClip.getEnd() + delta, dragClip.id));
+            SessionEdits::trimClip (next, dragClip.id, dragClip.position, toZeroCrossing (dragClip, snapped (dragClip.getEnd() + delta, dragClip.id)));
             break;
         case Drag::fadeIn:
             SessionEdits::setClipFades (next, dragClip.id, snapped (frameForX ((float) p.x), dragClip.id) - dragClip.position, dragClip.fadeOut);

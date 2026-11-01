@@ -243,6 +243,11 @@ namespace SessionEdits
         still removes it. Copies of a locked clip start unlocked. */
     bool setClipLocked (SessionState&, juce::uint32 clipId, bool locked);
 
+    /** The session frame nearest to `frame`, at most `within` frames away and inside the clip's
+        audio, where its channels' sum crosses zero: the sum changes sign between the frame before
+        and it, or is 0 there. `frame` itself when there is none. */
+    juce::int64 zeroCrossingNear (const SessionClip&, juce::int64 frame, juce::int64 within);
+
     /** Mutes or unmutes a clip, locked or not. False when it is already so. */
     bool setClipMuted (SessionState&, juce::uint32 clipId, bool muted);
 

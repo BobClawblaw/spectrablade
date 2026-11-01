@@ -401,6 +401,46 @@ bool setClipMuted (SessionState& s, juce::uint32 clipId, bool muted)
     return true;
 }
 
+juce::int64 zeroCrossingNear (const SessionClip& c, juce::int64 frame, juce::int64 within)
+{
+    if (c.audio == nullptr || within <= 0)
+        return frame;
+
+    // Session frames [first, last] whose audio frame and the one before it exist.
+    const auto audioStart = c.position - c.offset;
+    const auto first = juce::jmax (frame - within, audioStart + 1);
+    const auto last = juce::jmin (frame + within, audioStart + c.audio->getNumFrames() - 1);
+
+    if (last < first)
+        return frame;
+
+    const auto count = (int) (last - first + 2);
+    juce::AudioBuffer<float> b (c.audio->getNumChannels(), count);
+    c.audio->read (b, 0, first - 1 - audioStart, count);
+    std::vector<float> sum ((size_t) count, 0.0f);
+
+    for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        for (int i = 0; i < count; ++i)
+            sum[(size_t) i] += b.getSample (ch, i);
+
+    std::optional<juce::int64> best;
+
+    for (int i = 1; i < count; ++i)
+    {
+        const auto before = sum[(size_t) i - 1], at = sum[(size_t) i];
+
+        if (juce::exactlyEqual (at, 0.0f) || (before < 0.0f) != (at < 0.0f))
+        {
+            const auto candidate = first + i - 1;
+
+            if (! best.has_value() || std::abs (candidate - frame) < std::abs (*best - frame))
+                best = candidate;
+        }
+    }
+
+    return best.value_or (frame);
+}
+
 bool setClipLocked (SessionState& s, juce::uint32 clipId, bool locked)
 {
     auto* c = find (s, clipId);

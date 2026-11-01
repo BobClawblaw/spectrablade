@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 50: cutting at zero crossings**
+- Multitrack > Cut at Zero Crossings (off to start with, kept in the settings) moves Split Clip's cut and a dragged clip edge to the nearest point, up to 5 ms away, where the clip's audio crosses zero (its channels summed), so the cut doesn't click. Where there is none that close, the cut stays where it was. It works after snapping: an edge snapped to the cursor can then move up to 5 ms off it.
+- Measured by the tests: on a square wave changing sign every 50 frames, the nearest crossing within reach, none out of reach, none when another channel keeps the sum from crossing, and only inside the audio; through the real view, a split landing on the crossing with the option on and at the cursor with it off. Dragging an edge with the option on was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 49: closing gaps**
 - Multitrack > Close Gaps moves the selected track's clips back, in time order from the first, so each starts where the ones before it end, as one undo step ("Close Gaps"). A clip that overlapped the one before it moves with it by the same amount, keeping the overlap. Locked clips stay where they are, and the clips after one close up to it.
 - Measured by the tests: five clips added out of order, with a gap, a locked clip and an overlap, ending at the frames worked out by hand, a clip on another track untouched, and nothing more to do the second time; through the real view, on the selected track as one undo step. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -374,6 +378,7 @@ The tests run against the real machine:
 - Selecting clips on a track and after the cursor, leaving out hidden tracks.
 - Moving the selected clips to the cursor, together, and not when locked.
 - Closing gaps on a track, around locked clips and keeping overlaps.
+- Zero crossings: finding them, and splits landing on them.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -427,4 +432,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: snapping a clip's start to the nearest zero crossing when splitting or trimming, to avoid clicks
+1. Multitrack, continued: a clip's pitch-preserving time-stretch, which needs a stretching algorithm written from published methods
