@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 86: searching the clip list**
+- The clip list has a search box at the top. Type to show only the clips whose name, file name or track name contains the text, ignoring case and spaces around it; Escape clears it. The list keeps following edits and undo while filtered, so a clip renamed away from the search leaves it.
+- Measured by the tests: a search by clip name in capitals, by track name, by file extension with a trailing space, one matching nothing, and a clip leaving the filtered list when renamed; then clearing the search showing every clip again. Typing into the box itself (rather than setting its text) and Escape were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 85: a menu on the mixer's strips**
 - Right-click a strip in the mixer window (its background or name) for Solo Safe and a Colour submenu, as in the track headers, each an undo step. A solo-safe strip shows the same yellow bar under its S button, and its solo tooltip says so. The master strip has no menu.
 - Measured by the tests: the menu offering Solo Safe unticked and the colours, nothing for an unknown strip; choosing Solo Safe making the bus solo safe as an undo step, after which it shows ticked; choosing Violet setting that bus's colour only, ticked, with Automatic unticked; and choosing Solo Safe again clearing it ("Not Solo Safe"). The right-click itself and the bar were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -582,6 +586,7 @@ The tests run against the real machine:
 - Double-clicking the marker lane: a marker where clicked, and snapped.
 - Solo safe: mixing beside a solo, mute, folders, undo and the session file.
 - The mixer strip menu: solo safe and colour, ticks and undo steps.
+- Clip list search: names, files, tracks, case and following edits.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -635,4 +640,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Clip list: a search box that shows only the clips whose name or file contains what is typed
+1. Marker list: a search box like the clip list's

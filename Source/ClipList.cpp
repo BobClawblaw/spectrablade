@@ -14,6 +14,12 @@ ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, 
     table.setRowHeight (22);
     addAndMakeVisible (table);
 
+    search.setTextToShowWhenEmpty ("Search names, files and tracks", juce::Colours::grey);
+    search.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0e1013));
+    search.onTextChange = [this] { rebuild(); };
+    search.onEscapeKey = [this] { setSearch ({}); };
+    addAndMakeVisible (search);
+
     engine.session.addChangeListener (this);
     rebuild();
     startTimerHz (8);
@@ -27,6 +33,7 @@ ClipList::~ClipList()
 void ClipList::rebuild()
 {
     const auto s = engine.session.getState();
+    const auto wanted = search.getText().trim();
     std::vector<std::tuple<juce::int64, int, Row>> found;
 
     for (size_t t = 0; t < s->tracks.size(); ++t)
@@ -35,6 +42,10 @@ void ClipList::rebuild()
 
         for (auto& c : tr.clips)
         {
+            if (wanted.isNotEmpty() && ! c.name.containsIgnoreCase (wanted) && ! c.source.getFileName().containsIgnoreCase (wanted)
+                && ! tr.name.containsIgnoreCase (wanted))
+                continue;
+
             juce::StringArray flags;
 
             if (c.locked)
@@ -117,7 +128,15 @@ void ClipList::paintCell (juce::Graphics& g, int row, int column, int width, int
     g.drawText (getText (row, column), 6, 0, width - 12, height, right ? juce::Justification::centredRight : juce::Justification::centredLeft, true);
 }
 
+void ClipList::setSearch (const juce::String& text)
+{
+    search.setText (text, false);
+    rebuild();
+}
+
 void ClipList::resized()
 {
-    table.setBounds (getLocalBounds());
+    auto r = getLocalBounds();
+    search.setBounds (r.removeFromTop (26).reduced (4, 2));
+    table.setBounds (r);
 }

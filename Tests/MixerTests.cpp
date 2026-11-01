@@ -516,6 +516,27 @@ namespace
         check (followed && list.getNumRows() == 3 && list.getText (0, C::name) == "kick" && list.getHighlightedRow() == 2,
                "clip list: follows edits and undo, and a deleted clip's row goes, the highlight staying on the selected clip");
 
+        // Searching: names, files and track names, ignoring case; edits re-filter.
+        list.setSearch ("RIFF");
+        const auto byName = list.getNumRows() == 1 && list.getClip (0) == beside;
+        list.setSearch ("bass");
+        const auto byTrack = list.getNumRows() == 2 && list.getText (0, C::track) == "Bass" && list.getText (1, C::file) == "far.wav";
+        list.setSearch (".WAV ");
+        const auto byFile = list.getNumRows() == 3;
+        list.setSearch ("zzz");
+        const auto none = list.getNumRows() == 0;
+        list.setSearch ("kick");
+        const auto kickBefore = list.getNumRows() == 1;
+        auto boom = *engine.session.getState();
+        boom.tracks[0].clips[0].name = "boom";
+        boom.tracks[0].clips[0].source = juce::File ("/takes/boom.wav");
+        engine.session.apply (std::move (boom), "Rename Clip");
+        settle();
+        const auto refiltered = list.getNumRows() == 0;
+        list.setSearch ({});
+        check (byName && byTrack && byFile && none && kickBefore && refiltered && list.getNumRows() == 3 && list.getSearch().isEmpty(),
+               "clip list: the search shows clips whose name, file or track holds the text, ignoring case and spaces around it, and follows edits");
+
         engine.session.reset ({}, {});
         settle();
     }

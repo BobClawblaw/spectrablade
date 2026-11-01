@@ -4,7 +4,9 @@
 
 /** Every clip in the session in a table, in time order: its track, name, start, length, file and
     whether it is locked or muted. The row of the selected clip is highlighted; clicking a row
-    asks for that clip to be shown. Follows the session, so edits and undo show here at once. */
+    asks for that clip to be shown. Follows the session, so edits and undo show here at once.
+    The search box above it shows only the clips whose name, file or track contains what is
+    typed, ignoring case. */
 class ClipList final : public juce::Component,
                        private juce::TableListBoxModel,
                        private juce::ChangeListener,
@@ -26,6 +28,10 @@ public:
     /** Clicks a row, as the mouse does. */
     void chooseRow (int row);
 
+    /** Types into the search box, as the keyboard does. */
+    void setSearch (const juce::String&);
+    juce::String getSearch() const                      { return search.getText(); }
+
     void resized() override;
 
 private:
@@ -46,6 +52,7 @@ private:
     std::function<juce::uint32()> selected;
     std::function<void (juce::uint32)> choose;
     std::vector<Row> rows;
+    juce::TextEditor search;
     juce::TableListBox table { {}, this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ClipList)
