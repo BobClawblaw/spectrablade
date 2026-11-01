@@ -138,10 +138,78 @@ void runEqTests()
                && near (panel.yForDb (24.0), area.getY(), 1.0e-3) && near (panel.yForDb (60.0), area.getY(), 1.0e-3),
            "parametric eq drawing: 20 Hz to 20 kHz across on a log scale and back, 0 dB in the middle, +24 dB at the top and anything past it held there");
 
+    {
+        // Dragging the points, through synthesised mouse events on a 640 by 360 panel.
+        ParametricEq drag (ParametricEq::defaultSettings(), rate);
+        drag.setSize (640, 360);
+        const auto event = [&drag] (juce::Point<float> at, juce::Point<float> down, bool dragged)
+        {
+            const auto now = juce::Time::getCurrentTime();
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys::leftButtonModifier,
+                                     juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                     juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                                     juce::MouseInputSource::defaultTiltY, &drag, &drag, now, down, now, 1, dragged);
+        };
+        const auto dragTo = [&drag, &event] (int band, double hz, double db)
+        {
+            const auto from = drag.pointFor (band);
+            const juce::Point<float> to (drag.xForFrequency (hz), drag.yForDb (db));
+            drag.mouseDown (event (from, from, false));
+            drag.mouseDrag (event (to, from, true));
+            drag.mouseUp (event (to, from, true));
+        };
+        const auto& s = drag.getSettings();
+
+        dragTo (2, 2000.0, 6.0);
+        const auto bellMoved = near (s[2].band.frequency, 2000.0, 0.5) && near (s[2].band.gainDb, 6.0, 0.1) && near (drag.responseDb (s[2].band.frequency), 6.0, 0.1);
+
+        drag.getRow (1).gain.setValue (-6.0, juce::sendNotificationSync);
+        dragTo (2, 500.0, 3.0);
+        const auto underMouse = near (s[2].band.frequency, 500.0, 0.5) && near (drag.responseDb (s[2].band.frequency), 3.0, 0.1) && s[2].band.gainDb > 3.5;
+
+        dragTo (4, 6000.0, 4.0);
+        const auto shelfMoved = near (s[4].band.frequency, 6000.0, 1.0) && near (drag.responseDb (s[4].band.frequency), 4.0, 0.1);
+
+        drag.getRow (0).type.setSelectedItemIndex ((int) BandType::highPass, juce::sendNotificationSync);
+        dragTo (0, 60.0, 12.0);
+        const auto passMoved = near (s[0].band.frequency, 60.0, 0.2) && juce::exactlyEqual (s[0].band.gainDb, 0.0);
+
+        const auto before = s;
+        const juce::Point<float> empty (drag.xForFrequency (30.0), drag.yForDb (20.0));
+        drag.mouseDown (event (empty, empty, false));
+        drag.mouseDrag (event (empty.translated (40.0f, 40.0f), empty, true));
+        drag.mouseUp (event (empty.translated (40.0f, 40.0f), empty, true));
+        drag.getRow (3).on.setToggleState (false, juce::sendNotificationSync);
+        const auto offBand = drag.pointFor (3);
+        const auto missesRight = drag.bandAt (empty) < 0 && drag.bandAt (offBand) != 3 && near (s[0].band.frequency, before[0].band.frequency, 0.0)
+                              && near (s[2].band.gainDb, before[2].band.gainDb, 0.0);
+
+        const auto q0 = s[2].band.q;
+        juce::MouseWheelDetails up {};
+        up.deltaY = 0.25f;
+        auto down = up;
+        down.deltaY = -0.25f;
+        const auto at = drag.pointFor (2);
+        drag.mouseWheelMove (event (at, at, false), up);
+        const auto qUp = s[2].band.q;
+        drag.mouseWheelMove (event (at, at, false), down);
+        const auto wheelRight = near (qUp, q0 * 1.1, 1.0e-9) && near (s[2].band.q, q0, 1.0e-9);
+
+        check (bellMoved && underMouse && shelfMoved && passMoved && missesRight && wheelRight,
+               "parametric eq points: dragging a bell or a shelf sets its frequency and puts the curve under the mouse (to 0.1 dB), "
+               "a pass moves in frequency only, a press away from the points or on a band switched off moves nothing, the wheel raises and lowers the Q by a tenth");
+    }
+
     auto passFirst = ParametricEq::defaultSettings();
     passFirst[0].band.type = BandType::lowPass;
     check (! ParametricEq (passFirst, rate).getRow (0).gain.isEnabled() && ParametricEq (passFirst, rate).getRow (1).gain.isEnabled(),
            "parametric eq: a band that opens as a pass has its gain greyed out, a bell's not");
+
+    ParametricEq touched (ParametricEq::defaultSettings(), rate);
+    touched.getRow (2).q.setValue (3.0, juce::sendNotificationSync);
+    touched.getRow (2).gain.setValue (0.0, juce::sendNotificationSync);
+    check (touched.getActiveBands().empty() && juce::exactlyEqual (touched.getSettings()[2].band.gainDb, 0.0),
+           "parametric eq: a bell at 0 dB whose row was changed reads exactly 0 dB and still changes nothing");
 
     ParametricEq slow (ParametricEq::defaultSettings(), 22050.0);
     check (slow.getRow (4).frequency.getMaximum() < 22050.0 / 2.0 && juce::exactlyEqual (slow.getSettings()[4].band.frequency, 8000.0),

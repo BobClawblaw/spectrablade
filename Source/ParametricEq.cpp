@@ -93,7 +93,8 @@ void ParametricEq::readRow (int index)
     setting.on = row.on.getToggleState();
     setting.band.type = (Equalizer::BandType) juce::jmax (0, row.type.getSelectedItemIndex());
     setting.band.frequency = row.frequency.getValue();
-    setting.band.gainDb = row.gain.getValue();
+    // The slider steps from its bottom end, so 0 dB comes back as about 1e-15; the step is 0.1 dB.
+    setting.band.gainDb = std::round (row.gain.getValue() * 10.0) / 10.0;
     setting.band.q = row.q.getValue();
 
     // A pass ignores the gain, so its slider is greyed out.
@@ -147,6 +148,95 @@ float ParametricEq::yForDb (double db) const
 {
     const auto area = getCurveArea();
     return area.getCentreY() - (float) (juce::jlimit (-rangeDb, rangeDb, db) / rangeDb) * area.getHeight() / 2.0f;
+}
+
+double ParametricEq::dbForY (float y) const
+{
+    const auto area = getCurveArea();
+    return (double) ((area.getCentreY() - y) / (area.getHeight() / 2.0f)) * rangeDb;
+}
+
+juce::Point<float> ParametricEq::pointFor (int index) const
+{
+    const auto frequency = settings[(size_t) index].band.frequency;
+    return { xForFrequency (frequency), yForDb (responseDb (frequency)) };
+}
+
+int ParametricEq::bandAt (juce::Point<float> p) const
+{
+    auto nearest = -1;
+    auto best = grabRadius;
+
+    for (int i = 0; i < numBands; ++i)
+    {
+        if (! settings[(size_t) i].on)
+            continue;
+
+        const auto d = pointFor (i).getDistanceFrom (p);
+
+        if (d <= best)
+        {
+            best = d;
+            nearest = i;
+        }
+    }
+
+    return nearest;
+}
+
+void ParametricEq::mouseMove (const juce::MouseEvent& e)
+{
+    setMouseCursor (bandAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+}
+
+void ParametricEq::mouseDown (const juce::MouseEvent& e)
+{
+    dragging = bandAt (e.position);
+}
+
+void ParametricEq::mouseDrag (const juce::MouseEvent& e)
+{
+    if (dragging < 0)
+        return;
+
+    auto& row = *rows[(size_t) dragging];
+    const auto& band = settings[(size_t) dragging].band;
+    const auto frequency = juce::jlimit (row.frequency.getMinimum(), row.frequency.getMaximum(), frequencyForX (e.position.x));
+    row.frequency.setValue (frequency, juce::sendNotificationSync);
+
+    if (isPass (band))
+        return;
+
+    // The gain that puts the curve under the mouse at this frequency, given the other bands: a bell
+    // makes all its gain at its frequency, a shelf half of it.
+    double others = 0.0;
+
+    for (int i = 0; i < numBands; ++i)
+        if (i != dragging && settings[(size_t) i].on && ! changesNothing (settings[(size_t) i].band))
+            others += Equalizer::responseDb (settings[(size_t) i].band, sampleRate, frequency);
+
+    const auto share = band.type == Equalizer::BandType::peak ? 1.0 : 0.5;
+    row.gain.setValue (juce::jlimit (-rangeDb, rangeDb, (dbForY (e.position.y) - others) / share), juce::sendNotificationSync);
+}
+
+void ParametricEq::mouseUp (const juce::MouseEvent&)
+{
+    dragging = -1;
+}
+
+void ParametricEq::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
+{
+    const auto index = bandAt (e.position);
+
+    if (index < 0 || juce::exactlyEqual (wheel.deltaY, 0.0f))
+    {
+        Component::mouseWheelMove (e, wheel);
+        return;
+    }
+
+    // Up narrows the band (a higher Q), down widens it, by a tenth a step.
+    auto& q = rows[(size_t) index]->q;
+    q.setValue (juce::jlimit (q.getMinimum(), q.getMaximum(), q.getValue() * (wheel.deltaY > 0.0f ? 1.1 : 1.0 / 1.1)), juce::sendNotificationSync);
 }
 
 void ParametricEq::paint (juce::Graphics& g)
@@ -208,7 +298,7 @@ void ParametricEq::paint (juce::Graphics& g)
         if (! s.on)
             continue;
 
-        const juce::Point<float> p (xForFrequency (s.band.frequency), yForDb (responseDb (s.band.frequency)));
+        const auto p = pointFor (i);
         g.setColour (text);
         g.drawText (juce::String (i + 1), juce::Rectangle<float> (12.0f, 12.0f).withCentre (p.translated (0.0f, -12.0f)), juce::Justification::centred);
         g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre (p));

@@ -3,7 +3,9 @@
 #include "Equalizer.h"
 
 /** Five equalizer bands at once, each with an on switch, a type, a frequency, a gain and a Q,
-    over a drawing of the response they make together (20 Hz to 20 kHz across, -24 to +24 dB up). */
+    over a drawing of the response they make together (20 Hz to 20 kHz across, -24 to +24 dB up).
+    Each band switched on has a point on the curve at its frequency: drag it to set the frequency
+    and the gain (so the curve passes under the mouse there), and turn the wheel over it for the Q. */
 class ParametricEq final : public juce::Component
 {
 public:
@@ -40,6 +42,14 @@ public:
     float xForFrequency (double frequency) const;
     double frequencyForX (float x) const;
     float yForDb (double db) const;
+    double dbForY (float y) const;
+
+    /** Where band index's point is drawn: at its frequency, on the curve. */
+    juce::Point<float> pointFor (int index) const;
+
+    /** The band switched on whose point is nearest, within grabRadius pixels; -1 for none. */
+    int bandAt (juce::Point<float>) const;
+    static constexpr float grabRadius = 10.0f;
 
     struct Row
     {
@@ -51,6 +61,11 @@ public:
     Row& getRow (int index)                          { return *rows[(size_t) index]; }
 
     void paint (juce::Graphics&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void resized() override;
 
 private:
@@ -59,6 +74,7 @@ private:
     Settings settings;
     double sampleRate;
     std::array<std::unique_ptr<Row>, numBands> rows;
+    int dragging = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEq)
 };
