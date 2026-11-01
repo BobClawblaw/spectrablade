@@ -268,6 +268,11 @@ public:
         }
 
         pan.setBounds (bottom);
+
+        // In a short lane, the rows that don't fit (or get squeezed) are left out.
+        for (auto* c : std::initializer_list<juce::Component*> { &gain, &pan, &automationButton, &sendsButton, &inputButton })
+            if (c->getHeight() < 20 || c->getBottom() > getHeight() - 2)
+                c->setBounds ({});
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -933,7 +938,7 @@ void MultitrackView::rebuildHeaders()
 void MultitrackView::layoutHeaders()
 {
     for (size_t i = 0; i < headers.size(); ++i)
-        headers[i]->setBounds (0, (int) i * trackHeight - scrollY, headerArea.getWidth(), trackHeight);
+        headers[i]->setBounds (0, (int) i * laneHeight - scrollY, headerArea.getWidth(), laneHeight);
 }
 
 void MultitrackView::resized()
@@ -954,7 +959,7 @@ juce::Rectangle<int> MultitrackView::timelineArea() const
 
 int MultitrackView::laneTop (int track) const
 {
-    return rulerHeight + track * trackHeight - scrollY;
+    return rulerHeight + track * laneHeight - scrollY;
 }
 
 int MultitrackView::trackAt (int y) const
@@ -962,7 +967,7 @@ int MultitrackView::trackAt (int y) const
     if (y < rulerHeight)
         return -1;
 
-    return (y - rulerHeight + scrollY) / trackHeight;
+    return (y - rulerHeight + scrollY) / laneHeight;
 }
 
 float MultitrackView::xForFrame (juce::int64 frame) const
@@ -978,7 +983,7 @@ juce::int64 MultitrackView::frameForX (float x) const
 juce::Rectangle<int> MultitrackView::clipBounds (int track, const SessionClip& c) const
 {
     const auto x0 = xForFrame (c.position), x1 = xForFrame (c.getEnd());
-    return juce::Rectangle<float> (x0, (float) laneTop (track) + 3.0f, juce::jmax (2.0f, x1 - x0), (float) trackHeight - 6.0f).toNearestInt();
+    return juce::Rectangle<float> (x0, (float) laneTop (track) + 3.0f, juce::jmax (2.0f, x1 - x0), (float) laneHeight - 6.0f).toNearestInt();
 }
 
 std::optional<std::pair<int, int>> MultitrackView::clipAt (juce::Point<int> p) const
@@ -1024,6 +1029,19 @@ void MultitrackView::zoomToFit()
     setView (0.0, length * 1.05 / juce::jmax (1, timelineArea().getWidth()));
 }
 
+void MultitrackView::setLaneHeight (int height)
+{
+    const auto limited = juce::jlimit (minLaneHeight, maxLaneHeight, height);
+
+    if (limited == laneHeight)
+        return;
+
+    laneHeight = limited;
+    layoutHeaders();
+    updateScrollBars();
+    repaint();
+}
+
 void MultitrackView::zoomToRange (juce::Range<juce::int64> range)
 {
     if (range.isEmpty())
@@ -1046,7 +1064,7 @@ void MultitrackView::updateScrollBars()
     hScroll.setCurrentRange (viewStart, width * framesPerPixel, juce::dontSendNotification);
 
     const auto visible = juce::jmax (1, timelineArea().getHeight());
-    const auto total = ((int) shown().tracks.size() + 1) * trackHeight;
+    const auto total = ((int) shown().tracks.size() + 1) * laneHeight;
     scrollY = juce::jlimit (0, juce::jmax (0, total - visible), scrollY);
     vScroll.setRangeLimits (0.0, (double) juce::jmax (total, visible), juce::dontSendNotification);
     vScroll.setCurrentRange ((double) scrollY, (double) visible, juce::dontSendNotification);
@@ -1111,7 +1129,7 @@ namespace
 
 float MultitrackView::yForValue (int track, const AutomationTarget& p, float value) const
 {
-    const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + trackHeight) - envelopeMargin;
+    const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + laneHeight) - envelopeMargin;
     auto proportion = envelopeScale (p.parameter).convertTo0to1 (automationRange (p.parameter).clipValue (value));
 
     // Pan: left at the top.
@@ -1123,7 +1141,7 @@ float MultitrackView::yForValue (int track, const AutomationTarget& p, float val
 
 float MultitrackView::valueForY (int track, const AutomationTarget& p, float y) const
 {
-    const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + trackHeight) - envelopeMargin;
+    const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + laneHeight) - envelopeMargin;
     auto proportion = juce::jlimit (0.0f, 1.0f, (bottom - y) / (bottom - top));
 
     if (p.parameter == AutomationParameter::pan)
@@ -1216,7 +1234,7 @@ void MultitrackView::drawEnvelope (juce::Graphics& g, int track, const Automatio
     g.setColour (colour.withAlpha (0.8f));
     g.setFont (11.0f);
     g.drawText (label + (points.empty() ? ": click the line to add a point" : ""),
-                juce::Rectangle<float> (left + 6.0f, (float) laneTop (track) + (float) trackHeight - 20.0f, 400.0f, 16.0f),
+                juce::Rectangle<float> (left + 6.0f, (float) laneTop (track) + (float) laneHeight - 20.0f, 400.0f, 16.0f),
                 juce::Justification::centredLeft, false);
 
     if (points.empty())
@@ -1475,7 +1493,7 @@ void MultitrackView::paint (juce::Graphics& g)
 
         for (int t = 0; t < (int) s.tracks.size(); ++t)
         {
-            const auto lane = juce::Rectangle<int> (area.getX(), laneTop (t), area.getWidth(), trackHeight);
+            const auto lane = juce::Rectangle<int> (area.getX(), laneTop (t), area.getWidth(), laneHeight);
             g.setColour (s.tracks[(size_t) t].id == selectedTrackId ? juce::Colour (0xff20262e) : (t % 2 == 0 ? laneColour : laneAlternate));
             g.fillRect (lane);
             g.setColour (laneLine);
@@ -1564,7 +1582,7 @@ void MultitrackView::paint (juce::Graphics& g)
 
             for (auto lane : lanes)
             {
-                const auto r = juce::Rectangle<float> (x0, (float) laneTop (lane) + 2.0f, juce::jmax (1.0f, x1 - x0), (float) trackHeight - 4.0f);
+                const auto r = juce::Rectangle<float> (x0, (float) laneTop (lane) + 2.0f, juce::jmax (1.0f, x1 - x0), (float) laneHeight - 4.0f);
                 g.setColour (juce::Colour (0xffd0453a).withAlpha (0.3f));
                 g.fillRoundedRectangle (r, 3.0f);
                 g.setColour (juce::Colour (0xffd0453a));

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 38: track height**
+- View > Taller Tracks and Shorter Tracks (Cmd Option = and Cmd Option -) change the height of every track's lane and header, 24 pixels at a time, from 56 to 312 (104 to start with). Waveforms and envelopes fill the taller lanes; in short ones a header keeps its top row (name, FX, R, M, S) and leaves out the rows that don't fit. The height is kept in the app's settings.
+- Measured by the tests, through the real view: at 200 pixels a click 150 pixels down the second lane selects that lane's clip, both headers are 200 pixels tall, the height stays within 56 to 312, and at the shortest the headers' sliders get no room. The keys and how the lanes look were not checked by the tests, and none of it was tried by hand.
+
 **Milestone 37: pre-roll and post-roll**
 - Transport > Recording Options... sets the pre-roll (how long playback runs before a punch-in) and the post-roll (how long recording goes on after a punch-out before it stops by itself), each from 0 to 10 seconds. They are kept in the app's settings and apply to punch recording in the editor and in the session. The defaults are what the app did before: 2 s of pre-roll and a quarter of a second of post-roll.
 - A count-in still replaces the pre-roll with a bar of clicks, and a loop recording still runs until you stop it.
@@ -306,6 +310,7 @@ The tests run against the real machine:
 - Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
+- Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
 - Repeating clips to a range's end and reversing them bit for bit.
 - Clip properties: typing each of a clip's settings, refused values, and following undo.
@@ -357,4 +362,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a track's own height, and showing tracks taller or shorter to see more of them
+1. Multitrack, continued: colouring tracks, chosen from a palette, in the lanes, headers and mixer

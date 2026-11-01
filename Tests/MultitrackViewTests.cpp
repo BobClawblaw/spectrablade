@@ -909,6 +909,64 @@ void runMultitrackViewTests (AudioEngine& engine)
                "reverse: the part the clip plays, back to front bit for bit, in place, its fades changing ends");
     }
 
+    // Lane height: clicks find the right lane at another height, the height stays within its
+    // limits, and short headers leave out their lower rows.
+    {
+        SessionState tall;
+        tall.sampleRate = rate;
+        tall.addTrack();
+        tall.addTrack();
+        SessionEdits::addClip (tall, 0, juce::File ("/tmp/top.wav"), silence (96000), 0);
+        const auto lower = SessionEdits::addClip (tall, 1, juce::File ("/tmp/lower.wav"), silence (96000), 0);
+        engine.session.reset (tall, {});
+        view.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 3 * 200 + 12);
+        view.zoomToRange ({ 0, 96000 });
+        view.setLaneHeight (200);
+        Mouse::settle();
+        const auto shownFrames = view.getVisibleFrames();
+        const auto at = (float) MultitrackView::headerWidth + (float) ((48000.0 - shownFrames.getStart()) / (shownFrames.getLength() / timelineWidth));
+
+        // 150 px down the second lane: past where the first lane would end at the usual height.
+        mouse.click ({ at, (float) (MultitrackView::rulerHeight + 200 + 150) });
+        const auto picked = view.getSelectedClip() == lower && view.getSelectedTrack() == 1;
+
+        const auto headerHeights = [&]
+        {
+            std::vector<int> heights;
+
+            for (auto* area : view.getChildren())
+                for (auto* child : area->getChildren())
+                    if (child->getNumChildComponents() > 3)
+                        heights.push_back (child->getHeight());
+
+            return heights;
+        };
+
+        const auto tallHeaders = headerHeights();
+        view.setLaneHeight (1000);
+        const auto highest = view.getLaneHeight();
+        view.setLaneHeight (0);
+        const auto lowest = view.getLaneHeight();
+
+        // At the shortest, each header keeps its top row only: its sliders get no room.
+        auto slidersHidden = true;
+
+        for (auto* area : view.getChildren())
+            for (auto* child : area->getChildren())
+                if (child->getNumChildComponents() > 3)
+                    for (auto* control : child->getChildren())
+                        if (dynamic_cast<juce::Slider*> (control) != nullptr)
+                            slidersHidden = slidersHidden && control->getBounds().isEmpty();
+
+        view.setLaneHeight (MultitrackView::trackHeight);
+        view.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 3 * MultitrackView::trackHeight + 12);
+        check (picked && tallHeaders == std::vector<int> { 200, 200 } && highest == MultitrackView::maxLaneHeight
+                   && lowest == MultitrackView::minLaneHeight && slidersHidden,
+               "lanes: at 200 px a click finds the second lane's clip, headers follow the height, which stays within "
+                   + juce::String (MultitrackView::minLaneHeight) + " to " + juce::String (MultitrackView::maxLaneHeight)
+                   + " px, and short headers leave out their sliders");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

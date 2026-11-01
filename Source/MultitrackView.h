@@ -166,6 +166,13 @@ public:
     void zoomOut();
     void zoomToFit();
 
+    /** The height of every track's lane (and header), from minLaneHeight to maxLaneHeight;
+        trackHeight to start with. In short lanes the header shows only its top row. */
+    int getLaneHeight() const noexcept               { return laneHeight; }
+    void setLaneHeight (int);
+
+    static constexpr int minLaneHeight = 56, maxLaneHeight = 312, laneHeightStep = 24;
+
     /** Fills the timeline with a range of the session, with a small margin either side. */
     void zoomToRange (juce::Range<juce::int64>);
 
@@ -277,6 +284,7 @@ private:
     std::optional<SessionState> preview;   // the session as it would be after the drag under way
 
     double framesPerPixel = 1000.0, viewStart = 0.0;
+    int laneHeight = trackHeight;
     int scrollY = 0;
     juce::int64 cursor = 0;
     juce::uint32 selectedClip = 0, selectedTrackId = 0;

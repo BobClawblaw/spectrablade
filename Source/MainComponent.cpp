@@ -23,6 +23,7 @@ namespace
     constexpr const char* crossfadingKey  = "crossfading";
     constexpr const char* prerollKey      = "preroll";
     constexpr const char* postrollKey     = "postroll";
+    constexpr const char* laneHeightKey   = "laneHeight";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -46,7 +47,8 @@ namespace
         cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, cmdMixer,
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
-        cmdRepeatClip, cmdReverseClip, cmdRecordingOptions
+        cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
+        cmdTallerTracks, cmdShorterTracks
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -549,6 +551,7 @@ MainComponent::MainComponent()
     addChildComponent (multitrack);
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
+    multitrack.setLaneHeight (settings->getIntValue (laneHeightKey, MultitrackView::trackHeight));
     rolls.preroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (prerollKey, rolls.preroll));
     rolls.postroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (postrollKey, rolls.postroll));
     multitrack.onOpenInEditor = [this] (const juce::File& f)
@@ -691,7 +694,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdRecordingOptions; ++id)
+    for (int id = cmdOpen; id <= cmdShorterTracks; ++id)
         ids.add (id);
 }
 
@@ -793,6 +796,12 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
         case cmdMixer:      info.setInfo ("Mixer", "A window with a strip for each track and bus, and the master meter", "Multitrack", 0);
                             info.addDefaultKeypress ('m', cmd | shift); info.setTicked (mixerWindow != nullptr); break;
+        case cmdTallerTracks: info.setInfo ("Taller Tracks", "Make every track's lane taller", "View", 0);
+                            info.addDefaultKeypress ('=', cmd | alt);
+                            info.setActive (multitrackMode && multitrack.getLaneHeight() < MultitrackView::maxLaneHeight); break;
+        case cmdShorterTracks: info.setInfo ("Shorter Tracks", "Make every track's lane shorter, to see more of them", "View", 0);
+                            info.addDefaultKeypress ('-', cmd | alt);
+                            info.setActive (multitrackMode && multitrack.getLaneHeight() > MultitrackView::minLaneHeight); break;
         case cmdRecordingOptions: info.setInfo ("Recording Options...", "How long playback runs before a punch-in and after a punch-out", "Transport", 0);
                             info.setActive (! isRecording()); break;
         case cmdRepeatClip: info.setInfo ("Repeat Clip to Range End", "Lay copies of the selected clip end to end up to the end of the time range", "Multitrack", 0);
@@ -947,6 +956,13 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdClipProperties: toggleClipProperties(); break;
         case cmdRepeatClip: multitrack.repeatSelectedClip(); break;
         case cmdRecordingOptions: showRecordingOptions(); break;
+        case cmdTallerTracks:
+        case cmdShorterTracks:
+            multitrack.setLaneHeight (multitrack.getLaneHeight()
+                                      + (info.commandID == cmdTallerTracks ? 1 : -1) * MultitrackView::laneHeightStep);
+            appProperties.getUserSettings()->setValue (laneHeightKey, multitrack.getLaneHeight());
+            commands.commandStatusChanged();
+            break;
         case cmdReverseClip: reverseSelectedClip(); break;
         case cmdNudgeEarlier: multitrack.nudge (false); break;
         case cmdNudgeLater: multitrack.nudge (true); break;
@@ -1078,7 +1094,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
-        case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
+        case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
+                       0, cmdTallerTracks, cmdShorterTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
