@@ -1,5 +1,6 @@
 #include "MultitrackView.h"
 #include "Metronome.h"
+#include "TrackColours.h"
 
 namespace
 {
@@ -35,11 +36,6 @@ namespace
         return curve;
     }
 
-    juce::Colour trackColour (int index)
-    {
-        static const juce::uint32 colours[] = { 0xff4fc3a1, 0xff58a6ff, 0xffd98cff, 0xffffa657, 0xff7ee787, 0xffff7b72 };
-        return juce::Colour (colours[(size_t) index % std::size (colours)]);
-    }
 
     juce::String formatTime (double seconds, double secondsPerTick)
     {
@@ -164,7 +160,7 @@ public:
 
     void update (const SessionTrack& t, int index, bool selected)
     {
-        colour = t.isBus ? juce::Colour (0xff9aa3ad) : trackColour (index);
+        colour = TrackColours::of (t, index);
         group = t.group;
         isSelected = selected;
         isBus = t.isBus;
@@ -297,8 +293,21 @@ public:
         for (int g = 1; g <= SessionTrack::maxGroups; ++g)
             groups.addItem ("Group " + juce::String (g), true, t->group == g, [this, g] { view.setTrackGroup (trackId, g); });
 
+        juce::PopupMenu colours;
+        colours.addItem ("Automatic", true, t->colour < 0, [this] { view.setTrackColour (trackId, -1); });
+
+        for (int c = 0; c < (int) TrackColours::palette.size(); ++c)
+        {
+            juce::PopupMenu::Item item (TrackColours::palette[(size_t) c].name);
+            item.setTicked (t->colour == c);
+            item.setColour (juce::Colour (TrackColours::palette[(size_t) c].argb));
+            item.setAction ([this, c] { view.setTrackColour (trackId, c); });
+            colours.addItem (std::move (item));
+        }
+
         juce::PopupMenu menu;
         menu.addSubMenu ("Group", groups);
+        menu.addSubMenu ("Colour", colours);
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
@@ -1402,7 +1411,7 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
 void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& c) const
 {
     const auto r = clipBounds (track, c);
-    const auto colour = trackColour (track);
+    const auto colour = TrackColours::of (shown().tracks[(size_t) track], track);
     const auto selected = isClipSelected (c.id);
 
     g.setColour (colour.withAlpha (0.18f));
@@ -2234,6 +2243,12 @@ void MultitrackView::nudge (bool later)
     }
 
     engine.session.apply (std::move (next), ids.size() > 1 ? juce::String ("Nudge Clips") : juce::String ("Nudge Clip"), true);
+}
+
+void MultitrackView::setTrackColour (juce::uint32 trackId, int colour)
+{
+    editTrack (trackId, "Track Colour", false,
+               [colour] (SessionTrack& t) { t.colour = juce::isPositiveAndBelow (colour, (int) TrackColours::palette.size()) ? colour : -1; });
 }
 
 void MultitrackView::setTrackGroup (juce::uint32 trackId, int group)

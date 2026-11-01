@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 39: track colours**
+- Right-click a track's or bus's header (its background) and choose Colour: Automatic, or one of eight (Teal, Blue, Violet, Orange, Green, Red, Yellow, Pink). The track's header, its clips in the lanes and a bar along the top of its mixer strip take that colour. Choosing a colour is an undo step ("Track Colour").
+- Automatic is what tracks had before: the first six colours in turn by the track's place in the list, so an automatic track's colour changes when it moves, and grey for buses. A chosen colour stays with the track as it moves.
+- Measured by the tests: the automatic colours by place, grey buses, and a chosen colour overriding both; choosing one as an undo step, and one outside the palette going back to automatic; session files keeping a chosen colour and leaving the rest automatic. The Colour menu and the colours drawn in the lanes, headers and mixer were not checked by the tests, and none of it was tried by hand.
+
 **Milestone 38: track height**
 - View > Taller Tracks and Shorter Tracks (Cmd Option = and Cmd Option -) change the height of every track's lane and header, 24 pixels at a time, from 56 to 312 (104 to start with). Waveforms and envelopes fill the taller lanes; in short ones a header keeps its top row (name, FX, R, M, S) and leaves out the rows that don't fit. The height is kept in the app's settings.
 - Measured by the tests, through the real view: at 200 pixels a click 150 pixels down the second lane selects that lane's clip, both headers are 200 pixels tall, the height stays within 56 to 312, and at the shortest the headers' sliders get no room. The keys and how the lanes look were not checked by the tests, and none of it was tried by hand.
@@ -309,6 +314,7 @@ The tests run against the real machine:
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
 - Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
+- Track colours: automatic and chosen colours, the undo step, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -362,4 +368,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: colouring tracks, chosen from a palette, in the lanes, headers and mixer
+1. Multitrack, continued: locking clips so that they can't be moved, trimmed or deleted by accident

@@ -117,6 +117,10 @@ public:
         selected, moves the cursor to it. */
     void nudge (bool later);
 
+    /** Gives a track or bus a colour from TrackColours::palette, or -1 for the automatic one, as
+        an undo step. Right-click a header for its Colour menu. */
+    void setTrackColour (juce::uint32 trackId, int colour);
+
     /** Puts a track or bus in a group (1 to SessionTrack::maxGroups) or none (0), as an undo
         step. Right-click a header for its Group menu. */
     void setTrackGroup (juce::uint32 trackId, int group);

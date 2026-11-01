@@ -5,6 +5,7 @@
 #include "../Source/ClipProperties.h"
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
+#include "../Source/TrackColours.h"
 #include "TestUtils.h"
 #include "MixerTests.h"
 
@@ -227,6 +228,45 @@ namespace
 
 namespace
 {
+    void testColours (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+
+        for (int i = 0; i < 8; ++i)
+            s.addTrack();
+
+        s.tracks[7].isBus = true;
+        const auto automatic = TrackColours::of (s.tracks[0], 0) == juce::Colour (TrackColours::palette[0].argb)
+                                && TrackColours::of (s.tracks[6], 6) == TrackColours::of (s.tracks[0], 0)
+                                && TrackColours::of (s.tracks[7], 7) == juce::Colour (0xff9aa3ad);
+        s.tracks[7].colour = 7;
+        check (automatic && TrackColours::of (s.tracks[7], 7) == juce::Colour (TrackColours::palette[7].argb),
+               "colours: tracks take the palette by their place and buses are grey, until one is chosen");
+
+        engine.session.reset (s, {});
+        MultitrackView view (engine);
+        const auto id = engine.session.getState()->tracks[1].id;
+        view.setTrackColour (id, 5);
+        const auto chosen = engine.session.getState()->tracks[1].colour == 5 && engine.session.getUndoDescription() == "Track Colour";
+        view.setTrackColour (id, 99);
+        check (chosen && engine.session.getState()->tracks[1].colour == -1,
+               "colours: choosing a track's colour is an undo step; one outside the palette means automatic");
+
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (s, file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        file.deleteFile();
+        check (error.isEmpty() && loaded.state.tracks.size() == 8 && loaded.state.tracks[7].colour == 7 && loaded.state.tracks[0].colour == -1,
+               "colours: session files keep a chosen colour and leave the rest automatic");
+
+        engine.session.reset ({}, {});
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+    }
+}
+
+namespace
+{
     void testClipProperties (AudioEngine& engine)
     {
         SessionState s;
@@ -288,4 +328,5 @@ void runMixerTests (AudioEngine& engine)
     testLevels();
     testMixerView (engine);
     testGroups (engine);
+    testColours (engine);
 }

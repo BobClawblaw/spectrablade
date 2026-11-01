@@ -1,4 +1,5 @@
 #include "MixerView.h"
+#include "TrackColours.h"
 
 namespace
 {
@@ -127,9 +128,10 @@ public:
     }
 
     /** Shows the track as it is; the frame is where an automated volume or pan is read. */
-    void update (const SessionTrack& t, juce::int64 frame)
+    void update (const SessionTrack& t, int index, juce::int64 frame)
     {
         isBus = t.isBus;
+        colour = TrackColours::of (t, index);
         name.setText (t.name, juce::dontSendNotification);
         mute.setToggleState (t.mute, juce::dontSendNotification);
         solo.setToggleState (t.solo, juce::dontSendNotification);
@@ -155,6 +157,13 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (trackId == 0 ? juce::Colour (0xff20262e) : isBus ? busColour : stripColour);
+
+        if (trackId != 0)
+        {
+            g.setColour (colour);
+            g.fillRect (0, 0, getWidth() - 1, 3);
+        }
+
         g.setColour (juce::Colour (0xff2a2f37));
         g.drawVerticalLine (getWidth() - 1, 0.0f, (float) getHeight());
     }
@@ -208,6 +217,7 @@ private:
     }
 
     MixerView& view;
+    juce::Colour colour;
     juce::Label name, readout;
     bool isBus = false;
 };
@@ -261,7 +271,7 @@ void MixerView::rebuild()
     const auto frame = engine.getPlayer().getPositionFrames();
 
     for (size_t i = 0; i < strips.size(); ++i)
-        strips[i]->update (state->tracks[i], frame);
+        strips[i]->update (state->tracks[i], (int) i, frame);
 }
 
 MixerView::Strip* MixerView::findStrip (juce::uint32 trackId) const
@@ -308,7 +318,7 @@ void MixerView::updateMeters()
 
         for (size_t i = 0; i < strips.size() && i < state->tracks.size(); ++i)
             if (! state->tracks[i].volumeEnvelope.isEmpty() || ! state->tracks[i].panEnvelope.isEmpty())
-                strips[i]->update (state->tracks[i], frame);
+                strips[i]->update (state->tracks[i], (int) i, frame);
     }
 }
 
