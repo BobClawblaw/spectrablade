@@ -12,7 +12,15 @@ MarkerTable::MarkerTable (Session& s, Actions a) : session (s), actions (std::mo
     table.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff161b22));
     table.setRowHeight (22);
     addAndMakeVisible (table);
+
+    search.setTextToShowWhenEmpty ("Search names", juce::Colours::grey);
+    search.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0e1013));
+    search.onTextChange = [this] { refilter(); };
+    search.onEscapeKey = [this] { setSearch ({}); };
+    addAndMakeVisible (search);
+
     session.addChangeListener (this);
+    refilter();
 }
 
 MarkerTable::~MarkerTable()
@@ -20,19 +28,46 @@ MarkerTable::~MarkerTable()
     session.removeChangeListener (this);
 }
 
-int MarkerTable::getNumRows()
+void MarkerTable::refilter()
 {
-    return (int) session.getState()->markers.size();
+    const auto& markers = session.getState()->markers;
+    const auto wanted = search.getText().trim();
+    shownMarkers.clear();
+
+    for (size_t i = 0; i < markers.size(); ++i)
+        if (wanted.isEmpty() || markers[i].name.containsIgnoreCase (wanted))
+            shownMarkers.push_back ((int) i);
+
+    table.updateContent();
+
+    if (table.getSelectedRow() >= getNumRows())
+        table.deselectAllRows();
+
+    repaint();
+}
+
+void MarkerTable::setSearch (const juce::String& text)
+{
+    search.setText (text, false);
+    refilter();
+}
+
+int MarkerTable::getMarkerIndex (int row) const
+{
+    const auto count = (int) session.getState()->markers.size();
+    const auto index = juce::isPositiveAndBelow (row, (int) shownMarkers.size()) ? shownMarkers[(size_t) row] : -1;
+    return juce::isPositiveAndBelow (index, count) ? index : -1;
 }
 
 juce::String MarkerTable::getText (int row, int column) const
 {
     const auto s = session.getState();
+    const auto index = getMarkerIndex (row);
 
-    if (! juce::isPositiveAndBelow (row, (int) s->markers.size()))
+    if (index < 0)
         return {};
 
-    const auto& m = s->markers[(size_t) row];
+    const auto& m = s->markers[(size_t) index];
     const auto seconds = [&s] (juce::int64 frames) { return juce::String ((double) frames / s->sampleRate, 3); };
 
     switch (column)
@@ -47,12 +82,12 @@ juce::String MarkerTable::getText (int row, int column) const
 
 void MarkerTable::chooseRow (int row)
 {
-    if (juce::isPositiveAndBelow (row, getNumRows()))
+    if (const auto index = getMarkerIndex (row); index >= 0)
     {
         table.selectRow (row);
 
         if (actions.choose != nullptr)
-            actions.choose (row);
+            actions.choose (index);
     }
 }
 
@@ -68,24 +103,19 @@ void MarkerTable::cellDoubleClicked (int row, int, const juce::MouseEvent&)
 
 void MarkerTable::returnKeyPressed (int row)
 {
-    if (juce::isPositiveAndBelow (row, getNumRows()) && actions.rename != nullptr)
-        actions.rename (row);
+    if (const auto index = getMarkerIndex (row); index >= 0 && actions.rename != nullptr)
+        actions.rename (index);
 }
 
 void MarkerTable::deleteKeyPressed (int row)
 {
-    if (juce::isPositiveAndBelow (row, getNumRows()) && actions.remove != nullptr)
-        actions.remove (row);
+    if (const auto index = getMarkerIndex (row); index >= 0 && actions.remove != nullptr)
+        actions.remove (index);
 }
 
 void MarkerTable::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    table.updateContent();
-
-    if (table.getSelectedRow() >= getNumRows())
-        table.deselectAllRows();
-
-    repaint();
+    refilter();
 }
 
 void MarkerTable::paintRowBackground (juce::Graphics& g, int, int, int, bool isSelected)
@@ -97,9 +127,9 @@ void MarkerTable::paintCell (juce::Graphics& g, int row, int column, int width, 
 {
     // The name cell starts with the marker's colour.
     if (column == name)
-        if (const auto& markers = session.getState()->markers; juce::isPositiveAndBelow (row, (int) markers.size()))
+        if (const auto index = getMarkerIndex (row); index >= 0)
         {
-            g.setColour (TrackColours::of (markers[(size_t) row]));
+            g.setColour (TrackColours::of (session.getState()->markers[(size_t) index]));
             g.fillRect (2, 3, 3, height - 6);
         }
 
@@ -112,5 +142,7 @@ void MarkerTable::paintCell (juce::Graphics& g, int row, int column, int width, 
 
 void MarkerTable::resized()
 {
-    table.setBounds (getLocalBounds());
+    auto r = getLocalBounds();
+    search.setBounds (r.removeFromTop (26).reduced (4, 2));
+    table.setBounds (r);
 }

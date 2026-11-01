@@ -642,6 +642,24 @@ namespace
         check (deleted && engine.session.getUndoDescription() == "Delete Intro" && table.getNumRows() == 2 && table.getText (1, MarkerTable::name) == "Verse, 1"
                    && ! view.deleteMarker (5) && ! view.showMarker (-1),
                "marker list: deleting a marker is an undo step and the list follows; a marker that isn't there does nothing");
+
+        // Searching names, ignoring case: rows map to the markers they show, and edits re-filter.
+        chosen.clear();
+        table.setSearch ("VERSE");
+        const auto found = table.getNumRows() == 1 && table.getText (0, MarkerTable::name) == "Verse, 1" && table.getMarkerIndex (0) == 1
+                           && table.getMarkerIndex (1) == -1;
+        table.chooseRow (0);
+        const auto mapped = chosen == std::vector<int> { 1 } && view.getTimeSelection() == juce::Range<juce::int64> (96000, 168000);
+        auto more = *engine.session.getState();
+        more.markers[0].name = "Pre-verse";
+        engine.session.apply (std::move (more), "Rename Say \"hi\"");
+        settle();
+        const auto refiltered = table.getNumRows() == 2 && table.getMarkerIndex (0) == 0 && table.getText (0, MarkerTable::name) == "Pre-verse";
+        table.setSearch ("chorus");
+        const auto none = table.getNumRows() == 0 && table.getText (0, MarkerTable::name).isEmpty();
+        table.setSearch ({});
+        check (found && mapped && refiltered && none && table.getNumRows() == 2,
+               "marker list: the search shows markers whose name holds the text, ignoring case; a row chooses the marker it shows; edits re-filter");
         engine.session.reset ({}, {});
         settle();
     }

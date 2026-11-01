@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 87: searching the marker list**
+- The marker list has a search box like the clip list's: type to show only the markers and regions whose name contains the text, ignoring case and spaces around it; Escape clears it. Clicking, renaming and deleting act on the marker a row shows, and the list keeps following edits and undo while filtered.
+- Measured by the tests: a search in capitals finding one region; that row choosing the region (index 1, not row 0) and selecting its range; a marker renamed to match joining the list in time order; a search matching nothing; and clearing it showing every marker again. Typing into the box and Escape were not checked by the tests, nor renaming or deleting from a filtered list (they use the same row-to-marker mapping as choosing), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 86: searching the clip list**
 - The clip list has a search box at the top. Type to show only the clips whose name, file name or track name contains the text, ignoring case and spaces around it; Escape clears it. The list keeps following edits and undo while filtered, so a clip renamed away from the search leaves it.
 - Measured by the tests: a search by clip name in capitals, by track name, by file extension with a trailing space, one matching nothing, and a clip leaving the filtered list when renamed; then clearing the search showing every clip again. Typing into the box itself (rather than setting its text) and Escape were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -587,6 +591,7 @@ The tests run against the real machine:
 - Solo safe: mixing beside a solo, mute, folders, undo and the session file.
 - The mixer strip menu: solo safe and colour, ticks and undo steps.
 - Clip list search: names, files, tracks, case and following edits.
+- Marker list search: names, case, rows mapped to markers and following edits.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -640,4 +645,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Marker list: a search box like the clip list's
+1. Multitrack, continued: a polarity (phase) invert switch for each track and bus, in the header and the mixer
