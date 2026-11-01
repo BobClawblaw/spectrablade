@@ -104,6 +104,15 @@ public:
     void splitSelectedClip();      // at the cursor
     void deleteSelectedTrack();
 
+    /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise
+        its marks in seconds, at the current zoom. Never before 0. */
+    juce::int64 gridStepFrom (juce::int64 frame, bool later) const;
+
+    /** Moves the selected clips together so that the one clicked last starts on the next grid
+        point (or the one before), as an undo step that a run of nudges shares; with no clip
+        selected, moves the cursor to it. */
+    void nudge (bool later);
+
     /** Puts a track or bus in a group (1 to SessionTrack::maxGroups) or none (0), as an undo
         step. Right-click a header for its Group menu. */
     void setTrackGroup (juce::uint32 trackId, int group);

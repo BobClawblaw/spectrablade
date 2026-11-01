@@ -2143,6 +2143,69 @@ void MultitrackView::deleteSelectedTrack()
     }
 }
 
+juce::int64 MultitrackView::gridStepFrom (juce::int64 frame, bool later) const
+{
+    const auto& s = shown();
+
+    if (showBars)
+    {
+        // Beats a mark apart; the beat starting at or before the frame is where to count from.
+        const auto step = (juce::int64) rulerBeats().second;
+        const auto beat = Metronome::beatAt (frame, s.tempo, s.sampleRate);
+        auto mark = (beat >= 0 ? beat : beat - step + 1) / step * step;
+
+        if (later)
+            mark += step;
+        else if (Metronome::beatFrame (mark, s.tempo, s.sampleRate) >= frame)
+            mark -= step;
+
+        return juce::jmax ((juce::int64) 0, Metronome::beatFrame (mark, s.tempo, s.sampleRate));
+    }
+
+    const auto step = juce::jmax ((juce::int64) 1, (juce::int64) std::llround (rulerTick() * s.sampleRate));
+    const auto below = frame >= 0 ? frame / step * step : -((-frame + step - 1) / step) * step;
+
+    if (later)
+        return below + step;
+
+    return juce::jmax ((juce::int64) 0, below < frame ? below : below - step);
+}
+
+void MultitrackView::nudge (bool later)
+{
+    const auto ids = getSelectedClips();
+
+    if (ids.empty())
+    {
+        setCursor (gridStepFrom (cursor, later));
+        return;
+    }
+
+    auto next = *engine.session.getState();
+    const auto primary = next.findClip (isClipSelected (selectedClip) ? selectedClip : ids.front());
+    const auto start = next.tracks[(size_t) primary->first].clips[(size_t) primary->second].position;
+    auto earliest = start;
+
+    for (auto id : ids)
+    {
+        const auto where = next.findClip (id);
+        earliest = juce::jmin (earliest, next.tracks[(size_t) where->first].clips[(size_t) where->second].position);
+    }
+
+    const auto delta = juce::jmax (gridStepFrom (start, later) - start, -earliest);
+
+    if (delta == 0)
+        return;
+
+    for (auto id : ids)
+    {
+        const auto where = next.findClip (id);
+        SessionEdits::moveClip (next, id, where->first, next.tracks[(size_t) where->first].clips[(size_t) where->second].position + delta);
+    }
+
+    engine.session.apply (std::move (next), ids.size() > 1 ? juce::String ("Nudge Clips") : juce::String ("Nudge Clip"), true);
+}
+
 void MultitrackView::setTrackGroup (juce::uint32 trackId, int group)
 {
     editTrack (trackId, group == 0 ? juce::String ("Ungroup Track") : "Group " + juce::String (group), false,

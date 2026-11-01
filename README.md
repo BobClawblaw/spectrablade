@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 33: nudging by the grid**
+- Multitrack > Nudge Earlier and Nudge Later (comma and period) move the selected clips together so that the one clicked last starts on the grid point before or after where it is: the ruler's marks in seconds, or the beats in bars and beats, at the current zoom. With no clip selected they move the cursor the same way. Nothing goes before the start of the session.
+- A run of nudges is one undo step ("Nudge Clip" or "Nudge Clips").
+- Measured by the tests, through the real view: the grid points either side of a frame at a 2 s ruler spacing and at 120 beats a minute (never before 0); the cursor nudged on to the next mark; two selected clips on different tracks nudged twice together, undone in one step, and nudged back until the earlier reaches the start. The keys were not pressed by the tests, and none of it was tried by hand.
+
 **Milestone 32: track groups**
 - Right-click a track's or bus's header (its background) and choose Group > Group 1 to 8, or None. The header shows its group ("G1"). Joining or leaving a group is an undo step.
 - In a group, moving one track's volume, from its header or its mixer strip, moves the others' by as many dB; muting or soloing one mutes or solos them all. Pan, sends and effects stay each track's own. A volume that reaches -60 or +12 dB stops there, so a group pushed past an end no longer keeps its spacing on the way back; a track whose volume is on an envelope is left to its envelope. Groups are saved in the session file.
@@ -279,6 +284,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
@@ -328,4 +334,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: nudging clips and the cursor by the grid with the keyboard
+1. Multitrack, continued: a clip's own fades and gain shown and edited from a clip inspector panel

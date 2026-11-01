@@ -790,6 +790,58 @@ void runMultitrackViewTests (AudioEngine& engine)
                "tracks: dragging a track's header down two lanes moves it there (" + names (*engine.session.getState()) + ")");
     }
 
+    // Nudging by the grid: at 504 frames a pixel the ruler marks every 2 s (96000 frames), and in
+    // bars and beats at 120 a minute every beat (24000).
+    {
+        SessionState nudged;
+        nudged.sampleRate = rate;
+        nudged.addTrack();
+        nudged.addTrack();
+        const auto a = SessionEdits::addClip (nudged, 0, juce::File ("/tmp/a.wav"), silence (48000), 48000);
+        const auto b = SessionEdits::addClip (nudged, 1, juce::File ("/tmp/b.wav"), silence (48000), 120000);
+        engine.session.reset (nudged, {});
+        view.setShowBars (false);
+        view.setTimeSelection ({});
+        view.zoomToRange ({ 0, 480000 });
+        Mouse::settle();
+        const auto laneY = [] (int lane) { return (float) (MultitrackView::rulerHeight + lane * MultitrackView::trackHeight) + 60.0f; };
+
+        const auto seconds = std::vector<juce::int64> { view.gridStepFrom (100000, true), view.gridStepFrom (100000, false),
+                                                        view.gridStepFrom (96000, false), view.gridStepFrom (96000, true), view.gridStepFrom (0, false) };
+        view.setShowBars (true);
+        const auto beats = std::vector<juce::int64> { view.gridStepFrom (30000, true), view.gridStepFrom (30000, false),
+                                                      view.gridStepFrom (24000, false), view.gridStepFrom (0, false) };
+        view.setShowBars (false);
+        check (seconds == std::vector<juce::int64> { 192000, 96000, 0, 192000, 0 } && beats == std::vector<juce::int64> { 48000, 24000, 0, 0 },
+               "nudge: grid points either side of a frame, in seconds and in beats, never before 0");
+
+        mouse.click ({ x (900000), laneY (0) });
+        view.setCursor (100000);
+        view.nudge (true);
+        const auto cursorNudged = view.getCursor();
+
+        mouse.click ({ x (70000), laneY (0) });
+        mouse.click ({ x (140000), laneY (1) }, juce::ModifierKeys::shiftModifier);
+        mouse.click ({ x (70000), laneY (0) }, juce::ModifierKeys::shiftModifier);
+        mouse.click ({ x (70000), laneY (0) }, juce::ModifierKeys::shiftModifier);   // a, clicked last
+        view.nudge (true);
+        view.nudge (true);
+        Mouse::settle();
+        const auto twice = std::pair (clip (a).position, clip (b).position);
+        engine.session.undo();
+        Mouse::settle();
+        const auto undone = std::pair (clip (a).position, clip (b).position);
+        view.nudge (false);
+        view.nudge (false);
+        Mouse::settle();
+        check (cursorNudged == 192000 && twice == std::pair<juce::int64, juce::int64> (192000, 264000)
+                   && undone == std::pair<juce::int64, juce::int64> (48000, 120000)
+                   && clip (a).position == 0 && clip (b).position == 72000 && engine.session.getUndoDescription() == "Nudge Clips",
+               "nudge: the cursor, or the selected clips together, move to the next grid point, and a run of nudges is one undo step");
+        engine.session.undo();
+        Mouse::settle();
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }
