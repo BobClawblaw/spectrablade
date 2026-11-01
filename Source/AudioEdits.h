@@ -51,6 +51,9 @@ namespace AudioEdits
 
     /** Silences one channel only; nullptr when the audio has no such channel. */
     Snapshot silenceChannel (const AudioSnapshot&, juce::int64 start, juce::int64 end, int channel);
+
+    /** Replaces channel `to` with a copy of channel `from`; nullptr when either is missing or they are the same. */
+    Snapshot copyChannel (const AudioSnapshot&, juce::int64 start, juce::int64 end, int from, int to);
     Snapshot reverse (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
     /** Takes each channel's average level over [start, end) out of it, so it sits centred on 0. */

@@ -216,6 +216,16 @@ Snapshot silenceChannel (const AudioSnapshot& s, juce::int64 start, juce::int64 
     return processRange (s, start, end, [channel] (auto& b) { b.clear (channel, 0, b.getNumSamples()); });
 }
 
+Snapshot copyChannel (const AudioSnapshot& s, juce::int64 start, juce::int64 end, int from, int to)
+{
+    const auto n = s.getNumChannels();
+
+    if (from < 0 || to < 0 || from >= n || to >= n || from == to)
+        return nullptr;
+
+    return processRange (s, start, end, [from, to] (auto& b) { b.copyFrom (to, 0, b, from, 0, b.getNumSamples()); });
+}
+
 Snapshot reverse (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (auto& b) { b.reverse (0, b.getNumSamples()); });

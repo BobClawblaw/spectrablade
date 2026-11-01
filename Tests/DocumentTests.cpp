@@ -370,6 +370,17 @@ namespace
         check (onlyLeft && ! AudioEdits::silenceChannel (*twoSnap, 0, 1000, -1) && ! AudioEdits::silenceChannel (*rampSnap, 0, 1000, 1),
                "silence one channel: only that channel zeroed, only in the range; a channel the audio lacks refused");
 
+        const auto rightOnBoth = readAll (*AudioEdits::copyChannel (*twoSnap, 100, 900, 1, 0));
+        auto copiedOver = rightOnBoth.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && copiedOver; ++i)
+            copiedOver = juce::exactlyEqual (rightOnBoth.getSample (0, i), twoRamps.getSample (i >= 100 && i < 900 ? 1 : 0, i))
+                         && juce::exactlyEqual (rightOnBoth.getSample (1, i), twoRamps.getSample (1, i));
+
+        check (copiedOver && ! AudioEdits::copyChannel (*twoSnap, 0, 1000, 1, 1) && ! AudioEdits::copyChannel (*twoSnap, 0, 1000, 0, 2)
+                   && ! AudioEdits::copyChannel (*rampSnap, 0, 1000, 0, 1),
+               "copy one channel to the other: the target replaced in the range, the source untouched; same or missing channels refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);
