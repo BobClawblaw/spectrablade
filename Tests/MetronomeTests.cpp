@@ -186,6 +186,99 @@ namespace
                "metronome: with the device at another rate, it stays silent");
     }
 
+    /** The click expected at a session frame on its tempo map. */
+    float clickOnMap (const SessionState& s, juce::int64 frame)
+    {
+        const auto map = s.tempoMap();
+        const auto beat = map.beatAt (frame);
+        return Metronome::sample (frame - map.beatFrame (beat), map.barAndBeat (beat).second == 0, s.sampleRate);
+    }
+
+    void testTempoMap()
+    {
+        // 120 a minute in fours, 90 in threes from bar 2 (counted from 0), 150 in fours from bar 4.
+        SessionState s;
+        s.sampleRate = rate;
+        const auto refused = ! SessionEdits::setTempoChange (s, { 0, 90.0, 3 }) && ! SessionEdits::setTempoChange (s, { 2, 19.0, 3 })
+                             && ! SessionEdits::setTempoChange (s, { 2, 90.0, 17 });
+        const auto added = SessionEdits::setTempoChange (s, { 4, 150.0, 4 }) && SessionEdits::setTempoChange (s, { 2, 100.0, 3 })
+                           && SessionEdits::setTempoChange (s, { 2, 90.0, 3 }) && ! SessionEdits::setTempoChange (s, { 2, 90.0, 3 });
+        check (refused && added && s.tempoChanges.size() == 2 && s.tempoChanges[0].bar == 2 && juce::exactlyEqual (s.tempoChanges[0].tempo, 90.0)
+                   && s.tempoChanges[1].bar == 4,
+               "tempo map: changes after the first bar, in range, one a bar (replaced), kept in order");
+
+        const auto map = s.tempoMap();
+        check (map.beatFrame (8) == 192000 && map.beatFrame (9) == 224000 && map.beatFrame (14) == 384000 && map.beatFrame (15) == 403200
+                   && map.beatAt (223999) == 8 && map.beatAt (224000) == 9 && map.beatAt (-1) == -1
+                   && map.barAndBeat (13) == std::pair<juce::int64, int> (3, 2) && map.barAndBeat (14) == std::pair<juce::int64, int> (4, 0)
+                   && map.barFrame (3) == 288000 && map.barAt (383999) == 3 && map.barAt (384000) == 4
+                   && juce::exactlyEqual (map.tempoAt (191999), 120.0) && juce::exactlyEqual (map.tempoAt (192000), 90.0) && map.beatsPerBarAt (300000) == 3
+                   && juce::exactlyEqual (map.shortestBeat(), 19200.0) && juce::exactlyEqual (map.shortestBar(), 76800.0),
+               "tempo map: beats, bars, tempo and beats in a bar follow each change from its bar on");
+
+        std::vector<juce::int64> bars, beats;
+        map.forEachLine (150000, 420000, Metronome::Grid { 2 }, [&] (juce::int64 frame, juce::int64) { bars.push_back (frame); });
+        map.forEachLine (370000, 410000, Metronome::Grid {}, [&] (juce::int64 frame, juce::int64) { beats.push_back (frame); });
+        check (bars == std::vector<juce::int64> { 192000, 384000 } && beats == std::vector<juce::int64> { 384000, 403200 }
+                   && map.linesAround (300000, {}) == std::pair<juce::int64, juce::int64> (288000, 320000)
+                   && map.linesAround (300000, Metronome::Grid { 2 }) == std::pair<juce::int64, juce::int64> (192000, 384000),
+               "tempo map: grid lines every beat or every two bars across the changes");
+
+        // Beats between frames: every frame lies in the beat beatAt gives, and with no changes the
+        // beats are the plain grid's.
+        SessionState odd;
+        odd.sampleRate = 44100.0;
+        odd.tempo = 133.7;
+        odd.beatsPerBar = 3;
+        const auto plain = odd.tempoMap();
+        auto same = true;
+
+        for (juce::int64 b = -5; b < 3000; ++b)
+            same = same && plain.beatFrame (b) == Metronome::beatFrame (b, 133.7, 44100.0);
+
+        SessionEdits::setTempoChange (odd, { 3, 97.3, 5 });
+        SessionEdits::setTempoChange (odd, { 7, 211.1, 7 });
+        const auto oddMap = odd.tempoMap();
+        auto inside = true;
+
+        for (juce::int64 frame = -100; frame < 800000; frame += 37)
+        {
+            const auto beat = oddMap.beatAt (frame);
+            inside = inside && oddMap.beatFrame (beat) <= frame && frame < oddMap.beatFrame (beat + 1);
+        }
+
+        check (same && inside, "tempo map: with no changes the plain grid exactly; with changes, every frame inside the beat it is in");
+
+        // The click follows the map: from bar 1 at 63066, 200 a minute in twos.
+        auto clicking = toneSession();
+        SessionEdits::setTempoChange (clicking, { 1, 200.0, 2 });
+        Session session;
+        session.reset (clicking, {});
+        const juce::int64 start = 30011;
+        Rig on (session);
+        on.player.setMetronome (true);
+        on.player.play (start, -1);
+        on.run (220);
+        on.player.pause();
+        auto followed = true;
+
+        for (size_t j = 0; j < on.sent[2].size(); ++j)
+            followed = followed && on.sent[2][j] == clickOnMap (clicking, start + (juce::int64) j);
+
+        const auto clickStarts = [&] (juce::int64 frame) { return on.sent[2][(size_t) (frame - start + 1)] != 0.0f && on.sent[2][(size_t) (frame - start - 1)] == 0.0f; };
+        check (followed && clickStarts (63066) && clickStarts (63066 + 14400) && ! clickStarts (63066 + 21022),
+               "tempo map: the metronome clicks on the changed tempo from its bar, bit for bit");
+
+        // Snapping to the grid follows it too.
+        SessionSnap::Targets grid;
+        grid.beatGrid = Metronome::Grid {};
+        SessionSnap::Targets everyBar;
+        everyBar.beatGrid = Metronome::Grid { 1 };
+        check (SessionSnap::snap (s, 224000 + 300, 1000, grid) == 224000 && SessionSnap::snap (s, 288000 - 700, 1000, everyBar) == 288000
+                   && SessionSnap::snap (s, 256000, 1000, everyBar) == 256000,
+               "tempo map: snapping lands on the beats and bars of the changed tempo");
+    }
+
     void testSnapping()
     {
         // At 133.7 a minute and 44.1 kHz beats fall between frames; snapping lands on the frame
@@ -198,13 +291,13 @@ namespace
         const auto beat = [&] (juce::int64 b) { return Metronome::beatFrame (b, s.tempo, s.sampleRate); };
 
         SessionSnap::Targets beats;
-        beats.gridBeats = 1;
+        beats.beatGrid = Metronome::Grid {};
         check (SessionSnap::snap (s, beat (10) + 37, 100, beats) == beat (10) && SessionSnap::snap (s, beat (11) - 41, 100, beats) == beat (11)
                    && SessionSnap::snap (s, beat (10) + 500, 100, beats) == beat (10) + 500,
                "beat snapping: a frame near a beat lands on the beat's frame; one further than the tolerance stays put");
 
         SessionSnap::Targets bars;
-        bars.gridBeats = 3;
+        bars.beatGrid = Metronome::Grid { 1 };
         check (SessionSnap::snap (s, beat (11) - 5, 20000, bars) == beat (12) && SessionSnap::snap (s, beat (10) + 5, 20000, bars) == beat (9)
                    && SessionSnap::snap (s, beat (10) + 5, 100, bars) == beat (10) + 5,
                "beat snapping: on a grid of bars, only bar starts are targets");
@@ -231,6 +324,16 @@ namespace
 
         check (error.isEmpty() && loaded.error.isEmpty() && juce::exactlyEqual (loaded.state.tempo, 93.25) && loaded.state.beatsPerBar == 7,
                "metronome: the tempo and beats in a bar come back from a session file");
+
+        auto changed = s;
+        SessionEdits::setTempoChange (changed, { 8, 141.5, 5 });
+        SessionEdits::setTempoChange (changed, { 3, 60.0, 2 });
+        const auto changedFile = juce::File::createTempFile (".sbsession");
+        const auto changedError = SessionFile::save (changed, changedFile);
+        const auto changedLoaded = SessionFile::load (changedFile, formats);
+        changedFile.deleteFile();
+        check (changedError.isEmpty() && changedLoaded.state.tempoChanges == changed.tempoChanges && changedLoaded.state.tempoChanges.size() == 2,
+               "tempo map: the changes come back from a session file, in order");
         check (juce::exactlyEqual (SessionState().tempo, 120.0) && SessionState().beatsPerBar == 4,
                "metronome: a new session is 120 a minute, four beats in a bar");
     }
@@ -239,6 +342,7 @@ namespace
 void runMetronomeTests (juce::AudioFormatManager& formats)
 {
     testGrid();
+    testTempoMap();
     testClicks();
     testSnapping();
     testFile (formats);

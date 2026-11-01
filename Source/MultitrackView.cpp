@@ -1360,7 +1360,7 @@ SessionSnap::Targets MultitrackView::snapTargets (juce::uint32 ignoreClip, bool 
     targets.ignoreClip = ignoreClip;
 
     if (showBars)
-        targets.gridBeats = rulerBeats().second;
+        targets.beatGrid = rulerBeats().second;
     else
         targets.gridStep = (juce::int64) std::llround (rulerTick() * shown().sampleRate);
 
@@ -1392,48 +1392,70 @@ juce::int64 MultitrackView::snapped (juce::int64 frame, juce::uint32 ignoreClip,
     return SessionSnap::snap (*state, frame, snapTolerance(), snapTargets (ignoreClip, toCursorAndRange));
 }
 
-std::pair<int, int> MultitrackView::rulerBeats() const
+std::pair<Metronome::Grid, Metronome::Grid> MultitrackView::rulerBeats() const
 {
     // Labels at least 50 pixels apart: every beat, or every 1, 2, 4... bars. Marks (and the snap
-    // grid) every beat while beats are 8 pixels apart, else on the labels.
-    const auto& s = shown();
-    const auto beatPixels = 60.0 * s.sampleRate / s.tempo / framesPerPixel;
-    const auto perBar = juce::jmax (1, s.beatsPerBar);
-    auto label = 1;
+    // grid) every beat while beats are 8 pixels apart, else on the labels. The shortest beat and
+    // bar anywhere in the tempo map decide, so the spacing holds at every tempo.
+    const auto map = shown().tempoMap();
+    const auto beatPixels = map.shortestBeat() / framesPerPixel, barPixels = map.shortestBar() / framesPerPixel;
+    Metronome::Grid label;
 
     if (beatPixels < 50.0)
-        for (label = perBar; label * beatPixels < 50.0 && label < (1 << 24);)
-            label *= 2;
+        for (label.bars = 1; label.bars * barPixels < 50.0 && label.bars < (1 << 24);)
+            label.bars *= 2;
 
-    return { label, beatPixels >= 8.0 ? 1 : label };
+    return { label, beatPixels >= 8.0 ? Metronome::Grid {} : label };
 }
 
 void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area) const
 {
     const auto& s = shown();
-    const auto perBar = juce::jmax (1, s.beatsPerBar);
-    const auto [labelBeats, markBeats] = rulerBeats();
-    const auto first = juce::jmax ((juce::int64) 0, Metronome::beatAt (frameForX ((float) area.getX()), s.tempo, s.sampleRate));
-    const auto last = Metronome::beatAt (frameForX ((float) area.getRight()), s.tempo, s.sampleRate);
+    const auto map = s.tempoMap();
+    const auto [label, mark] = rulerBeats();
+    const auto first = juce::jmax ((juce::int64) 0, frameForX ((float) area.getX())), last = frameForX ((float) area.getRight());
+    const auto changeAt = [&s] (juce::int64 bar)
+    {
+        return std::find_if (s.tempoChanges.begin(), s.tempoChanges.end(), [bar] (auto& c) { return c.bar == bar; });
+    };
     g.setFont (11.0f);
 
-    for (auto beat = first / markBeats * markBeats; beat <= last; beat += markBeats)
+    map.forEachLine (first, last, mark, [&] (juce::int64 frame, juce::int64 beat)
     {
-        const auto x = xForFrame (Metronome::beatFrame (beat, s.tempo, s.sampleRate));
-        const auto labelled = beat % labelBeats == 0;
-        g.setColour (juce::Colours::grey);
-        g.drawVerticalLine ((int) x, (float) area.getBottom() - (labelled ? 8.0f : 4.0f), (float) area.getBottom());
+        const auto x = xForFrame (frame);
+        const auto [bar, inBar] = map.barAndBeat (beat);
+        const auto labelled = label.bars == 0 || (inBar == 0 && bar % label.bars == 0);
+        const auto change = inBar == 0 ? changeAt (bar) : s.tempoChanges.end();
+        g.setColour (change != s.tempoChanges.end() ? juce::Colour (0xfff2cc60) : juce::Colours::grey);
+        g.drawVerticalLine ((int) x, change != s.tempoChanges.end() ? (float) area.getY() : (float) area.getBottom() - (labelled ? 8.0f : 4.0f),
+                            (float) area.getBottom());
 
-        if (! labelled)
-            continue;
+        if (! labelled && change == s.tempoChanges.end())
+            return;
 
         // Bars count from 1, and a beat within a bar from 1: "5" is bar 5, "5.3" its third beat.
-        const auto bar = beat / perBar + 1, inBar = beat % perBar + 1;
+        // A bar where the tempo changes shows the new tempo and time signature after its number.
+        const auto text = inBar == 0 ? juce::String (bar + 1) : juce::String (bar + 1) + "." + juce::String (inBar + 1);
+        const auto box = juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 120.0f, (float) area.getHeight() - 4.0f);
         g.setColour (juce::Colours::lightgrey);
-        g.drawText (inBar == 1 ? juce::String (bar) : juce::String (bar) + "." + juce::String (inBar),
-                    juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 60.0f, (float) area.getHeight() - 4.0f),
-                    juce::Justification::centredLeft, false);
-    }
+        g.drawText (text, box, juce::Justification::centredLeft, false);
+
+        if (change != s.tempoChanges.end())
+        {
+            g.setColour (juce::Colour (0xfff2cc60));
+            g.drawText (juce::String (change->tempo, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") + " bpm, " + juce::String (change->beatsPerBar) + " beats",
+                        box.withTrimmedLeft (juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), text) + 5.0f),
+                        juce::Justification::centredLeft, false);
+        }
+    });
+
+    // Changes between the marks still show where they are.
+    for (auto& c : s.tempoChanges)
+        if (const auto frame = map.barFrame (c.bar); frame >= first && frame <= last && label.bars > 1 && c.bar % label.bars != 0)
+        {
+            g.setColour (juce::Colour (0xfff2cc60));
+            g.drawVerticalLine ((int) xForFrame (frame), (float) area.getY(), (float) area.getBottom());
+        }
 }
 
 void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) const
@@ -1641,15 +1663,14 @@ void MultitrackView::paint (juce::Graphics& g)
         if (showBars && ! s.tracks.empty())
         {
             const auto bottom = (float) juce::jmin (area.getBottom(), laneTop ((int) s.tracks.size()));
-            const auto markBeats = rulerBeats().second;
-            const auto first = juce::jmax ((juce::int64) 0, Metronome::beatAt (frameForX ((float) area.getX()), s.tempo, s.sampleRate));
-            const auto last = Metronome::beatAt (frameForX ((float) area.getRight()), s.tempo, s.sampleRate);
+            const auto map = s.tempoMap();
 
-            for (auto beat = first / markBeats * markBeats; beat <= last; beat += markBeats)
-            {
-                g.setColour (juce::Colours::white.withAlpha (beat % juce::jmax (1, s.beatsPerBar) == 0 ? 0.12f : 0.05f));
-                g.drawVerticalLine ((int) xForFrame (Metronome::beatFrame (beat, s.tempo, s.sampleRate)), (float) area.getY(), bottom);
-            }
+            map.forEachLine (juce::jmax ((juce::int64) 0, frameForX ((float) area.getX())), frameForX ((float) area.getRight()), rulerBeats().second,
+                             [&] (juce::int64 frame, juce::int64 beat)
+                             {
+                                 g.setColour (juce::Colours::white.withAlpha (map.barAndBeat (beat).second == 0 ? 0.12f : 0.05f));
+                                 g.drawVerticalLine ((int) xForFrame (frame), (float) area.getY(), bottom);
+                             });
         }
 
         if (! timeSelection.isEmpty())
@@ -2552,17 +2573,11 @@ juce::int64 MultitrackView::gridStepFrom (juce::int64 frame, bool later) const
 
     if (showBars)
     {
-        // Beats a mark apart; the beat starting at or before the frame is where to count from.
-        const auto step = (juce::int64) rulerBeats().second;
-        const auto beat = Metronome::beatAt (frame, s.tempo, s.sampleRate);
-        auto mark = (beat >= 0 ? beat : beat - step + 1) / step * step;
-
-        if (later)
-            mark += step;
-        else if (Metronome::beatFrame (mark, s.tempo, s.sampleRate) >= frame)
-            mark -= step;
-
-        return juce::jmax ((juce::int64) 0, Metronome::beatFrame (mark, s.tempo, s.sampleRate));
+        // The marks either side; one on the frame counts as before it.
+        const auto map = s.tempoMap();
+        const auto grid = rulerBeats().second;
+        const auto [below, above] = map.linesAround (frame, grid);
+        return juce::jmax ((juce::int64) 0, later ? above : below < frame ? below : map.linesAround (below - 1, grid).first);
     }
 
     const auto step = juce::jmax ((juce::int64) 1, (juce::int64) std::llround (rulerTick() * s.sampleRate));

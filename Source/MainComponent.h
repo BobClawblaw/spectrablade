@@ -146,7 +146,9 @@ private:
     void finishSessionRecording (const std::map<Recorder*, Recorder::Take>&);
     juce::File recordingsFolder() const;
     void showAudioSettings();
-    void showTempoDialog();
+    /** Asks for the session's tempo and beats in a bar from the start, or with atCursor, for a
+        tempo change at the bar the cursor is in (offering to remove one there). */
+    void showTempoDialog (bool atCursor);
     void showRecordingOptions();
     void toggleMixer();
     void toggleClipProperties();

@@ -352,8 +352,7 @@ void DocumentPlayerProcessor::addClicks (juce::AudioBuffer<float>& buffer, juce:
     const auto on = metronome.load();
     const auto until = countInEnd.load();
     const auto [loopFrom, loopTo] = sessionSource.getLoop();
-    const auto tempo = clickState->tempo;
-    const auto perBar = juce::jmax (1, clickState->beatsPerBar);
+    const auto map = clickState->tempoMap();
     auto* left = buffer.getWritePointer (2);
     auto* right = buffer.getWritePointer (3);
 
@@ -368,8 +367,8 @@ void DocumentPlayerProcessor::addClicks (juce::AudioBuffer<float>& buffer, juce:
         if (frame < 0 || ! (on || frame < until))
             continue;
 
-        const auto beat = Metronome::beatAt (frame, tempo, sourceRate);
-        left[i] = right[i] = Metronome::sample (frame - Metronome::beatFrame (beat, tempo, sourceRate), beat % perBar == 0, sourceRate);
+        const auto beat = map.beatAt (frame);
+        left[i] = right[i] = Metronome::sample (frame - map.beatFrame (beat), map.barAndBeat (beat).second == 0, sourceRate);
     }
 }
 

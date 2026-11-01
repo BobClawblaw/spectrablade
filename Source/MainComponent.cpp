@@ -55,7 +55,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -754,7 +754,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdPasteTime; ++id)
+    for (int id = cmdOpen; id <= cmdTempoChange; ++id)
         ids.add (id);
 }
 
@@ -900,6 +900,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('d', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
                             info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
+        case cmdTempoChange: info.setInfo ("Tempo Change at Cursor...", "Change the tempo or beats in a bar from the bar the cursor is in, or remove a change there", "Multitrack", 0);
+                            info.setActive (multitrackMode && ! isRecording()); break;
         case cmdTempo:      info.setInfo ("Tempo...", "The session's tempo and beats in a bar", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
         case cmdInputMonitoring: info.setInfo ("Input Monitoring", "Hear each armed track's input through its effects, volume and pan", "Multitrack", 0);
@@ -1152,7 +1154,10 @@ bool MainComponent::perform (const InvocationInfo& info)
             commands.commandStatusChanged();
             break;
         case cmdTempo:
-            showTempoDialog();
+            showTempoDialog (false);
+            break;
+        case cmdTempoChange:
+            showTempoDialog (true);
             break;
         case cmdBarsAndBeats:
             multitrack.setShowBars (! multitrack.isShowingBars());
@@ -1235,7 +1240,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1880,21 +1885,44 @@ void MainComponent::showRecordingOptions()
     }), true);
 }
 
-void MainComponent::showTempoDialog()
+void MainComponent::showTempoDialog (bool atCursor)
 {
     const auto state = engine.session.getState();
-    auto* box = new juce::AlertWindow ("Tempo", "The metronome clicks on this tempo, from the start of the session.",
+    const auto map = state->tempoMap();
+    const auto bar = atCursor ? map.barAt (multitrack.getCursor()) : (juce::int64) 0;
+    const auto existing = std::find_if (state->tempoChanges.begin(), state->tempoChanges.end(), [bar] (auto& c) { return c.bar == bar; });
+    const auto hasChange = existing != state->tempoChanges.end();
+    const auto barFrame = map.barFrame (bar);
+    auto* box = new juce::AlertWindow (bar == 0 ? "Tempo" : "Tempo Change at Bar " + juce::String (bar + 1),
+                                       bar == 0 ? "The metronome clicks on this tempo from the start of the session, up to the first tempo change."
+                                                : "The tempo and beats in a bar from the start of bar " + juce::String (bar + 1)
+                                                      + " (where the cursor is) up to the next change. Clips stay where they are.",
                                        juce::MessageBoxIconType::NoIcon);
-    box->addTextEditor ("tempo", juce::String (state->tempo, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."), "Beats a minute (20 to 400)");
-    box->addTextEditor ("beats", juce::String (state->beatsPerBar), "Beats in a bar (1 to 16)");
+    box->addTextEditor ("tempo", juce::String (hasChange ? existing->tempo : map.tempoAt (barFrame), 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."),
+                        "Beats a minute (20 to 400)");
+    box->addTextEditor ("beats", juce::String (hasChange ? existing->beatsPerBar : map.beatsPerBarAt (barFrame)), "Beats in a bar (1 to 16)");
     box->getTextEditor ("tempo")->setInputRestrictions (7, ".0123456789");
     box->getTextEditor ("beats")->setInputRestrictions (2, "0123456789");
     box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+
+    if (hasChange)
+        box->addButton ("Remove", 2);
+
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
     box->enterModalState (true, juce::ModalCallbackFunction::create (
-        [this, box] (int result)
+        [this, box, bar] (int result)
         {
+            if (result == 2)
+            {
+                auto next = *engine.session.getState();
+
+                if (SessionEdits::removeTempoChange (next, bar))
+                    engine.session.apply (std::move (next), "Remove Tempo Change");
+
+                return;
+            }
+
             if (result != 1)
                 return;
 
@@ -1908,6 +1936,15 @@ void MainComponent::showTempoDialog()
             }
 
             auto next = *engine.session.getState();
+
+            if (bar > 0)
+            {
+                if (SessionEdits::setTempoChange (next, { bar, tempo, beats }))
+                    engine.session.apply (std::move (next), "Tempo Change");
+
+                return;
+            }
+
             next.tempo = tempo;
             next.beatsPerBar = beats;
             engine.session.apply (std::move (next), "Tempo");
@@ -3366,9 +3403,12 @@ void MainComponent::startSessionRecording()
     recordLatency = engine.getRoundTripLatency();
     recordingLoop = loopRecording && ! range.isEmpty();
 
-    // A count-in starts one bar before the punch-in, with clicks up to it; otherwise the pre-roll.
-    const auto& now = *session.getState();
-    const auto from = countIn ? juce::jmax ((juce::int64) 0, punchIn - Metronome::barFrames (now.tempo, now.beatsPerBar, now.sampleRate))
+    // A count-in starts a bar (as long as the one the punch-in is in) before the punch-in, with
+    // clicks up to it; otherwise the pre-roll.
+    const auto now = session.getState();
+    const auto map = now->tempoMap();
+    const auto bar = map.barAt (punchIn);
+    const auto from = countIn ? juce::jmax ((juce::int64) 0, punchIn - (map.barFrame (bar + 1) - map.barFrame (bar)))
                               : rolls.startFrame (punchIn, deviceRate);
     player.setCountIn (countIn ? punchIn : -1);
 

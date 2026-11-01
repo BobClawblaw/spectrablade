@@ -357,7 +357,7 @@ private:
     juce::int64 snapped (juce::int64 frame, juce::uint32 ignoreClip = 0, bool toCursorAndRange = true) const;
 
     /** In bars and beats: beats between ruler labels, and between marks (the snap grid). */
-    std::pair<int, int> rulerBeats() const;
+    std::pair<Metronome::Grid, Metronome::Grid> rulerBeats() const;
     void drawBarsRuler (juce::Graphics&, juce::Rectangle<int> area) const;
     SessionSnap::Targets snapTargets (juce::uint32 ignoreClip, bool toCursorAndRange) const;
     juce::int64 snapTolerance() const;

@@ -1084,6 +1084,37 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
     return true;
 }
 
+bool setTempoChange (SessionState& s, Metronome::TempoChange change)
+{
+    if (change.bar < 1 || change.tempo < 20.0 || change.tempo > 400.0 || change.beatsPerBar < 1 || change.beatsPerBar > 16)
+        return false;
+
+    auto& changes = s.tempoChanges;
+    const auto at = std::lower_bound (changes.begin(), changes.end(), change.bar, [] (auto& c, juce::int64 bar) { return c.bar < bar; });
+
+    if (at != changes.end() && at->bar == change.bar)
+    {
+        if (*at == change)
+            return false;
+
+        *at = change;
+    }
+    else
+    {
+        changes.insert (at, change);
+    }
+
+    return true;
+}
+
+bool removeTempoChange (SessionState& s, juce::int64 bar)
+{
+    auto& changes = s.tempoChanges;
+    const auto before = changes.size();
+    changes.erase (std::remove_if (changes.begin(), changes.end(), [bar] (auto& c) { return c.bar == bar; }), changes.end());
+    return changes.size() != before;
+}
+
 juce::uint32 duplicateTrack (SessionState& s, int track)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))
@@ -1279,15 +1310,14 @@ namespace
             }
         }
 
-        if (targets.gridBeats > 0)
+        if (targets.beatGrid.has_value())
         {
-            // The grid beats either side of the frame.
-            const auto beat = Metronome::beatAt (frame, s.tempo, s.sampleRate);
-            const auto below = (beat >= 0 ? beat : beat - targets.gridBeats + 1) / targets.gridBeats * targets.gridBeats;
+            // The grid lines either side of the frame.
+            const auto [below, above] = s.tempoMap().linesAround (frame, *targets.beatGrid);
 
-            for (auto b : { below, below + targets.gridBeats })
-                if (b >= 0)
-                    consider (Metronome::beatFrame (b, s.tempo, s.sampleRate));
+            for (auto line : { below, above })
+                if (line >= 0)
+                    consider (line);
         }
         else if (targets.gridStep > 0)
         {
@@ -1578,6 +1608,14 @@ juce::String save (const SessionState& state, const juce::File& target,
         }
     }
 
+    for (auto& c : state.tempoChanges)
+    {
+        auto* change = root.createNewChildElement ("TEMPO");
+        change->setAttribute ("bar", juce::String (c.bar));
+        change->setAttribute ("tempo", c.tempo);
+        change->setAttribute ("beatsPerBar", c.beatsPerBar);
+    }
+
     for (auto& m : state.markers)
     {
         auto* marker = root.createNewChildElement ("MARKER");
@@ -1750,6 +1788,11 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     }
 
     MarkerEdits::sort (state.markers);
+
+    for (auto* changeXml : root->getChildWithTagNameIterator ("TEMPO"))
+        SessionEdits::setTempoChange (state, { changeXml->getStringAttribute ("bar").getLargeIntValue(),
+                                               juce::jlimit (20.0, 400.0, changeXml->getDoubleAttribute ("tempo", 120.0)),
+                                               juce::jlimit (1, 16, changeXml->getIntAttribute ("beatsPerBar", 4)) });
 
     // Indices to ids; sends to anything but a bus are dropped.
     const auto pending = state.tracks;

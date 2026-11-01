@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioDocument.h"
+#include "Metronome.h"
 
 //==============================================================================
 /** A clip: a stretch of an audio file placed on a track. The audio is shared, never copied. */
@@ -181,14 +182,19 @@ struct SessionTrack
 struct SessionState
 {
     double sampleRate = 48000.0;
-    double tempo = 120.0;                  // beats a minute, for the metronome
+    double tempo = 120.0;                  // beats a minute, for the metronome, from the start
     int beatsPerBar = 4;
+    std::vector<Metronome::TempoChange> tempoChanges;   // at later bars, sorted by bar, one a bar
     std::vector<SessionTrack> tracks;
     Markers markers;                       // points and regions on the session's time, kept sorted
     juce::uint32 nextId = 1;
 
     /** The end of the last clip. */
     juce::int64 getLength() const;
+
+    /** The beats of the tempo and its changes. It refers to tempoChanges, so it lasts only as
+        long as this state, unchanged. */
+    Metronome::TempoMap tempoMap() const noexcept { return { tempo, beatsPerBar, tempoChanges, sampleRate }; }
     bool anySolo() const;
 
     /** Adds an empty track named "Track n" and returns it. */
@@ -369,6 +375,12 @@ namespace SessionEdits
         stay as they are, where they are. False when nothing changed. */
     bool insertTime (SessionState&, juce::int64 at, juce::int64 length);
 
+    /** Puts a tempo change at its bar (after the first; the first bar's tempo is the session's),
+        replacing one there. Tempo 20 to 400, 1 to 16 beats in a bar; false outside those or when
+        it is already so. Clips and markers stay where they are in time. */
+    bool setTempoChange (SessionState&, Metronome::TempoChange);
+    bool removeTempoChange (SessionState&, juce::int64 bar);
+
     /** Copies [start, end) from every track: the clips across it cut to it (losing their fades
         on the cut sides), each envelope's line across it, and the markers in it as
         MarkerEdits::afterCrop has them. Empty (length 0) when the range is. */
@@ -407,8 +419,8 @@ namespace SessionSnap
 {
     /** What a dragged edge can snap to: the session start, the extra frames given (the cursor,
         a time range's edges), every clip's start and end but the ignored clip's, and a grid: with
-        gridBeats, every gridBeats-th beat of the session's tempo (the metronome's beats), else
-        with a grid step, every multiple of it. */
+        a beat grid, its lines on the session's tempo map (the metronome's beats), else with a grid
+        step, every multiple of it. */
     struct Targets
     {
         std::vector<juce::int64> extra;
@@ -416,7 +428,7 @@ namespace SessionSnap
         std::vector<juce::uint32> ignoreClips;   // more clips being dragged
         int ignoreMarker = -1;             // the index of a marker being dragged
         juce::int64 gridStep = 0;
-        int gridBeats = 0;
+        std::optional<Metronome::Grid> beatGrid;
     };
 
     /** The target nearest frame, when one is within tolerance frames; otherwise frame. */

@@ -1467,6 +1467,31 @@ void runMultitrackViewTests (AudioEngine& engine)
                    && engine.session.getUndoDescription() == "Paste Time" && engine.session.getState()->getLength() == 144000
                    && view.getTimeSelection() == juce::Range<juce::int64> (0, 48000) && view.getCursor() == 48000,
                "time edits: cut time takes the range out, paste time puts it in at the cursor, selected, with the cursor after it");
+
+        // On the beat grid, nudging steps follow a tempo change: 90 a minute in threes from bar 2.
+        auto changed = timed;
+        SessionEdits::setTempoChange (changed, { 2, 90.0, 3 });
+        engine.session.reset (changed, {});
+        view.zoomToRange ({ 0, 480000 });
+        view.setShowBars (true);
+        Mouse::settle();
+        const auto steps = std::vector<juce::int64> { view.gridStepFrom (300000, true), view.gridStepFrom (300000, false),
+                                                      view.gridStepFrom (288000, false), view.gridStepFrom (192000, false) };
+        juce::Image ruler (juce::Image::ARGB, view.getWidth(), view.getHeight(), true);
+        {
+            juce::Graphics g (ruler);
+            view.paintEntireComponent (g, false);
+        }
+        const auto changeX = (int) std::lround ((double) MultitrackView::headerWidth + (192000.0 - view.getVisibleFrames().getStart())
+                                                / (view.getVisibleFrames().getLength() / timelineWidth));
+        auto marked = false;
+
+        for (auto px = changeX - 1; px <= changeX + 1; ++px)
+            marked = marked || (ruler.getPixelAt (px, 2).getRed() > 200 && ruler.getPixelAt (px, 2).getBlue() < 140);
+
+        view.setShowBars (false);
+        check (steps == std::vector<juce::int64> { 320000, 288000, 256000, 168000 } && marked,
+               "tempo map: nudging steps by the beats either side of a tempo change, and the ruler marks the change");
     }
 
     engine.session.reset ({}, {});

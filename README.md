@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 60: a tempo map**
+- Multitrack > Tempo Change at Cursor... changes the tempo, the beats in a bar or both from the start of the bar the cursor is in, up to the next change; on a bar with a change it edits it, and Remove takes it out. Tempo... still sets the first bar's. Each is an undo step ("Tempo Change", "Remove Tempo Change") and is saved with the session.
+- The metronome, the count-in, the bars-and-beats ruler, the lane grid, snapping and nudging all follow the changes. Each beat is still rounded to the nearest frame from the start of the session, so with no changes everything is as before. The ruler marks a change with an amber line and its tempo and beats after the bar number; its label spacing is set by the shortest beat and bar in the session, so labels stay apart at every tempo. A count-in lasts as long as the bar the punch-in is in.
+- Clips, markers and envelopes stay where they are in time when the tempo changes, and time edits (Milestones 58 and 59) leave the changes at their bars.
+- Measured by the tests: the map's beats, bars, tempo and beats in a bar across two changes, frame for frame; with no changes, the plain grid's beats exactly (3,005 beats); with changes at awkward tempos, every 37th frame from -100 to 800,000 inside the beat it is said to be in; grid lines every beat and every two bars; snapping to the changed beats and bars; nudging across a change in the view and the amber mark on the drawn ruler; the click from the player following a change bit for bit; changes kept in order and refused outside the limits; and the changes through a session file. The dialog was not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
+
 **Milestone 59: copying and pasting time**
 - Multitrack > Copy Time copies the time range from every track and bus: the clips across it, cut to it (losing their fades on the cut sides, unlocked), each envelope's line across it (volume, pan and effect parameters), and the markers in it. Cut Time copies it, then deletes it as Delete Time does, as one undo step.
 - Paste Time puts the copied time in at the cursor as one undo step: room is made as Insert Time does, each track's clips go onto the track at the same place in the list (tracks past the last are left out), its envelope lines take the place of the held values, and its markers are added. The pasted time becomes the range and the cursor moves to its end, so pastes follow each other. It is refused for a session at another sample rate.
@@ -433,6 +439,7 @@ The tests run against the real machine:
 - The session overview: its span, clicking and dragging to scroll, and drawing.
 - Time edits: clearing, deleting and inserting time across every track, with envelopes, markers and locked clips.
 - Copying and pasting time: the mix, envelopes, markers, rates and tracks.
+- The tempo map: beats and bars across changes, the grid, snapping, nudging, the ruler, the click and the session file.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -486,4 +493,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a tempo map, with tempo and time-signature changes along the session that the ruler, grid, snapping and metronome follow
+1. Multitrack, continued: a marker list window for the session's markers and regions (jump, rename, delete), and exporting them as a CSV file
