@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 121: Find Next Silence**
+- Edit > Find Next Silence asks for a level (the one Trim Silence last used, -60 dB to start) and a time (half a second to start) and selects the next stretch where every channel stays at or below that level for at least that long, searching from the cursor or the end of the selection, and scrolls to it. The level it is given becomes the one Trim Silence and Select Audible Span use too, and the time is remembered while the app runs. When there is none it says so. Find Next Clipping now shares its search with it, unchanged in what it finds.
+- Measured by the tests: in 200,000 frames of a full-level tone, with a 100-frame gap, a 200-frame gap on the left channel only and a 70,000-frame gap crossing a block edge, asking for 150 frames finds exactly the long gap, asking for 100 finds the short one, and nothing is found past the long gap; the clipping test still passed after the search was shared. The dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 120: Find Next Clipping**
 - Edit > Find Next Clipping selects the next run of three or more frames where some channel is at or above 0.999 (within 0.009 dB of full scale), searching from the cursor, or from the end of the selection so that choosing it again moves on, and scrolls to it. When there is none it says so. Pairs well with Click and Pop Repair or Gain on the found run.
 - Measured by the tests: in 140,000 frames, two full-scale samples are passed over; three on the right channel straddling the 65,536-frame block edge are found as exactly 65,535 to 65,538; searching from there finds four samples of 0.9995 ending the file; past the end finds nothing; and with a run length of two the first pair is found. The command was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -762,6 +766,7 @@ The tests run against the real machine:
 - Normalizing each channel apart: both peaks to the level, a silent channel left silent.
 - Channel levels: peak, RMS and DC offset per channel, exact across blocks.
 - Find clipping: runs on any channel, across a block edge and at the end; short ones skipped.
+- Find silence: quiet on every channel for the time, across a block edge; short or one-sided gaps skipped.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -815,4 +820,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Find Silence, selecting the next stretch quieter than a level for at least a chosen time
+1. Editor: Markers at Silences, putting a marker in the middle of every stretch Find Next Silence would find, to split takes

@@ -273,6 +273,22 @@ namespace
                    && ! AudioEdits::nextClipping (*clippedSnap, 140000, 0.999f, 3) && AudioEdits::nextClipping (*clippedSnap, 0, 0.999f, 2) == juce::Range<juce::int64> (1000, 1002),
                "find clipping: runs of the length or longer, on any channel, across a block edge and at the end; shorter ones skipped");
 
+        // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
+        // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
+        juce::AudioBuffer<float> gaps (2, 200000);
+
+        for (int i = 0; i < 200000; ++i)
+            for (int ch = 0; ch < 2; ++ch)
+                gaps.setSample (ch, i, (i % 2 == 0 ? 0.5f : -0.5f)
+                                           * ((i >= 1000 && i < 1100) || (ch == 0 && i >= 5000 && i < 5200) || (i >= 60000 && i < 130000) ? 0.0f : 1.0f));
+
+        const auto gapSnap = AudioEdits::fromBuffer (std::move (gaps));
+        const auto quietLevel = juce::Decibels::decibelsToGain (-60.0f);
+        check (AudioEdits::nextQuiet (*gapSnap, 0, quietLevel, 150) == juce::Range<juce::int64> (60000, 130000)
+                   && AudioEdits::nextQuiet (*gapSnap, 0, quietLevel, 100) == juce::Range<juce::int64> (1000, 1100)
+                   && ! AudioEdits::nextQuiet (*gapSnap, 130000, quietLevel, 150),
+               "find silence: the first stretch quiet on every channel for the time, across a block edge; shorter or one-sided gaps skipped");
+
         // Balance: half right lowers the left by 3 dB, the right untouched.
         const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
         const auto halfRight = SessionMixer::panGains (0.5f, 2);

@@ -114,6 +114,8 @@ private:
     void trimSilence (float thresholdDb);
     void selectAudibleSpan();
     void findNextClipping();
+    void showFindSilence();
+    void findNextSilence (juce::int64 minFrames);
 
     /** What Find Next Clipping counts: samples within about 0.01 dB of full scale, three in a row. */
     static constexpr float clipLevel = 0.999f;
@@ -255,7 +257,8 @@ private:
     bool multitrackMode = false;
     FadeShape fadeShape = FadeShape::sCurve;   // the editor's Fade In and Fade Out
     bool normalizeChannelsApart = false;   // the Normalize dialog's last choice
-    float silenceThresholdDb = -60.0f;   // Trim Silence's last level, also used by Select Audible Span
+    float silenceThresholdDb = -60.0f;   // Trim Silence's last level, also used by Select Audible Span and Find Next Silence
+    double silenceMinSeconds = 0.5;      // Find Next Silence's last time
     RackView rackView { engine };
 
     std::unique_ptr<juce::FileChooser> chooser;

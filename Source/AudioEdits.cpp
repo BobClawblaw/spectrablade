@@ -414,40 +414,67 @@ std::vector<ChannelLevels> channelLevels (const AudioSnapshot& s, juce::int64 st
     return levels;
 }
 
-std::optional<juce::Range<juce::int64>> nextClipping (const AudioSnapshot& s, juce::int64 from, float level, int minRun)
+namespace
 {
-    constexpr juce::int64 blockSize = 65536;
-    const auto total = s.getNumFrames();
-    juce::int64 runStart = -1;
-
-    for (auto start = juce::jmax ((juce::int64) 0, from); start < total; start += blockSize)
+    /** The first run of at least minRun frames from `from` on for which matches (block, index) holds. */
+    template <typename Matches>
+    std::optional<juce::Range<juce::int64>> nextRun (const AudioSnapshot& s, juce::int64 from, juce::int64 minRun, Matches&& matches)
     {
-        const auto block = readRange (s, start, juce::jmin (total, start + blockSize));
+        constexpr juce::int64 blockSize = 65536;
+        const auto total = s.getNumFrames();
+        juce::int64 runStart = -1;
 
-        for (int i = 0; i < block.getNumSamples(); ++i)
+        for (auto start = juce::jmax ((juce::int64) 0, from); start < total; start += blockSize)
         {
-            auto loud = false;
+            const auto block = readRange (s, start, juce::jmin (total, start + blockSize));
 
-            for (int ch = 0; ch < block.getNumChannels() && ! loud; ++ch)
-                loud = std::abs (block.getSample (ch, i)) >= level;
-
-            const auto frame = start + i;
-
-            if (loud && runStart < 0)
-                runStart = frame;
-            else if (! loud && runStart >= 0)
+            for (int i = 0; i < block.getNumSamples(); ++i)
             {
-                if (frame - runStart >= minRun)
-                    return juce::Range<juce::int64> (runStart, frame);
+                const auto frame = start + i;
 
-                runStart = -1;
+                if (matches (block, i))
+                {
+                    if (runStart < 0)
+                        runStart = frame;
+                }
+                else if (runStart >= 0)
+                {
+                    if (frame - runStart >= minRun)
+                        return juce::Range<juce::int64> (runStart, frame);
+
+                    runStart = -1;
+                }
             }
         }
+
+        if (runStart >= 0 && total - runStart >= minRun)
+            return juce::Range<juce::int64> (runStart, total);
+
+        return std::nullopt;
     }
+}
 
-    if (runStart >= 0 && total - runStart >= minRun)
-        return juce::Range<juce::int64> (runStart, total);
+std::optional<juce::Range<juce::int64>> nextClipping (const AudioSnapshot& s, juce::int64 from, float level, int minRun)
+{
+    return nextRun (s, from, minRun, [level] (const juce::AudioBuffer<float>& b, int i)
+    {
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            if (std::abs (b.getSample (ch, i)) >= level)
+                return true;
 
-    return std::nullopt;
+        return false;
+    });
+}
+
+std::optional<juce::Range<juce::int64>> nextQuiet (const AudioSnapshot& s, juce::int64 from, float level, juce::int64 minFrames)
+{
+    return nextRun (s, from, juce::jmax ((juce::int64) 1, minFrames), [level] (const juce::AudioBuffer<float>& b, int i)
+    {
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            if (std::abs (b.getSample (ch, i)) > level)
+                return false;
+
+        return true;
+    });
 }
 }
