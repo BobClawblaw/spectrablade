@@ -681,6 +681,9 @@ void MultitrackView::showClipMenu (juce::uint32 clipId)
 
     menu.addItem ("Lock", true, areSelectedClipsLocked(), [safe] { if (safe != nullptr) safe->setSelectedClipsLocked (! safe->areSelectedClipsLocked()); });
     menu.addItem ("Mute", true, areSelectedClipsMuted(), [safe] { if (safe != nullptr) safe->setSelectedClipsMuted (! safe->areSelectedClipsMuted()); });
+    menu.addSeparator();
+    menu.addItem ("Group", canGroupSelectedClips(), false, [safe] { if (safe != nullptr) safe->groupSelectedClips(); });
+    menu.addItem ("Ungroup", areSelectedClipsGrouped(), false, [safe] { if (safe != nullptr) safe->ungroupSelectedClips(); });
     menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
 }
 
@@ -1525,7 +1528,8 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
 
     if (c.muted)
         name << "  (muted)";
-    g.drawText (name, title.withTrimmedLeft (12).withTrimmedRight (c.locked ? 24 : 10), juce::Justification::centredLeft, true);   // clear of the fade handles
+    const auto badges = (c.locked ? 20 : 0) + (c.groupId != 0 ? 20 : 0);
+    g.drawText (name, title.withTrimmedLeft (12).withTrimmedRight (badges > 0 ? badges + 4 : 10), juce::Justification::centredLeft, true);   // clear of the fade handles
 
     if (c.locked && title.getWidth() > 40)
     {
@@ -1537,6 +1541,14 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
                                juce::MathConstants<float>::halfPi, true);
         g.strokePath (shackle, juce::PathStrokeType (1.3f));
         g.fillRect (lockBody);
+    }
+
+    if (c.groupId != 0 && title.getWidth() > 40)
+    {
+        // Two chain links: the clip is in a group.
+        const auto box = title.removeFromRight (20).withSizeKeepingCentre (14, 8).toFloat();
+        g.drawRoundedRectangle (box.withWidth (8.0f), 3.0f, 1.3f);
+        g.drawRoundedRectangle (box.withTrimmedLeft (6.0f), 3.0f, 1.3f);
     }
 
     // Waveform: one peak per pixel column, each channel in its own band.
@@ -2129,6 +2141,9 @@ std::vector<juce::uint32> MultitrackView::getSelectedClips() const
 
 void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
 {
+    // A clip in a group brings the rest of its group with it, into the selection or out of it.
+    const auto group = SessionEdits::clipGroup (shown(), clipId);
+
     if (! adding)
     {
         selectedClips.clear();
@@ -2137,6 +2152,9 @@ void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
     else if (selectedClips.count (clipId) > 0)
     {
         selectedClips.erase (clipId);
+
+        for (auto id : group)
+            selectedClips.erase (id);
 
         if (selectedClip == clipId)
             selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
@@ -2152,7 +2170,48 @@ void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
     if (clipId != 0)
         selectedClips.insert (clipId);
 
+    selectedClips.insert (group.begin(), group.end());
     repaint();
+}
+
+bool MultitrackView::canGroupSelectedClips() const
+{
+    // Two or more, unless they already make up exactly one group.
+    const auto ids = getSelectedClips();
+
+    if (ids.size() < 2)
+        return false;
+
+    const auto group = SessionEdits::clipGroup (shown(), ids.front());
+    return std::set<juce::uint32> (group.begin(), group.end()) != std::set<juce::uint32> (ids.begin(), ids.end())
+        || ! areSelectedClipsGrouped();
+}
+
+bool MultitrackView::areSelectedClipsGrouped() const
+{
+    const auto& s = shown();
+
+    for (auto id : getSelectedClips())
+        if (const auto where = s.findClip (id); where.has_value() && s.tracks[(size_t) where->first].clips[(size_t) where->second].groupId != 0)
+            return true;
+
+    return false;
+}
+
+void MultitrackView::groupSelectedClips()
+{
+    auto next = *engine.session.getState();
+
+    if (canGroupSelectedClips() && SessionEdits::groupClips (next, getSelectedClips()) != 0)
+        engine.session.apply (std::move (next), "Group Clips");
+}
+
+void MultitrackView::ungroupSelectedClips()
+{
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::ungroupClips (next, getSelectedClips()))
+        engine.session.apply (std::move (next), "Ungroup Clips");
 }
 
 void MultitrackView::selectAllClips()

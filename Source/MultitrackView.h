@@ -140,6 +140,13 @@ public:
         "Fade Out Shape"); locked clips keep theirs. Right-click a clip for its fade shape menus. */
     void setSelectedClipsFadeShape (bool fadeOut, FadeShape);
 
+    /** Groups the selected clips, so a click on one selects them all (to move or delete them
+        together), or breaks up the groups they are in. Each is one undo step. */
+    bool canGroupSelectedClips() const;
+    bool areSelectedClipsGrouped() const;
+    void groupSelectedClips();
+    void ungroupSelectedClips();
+
     /** Selects a clip alone (and its track), puts the cursor at its start and scrolls it into
         view, keeping the zoom. False when there is no such clip. */
     bool showClip (juce::uint32 clipId);

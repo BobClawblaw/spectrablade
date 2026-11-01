@@ -1545,6 +1545,68 @@ void runMultitrackViewTests (AudioEngine& engine)
     }
 
     {
+        // Grouped clips: a click on one selects the group, and dragging it moves them all.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addTrack();
+        const auto a = SessionEdits::addClip (s, 0, juce::File ("/tmp/a.wav"), silence (48000), 0);
+        const auto b = SessionEdits::addClip (s, 0, juce::File ("/tmp/b.wav"), silence (48000), 240000);
+        const auto c = SessionEdits::addClip (s, 1, juce::File ("/tmp/c.wav"), silence (48000), 96000);
+        engine.session.reset (s, {});
+        view.zoomToFit();
+        view.setSnapping (false);
+        Mouse::settle();
+        const auto shown = view.getVisibleFrames();
+        const auto at = [&] (juce::int64 frame) { return (float) ((double) MultitrackView::headerWidth + ((double) frame - shown.getStart()) / (shown.getLength() / timelineWidth)); };
+
+        mouse.click ({ at (24000), bodyY });
+        mouse.click ({ at (264000), bodyY }, juce::ModifierKeys::shiftModifier);
+        const auto couldGroup = view.canGroupSelectedClips();
+        view.groupSelectedClips();
+        Mouse::settle();
+        const auto grouped = engine.session.getUndoDescription() == "Group Clips" && ! view.canGroupSelectedClips() && view.areSelectedClipsGrouped();
+
+        auto withC = *engine.session.getState();
+        SessionEdits::groupClips (withC, { a, b, c });
+        engine.session.apply (withC, "Group Clips");
+        Mouse::settle();
+        mouse.click ({ at (150000), bodyY });   // empty lane: nothing selected
+        const auto cleared = view.getSelectedClips().empty();
+        mouse.click ({ at (24000), bodyY });
+        const auto selected = view.getSelectedClips();
+        const auto wholeGroup = std::set<juce::uint32> (selected.begin(), selected.end()) == std::set<juce::uint32> { a, b, c };
+
+        mouse.drag ({ at (24000), bodyY }, { at (24000 + 48000), bodyY });
+        Mouse::settle();
+        const auto position = [&] (juce::uint32 id)
+        {
+            const auto& st = *engine.session.getState();
+            const auto where = st.findClip (id);
+            return st.tracks[(size_t) where->first].clips[(size_t) where->second].position;
+        };
+        const auto moved = position (a);
+        const auto together = moved > 40000 && moved < 56000 && position (b) == 240000 + moved && position (c) == 96000 + moved
+                              && engine.session.getState()->findClip (c)->first == 1;
+
+        mouse.click ({ at (264000 + moved), bodyY }, juce::ModifierKeys::shiftModifier);   // shift-click: the whole group out
+        const auto deselected = view.getSelectedClips().empty();
+        mouse.click ({ at (24000 + moved), bodyY });
+        view.ungroupSelectedClips();
+        Mouse::settle();
+        const auto ungroupStep = engine.session.getUndoDescription() == "Ungroup Clips";
+        mouse.click ({ at (150000 + moved), bodyY });
+        mouse.click ({ at (24000 + moved), bodyY });
+        const auto alone = view.getSelectedClips() == std::vector<juce::uint32> { a };
+        view.setSnapping (true);
+
+        check (couldGroup && grouped && cleared && wholeGroup && deselected && ungroupStep && alone,
+               "clip groups: grouping as an undo step, a click on one clip selecting its whole group across tracks, shift-click taking it out, and ungrouping");
+        check (together, "clip groups: dragging one clip moves its whole group by the same amount, each on its own track (moved "
+                             + juce::String (moved) + " frames)");
+    }
+
+    {
         // A frozen track: an icy wash over the lane where its frozen audio plays, past its clips.
         SessionState s;
         s.sampleRate = rate;

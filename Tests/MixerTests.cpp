@@ -733,6 +733,66 @@ namespace
                "freeze: a frozen track's audio kept in a session file and collected with it; missing, the track opens unfrozen and the file is named");
     }
 
+    void testClipGroups (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addTrack();
+        const auto a = SessionEdits::addClip (s, 0, juce::File ("/takes/a.wav"), constant (1, 4800, 0.1f), 0);
+        const auto b = SessionEdits::addClip (s, 0, juce::File ("/takes/b.wav"), constant (1, 4800, 0.1f), 9600);
+        const auto c = SessionEdits::addClip (s, 1, juce::File ("/takes/c.wav"), constant (1, 4800, 0.1f), 0);
+        const auto d = SessionEdits::addClip (s, 1, juce::File ("/takes/d.wav"), constant (1, 4800, 0.1f), 9600);
+        SessionEdits::setClipLocked (s, d, true);
+        const auto tooFew = SessionEdits::groupClips (s, { a, 999 }) == 0;
+        const auto first = SessionEdits::groupClips (s, { a, c });
+        const auto second = SessionEdits::groupClips (s, { b, d });
+        const auto sorted = [] (std::vector<juce::uint32> v) { std::sort (v.begin(), v.end()); return v; };
+        const auto groups = first != 0 && second != 0 && first != second && sorted (SessionEdits::clipGroup (s, c)) == sorted ({ a, c })
+                            && SessionEdits::clipGroup (s, d).size() == 2 && SessionEdits::clipGroup (s, 999).empty();
+
+        // Copies of a grouped clip don't join its group; split parts stay in it.
+        auto copies = s;
+        const auto pasted = SessionEdits::placeClip (copies, 0, copies.tracks[0].clips[0], 30000);
+        SessionEdits::splitClip (copies, a, 2400);
+        const auto copiesLeave = SessionEdits::clipGroup (copies, pasted) == std::vector<juce::uint32> { pasted }
+                                 && SessionEdits::clipGroup (copies, a).size() == 3;
+
+        // Regrouping a clip takes it from its old group; ungrouping breaks up the whole group.
+        const auto third = SessionEdits::groupClips (s, { a, b });
+        const auto regrouped = SessionEdits::clipGroup (s, c) == std::vector<juce::uint32> { c } && SessionEdits::clipGroup (s, d) == std::vector<juce::uint32> { d }
+                               && sorted (SessionEdits::clipGroup (s, a)) == sorted ({ a, b }) && third != 0;
+        auto ungrouped = s;
+        const auto broke = SessionEdits::ungroupClips (ungrouped, { a }) && SessionEdits::clipGroup (ungrouped, b) == std::vector<juce::uint32> { b }
+                           && ! SessionEdits::ungroupClips (ungrouped, { a, b });
+
+        const auto folder = juce::File::createTempFile ("groups");
+        folder.createDirectory();
+        const auto take = folder.getChildFile ("take.wav");
+        const auto written = AudioFileIO::save (*constant (1, 4800, 0.1f), rate, take, 24, engine.formatManager).isEmpty();
+
+        for (auto& t : s.tracks)
+            for (auto& clip : t.clips)
+                clip.source = take;
+
+        const auto sessionFile = folder.getChildFile ("Groups.sbsession");
+        const auto error = SessionFile::save (s, sessionFile);
+        const auto loaded = SessionFile::load (sessionFile, engine.formatManager);
+        folder.deleteRecursively();
+        const auto& lt = loaded.state.tracks;
+        const auto kept = lt.size() == 2 && lt[0].clips.size() == 2 && lt[1].clips.size() == 2
+                          && lt[0].clips[0].groupId != 0 && lt[0].clips[0].groupId == lt[0].clips[1].groupId
+                          && lt[1].clips[0].groupId != 0 && lt[1].clips[1].groupId != 0 && lt[1].clips[0].groupId != lt[1].clips[1].groupId
+                          && lt[1].clips[0].groupId != lt[0].clips[0].groupId && lt[1].clips[1].groupId != lt[0].clips[0].groupId
+                          && SessionEdits::clipGroup (loaded.state, lt[1].clips[1].id).size() == 1
+                          && lt[0].clips[0].groupId < loaded.state.nextId && lt[1].clips[1].groupId < loaded.state.nextId;
+
+        check (tooFew && groups && copiesLeave && regrouped && broke,
+               "clip groups: two or more clips, locked ones too; copies leave the group and split parts stay; regrouping and ungrouping");
+        check (written && error.isEmpty() && loaded.error.isEmpty() && kept,
+               "clip groups: kept in a session file, each group with a fresh id, a group left with one clip too");
+    }
+
     /** Two commands with default keys, as the main window has many. */
     struct TwoCommands final : public juce::ApplicationCommandTarget
     {
@@ -798,4 +858,5 @@ void runMixerTests (AudioEngine& engine)
     testFadeShapeFile (engine);
     testKeyShortcuts();
     testFrozenFile (engine);
+    testClipGroups (engine);
 }

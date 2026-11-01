@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 69: grouping clips**
+- Multitrack > Group Clips (Cmd G), also Group in a clip's right-click menu, groups the selected clips, on any tracks, locked ones too. Clicking any clip in a group then selects the whole group, so dragging it moves them all by the same amount, each on its own track, and deleting, nudging, locking, muting and the other edits on the selection act on them all; Shift-clicking a grouped clip takes the whole group out of the selection. Ungroup Clips (Cmd Shift G, or Ungroup in the menu) breaks up every group the selected clips are in. Grouping a clip again takes it out of its old group. Each is an undo step, and grouped clips show two chain links in their title bar.
+- Split parts of a grouped clip stay in its group; copies (Duplicate, Repeat, pasting, pasting time, Duplicate Track) don't join it. As before, a selection with a locked clip in it doesn't move. Select All and the other Select commands select what they match, not whole groups. Groups are saved with the session.
+- Measured by the tests: grouping two or more clips (fewer refused); a clip's group found across tracks; copies leaving the group and split parts staying in it; regrouping and ungrouping; groups through a session file, each with a fresh id; and, through the view, grouping as an undo step, a click selecting the whole group, a drag moving three clips on two tracks by the same 47,880 frames, Shift-click taking the group out, and ungrouping. The chain links, the menu items and the keys were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 68: freezing a track**
 - Multitrack > Freeze Track renders the selected track's clips through its pan and its effects, from the session's start to 5 seconds past its last clip so tails can ring out, to a 32-bit float file in the recordings folder, and the track then plays that file instead: its effects stop running, which frees the CPU they used. The item is ticked on a frozen track and reads Unfreeze Track, which plays the clips live again. Both are undo steps.
 - A frozen track keeps its volume, volume envelope, mute, solo and sends, which still act on the frozen audio. Its pan, pan envelope and effects are in the frozen audio, so changes to them are heard only after unfreezing. Its clips can't be moved, trimmed, split, muted or cleared; time edits (delete and insert time) leave the frozen audio where it is; and clips added, pasted, recorded or dropped onto it go to a new track instead. Its lane shows an icy wash where the frozen audio plays, with the word Frozen. Effect tails longer than 5 seconds are cut off.
@@ -486,6 +491,7 @@ The tests run against the real machine:
 - Loop playback in the file player, sample for sample.
 - Keyboard shortcuts: storing changes and restoring them over the defaults.
 - Freezing a track: the mix bit for bit, refused edits, the session file, collecting, and the lane.
+- Clip groups: the edits, the session file, and selecting and dragging a group in the view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -539,4 +545,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: grouping clips, so clips grouped together select, move and delete as one
+1. Multitrack, continued: clip gain envelopes, a volume line inside each clip that moves with it

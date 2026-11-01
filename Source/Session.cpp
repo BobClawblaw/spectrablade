@@ -1,6 +1,7 @@
 #include "Session.h"
 
 #include <numeric>
+#include <set>
 
 #include "AudioEdits.h"
 #include "AudioFileIO.h"
@@ -452,6 +453,63 @@ bool setClipColour (SessionState& s, juce::uint32 clipId, int colour)
     return true;
 }
 
+juce::uint32 groupClips (SessionState& s, const std::vector<juce::uint32>& clipIds)
+{
+    std::vector<SessionClip*> clips;
+
+    for (auto id : clipIds)
+        if (auto* c = find (s, id); c != nullptr && std::find (clips.begin(), clips.end(), c) == clips.end())
+            clips.push_back (c);
+
+    if (clips.size() < 2)
+        return 0;
+
+    const auto groupId = s.nextId++;
+
+    for (auto* c : clips)
+        c->groupId = groupId;
+
+    return groupId;
+}
+
+bool ungroupClips (SessionState& s, const std::vector<juce::uint32>& clipIds)
+{
+    std::set<juce::uint32> groups;
+
+    for (auto id : clipIds)
+        if (const auto* c = find (s, id); c != nullptr && c->groupId != 0)
+            groups.insert (c->groupId);
+
+    for (auto& t : s.tracks)
+        for (auto& c : t.clips)
+            if (groups.count (c.groupId) > 0)
+                c.groupId = 0;
+
+    return ! groups.empty();
+}
+
+std::vector<juce::uint32> clipGroup (const SessionState& s, juce::uint32 clipId)
+{
+    const auto where = s.findClip (clipId);
+
+    if (! where.has_value())
+        return {};
+
+    const auto groupId = s.tracks[(size_t) where->first].clips[(size_t) where->second].groupId;
+
+    if (groupId == 0)
+        return { clipId };
+
+    std::vector<juce::uint32> ids;
+
+    for (auto& t : s.tracks)
+        for (auto& c : t.clips)
+            if (c.groupId == groupId)
+                ids.push_back (c.id);
+
+    return ids;
+}
+
 bool setClipMuted (SessionState& s, juce::uint32 clipId, bool muted)
 {
     auto* c = find (s, clipId);
@@ -606,6 +664,7 @@ juce::uint32 placeClip (SessionState& s, int track, const SessionClip& clip, juc
     auto copy = clip;
     copy.id = s.nextId++;
     copy.locked = false;
+    copy.groupId = 0;
     copy.position = juce::jmax ((juce::int64) 0, position);
     clearRange (s, track, copy.position, copy.getEnd());
     s.tracks[(size_t) track].clips.push_back (std::move (copy));
@@ -1148,6 +1207,7 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
         for (auto c : track.isFrozen() ? std::vector<SessionClip>() : copied.clips)
         {
             c.id = s.nextId++;
+            c.groupId = 0;
             c.position += at;
             track.clips.push_back (std::move (c));
         }
@@ -1267,6 +1327,7 @@ juce::uint32 duplicateTrack (SessionState& s, int track)
     {
         c.id = s.nextId++;
         c.locked = false;
+        c.groupId = 0;
     }
 
     s.tracks.insert (s.tracks.begin() + track + 1, std::move (copy));
@@ -1748,6 +1809,9 @@ juce::String save (const SessionState& state, const juce::File& target,
             if (c.colour >= 0)
                 clip->setAttribute ("colour", c.colour);
 
+            if (c.groupId != 0)
+                clip->setAttribute ("group", (int) c.groupId);
+
             if (c.note.isNotEmpty())
                 clip->setAttribute ("note", c.note);
 
@@ -1811,6 +1875,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     state.tempo = juce::jlimit (20.0, 400.0, root->getDoubleAttribute ("tempo", 120.0));
     state.beatsPerBar = juce::jlimit (1, 16, root->getIntAttribute ("beatsPerBar", 4));
     std::map<juce::String, AudioDocument::Snapshot> audio;   // by full path: each file read once
+    std::map<int, juce::uint32> groups;                      // a clip group's saved id, and its id now
 
     // The relative path first, so a session moved with its audio still finds it.
     const auto locate = [&] (const juce::XmlElement& xml)
@@ -1922,6 +1987,17 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.muted = clipXml->getBoolAttribute ("muted");
             clip.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, clipXml->getIntAttribute ("colour", -1));
             clip.note = clipXml->getStringAttribute ("note");
+
+            // Groups take fresh ids, as clips do, the same for every clip saved in one group.
+            if (const auto group = clipXml->getIntAttribute ("group"); group != 0)
+            {
+                auto& id = groups[group];
+
+                if (id == 0)
+                    id = state.nextId++;
+
+                clip.groupId = id;
+            }
 
             // Takes, kept only when every one's audio is there; otherwise the clip plays the one it had.
             std::vector<SessionClip::Take> takes;

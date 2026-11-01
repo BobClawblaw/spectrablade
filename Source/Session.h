@@ -43,6 +43,7 @@ struct SessionClip
     bool locked = false;                   // the edits below leave it where it is, as it is
     bool muted = false;                    // stays in place but isn't heard (in playback, mixdowns, bounces and stems)
     int colour = -1;                       // a place in TrackColours::palette, or -1 for its track's colour
+    juce::uint32 groupId = 0;              // clips sharing a non-zero id are selected (so moved and deleted) together
     juce::String note;                     // free text, shown along the clip's bottom edge
 
     static constexpr float minGainDb = -60.0f, maxGainDb = 24.0f;
@@ -309,6 +310,16 @@ namespace SessionEdits
         audio, where its channels' sum crosses zero: the sum changes sign between the frame before
         and it, or is 0 there. `frame` itself when there is none. */
     juce::int64 zeroCrossingNear (const SessionClip&, juce::int64 frame, juce::int64 within);
+
+    /** Groups clips, locked or not, so selecting one selects them all; they leave any group they
+        were in. Returns the group's id, or 0 when fewer than two of them exist. */
+    juce::uint32 groupClips (SessionState&, const std::vector<juce::uint32>& clipIds);
+
+    /** Breaks up every group any of these clips is in. False when none was in a group. */
+    bool ungroupClips (SessionState&, const std::vector<juce::uint32>& clipIds);
+
+    /** The clips in this clip's group, it among them; just it when it is in none. */
+    std::vector<juce::uint32> clipGroup (const SessionState&, juce::uint32 clipId);
 
     /** Mutes or unmutes a clip, locked or not. False when it is already so. */
     bool setClipMuted (SessionState&, juce::uint32 clipId, bool muted);
