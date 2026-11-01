@@ -1411,7 +1411,7 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
 void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& c) const
 {
     const auto r = clipBounds (track, c);
-    const auto colour = TrackColours::of (shown().tracks[(size_t) track], track);
+    const auto colour = c.muted ? juce::Colour (0xff6e7681) : TrackColours::of (shown().tracks[(size_t) track], track);
     const auto selected = isClipSelected (c.id);
 
     g.setColour (colour.withAlpha (0.18f));
@@ -1428,6 +1428,9 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
 
     if (! juce::exactlyEqual (c.gainDb, 0.0f))
         name << "  " << (c.gainDb > 0.0f ? "+" : "") << juce::String (c.gainDb, 1) << " dB";
+
+    if (c.muted)
+        name << "  (muted)";
     g.drawText (name, title.withTrimmedLeft (12).withTrimmedRight (c.locked ? 24 : 10), juce::Justification::centredLeft, true);   // clear of the fade handles
 
     if (c.locked && title.getWidth() > 40)
@@ -2188,29 +2191,41 @@ void MultitrackView::splitSelectedClip()
         engine.session.apply (std::move (next), "Split Clip");
 }
 
-bool MultitrackView::areSelectedClipsLocked() const
+namespace
 {
-    const auto& s = shown();
-    const auto ids = getSelectedClips();
-
-    return ! ids.empty() && std::all_of (ids.begin(), ids.end(), [&s] (auto id)
+    bool allSelected (const SessionState& s, const std::vector<juce::uint32>& ids, bool SessionClip::* flag)
     {
-        const auto where = s.findClip (id);
-        return s.tracks[(size_t) where->first].clips[(size_t) where->second].locked;
-    });
+        return ! ids.empty() && std::all_of (ids.begin(), ids.end(), [&s, flag] (auto id)
+        {
+            const auto where = s.findClip (id);
+            return s.tracks[(size_t) where->first].clips[(size_t) where->second].*flag;
+        });
+    }
 }
 
+bool MultitrackView::areSelectedClipsLocked() const   { return allSelected (shown(), getSelectedClips(), &SessionClip::locked); }
+bool MultitrackView::areSelectedClipsMuted() const    { return allSelected (shown(), getSelectedClips(), &SessionClip::muted); }
+
 void MultitrackView::setSelectedClipsLocked (bool locked)
+{
+    setSelectedClipsFlag (SessionEdits::setClipLocked, locked, locked ? "Lock " : "Unlock ");
+}
+
+void MultitrackView::setSelectedClipsMuted (bool muted)
+{
+    setSelectedClipsFlag (SessionEdits::setClipMuted, muted, muted ? "Mute " : "Unmute ");
+}
+
+void MultitrackView::setSelectedClipsFlag (bool (*set) (SessionState&, juce::uint32, bool), bool on, const juce::String& verb)
 {
     auto next = *engine.session.getState();
     auto changed = 0;
 
     for (auto id : getSelectedClips())
-        changed += SessionEdits::setClipLocked (next, id, locked) ? 1 : 0;
+        changed += set (next, id, on) ? 1 : 0;
 
     if (changed > 0)
-        engine.session.apply (std::move (next), juce::String (locked ? "Lock " : "Unlock ")
-                                                    + (changed > 1 ? juce::String (changed) + " Clips" : juce::String ("Clip")));
+        engine.session.apply (std::move (next), verb + (changed > 1 ? juce::String (changed) + " Clips" : juce::String ("Clip")));
 }
 
 void MultitrackView::deleteSelectedTrack()

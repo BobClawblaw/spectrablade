@@ -1056,6 +1056,49 @@ void runMultitrackViewTests (AudioEngine& engine)
                "locking: deleting the selection leaves the locked clip; unlocked (an undo step) it drags again");
     }
 
+    // Muted clips: muting from the view, still editable, and kept in session files.
+    {
+        SessionState quiet;
+        quiet.sampleRate = rate;
+        quiet.addTrack();
+        const auto hushed = SessionEdits::addClip (quiet, 0, juce::File ("/tmp/hushed.wav"), silence (48000), 0);
+        engine.session.reset (quiet, {});
+        view.zoomToRange ({ 0, 96000 });
+        Mouse::settle();
+        const auto muteFrames = view.getVisibleFrames();
+        const auto muteX = [&] (juce::int64 frame)
+        {
+            return (float) MultitrackView::headerWidth + (float) (((double) frame - muteFrames.getStart()) / (muteFrames.getLength() / timelineWidth));
+        };
+
+        mouse.click ({ muteX (24000), bodyY });
+        view.setSelectedClipsMuted (true);
+        Mouse::settle();
+        const auto mutedNow = engine.session.getUndoDescription() == "Mute Clip" && view.areSelectedClipsMuted()
+                              && engine.session.getState()->tracks[0].clips[0].muted;
+        mouse.drag ({ muteX (24000), bodyY }, { muteX (30000), bodyY });
+        const auto movedMuted = engine.session.getState()->tracks[0].clips[0].position > 0 && engine.session.getState()->tracks[0].clips[0].muted;
+
+        const auto folder = juce::File::createTempFile ("muting");
+        folder.createDirectory();
+        const auto wav = folder.getChildFile ("hushed.wav");
+        auto onDisk = *engine.session.getState();
+        onDisk.tracks[0].clips[0].source = wav;
+        SessionEdits::addClip (onDisk, 0, wav, silence (48000), 60000);
+        const auto file = folder.getChildFile ("muting.sbsession");
+        const auto wrote = AudioFileIO::save (*silence (48000), rate, wav, 24, engine.formatManager).isEmpty()
+                           && SessionFile::save (onDisk, file).isEmpty();
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        folder.deleteRecursively();
+
+        view.setSelectedClipsMuted (false);
+        Mouse::settle();
+        check (mutedNow && movedMuted && wrote && loaded.state.tracks[0].clips.size() == 2 && loaded.state.tracks[0].clips[0].muted
+                   && ! loaded.state.tracks[0].clips[1].muted && engine.session.getUndoDescription() == "Unmute Clip"
+                   && ! view.areSelectedClipsMuted() && view.getSelectedClip() == hushed,
+               "clip mute: muting and unmuting from the view as undo steps, a muted clip still drags, and session files keep it");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

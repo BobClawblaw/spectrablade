@@ -48,7 +48,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -694,7 +694,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdLockClip; ++id)
+    for (int id = cmdOpen; id <= cmdMuteClip; ++id)
         ids.add (id);
 }
 
@@ -810,6 +810,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdLockClip:   info.setInfo ("Lock Clip", "Keep the selected clips from being moved, trimmed or deleted, or let them be again", "Multitrack", 0);
                             info.addDefaultKeypress ('l', cmd | shift); info.setTicked (multitrack.areSelectedClipsLocked());
+                            info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
+        case cmdMuteClip:   info.setInfo ("Mute Clip", "Keep the selected clips in place but silent, or let them be heard again", "Multitrack", 0);
+                            info.setTicked (multitrack.areSelectedClipsMuted());
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
         case cmdClipProperties: info.setInfo ("Clip Properties", "A window with the selected clip's name, start, length, gain and fades", "Multitrack", 0);
                             info.addDefaultKeypress ('i', cmd | shift); info.setTicked (clipPropertiesWindow != nullptr); break;
@@ -968,6 +971,7 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdReverseClip: reverseSelectedClip(); break;
         case cmdLockClip:   multitrack.setSelectedClipsLocked (! multitrack.areSelectedClipsLocked()); commands.commandStatusChanged(); break;
+        case cmdMuteClip:   multitrack.setSelectedClipsMuted (! multitrack.areSelectedClipsMuted()); commands.commandStatusChanged(); break;
         case cmdNudgeEarlier: multitrack.nudge (false); break;
         case cmdNudgeLater: multitrack.nudge (true); break;
         case cmdMoveTrackUp: multitrack.moveTrack (multitrack.getSelectedTrack(), multitrack.getSelectedTrack() - 1); break;
@@ -1100,7 +1104,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;

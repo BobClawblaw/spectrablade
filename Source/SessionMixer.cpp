@@ -180,7 +180,7 @@ namespace
             const auto from = juce::jmax (start, clip.position);
             const auto to = juce::jmin (end, clip.getEnd());
 
-            if (to <= from || clip.audio == nullptr)
+            if (to <= from || clip.audio == nullptr || clip.muted)
                 continue;
 
             const auto count = (int) (to - from);

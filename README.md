@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 41: muting clips**
+- Multitrack > Mute Clip mutes the selected clips, or unmutes them when they are all muted, as one undo step ("Mute Clip", "Unmute 2 Clips"). A muted clip stays where it is, drawn grey with "(muted)" after its name, and can be edited as usual, but it isn't heard: not in playback, mixdowns, bounces or stems, nor through its track's sends.
+- Copies of a muted clip are muted too. A track whose clips are all muted still gets a stem, a silent one.
+- Measured by the tests: a muted clip mixing bit for bit as if it were removed, its send included; copies staying muted, and a bounce of the track leaving it out bit for bit; through the real view, muting and unmuting as undo steps and a muted clip still dragging; session files, saved and loaded with real audio, keeping which clips are muted. The grey drawing and the menu item were not checked by the tests, and none of it was tried by hand. The default-device test still hung opening the audio interface, as for Milestone 40; every other check passed.
+
 **Milestone 40: locking clips**
 - Multitrack > Lock Clip (Cmd Shift L) locks the selected clips, or unlocks them when they are all locked, as one undo step ("Lock Clip", "Unlock 2 Clips"). A locked clip shows a padlock in its title bar and no fade handles.
 - A locked clip can still be clicked, selected, copied and renamed, but it can't be dragged, trimmed, faded, Command-dragged for gain, nudged, split, reversed, normalized, given another take or deleted. Selected with other clips, it keeps them from being dragged or nudged too; Delete and Cut remove the others and leave it.
@@ -322,6 +327,7 @@ The tests run against the real machine:
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Track colours: automatic and chosen colours, the undo step, and session files.
 - Locking clips: every refused edit, clips placed over locked ones, session files, and the view.
+- Muting clips: the mix, bounces and copies bit for bit, the view, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -375,4 +381,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: muting single clips, so they stay in place but don't play
+1. Multitrack, continued: a clip's own pitch-preserving playback rate is out of scope for now; next, clip colours chosen from the track palette

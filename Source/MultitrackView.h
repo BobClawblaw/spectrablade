@@ -114,6 +114,13 @@ public:
         Locked clips show a lock and can't be dragged, trimmed, faded, nudged, split or deleted
         until they are unlocked; see SessionEdits::setClipLocked. */
     void setSelectedClipsLocked (bool locked);
+
+    /** True when there are selected clips and every one is muted. */
+    bool areSelectedClipsMuted() const;
+
+    /** Mutes (or unmutes) every selected clip as one undo step ("Mute Clip", "Unmute 2 Clips").
+        A muted clip is drawn grey and isn't heard, but can be edited as usual. */
+    void setSelectedClipsMuted (bool muted);
     void deleteSelectedTrack();
 
     /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise
@@ -229,6 +236,7 @@ private:
     void timerCallback() override;
 
     const SessionState& shown() const             { return preview.has_value() ? *preview : *state; }
+    void setSelectedClipsFlag (bool (*set) (SessionState&, juce::uint32, bool), bool on, const juce::String& verb);
     void rebuildHeaders();
     void layoutHeaders();
     void updateScrollBars();

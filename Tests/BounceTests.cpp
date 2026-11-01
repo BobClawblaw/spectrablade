@@ -157,6 +157,26 @@ void runBounceTests()
         check (identical (full, sum), "stems: without buses, the stems add up to the mix bit for bit, a muted track's as it would play");
     }
 
+    // A muted clip mixes as if it weren't there, bit for bit, through its track's send too.
+    {
+        const juce::Range<juce::int64> span (0, 12000);
+        auto silenced = session (0.0f);
+        const auto guitarClip = silenced.tracks[0].clips[0].id;
+        const auto changed = SessionEdits::setClipMuted (silenced, guitarClip, true) && ! SessionEdits::setClipMuted (silenced, guitarClip, true);
+        auto removed = session (0.0f);
+        SessionEdits::removeClip (removed, removed.tracks[0].clips[0].id);
+        const auto unmutedMix = mix (session (0.0f), span);
+        const auto mutedMix = mix (silenced, span);
+        check (changed && identical (mutedMix, mix (removed, span)) && ! identical (mutedMix, unmutedMix),
+               "clip mute: a muted clip mixes as if it were removed, bit for bit, its send included");
+
+        const auto copy = SessionEdits::placeClip (silenced, 1, silenced.tracks[0].clips[0], 20000);
+        const auto where = silenced.findClip (copy);
+        check (silenced.tracks[(size_t) where->first].clips[(size_t) where->second].muted
+                   && identical (mix (Bounce::isolate (silenced, silenced.tracks[0].id), span), mix (Bounce::isolate (removed, removed.tracks[0].id), span)),
+               "clip mute: copies stay muted, and a bounce or stem of the track leaves the muted clip out");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");

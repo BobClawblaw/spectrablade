@@ -372,6 +372,17 @@ bool removeClip (SessionState& s, juce::uint32 clipId)
     return true;
 }
 
+bool setClipMuted (SessionState& s, juce::uint32 clipId, bool muted)
+{
+    auto* c = find (s, clipId);
+
+    if (c == nullptr || c->muted == muted)
+        return false;
+
+    c->muted = muted;
+    return true;
+}
+
 bool setClipLocked (SessionState& s, juce::uint32 clipId, bool locked)
 {
     auto* c = find (s, clipId);
@@ -1074,6 +1085,9 @@ juce::String save (const SessionState& state, const juce::File& target,
             if (c.locked)
                 clip->setAttribute ("locked", true);
 
+            if (c.muted)
+                clip->setAttribute ("muted", true);
+
             if (! c.takes.empty())
             {
                 clip->setAttribute ("activeTake", c.activeTake);
@@ -1222,6 +1236,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.fadeIn = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeIn").getLargeIntValue());
             clip.fadeOut = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeOut").getLargeIntValue());
             clip.locked = clipXml->getBoolAttribute ("locked");
+            clip.muted = clipXml->getBoolAttribute ("muted");
 
             // Takes, kept only when every one's audio is there; otherwise the clip plays the one it had.
             std::vector<SessionClip::Take> takes;

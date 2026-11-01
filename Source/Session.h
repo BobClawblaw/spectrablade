@@ -16,6 +16,7 @@ struct SessionClip
     float gainDb = 0.0f;                   // from minGainDb to maxGainDb
     juce::int64 fadeIn = 0, fadeOut = 0;   // frames, raised-cosine
     bool locked = false;                   // the edits below leave it where it is, as it is
+    bool muted = false;                    // stays in place but isn't heard (in playback, mixdowns, bounces and stems)
 
     static constexpr float minGainDb = -60.0f, maxGainDb = 24.0f;
 
@@ -237,6 +238,9 @@ namespace SessionEdits
         over it, and crossfades with it, leave it as it is, so they overlap it. Removing its track
         still removes it. Copies of a locked clip start unlocked. */
     bool setClipLocked (SessionState&, juce::uint32 clipId, bool locked);
+
+    /** Mutes or unmutes a clip, locked or not. False when it is already so. */
+    bool setClipMuted (SessionState&, juce::uint32 clipId, bool muted);
 
     /** Puts take `index` of a clip in use. It keeps its place and length where the take's audio
         allows; otherwise it is cut back to what the take has. */
