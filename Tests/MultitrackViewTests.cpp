@@ -1492,6 +1492,50 @@ void runMultitrackViewTests (AudioEngine& engine)
         view.setShowBars (false);
         check (steps == std::vector<juce::int64> { 320000, 288000, 256000, 168000 } && marked,
                "tempo map: nudging steps by the beats either side of a tempo change, and the ruler marks the change");
+
+        // Quantizing: to the ruler's marks (two seconds apart here), or in bars and beats to the beats.
+        SessionState loose;
+        loose.sampleRate = rate;
+        loose.addTrack();
+        loose.addTrack();
+        const auto early = SessionEdits::addClip (loose, 0, juce::File ("/tmp/q1.wav"), silence (10000), 30000);
+        const auto middle = SessionEdits::addClip (loose, 1, juce::File ("/tmp/q2.wav"), silence (10000), 150000);
+        const auto fixed = SessionEdits::addClip (loose, 0, juce::File ("/tmp/q3.wav"), silence (10000), 250000);
+        SessionEdits::setClipLocked (loose, fixed, true);
+        const auto startOf = [&] (juce::uint32 id) { return clip (id).position; };
+        engine.session.reset (loose, {});
+        view.zoomToRange ({ 0, 480000 });
+        Mouse::settle();
+        view.selectAllClips();
+        const auto toSeconds = view.quantizeSelectedClips();
+        Mouse::settle();
+        const auto secondsStep = engine.session.getUndoDescription();
+        const auto onSeconds = startOf (early) == 0 && startOf (middle) == 192000 && startOf (fixed) == 250000;
+        engine.session.undo();
+        view.setShowBars (true);
+        Mouse::settle();
+        const auto toBeats = view.quantizeSelectedClips();
+        Mouse::settle();
+        const auto onBeats = startOf (early) == 24000 && startOf (middle) == 144000 && startOf (fixed) == 250000;
+        const auto again = view.quantizeSelectedClips();
+        view.setShowBars (false);
+        check (toSeconds == 2 && secondsStep == "Quantize 2 Clips" && onSeconds && toBeats == 2 && onBeats && again == 0,
+               "quantize: selected clips start on the nearest mark, of seconds or of beats; a locked clip stays; nothing left to move the second time");
+
+        // Dropped files land on the grid when snapping is on.
+        juce::int64 droppedAt = -1;
+        view.onFilesDropped = [&droppedAt] (const juce::StringArray&, int, juce::int64 frame) { droppedAt = frame; };
+        const auto shownFrames = view.getVisibleFrames();
+        const auto dropX = (int) std::lround ((double) MultitrackView::headerWidth + (96000.0 + 900.0 - shownFrames.getStart()) / (shownFrames.getLength() / timelineWidth));
+        view.setSnapping (true);
+        view.filesDropped ({ "/tmp/drop.wav" }, dropX, (int) bodyY);
+        const auto snappedDrop = droppedAt;
+        view.setSnapping (false);
+        view.filesDropped ({ "/tmp/drop.wav" }, dropX, (int) bodyY);
+        view.onFilesDropped = nullptr;
+        view.setSnapping (true);
+        check (snappedDrop == 96000 && droppedAt != 96000 && std::abs (droppedAt - 96900) < 600,
+               "dropping files: with snapping on they land on the grid, without it where they are dropped");
     }
 
     engine.session.reset ({}, {});

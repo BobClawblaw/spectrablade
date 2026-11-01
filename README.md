@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 63: quantizing clips, and snapping dropped files**
+- Multitrack > Quantize Clips to Grid moves each selected clip, on its own track, so it starts on the nearest line of the grid snapping uses: in bars and beats the beats (or bars, zoomed out) of the tempo map, otherwise the ruler's marks. It is one undo step ("Quantize Clip", "Quantize 3 Clips"); locked clips stay, and no clip goes before the session's start.
+- Audio files dropped onto the lanes now land on the grid (or another snap target) when snapping is on, as dragged clips do; before, they landed exactly where they were dropped.
+- Measured by the tests, through the view: with marks two seconds apart, clips at 0.625 s and 3.125 s moving to 0 s and 4 s; in bars and beats at 120 a minute, to 0.5 s and 3 s; a locked clip staying; a second quantize moving nothing; and a drop 900 frames past a mark landing on it with snapping on, and not with it off. None of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 62: exporting regions**
 - Multitrack > Export Regions... asks for a folder and mixes each region of the session to a 32-bit float WAV of its own, as Mix Down would mix that range: every track through fresh copies of its effects for each region, so none carries another's tail. Files are named after the session and the region, numbered by the region's place in time ("Song - 01 Verse.wav"), with characters files can't hold left out; a file of the same name is replaced. Point markers are left out. It runs in the background and can be cancelled. A region's file ends where the region does: effect tails past it are not kept.
 - Measured by the tests: the regions chosen and their files (ranges, order, numbering, names with a slash, points left out, none without regions). The export job itself was not run by the tests (it lives in the main window, as Export Stems does), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -451,6 +456,7 @@ The tests run against the real machine:
 - The tempo map: beats and bars across changes, the grid, snapping, nudging, the ruler, the click and the session file.
 - The marker list and markers as CSV.
 - Export Regions: which regions, and their files.
+- Quantizing clips to seconds and to beats, and snapping dropped files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -504,4 +510,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: snapping clips to the tempo grid when they are dropped or imported, and quantizing selected clips' starts to the grid
+1. Sessions: saving a recovery copy of an unsaved session every few minutes, and offering it after a crash

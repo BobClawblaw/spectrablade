@@ -2490,6 +2490,30 @@ bool MultitrackView::closeGapsOnSelectedTrack()
     return true;
 }
 
+int MultitrackView::quantizeSelectedClips()
+{
+    auto next = *engine.session.getState();
+    const auto targets = snapTargets (0, false);
+    const auto map = next.tempoMap();
+
+    const auto moved = SessionEdits::quantizeClips (next, getSelectedClips(), [&] (juce::int64 frame)
+    {
+        if (targets.beatGrid.has_value())
+        {
+            const auto [below, above] = map.linesAround (frame, *targets.beatGrid);
+            return frame - below <= above - frame ? below : above;
+        }
+
+        const auto step = juce::jmax ((juce::int64) 1, targets.gridStep);
+        return (juce::int64) std::llround ((double) frame / (double) step) * step;
+    });
+
+    if (moved > 0)
+        engine.session.apply (std::move (next), moved > 1 ? "Quantize " + juce::String (moved) + " Clips" : juce::String ("Quantize Clip"));
+
+    return moved;
+}
+
 bool MultitrackView::clearTimeSelection()
 {
     auto next = *engine.session.getState();
@@ -3070,5 +3094,5 @@ bool MultitrackView::isInterestedInFileDrag (const juce::StringArray& files)
 void MultitrackView::filesDropped (const juce::StringArray& files, int x, int y)
 {
     if (onFilesDropped != nullptr)
-        onFilesDropped (files, trackAt (y), x < headerWidth ? 0 : frameForX ((float) x));
+        onFilesDropped (files, trackAt (y), x < headerWidth ? 0 : snapped (frameForX ((float) x)));
 }

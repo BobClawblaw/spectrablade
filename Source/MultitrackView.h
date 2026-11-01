@@ -162,6 +162,11 @@ public:
         step ("Close Gaps"). False when nothing moved. */
     bool closeGapsOnSelectedTrack();
 
+    /** Moves each selected clip so it starts on the nearest line of the grid snapping uses (beats
+        or bars in bars and beats, else the ruler's marks), as one undo step ("Quantize Clip",
+        "Quantize 3 Clips"). Locked clips stay. Returns how many moved. */
+    int quantizeSelectedClips();
+
     /** Clears the time range on every track (SessionEdits::clearTime) as one undo step ("Clear
         Range"). False with no range or nothing there. */
     bool clearTimeSelection();

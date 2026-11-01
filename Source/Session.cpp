@@ -799,6 +799,27 @@ int closeGaps (SessionState& s, int track)
     return moved;
 }
 
+int quantizeClips (SessionState& s, const std::vector<juce::uint32>& clipIds, const std::function<juce::int64 (juce::int64)>& nearestLine)
+{
+    auto moved = 0;
+
+    for (auto id : clipIds)
+    {
+        const auto where = s.findClip (id);
+
+        if (! where.has_value())
+            continue;
+
+        const auto from = s.tracks[(size_t) where->first].clips[(size_t) where->second].position;
+        const auto to = juce::jmax ((juce::int64) 0, nearestLine (from));
+
+        if (to != from && moveClip (s, id, where->first, to))
+            ++moved;
+    }
+
+    return moved;
+}
+
 bool clearTime (SessionState& s, juce::int64 start, juce::int64 end)
 {
     auto changed = false;

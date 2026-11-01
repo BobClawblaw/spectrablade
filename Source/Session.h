@@ -358,6 +358,10 @@ namespace SessionEdits
         ones after them close up to them. Returns how many clips moved. */
     int closeGaps (SessionState&, int track);
 
+    /** Moves each of these clips, on its own track, so that it starts on the grid line nearest
+        its start (nearestLine gives it). Locked clips stay. Returns how many moved. */
+    int quantizeClips (SessionState&, const std::vector<juce::uint32>& clipIds, const std::function<juce::int64 (juce::int64)>& nearestLine);
+
     /** Clears [start, end) on every track, hidden ones too, as clearRange does. False when
         nothing was there. */
     bool clearTime (SessionState&, juce::int64 start, juce::int64 end);
