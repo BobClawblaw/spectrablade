@@ -626,6 +626,88 @@ void runMultitrackViewTests (AudioEngine& engine)
                "clips: a clip placed on a bus goes onto a new track");
     }
 
+    // Several clips selected with Shift-click: moved together, pasted and duplicated keeping
+    // their places, deleted together.
+    {
+        SessionState several;
+        several.sampleRate = rate;
+        several.addTrack();
+        several.addTrack();
+        several.addTrack();
+        const auto a = SessionEdits::addClip (several, 0, juce::File ("/tmp/a.wav"), silence (48000), 48000);
+        const auto b = SessionEdits::addClip (several, 1, juce::File ("/tmp/b.wav"), silence (48000), 120000);
+        const auto c = SessionEdits::addClip (several, 2, juce::File ("/tmp/c.wav"), silence (48000), 0);
+        engine.session.reset (several, {});
+        view.setTimeSelection ({});
+        Mouse::settle();
+        const auto laneY = [] (int lane) { return (float) (MultitrackView::rulerHeight + lane * MultitrackView::trackHeight) + 60.0f; };
+        const auto shift = juce::ModifierKeys::shiftModifier;
+        const auto positionOf = [&] (juce::uint32 id) { return clip (id).position; };
+        const auto trackOf = [&] (juce::uint32 id) { return engine.session.getState()->findClip (id)->first; };
+
+        mouse.click ({ x (70000), laneY (0) });
+        mouse.click ({ x (140000), laneY (1) }, shift);
+        const auto both = view.getSelectedClips();
+        const auto primary = view.getSelectedClip();
+        mouse.click ({ x (70000), laneY (0) }, shift);
+        const auto justB = view.getSelectedClips();
+        mouse.click ({ x (70000), laneY (0) }, shift);
+        check (both == std::vector<juce::uint32> { a, b } && primary == b && justB == std::vector<juce::uint32> { b }
+                   && view.getSelectedClips() == std::vector<juce::uint32> { a, b } && ! view.isClipSelected (c),
+               "selection: Shift-click adds a clip to the selection and takes it out again");
+
+        // Dragging one of them moves both by the same time, each on its own track.
+        view.setSnapping (false);
+        mouse.drag ({ x (70000), laneY (0) }, { x (70000) + 50.0f, laneY (0) });
+        const auto movedA = positionOf (a) - 48000, movedB = positionOf (b) - 120000;
+        check (movedA > 0 && movedA == movedB && trackOf (a) == 0 && trackOf (b) == 1 && positionOf (c) == 0
+                   && engine.session.getUndoDescription() == "Move Clip",
+               "selection: dragging a selected clip moves every selected clip in time by the same amount (" + juce::String (movedA) + ")");
+        engine.session.undo();
+        Mouse::settle();
+
+        mouse.drag ({ x (70000), laneY (0) }, { x (70000) - 400.0f, laneY (2) });
+        check (positionOf (a) == 0 && positionOf (b) == 72000 && trackOf (a) == 0 && trackOf (b) == 1,
+               "selection: moved together they stop when the earliest reaches the start, and keep their tracks");
+        engine.session.undo();
+        Mouse::settle();
+        view.setSnapping (true);
+
+        // Copy both, paste with the third track selected: the copies keep their spacing, the
+        // second on a new track below.
+        view.copySelectedClip();
+        mouse.click ({ x (20000), laneY (2) });
+        view.setCursor (300000);
+        view.pasteClip();
+        Mouse::settle();
+        auto pasted = view.getSelectedClips();
+        auto st = engine.session.getState();
+        check (pasted.size() == 2 && st->tracks.size() == 4 && trackOf (pasted[0]) == 2 && trackOf (pasted[1]) == 3
+                   && positionOf (pasted[0]) == 300000 && positionOf (pasted[1]) == 372000 && view.getCursor() == 420000
+                   && engine.session.getUndoDescription() == "Paste 2 Clips",
+               "selection: pasted clips keep their places relative to each other, from the cursor and the selected track");
+
+        view.duplicateSelectedClip();
+        Mouse::settle();
+        const auto duplicated = view.getSelectedClips();
+        check (duplicated.size() == 2 && trackOf (duplicated[0]) == 2 && trackOf (duplicated[1]) == 3
+                   && positionOf (duplicated[0]) == 420000 && positionOf (duplicated[1]) == 492000
+                   && engine.session.getUndoDescription() == "Duplicate 2 Clips",
+               "selection: Duplicate places the selected clips together right after them");
+
+        view.deleteSelectedClip();
+        Mouse::settle();
+        st = engine.session.getState();
+        const auto deleted = engine.session.getUndoDescription() == "Delete 2 Clips" && ! st->findClip (duplicated[0]).has_value()
+                             && ! st->findClip (duplicated[1]).has_value() && view.getSelectedClips().empty();
+        view.selectAllClips();
+        check (deleted && view.getSelectedClips().size() == 5,
+               "selection: deleting removes every selected clip, and Select All selects every clip");
+
+        mouse.click ({ x (900000), laneY (0) });
+        check (view.getSelectedClips().empty() && view.getSelectedClip() == 0, "selection: clicking where there is no clip selects none");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

@@ -694,8 +694,11 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     state = engine.session.getState();
 
+    for (auto it = selectedClips.begin(); it != selectedClips.end();)
+        it = state->findClip (*it).has_value() ? std::next (it) : selectedClips.erase (it);
+
     if (! state->findClip (selectedClip).has_value())
-        selectedClip = 0;
+        selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
 
     for (auto it = armed.begin(); it != armed.end();)
         it = state->findTrack (*it) == nullptr ? armed.erase (it) : std::next (it);
@@ -1308,7 +1311,7 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
 {
     const auto r = clipBounds (track, c);
     const auto colour = trackColour (track);
-    const auto selected = c.id == selectedClip;
+    const auto selected = isClipSelected (c.id);
 
     g.setColour (colour.withAlpha (0.18f));
     g.fillRoundedRectangle (r.toFloat(), 3.0f);
@@ -1833,45 +1836,142 @@ void MultitrackView::editTrack (juce::uint32 trackId, const juce::String& descri
     engine.session.apply (std::move (next), description, merge);
 }
 
+std::vector<juce::uint32> MultitrackView::getSelectedClips() const
+{
+    std::vector<juce::uint32> ids;
+
+    for (auto& t : shown().tracks)
+        for (auto& c : t.clips)
+            if (isClipSelected (c.id))
+                ids.push_back (c.id);
+
+    return ids;
+}
+
+void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
+{
+    if (! adding)
+    {
+        selectedClips.clear();
+        selectedClip = clipId;
+    }
+    else if (selectedClips.count (clipId) > 0)
+    {
+        selectedClips.erase (clipId);
+
+        if (selectedClip == clipId)
+            selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
+
+        repaint();
+        return;
+    }
+    else
+    {
+        selectedClip = clipId;
+    }
+
+    if (clipId != 0)
+        selectedClips.insert (clipId);
+
+    repaint();
+}
+
+void MultitrackView::selectAllClips()
+{
+    selectedClips.clear();
+
+    for (auto& t : engine.session.getState()->tracks)
+        for (auto& c : t.clips)
+            selectedClips.insert (c.id);
+
+    if (! isClipSelected (selectedClip))
+        selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
+
+    repaint();
+
+    if (onSelectionChanged != nullptr)
+        onSelectionChanged();
+}
+
 void MultitrackView::deleteSelectedClip()
 {
     auto next = *engine.session.getState();
+    const auto ids = getSelectedClips();
+    auto removed = 0;
 
-    if (SessionEdits::removeClip (next, selectedClip))
+    for (auto id : ids)
+        removed += SessionEdits::removeClip (next, id) ? 1 : 0;
+
+    if (removed > 0)
     {
-        selectedClip = 0;
-        engine.session.apply (std::move (next), "Delete Clip");
+        selectClip (0, false);
+        engine.session.apply (std::move (next), removed > 1 ? "Delete " + juce::String (removed) + " Clips" : juce::String ("Delete Clip"));
     }
 }
 
 bool MultitrackView::copySelectedClip()
 {
     const auto current = engine.session.getState();
-    const auto where = current->findClip (selectedClip);
+    std::vector<std::pair<int, SessionClip>> copied;
+    auto topmost = std::numeric_limits<int>::max();
 
-    if (! where.has_value())
+    for (auto id : getSelectedClips())
+    {
+        const auto where = current->findClip (id);
+        copied.emplace_back (where->first, current->tracks[(size_t) where->first].clips[(size_t) where->second]);
+        topmost = juce::jmin (topmost, where->first);
+    }
+
+    if (copied.empty())
         return false;
 
-    copiedClip = current->tracks[(size_t) where->first].clips[(size_t) where->second];
+    for (auto& [track, clip] : copied)
+        track -= topmost;
+
+    copiedClips = std::move (copied);
     copiedRate = current->sampleRate;
     return true;
 }
 
 bool MultitrackView::cutSelectedClip()
 {
-    auto next = *engine.session.getState();
-
-    if (! copySelectedClip() || ! SessionEdits::removeClip (next, selectedClip))
+    if (! copySelectedClip())
         return false;
 
-    selectedClip = 0;
-    engine.session.apply (std::move (next), "Cut Clip");
+    auto next = *engine.session.getState();
+
+    for (auto& copied : copiedClips)
+        SessionEdits::removeClip (next, copied.second.id);
+
+    selectClip (0, false);
+    engine.session.apply (std::move (next), copiedClips.size() > 1 ? "Cut " + juce::String ((int) copiedClips.size()) + " Clips"
+                                                                   : juce::String ("Cut Clip"));
     return true;
 }
 
 bool MultitrackView::canPaste() const
 {
-    return copiedClip.has_value() && juce::exactlyEqual (copiedRate, engine.session.getState()->sampleRate);
+    return ! copiedClips.empty() && juce::exactlyEqual (copiedRate, engine.session.getState()->sampleRate);
+}
+
+namespace
+{
+    /** Places clips, keeping their places relative to each other: each moves by shift in time,
+        onto the track firstTrack plus its own offset, or onto new tracks past the last (clips in
+        the order of their offsets). Returns the new ids. */
+    std::vector<juce::uint32> placeClips (SessionState& s, const std::vector<std::pair<int, SessionClip>>& clips,
+                                          int firstTrack, juce::int64 shift)
+    {
+        std::vector<juce::uint32> ids;
+
+        for (auto& [offset, clip] : clips)
+        {
+            // Past the last track (or onto a bus), placeClip makes a new one.
+            ids.push_back (SessionEdits::placeClip (s, firstTrack + offset, clip, clip.position + shift));
+        }
+
+        return ids;
+    }
 }
 
 void MultitrackView::pasteClip()
@@ -1879,27 +1979,59 @@ void MultitrackView::pasteClip()
     if (! canPaste())
         return;
 
+    auto earliest = copiedClips.front().second.position;
+
+    for (auto& c : copiedClips)
+        earliest = juce::jmin (earliest, c.second.position);
+
     auto next = *engine.session.getState();
-    const auto id = SessionEdits::placeClip (next, getSelectedTrack(), *copiedClip, cursor);
-    const auto where = next.findClip (id);
-    const auto end = next.tracks[(size_t) where->first].clips[(size_t) where->second].getEnd();
-    selectedClip = id;
-    selectedTrackId = next.tracks[(size_t) where->first].id;
-    engine.session.apply (std::move (next), "Paste Clip");
+    auto firstTrack = getSelectedTrack();
+
+    if (juce::isPositiveAndBelow (firstTrack, (int) next.tracks.size()) && next.tracks[(size_t) firstTrack].isBus)
+        firstTrack = -1;
+
+    // Without a selected track all of them go below the last, still a track apart.
+    if (firstTrack < 0)
+        firstTrack = (int) next.tracks.size();
+
+    const auto ids = placeClips (next, copiedClips, firstTrack, cursor - earliest);
+    auto end = cursor;
+
+    for (auto id : ids)
+    {
+        const auto where = next.findClip (id);
+        end = juce::jmax (end, next.tracks[(size_t) where->first].clips[(size_t) where->second].getEnd());
+    }
+
+    selectedClips = { ids.begin(), ids.end() };
+    selectedClip = ids.front();
+    selectedTrackId = next.tracks[(size_t) next.findClip (ids.front())->first].id;
+    engine.session.apply (std::move (next), ids.size() > 1 ? "Paste " + juce::String ((int) ids.size()) + " Clips" : juce::String ("Paste Clip"));
     setCursor (end);
 }
 
 void MultitrackView::duplicateSelectedClip()
 {
     auto next = *engine.session.getState();
-    const auto where = next.findClip (selectedClip);
+    std::vector<std::pair<int, SessionClip>> clips;
+    juce::int64 start = std::numeric_limits<juce::int64>::max(), end = 0;
 
-    if (! where.has_value())
+    for (auto id : getSelectedClips())
+    {
+        const auto where = next.findClip (id);
+        const auto& c = next.tracks[(size_t) where->first].clips[(size_t) where->second];
+        clips.emplace_back (where->first, c);
+        start = juce::jmin (start, c.position);
+        end = juce::jmax (end, c.getEnd());
+    }
+
+    if (clips.empty())
         return;
 
-    const auto clip = next.tracks[(size_t) where->first].clips[(size_t) where->second];
-    selectedClip = SessionEdits::placeClip (next, where->first, clip, clip.getEnd());
-    engine.session.apply (std::move (next), "Duplicate Clip");
+    const auto ids = placeClips (next, clips, 0, end - start);
+    selectedClips = { ids.begin(), ids.end() };
+    selectedClip = ids.front();
+    engine.session.apply (std::move (next), ids.size() > 1 ? "Duplicate " + juce::String ((int) ids.size()) + " Clips" : juce::String ("Duplicate Clip"));
 }
 
 void MultitrackView::splitSelectedClip()
@@ -1970,7 +2102,7 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
     if (const auto hit = clipAt (p); hit.has_value() && e.mods.isPopupMenu())
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
-        selectedClip = clip.id;
+        selectClip (clip.id, false);
         selectTrack (hit->first);
 
         if (clip.takes.size() > 1)
@@ -2019,8 +2151,27 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
         const auto r = clipBounds (hit->first, clip);
+
+        if (e.mods.isShiftDown())
+        {
+            // Shift-click adds the clip to the selection or takes it out; no drag.
+            selectClip (clip.id, true);
+            selectTrack (hit->first);
+            return;
+        }
+
+        // A click on a selected clip keeps the selection, to drag it all.
+        if (! isClipSelected (clip.id))
+            selectClip (clip.id, false);
+
         selectedClip = clip.id;
         dragClip = clip;
+        dragGroup.clear();
+
+        for (auto id : selectedClips)
+            if (const auto where = shown().findClip (id); id != clip.id && where.has_value())
+                dragGroup.push_back (shown().tracks[(size_t) where->first].clips[(size_t) where->second]);
+
         dragTrack = hit->first;
         dragFrame = frameForX ((float) p.x);
         drag = e.mods.isCommandDown() ? Drag::clipGain : fadeHandleAt (p, hit->first, clip);
@@ -2036,7 +2187,7 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    selectedClip = 0;
+    selectClip (0, false);
     drag = Drag::range;
     dragFrame = snapped (frameForX ((float) p.x), 0, false);
     setCursor (dragFrame);
@@ -2069,14 +2220,33 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
     {
         case Drag::move:
         {
-            const auto target = juce::jlimit (0, (int) next.tracks.size(), trackAt (juce::jmax (rulerHeight, p.y)));
-            auto position = juce::jmax ((juce::int64) 0, dragClip.position + delta);
+            // With other clips selected, they all move in time by the same amount and keep their tracks.
+            auto earliest = dragClip.position;
+
+            for (auto& c : dragGroup)
+                earliest = juce::jmin (earliest, c.position);
+
+            const auto target = dragGroup.empty() ? juce::jlimit (0, (int) next.tracks.size(), trackAt (juce::jmax (rulerHeight, p.y)))
+                                                  : dragTrack;
+            auto position = dragClip.position + juce::jmax (delta, -earliest);
 
             if (snapping)
-                position += SessionSnap::snapSpan (*state, { position, position + dragClip.length }, snapTolerance(),
-                                                   snapTargets (dragClip.id, true));
+            {
+                auto targets = snapTargets (dragClip.id, true);
+
+                for (auto& c : dragGroup)
+                    targets.ignoreClips.push_back (c.id);
+
+                position += SessionSnap::snapSpan (*state, { position, position + dragClip.length }, snapTolerance(), targets);
+                position = juce::jmax (position, dragClip.position - earliest);
+            }
 
             SessionEdits::moveClip (next, dragClip.id, target, position);
+
+            for (auto& c : dragGroup)
+                if (const auto where = next.findClip (c.id))
+                    SessionEdits::moveClip (next, c.id, where->first, c.position + position - dragClip.position);
+
             break;
         }
         case Drag::trimStart:
@@ -2133,7 +2303,13 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
     }
 
     if (crossfading && (drag == Drag::move || drag == Drag::trimStart || drag == Drag::trimEnd))
+    {
         SessionEdits::crossfade (next, dragClip.id);
+
+        if (drag == Drag::move)
+            for (auto& c : dragGroup)
+                SessionEdits::crossfade (next, c.id);
+    }
 
     preview = std::move (next);
     rebuildHeaders();

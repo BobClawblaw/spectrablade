@@ -287,6 +287,7 @@ namespace SessionSnap
     {
         std::vector<juce::int64> extra;
         juce::uint32 ignoreClip = 0;
+        std::vector<juce::uint32> ignoreClips;   // more clips being dragged
         int ignoreMarker = -1;             // the index of a marker being dragged
         juce::int64 gridStep = 0;
         int gridBeats = 0;

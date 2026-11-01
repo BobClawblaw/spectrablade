@@ -6,6 +6,13 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 29: selecting several clips**
+- Shift-click clips to add them to the selection (Shift-click a selected one to take it out); Edit > Select All Clips (Cmd A) selects every clip in the session. Clicking where there is no clip selects none.
+- Drag any selected clip to move them all in time by the same amount, each staying on its own track; they stop when the earliest reaches the start of the session. With snapping on, the clip you drag snaps, and the other selected clips are not targets. With crossfading on, each one crossfades where it lands.
+- Cut, Copy, Paste, Duplicate Clip and Delete work on every selected clip as one undo step ("Paste 2 Clips"). Pasted clips keep their places relative to each other: the earliest lands at the cursor, the topmost on the selected track and the others on the tracks below it (new tracks past the last). Duplicate places the whole selection right after itself.
+- Commands for one clip (Split, Clip Gain, Normalize Clip, choosing a take) work on the clip clicked last.
+- Measured by the tests, through the real view: Shift-click selecting and deselecting; two clips on different tracks dragged together, by the same amount and stopping at the start; two clips copied and pasted onto a lower track (the second onto a new track, the cursor after them), duplicated and deleted together; Select All; a click on empty space. Dragging a selection across tracks is not supported: a selection of several moves only in time. None of it was tried by hand.
+
 **Milestone 28: copying, pasting and duplicating clips**
 - While the session is showing, Edit > Cut, Copy and Paste (Cmd X, C, V) work on clips: copy the selected clip, click a track, place the cursor and paste. The copy goes over what is on the track there, which is cut around it as for a punch-in; it is selected and the cursor moves to its end, so pasting again lays copies end to end. Pasting onto a bus, or with no track selected, makes a new track.
 - Multitrack > Duplicate Clip (Cmd D) places a copy right after the selected clip on its track and selects it, so pressing it again makes a row.
@@ -255,7 +262,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
-- Copying, pasting and duplicating clips through the view, over what was on the track.
+- Copying, pasting and duplicating clips through the view, over what was on the track, and several clips selected, moved, pasted, duplicated and deleted together.
 - Clip gain: normalizing against a brute-force peak, its limits, and Command-dragging a clip in the view.
 - Session markers: adding, going to, clicking and dragging them in the view, snapping to and with them, and session files.
 - The mixer window: track and bus peaks measured as the session mixes, and the strips editing the session (volume, pan, mute, solo, undo, automated tracks, meters).
@@ -301,4 +308,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: selecting several clips at once, to move, copy and delete them together
+1. Multitrack, continued: a session overview of the whole timeline, and zooming to the time range

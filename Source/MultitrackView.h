@@ -6,7 +6,9 @@
     pan, and on tracks their sends) and the tracks' clips with their waveforms. Drag a clip to
     move it (onto another track, or below the last for a new one); drag its edges to trim it, and
     the handles at its top corners to set its fades; double-click it to open its file in the
-    editor; right-click it to choose among its takes; Command-drag it up or down to change its gain. Click to place the cursor, drag across the
+    editor; right-click it to choose among its takes; Command-drag it up or down to change its gain.
+    Shift-click clips to select several: dragging any of them moves them all in time, and cut,
+    copy, paste, duplicate and delete work on them together. Click to place the cursor, drag across the
     timeline to select a time range; drop audio files to add them as clips. A track's R button
     arms it for recording.
 
@@ -75,19 +77,27 @@ public:
         on a clip with takes offers them. */
     void chooseTake (juce::uint32 clipId, int index);
 
-    void deleteSelectedClip();
+    /** Every selected clip, in the session's order. getSelectedClip() is the one clicked last,
+        which commands for a single clip (split, gain, takes) work on. */
+    std::vector<juce::uint32> getSelectedClips() const;
+    bool isClipSelected (juce::uint32 clipId) const  { return selectedClips.count (clipId) > 0; }
+    void selectAllClips();
 
-    /** The selected clip, copied for pasting (its audio is shared, not duplicated). */
+    void deleteSelectedClip();     // every selected clip
+
+    /** The selected clips, copied for pasting (their audio is shared, not duplicated), with
+        where they are on the timeline and the tracks relative to each other. */
     bool copySelectedClip();
     bool cutSelectedClip();
     bool canPaste() const;
 
-    /** Pastes the copied clip onto the selected track (or a new one) at the cursor, over what is
-        there, selects it and moves the cursor to its end, so pastes follow each other. */
+    /** Pastes the copied clips at the cursor, the topmost onto the selected track (or a new one)
+        and the rest onto the tracks below, over what is there. Selects them and moves the cursor
+        to their end, so pastes follow each other. */
     void pasteClip();
 
-    /** Places a copy of the selected clip right after it on its track, over what is there, and
-        selects the copy. */
+    /** Places copies of the selected clips right after them, each on its own track, over what is
+        there, and selects the copies. */
     void duplicateSelectedClip();
 
     void splitSelectedClip();      // at the cursor
@@ -226,6 +236,7 @@ private:
     void showMarkerMenu (int index);
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;
     void selectTrack (int track);
+    void selectClip (juce::uint32 clipId, bool adding);   // adding: Shift-click, which toggles it
     void showInputMenu (juce::uint32 trackId, juce::Component& target);
     void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
     void showSends (juce::uint32 trackId, juce::Component& target);
@@ -242,8 +253,9 @@ private:
     int scrollY = 0;
     juce::int64 cursor = 0;
     juce::uint32 selectedClip = 0, selectedTrackId = 0;
-    std::optional<SessionClip> copiedClip;
-    double copiedRate = 0.0;               // the session rate the copied clip was at
+    std::set<juce::uint32> selectedClips;  // selectedClip among them
+    std::vector<std::pair<int, SessionClip>> copiedClips;   // with their tracks counted from the topmost
+    double copiedRate = 0.0;               // the session rate the copied clips were at
     std::set<juce::uint32> armed;
     bool showBars = false;
     juce::Range<juce::int64> timeSelection, recording;
@@ -251,6 +263,7 @@ private:
     Drag drag = Drag::none;
     juce::int64 dragFrame = 0;             // frame under the mouse when the drag began (or the range's anchor)
     SessionClip dragClip;                  // the clip as it was
+    std::vector<SessionClip> dragGroup;    // the other selected clips being moved with it, as they were
     int dragMarker = -1;                   // the marker being dragged, and the frames from its start to the mouse
     juce::int64 dragMarkerGrab = 0;
     int dragTrack = 0;

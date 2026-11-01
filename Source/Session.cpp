@@ -691,7 +691,8 @@ namespace
         {
             for (auto& c : t.clips)
             {
-                if (c.id != targets.ignoreClip)
+                if (c.id != targets.ignoreClip
+                    && std::find (targets.ignoreClips.begin(), targets.ignoreClips.end(), c.id) == targets.ignoreClips.end())
                 {
                     consider (c.position);
                     consider (c.getEnd());

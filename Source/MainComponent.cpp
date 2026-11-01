@@ -828,6 +828,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
             case cmdRedo:   info.shortName = session.canRedo() ? "Redo " + session.getRedoDescription() : juce::String ("Redo");
                             info.setActive (session.canRedo()); break;
             case cmdDelete: info.shortName = "Delete Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdSelectAll: info.shortName = "Select All Clips"; info.setActive (hasClips); break;
             case cmdCut:    info.shortName = "Cut Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
             case cmdCopy:   info.shortName = "Copy Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
             case cmdPaste:  info.shortName = "Paste Clip"; info.setActive (multitrack.canPaste()); break;
@@ -866,7 +867,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdPaste:      if (multitrackMode) multitrack.pasteClip(); else paste(); break;
         case cmdDuplicateClip: multitrack.duplicateSelectedClip(); break;
         case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
-        case cmdSelectAll:  waveform.selectAll(); break;
+        case cmdSelectAll:  if (multitrackMode) multitrack.selectAllClips(); else waveform.selectAll(); break;
         case cmdCrop:       cropToSelection(); break;
         case cmdGain:       applyGain(); break;
         case cmdNormalize:  applyNormalize(); break;
