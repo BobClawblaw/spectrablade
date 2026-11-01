@@ -101,12 +101,18 @@ juce::String stemFileName (const juce::String& sessionName, int number, const ju
 std::vector<std::pair<juce::Range<juce::int64>, juce::File>> regionFiles (const SessionState& s, const juce::String& sessionName,
                                                                            const juce::File& folder)
 {
+    return regionFiles (s.markers, sessionName, folder);
+}
+
+std::vector<std::pair<juce::Range<juce::int64>, juce::File>> regionFiles (const Markers& markers, const juce::String& name,
+                                                                           const juce::File& folder)
+{
     std::vector<std::pair<juce::Range<juce::int64>, juce::File>> files;
 
-    for (auto& m : s.markers)
+    for (auto& m : markers)
         if (m.isRegion())
             files.emplace_back (juce::Range<juce::int64> (m.start, m.getEnd()),
-                                folder.getChildFile (stemFileName (sessionName, (int) files.size() + 1, m.name)));
+                                folder.getChildFile (stemFileName (name, (int) files.size() + 1, m.name)));
 
     return files;
 }

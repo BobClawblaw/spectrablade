@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 110: Save Each Region As**
+- File > Save Each Region As asks for a folder and saves every region of the open file to a WAV file of its own, named and numbered as the session's Export Regions names them ("Take - 01 Verse.wav"), in the background with a progress bar that can cancel. Each file keeps the markers inside its region, the region itself included, moved to start from 0. The files are written at the open file's bit depth when WAV can hold it, otherwise as 32-bit float, and like Export Regions it replaces files of the same name.
+- Measured by the tests: an open file's markers give the same regions and numbering as a session's, with point markers left out; saving each range is the Save Selection As writer measured in milestone 109. The menu item, the folder dialog and the job were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 109: Save Selection As**
 - File > Save Selection As saves only the selection to a new WAV, AIFF or FLAC file, in a sample format picked as Save As picks one, with the markers inside the selection moved so it starts at frame 0 (as Crop keeps them). The open file, its name and its saved state are left as they were.
 - Save As and Save Selection As now share one file-and-format dialog; Save As's steps are unchanged, but it was not tried again by hand.
@@ -707,6 +711,7 @@ The tests run against the real machine:
 - Set Selection: typed starts and lengths, cut to the file, bad ones refused.
 - Paste Mix: added in place, the file lengthened only past its end.
 - Save Selection As: the selection's frames and markers, read back from the file.
+- Save Each Region As: the open file's regions named and numbered as Export Regions does.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -760,4 +765,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Save Each Region As, writing every region to a file of its own (the editor's counterpart to the session's Export Regions)
+1. Editor: Select Region at Cursor, selecting the region the cursor is in (the innermost, where regions overlap)

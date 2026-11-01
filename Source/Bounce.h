@@ -37,4 +37,8 @@ namespace Bounce
         regions. Point markers are left out. */
     std::vector<std::pair<juce::Range<juce::int64>, juce::File>> regionFiles (const SessionState&, const juce::String& sessionName,
                                                                                const juce::File& folder);
+
+    /** The same for any markers, such as an open file's for the editor's Save Each Region As. */
+    std::vector<std::pair<juce::Range<juce::int64>, juce::File>> regionFiles (const Markers&, const juce::String& name,
+                                                                               const juce::File& folder);
 }

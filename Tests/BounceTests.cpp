@@ -702,6 +702,11 @@ void runBounceTests()
                    && files[1].first == juce::Range<juce::int64> (6000, 9000) && files[1].second.getFileName() == "Song - 02 Chorus.wav"
                    && Bounce::regionFiles (session (0.0f), "Song", folder).empty(),
                "export regions: a file for each region in time order, numbered and named as stems are; point markers left out");
+
+        const auto fileRegions = Bounce::regionFiles (regioned.markers, "Take", folder);
+        check (fileRegions.size() == 2 && fileRegions[0].first == files[0].first && fileRegions[1].first == files[1].first
+                   && fileRegions[1].second.getFileName() == "Take - 02 Chorus.wav",
+               "save each region: an open file's regions named and numbered the same way");
     }
 
     {

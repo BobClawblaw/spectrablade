@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdSaveSelection);
+            || (id >= cmdRemoveDc && id <= cmdSaveRegions);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSaveSelection; ++id)
+    for (int id = cmdOpen; id <= cmdSaveRegions; ++id)
         ids.add (id);
 }
 
@@ -948,6 +948,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (! clipboard.isEmpty()); break;
         case cmdSaveSelection: info.setInfo ("Save Selection As...", "Save the selection, and the markers in it, to a new file", "File", 0);
                             info.setActive (! waveform.getSelection().isEmpty()); break;
+        case cmdSaveRegions: info.setInfo ("Save Each Region As...", "Save every region of the file to a file of its own, in a folder", "File", 0);
+                            info.setActive (hasAudio && std::any_of (doc.getMarkers().begin(), doc.getMarkers().end(),
+                                                                     [] (const Marker& m) { return m.isRegion(); })); break;
         case cmdPasteMix:   info.setInfo ("Paste Mix", "Mix the clipboard into the audio from the cursor, or the start of the selection", "Edit", 0);
                             info.addDefaultKeypress ('v', cmd | shift); info.setActive (! clipboard.isEmpty() && hasAudio); break;
         case cmdDelete:     info.setInfo ("Delete", "Delete the selection", "Edit", 0);
@@ -1299,6 +1302,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdPaste:      if (multitrackMode) multitrack.pasteClip(); else paste (false); break;
         case cmdPasteMix:   paste (true); break;
         case cmdSaveSelection: saveSelectionAs(); break;
+        case cmdSaveRegions: chooseFileRegionsFolder(); break;
         case cmdDuplicateClip: multitrack.duplicateSelectedClip(); break;
         case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
         case cmdSelectAll:  if (multitrackMode) multitrack.selectAllClips(); else waveform.selectAll(); break;
@@ -1539,7 +1543,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ 0, cmdSave, cmdSaveAs, cmdSaveSelection, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
+            add ({ 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -3097,6 +3101,60 @@ void MainComponent::saveSelectionAs()
                                                         engine.formatManager, d.getMarkers()); error.isNotEmpty())
             showError ("Save failed", error);
     });
+}
+
+void MainComponent::chooseFileRegionsFolder()
+{
+    const auto file = engine.document.getFile();
+    chooser = std::make_unique<juce::FileChooser> ("Save regions to", file != juce::File() ? file.getParentDirectory()
+                                                                                          : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              if (const auto folder = fc.getResult(); folder != juce::File())
+                                  saveFileRegions (folder);
+                          });
+}
+
+void MainComponent::saveFileRegions (const juce::File& folder)
+{
+    if (backgroundJob != nullptr)
+        return;
+
+    const auto& doc = engine.document;
+    const auto snapshot = doc.getSnapshot();
+    const auto markers = doc.getMarkers();
+    const auto rate = doc.getSampleRate();
+    const auto name = doc.getFile() != juce::File() ? doc.getFile().getFileNameWithoutExtension() : juce::String ("Untitled");
+    const auto regions = Bounce::regionFiles (markers, name, folder);
+    const auto depths = AudioFileIO::bitDepthsFor (folder.getChildFile ("x.wav"), engine.formatManager);
+    const auto depth = depths.contains (doc.getSourceBitDepth()) ? doc.getSourceBitDepth() : 32;
+    auto errors = std::make_shared<juce::StringArray>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Saving regions...",
+        [this, snapshot, markers, rate, regions, depth, errors] (const std::function<bool (float)>& progress)
+        {
+            for (size_t i = 0; i < regions.size(); ++i)
+            {
+                if (! progress ((float) i / (float) regions.size()))
+                    return false;
+
+                const auto& [range, file] = regions[i];
+
+                if (const auto error = AudioFileIO::saveRange (*snapshot, rate, range.getStart(), range.getEnd(), file, depth,
+                                                               engine.formatManager, markers); error.isNotEmpty())
+                    errors->add (error);
+            }
+
+            return true;
+        },
+        [errors]
+        {
+            if (! errors->isEmpty())
+                showError ("Save Each Region As", errors->joinIntoString ("\n"));
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::askForAudioTarget (const juce::String& title, const juce::File& suggested,
