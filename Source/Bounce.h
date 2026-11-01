@@ -22,4 +22,10 @@ namespace Bounce
     /** A stem's file name: "Song - 01 Guitar.wav", numbered by the track's place among the stems
         so names stay apart and sort in order, with characters files can't hold left out. */
     juce::String stemFileName (const juce::String& sessionName, int number, const juce::String& trackName);
+
+    /** What Export Regions writes: each region of the session in time order, with its file in
+        the folder, named as stems are ("Song - 01 Verse.wav"), numbered by its place among the
+        regions. Point markers are left out. */
+    std::vector<std::pair<juce::Range<juce::int64>, juce::File>> regionFiles (const SessionState&, const juce::String& sessionName,
+                                                                               const juce::File& folder);
 }

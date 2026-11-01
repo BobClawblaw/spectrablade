@@ -56,7 +56,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -780,7 +780,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdExportMarkers; ++id)
+    for (int id = cmdOpen; id <= cmdExportRegions; ++id)
         ids.add (id);
 }
 
@@ -906,6 +906,11 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('i', cmd | shift); info.setTicked (clipPropertiesWindow != nullptr); break;
         case cmdExportStems: info.setInfo ("Export Stems...", "Write each track, alone through its effects, to a file of its own", "Multitrack", 0);
                             info.setActive (multitrackMode && backgroundJob == nullptr && ! Bounce::stemTracks (*engine.session.getState()).empty());
+                            break;
+        case cmdExportRegions: info.setInfo ("Export Regions...", "Mix each region of the session to a file of its own", "Multitrack", 0);
+                            info.setActive (multitrackMode && backgroundJob == nullptr
+                                            && std::any_of (engine.session.getState()->markers.begin(), engine.session.getState()->markers.end(),
+                                                            [] (auto& m) { return m.isRegion(); }));
                             break;
         case cmdNudgeEarlier: info.setInfo ("Nudge Earlier", "Move the selected clips, or the cursor, back to the grid point before", "Multitrack", 0);
                             info.addDefaultKeypress (',', 0); info.setActive (multitrackMode); break;
@@ -1095,6 +1100,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdZoomSelection: if (multitrackMode) multitrack.zoomToRange (multitrack.getTimeSelection()); else waveform.zoomToSelection(); break;
         case cmdBounceTrack: bounceTrack(); break;
         case cmdExportStems: chooseStemsFolder(); break;
+        case cmdExportRegions: chooseRegionsFolder(); break;
         case cmdClipProperties: toggleClipProperties(); break;
         case cmdClipList:   toggleClipList(); break;
         case cmdRepeatClip: multitrack.repeatSelectedClip(); break;
@@ -1273,7 +1279,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -2294,6 +2300,77 @@ void MainComponent::chooseStemsFolder()
                               exportStems (folder, ! timeRange.isEmpty() ? timeRange
                                                                          : juce::Range<juce::int64> (0, engine.session.getState()->getLength()));
                           });
+}
+
+void MainComponent::chooseRegionsFolder()
+{
+    const auto session = engine.session.getFile();
+    chooser = std::make_unique<juce::FileChooser> ("Export regions to", session != juce::File() ? session.getParentDirectory()
+                                                                                           : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              if (const auto folder = fc.getResult(); folder != juce::File())
+                                  exportRegions (folder);
+                          });
+}
+
+void MainComponent::exportRegions (const juce::File& folder)
+{
+    const auto state = engine.session.getState();
+    const auto rate = engine.session.getSampleRate();
+    const auto sessionName = engine.session.getFile() != juce::File() ? engine.session.getFile().getFileNameWithoutExtension()
+                                                                      : juce::String ("Session");
+    const auto regions = std::make_shared<const std::vector<std::pair<juce::Range<juce::int64>, juce::File>>> (Bounce::regionFiles (*state, sessionName, folder));
+    auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
+
+    for (auto& track : state->tracks)
+        if (auto xml = engine.getTrackEffects().createXml (track.id))
+            (*effects)[track.id] = std::move (xml);
+
+    // Fresh plug-ins for each region, so none carries another's tail; kept until the job is
+    // deleted on the message thread.
+    auto inserts = std::make_shared<std::vector<std::unique_ptr<TrackEffects>>>();
+    auto errors = std::make_shared<juce::StringArray>();
+    auto warnings = std::make_shared<juce::String>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Exporting regions...",
+        [this, state, regions, effects, inserts, errors, warnings, rate] (const std::function<bool (float)>& progress)
+        {
+            const auto count = (float) regions->size();
+
+            for (size_t i = 0; i < regions->size(); ++i)
+            {
+                const auto& [range, file] = (*regions)[i];
+                inserts->push_back (std::make_unique<TrackEffects>());
+                const auto missing = OfflineRender::loadTrackEffects (*effects, engine.pluginFormatManager, rate, *inserts->back());
+
+                if (i == 0)
+                    *warnings = missing;
+
+                juce::AudioBuffer<float> mix;
+                const auto part = [&progress, i, count] (float p) { return progress (((float) i + p) / count); };
+
+                if (! OfflineRender::mixSession (*state, range, mix, inserts->back().get(), part))
+                    return false;
+
+                if (const auto error = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (mix)), rate, file, 32, engine.formatManager);
+                    error.isNotEmpty())
+                    errors->add (error);
+            }
+
+            return true;
+        },
+        [errors, warnings, folder]
+        {
+            if (! errors->isEmpty())
+                showError ("Export Regions", errors->joinIntoString ("\n"));
+            else if (warnings->isNotEmpty())
+                showError ("Export Regions", "The regions were written to " + folder.getFullPathName()
+                                                 + " without these effects, which could not be loaded:\n" + *warnings);
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int64> range)

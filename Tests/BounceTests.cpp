@@ -500,6 +500,18 @@ void runBounceTests()
                "paste time: refused at another rate or with nothing copied; tracks past the last are left out");
     }
 
+    {
+        // Export Regions: each region in time order, numbered among the regions, points left out.
+        auto regioned = session (0.0f);
+        regioned.markers = { { 0, 0, "Start" }, { 1000, 4000, "Verse/A" }, { 3000, 0, "Hit" }, { 6000, 3000, "Chorus" } };
+        const auto folder = juce::File::getSpecialLocation (juce::File::tempDirectory);
+        const auto files = Bounce::regionFiles (regioned, "Song", folder);
+        check (files.size() == 2 && files[0].first == juce::Range<juce::int64> (1000, 5000) && files[0].second == folder.getChildFile (Bounce::stemFileName ("Song", 1, "Verse/A"))
+                   && files[1].first == juce::Range<juce::int64> (6000, 9000) && files[1].second.getFileName() == "Song - 02 Chorus.wav"
+                   && Bounce::regionFiles (session (0.0f), "Song", folder).empty(),
+               "export regions: a file for each region in time order, numbered and named as stems are; point markers left out");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");

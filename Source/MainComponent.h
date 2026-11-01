@@ -156,6 +156,10 @@ private:
     void toggleClipList();
     void toggleMarkerList();
 
+    /** Asks for a folder, then mixes each region of the session to a file of its own there. */
+    void chooseRegionsFolder();
+    void exportRegions (const juce::File& folder);
+
     /** Writes the markers of the session (in multitrack mode) or the open file as CSV. */
     void chooseMarkersCsv();
     void toggleUndoHistory();

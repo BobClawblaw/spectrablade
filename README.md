@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 62: exporting regions**
+- Multitrack > Export Regions... asks for a folder and mixes each region of the session to a 32-bit float WAV of its own, as Mix Down would mix that range: every track through fresh copies of its effects for each region, so none carries another's tail. Files are named after the session and the region, numbered by the region's place in time ("Song - 01 Verse.wav"), with characters files can't hold left out; a file of the same name is replaced. Point markers are left out. It runs in the background and can be cancelled. A region's file ends where the region does: effect tails past it are not kept.
+- Measured by the tests: the regions chosen and their files (ranges, order, numbering, names with a slash, points left out, none without regions). The export job itself was not run by the tests (it lives in the main window, as Export Stems does), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 61: the marker list and exporting markers**
 - Multitrack > Marker List opens a window listing the session's markers and regions in time order, with their start, and for regions their end and length, in seconds. Clicking one puts the cursor there and scrolls it into view (a region also becomes the time range), as clicking it in the marker lane does; double-clicking or Return renames it, and Delete or Backspace deletes it, each an undo step. The list follows the session, undo included.
 - File > Export Markers as CSV... writes the markers and regions of the session (in multitrack mode) or of the open file to a CSV file: a header line, then each one's name, start, end and length in seconds and its start and length in frames. Names holding a comma, a quote or a line break are quoted, with quotes doubled (RFC 4180).
@@ -446,6 +450,7 @@ The tests run against the real machine:
 - Copying and pasting time: the mix, envelopes, markers, rates and tracks.
 - The tempo map: beats and bars across changes, the grid, snapping, nudging, the ruler, the click and the session file.
 - The marker list and markers as CSV.
+- Export Regions: which regions, and their files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -499,4 +504,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: exporting each region of the session as a file of its own (a mixdown per region, named after it)
+1. Multitrack, continued: snapping clips to the tempo grid when they are dropped or imported, and quantizing selected clips' starts to the grid

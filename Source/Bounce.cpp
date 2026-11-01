@@ -59,4 +59,17 @@ juce::String stemFileName (const juce::String& sessionName, int number, const ju
 {
     return juce::File::createLegalFileName (sessionName + " - " + juce::String (number).paddedLeft ('0', 2) + " " + trackName) + ".wav";
 }
+
+std::vector<std::pair<juce::Range<juce::int64>, juce::File>> regionFiles (const SessionState& s, const juce::String& sessionName,
+                                                                           const juce::File& folder)
+{
+    std::vector<std::pair<juce::Range<juce::int64>, juce::File>> files;
+
+    for (auto& m : s.markers)
+        if (m.isRegion())
+            files.emplace_back (juce::Range<juce::int64> (m.start, m.getEnd()),
+                                folder.getChildFile (stemFileName (sessionName, (int) files.size() + 1, m.name)));
+
+    return files;
+}
 }
