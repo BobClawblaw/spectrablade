@@ -132,4 +132,10 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
 
     return {};
 }
+
+juce::String saveRange (const AudioSnapshot& snapshot, double sampleRate, juce::int64 start, juce::int64 end, const juce::File& target,
+                        int bitDepth, juce::AudioFormatManager& formats, const Markers& markers)
+{
+    return save (*AudioEdits::crop (snapshot, start, end), sampleRate, target, bitDepth, formats, MarkerEdits::afterCrop (markers, start, end));
+}
 }

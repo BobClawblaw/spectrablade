@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdPasteMix);
+            || (id >= cmdRemoveDc && id <= cmdSaveSelection);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdPasteMix; ++id)
+    for (int id = cmdOpen; id <= cmdSaveSelection; ++id)
         ids.add (id);
 }
 
@@ -946,6 +946,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdCopy:       info.setInfo ("Copy", "Copy the selection", "Edit", 0); info.addDefaultKeypress ('c', cmd); info.setActive (hasSelection); break;
         case cmdPaste:      info.setInfo ("Paste", "Paste at the cursor or over the selection", "Edit", 0); info.addDefaultKeypress ('v', cmd);
                             info.setActive (! clipboard.isEmpty()); break;
+        case cmdSaveSelection: info.setInfo ("Save Selection As...", "Save the selection, and the markers in it, to a new file", "File", 0);
+                            info.setActive (! waveform.getSelection().isEmpty()); break;
         case cmdPasteMix:   info.setInfo ("Paste Mix", "Mix the clipboard into the audio from the cursor, or the start of the selection", "Edit", 0);
                             info.addDefaultKeypress ('v', cmd | shift); info.setActive (! clipboard.isEmpty() && hasAudio); break;
         case cmdDelete:     info.setInfo ("Delete", "Delete the selection", "Edit", 0);
@@ -1296,6 +1298,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCopy:       if (multitrackMode) { multitrack.copySelectedClip(); commands.commandStatusChanged(); } else copy(); break;
         case cmdPaste:      if (multitrackMode) multitrack.pasteClip(); else paste (false); break;
         case cmdPasteMix:   paste (true); break;
+        case cmdSaveSelection: saveSelectionAs(); break;
         case cmdDuplicateClip: multitrack.duplicateSelectedClip(); break;
         case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
         case cmdSelectAll:  if (multitrackMode) multitrack.selectAllClips(); else waveform.selectAll(); break;
@@ -1536,7 +1539,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
+            add ({ 0, cmdSave, cmdSaveAs, cmdSaveSelection, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -3061,15 +3064,53 @@ void MainComponent::saveAs (std::function<void (bool)> done)
     auto& doc = engine.document;
     const auto suggested = doc.getFile().withFileExtension (doc.getFile().hasFileExtension ("mp3;ogg") ? "wav" : doc.getFile().getFileExtension());
 
-    chooser = std::make_unique<juce::FileChooser> ("Save audio as", suggested, "*.wav;*.aif;*.aiff;*.flac");
+    askForAudioTarget ("Save As", suggested, [this, done] (const juce::File& file, int depth)
+    {
+        if (file == juce::File())
+        {
+            if (done != nullptr) done (false);
+            return;
+        }
+
+        writeFile (file, depth, done);
+    });
+}
+
+void MainComponent::saveSelectionAs()
+{
+    const auto sel = waveform.getSelection();
+
+    if (sel.isEmpty())
+        return;
+
+    const auto& doc = engine.document;
+    const auto suggested = doc.getFile().getSiblingFile (doc.getFile().getFileNameWithoutExtension() + " selection").withFileExtension ("wav");
+
+    askForAudioTarget ("Save Selection As", suggested, [this, sel] (const juce::File& file, int depth)
+    {
+        auto& d = engine.document;
+
+        if (file == juce::File())
+            return;
+
+        if (const auto error = AudioFileIO::saveRange (*d.getSnapshot(), d.getSampleRate(), sel.getStart(), sel.getEnd(), file, depth,
+                                                        engine.formatManager, d.getMarkers()); error.isNotEmpty())
+            showError ("Save failed", error);
+    });
+}
+
+void MainComponent::askForAudioTarget (const juce::String& title, const juce::File& suggested,
+                                       std::function<void (const juce::File&, int)> chosen)
+{
+    chooser = std::make_unique<juce::FileChooser> (title, suggested, "*.wav;*.aif;*.aiff;*.flac");
     chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
-                          [this, done] (const juce::FileChooser& fc)
+                          [this, title, chosen] (const juce::FileChooser& fc)
                           {
                               auto file = fc.getResult();
 
                               if (file == juce::File())
                               {
-                                  if (done != nullptr) done (false);
+                                  chosen ({}, 0);
                                   return;
                               }
 
@@ -3080,12 +3121,12 @@ void MainComponent::saveAs (std::function<void (bool)> done)
 
                               if (depths.isEmpty())
                               {
-                                  showError ("Save As", "SpectraBlade can't write " + file.getFileExtension() + " files.");
-                                  if (done != nullptr) done (false);
+                                  showError (title, "SpectraBlade can't write " + file.getFileExtension() + " files.");
+                                  chosen ({}, 0);
                                   return;
                               }
 
-                              auto* box = new juce::AlertWindow ("Save As", "Sample format for " + file.getFileName(),
+                              auto* box = new juce::AlertWindow (title, "Sample format for " + file.getFileName(),
                                                                  juce::MessageBoxIconType::NoIcon);
                               juce::StringArray names;
 
@@ -3099,16 +3140,12 @@ void MainComponent::saveAs (std::function<void (bool)> done)
                               box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
                               box->enterModalState (true, juce::ModalCallbackFunction::create (
-                                  [this, box, file, depths, done] (int result)
+                                  [box, file, depths, chosen] (int result)
                                   {
                                       if (result != 1)
-                                      {
-                                          if (done != nullptr) done (false);
-                                          return;
-                                      }
-
-                                      const auto depth = depths[box->getComboBoxComponent ("depth")->getSelectedItemIndex()];
-                                      writeFile (file, depth, done);
+                                          chosen ({}, 0);
+                                      else
+                                          chosen (file, depths[box->getComboBoxComponent ("depth")->getSelectedItemIndex()]);
                                   }), true);
                           });
 }

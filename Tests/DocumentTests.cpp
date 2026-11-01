@@ -398,6 +398,18 @@ namespace
 
         check (AudioFileIO::save (*snap, rate, wav16.getFile().withFileExtension ("xyz"), 16, engine.formatManager).isNotEmpty(),
                "saving to an unknown extension reports an error");
+
+        // Saving a selection: only its frames, bit for bit as float, and its markers moved to start from 0.
+        const juce::TemporaryFile part (".wav");
+        const Markers marks { { 500, 0, "before" }, { 1500, 0, "inside" }, { 1800, 400, "across" } };
+        const auto partError = AudioFileIO::saveRange (*snap, rate, 1000, 2000, part.getFile(), 32, engine.formatManager, marks);
+        const auto partLoaded = AudioFileIO::load (part.getFile(), engine.formatManager);
+        const auto partMarks = partLoaded.markers;
+        check (partError.isEmpty() && partLoaded.snapshot != nullptr
+                   && identical (readAll (*partLoaded.snapshot), range (signal, 1000, 2000))
+                   && partMarks.size() == 2 && partMarks[0].start == 500 && partMarks[0].name == "inside"
+                   && partMarks[1].start == 800 && partMarks[1].length == 200 && partMarks[1].name == "across",
+               "save selection: only the selection's frames, and the markers in it from frame 0");
     }
 
     void testPlaybackSource()

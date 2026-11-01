@@ -27,4 +27,8 @@ namespace AudioFileIO
         empty on success. */
     juce::String save (const AudioSnapshot&, double sampleRate, const juce::File& target, int bitDepth,
                        juce::AudioFormatManager&, const Markers& = {});
+
+    /** Saves only [start, end), with the markers in it moved so start becomes frame 0, as Crop keeps them. */
+    juce::String saveRange (const AudioSnapshot&, double sampleRate, juce::int64 start, juce::int64 end, const juce::File& target,
+                            int bitDepth, juce::AudioFormatManager&, const Markers& = {});
 }

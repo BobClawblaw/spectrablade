@@ -71,6 +71,11 @@ private:
     void chooseFile();
     void save();
     void saveAs (std::function<void (bool saved)> done = {});
+    void saveSelectionAs();
+
+    /** Asks for a file to save audio to and its sample format, then calls chosen with them, or with
+        no file when the person cancels or picks a type that can't be written. */
+    void askForAudioTarget (const juce::String& title, const juce::File& suggested, std::function<void (const juce::File&, int)> chosen);
     void writeFile (const juce::File&, int bitDepth, std::function<void (bool saved)> done);
 
     // Edit
