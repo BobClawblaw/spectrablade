@@ -4,6 +4,7 @@
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
 #include "../Source/AudioFileIO.h"
+#include "../Source/SessionRecording.h"
 #include "TestPlugins.h"
 #include "TestUtils.h"
 #include "TrackRecordingTests.h"
@@ -122,8 +123,9 @@ namespace
                "record clip: onto a bus (or no armed track), the take goes on a new track");
     }
 
-    /** The session player and the recorder run in the same cycles, as the device would run them;
-        the input carries the player's output from roundTrip frames earlier. */
+    /** The session player and two recorders run in the same cycles, as the device would run them.
+        Inputs 1 and 2 carry the player's output from roundTrip frames earlier, which the first
+        recorder takes; input 3 carries minus half its left side, which the second takes. */
     struct Loopback
     {
         Loopback (Session& s, int roundTripFrames) : session (s), roundTrip (roundTripFrames)
@@ -131,9 +133,11 @@ namespace
             player.setMode (DocumentPlayerProcessor::Mode::session);
             player.prepareToPlay (rate, blockSize);
             recorder.setInput (0, 2);
+            second.setInput (2, 1);
             juce::BigInteger inputs;
-            inputs.setRange (0, 2, true);
+            inputs.setRange (0, 3, true);
             recorder.configure (rate, inputs);
+            second.configure (rate, inputs);
         }
 
         ~Loopback()  { player.releaseResources(); }
@@ -148,23 +152,27 @@ namespace
                 sent[(size_t) ch].insert (sent[(size_t) ch].end(), out.getReadPointer (ch), out.getReadPointer (ch) + blockSize);
 
             // Input frame i of this cycle is what left the output roundTrip frames before it.
-            juce::AudioBuffer<float> in (2, blockSize);
+            juce::AudioBuffer<float> in (3, blockSize);
             const auto first = (juce::int64) sent[0].size() - blockSize - roundTrip;
 
             for (int ch = 0; ch < 2; ++ch)
                 for (int i = 0; i < blockSize; ++i)
                     in.setSample (ch, i, first + i >= 0 ? sent[(size_t) ch][(size_t) (first + i)] : 0.0f);
 
+            for (int i = 0; i < blockSize; ++i)
+                in.setSample (2, i, -0.5f * in.getSample (0, i));
+
             float silent[2][blockSize] {};
             float* outs[2] = { silent[0], silent[1] };
-            recorder.audioDeviceIOCallbackWithContext (in.getArrayOfReadPointers(), 2, outs, 2, blockSize, {});
+            recorder.audioDeviceIOCallbackWithContext (in.getArrayOfReadPointers(), 3, outs, 2, blockSize, {});
+            second.audioDeviceIOCallbackWithContext (in.getArrayOfReadPointers(), 3, outs, 2, blockSize, {});
         }
 
         Session& session;
         AudioDocument document;
         TrackEffects inserts;
         DocumentPlayerProcessor player { document, session, inserts };
-        Recorder recorder { player.getPlayedFrame() };
+        Recorder recorder { player.getPlayedFrame() }, second { player.getPlayedFrame() };
         int roundTrip;
         std::array<std::vector<float>, 2> sent;
     };
@@ -545,7 +553,7 @@ namespace
 
         MonitorRig rig (session, 1);
         rig.inserts.add (armedId, std::make_unique<TestPlugins::DelayPlugin> (effectLatency, effectGain));
-        rig.player.setMonitoredTrack (armedId);
+        rig.player.setMonitoredTracks ({ { armedId, 0, 1 } });
 
         // Stopped: only the input plays, through the effect, from the cycle it arrives in.
         for (int i = 0; i < 40; ++i)
@@ -600,7 +608,7 @@ namespace
         rig.player.pause();
         rig.cycle();      // the transport's last, faded block
         const auto quietFrom = rig.sent[0].size();
-        rig.player.setMonitoredTrack (0);
+        rig.player.setMonitoredTracks ({});
 
         for (int i = 0; i < 4; ++i)
             rig.cycle();
@@ -610,7 +618,7 @@ namespace
         auto muted = initial;
         muted.tracks[1].mute = true;
         session.reset (muted, {});
-        rig.player.setMonitoredTrack (armedId);
+        rig.player.setMonitoredTracks ({ { armedId, 0, 1 } });
         const auto mutedFrom = rig.sent[0].size();
 
         for (int i = 0; i < 4; ++i)
@@ -620,7 +628,7 @@ namespace
 
         session.reset (initial, {});
         MonitorRig other (session, 1, 44100.0);
-        other.player.setMonitoredTrack (armedId);
+        other.player.setMonitoredTracks ({ { armedId, 0, 1 } });
 
         for (int i = 0; i < 4; ++i)
             other.cycle();
@@ -632,7 +640,7 @@ namespace
         stereo.tracks[1].pan = 0.0f;
         session.reset (stereo, {});
         MonitorRig pair (session, 2);
-        pair.player.setMonitoredTrack (armedId);
+        pair.player.setMonitoredTracks ({ { armedId, 0, 2 } });
 
         for (int i = 0; i < 4; ++i)
             pair.cycle();
@@ -640,6 +648,147 @@ namespace
         check (pair.sent[0] == std::vector<float> (pair.input[0].begin(), pair.input[0].begin() + 4 * blockSize)
                    && pair.sent[1] == std::vector<float> (pair.input[1].begin(), pair.input[1].begin() + 4 * blockSize),
                "input monitoring: a stereo input on a centred track without effects plays unchanged");
+
+        // Two tracks monitored at once, each from its own input: one panned left of centre, one right.
+        auto both = initial;
+        both.tracks[1].pan = pan;
+        auto& third = both.addTrack();
+        third.pan = 0.7f;
+        const auto thirdId = third.id;
+        session.reset (both, {});
+        MonitorRig two (session, 2);
+        two.player.setMonitoredTracks ({ { armedId, 0, 1 }, { thirdId, 1, 1 } });
+
+        for (int i = 0; i < 4; ++i)
+            two.cycle();
+
+        const auto [aLeft, aRight] = SessionMixer::panGains (pan, 1);
+        const auto [bLeft, bRight] = SessionMixer::panGains (0.7f, 1);
+        auto mixed = true;
+
+        for (size_t j = 0; mixed && j < two.sent[0].size(); ++j)
+        {
+            // Each track's part is rounded on its own before they are added (no fused multiply-add).
+            const float partA[2] = { two.input[0][j] * aLeft, two.input[0][j] * aRight };
+            const float partB[2] = { two.input[1][j] * bLeft, two.input[1][j] * bRight };
+            mixed = two.sent[0][j] == partA[0] + partB[0] && two.sent[1][j] == partA[1] + partB[1];
+        }
+
+        check (mixed, "input monitoring: two tracks each play their own input, panned by their own pan, bit for bit");
+    }
+
+    /** Frames [0, length) of a clip's audio, from its offset, are exactly want's first channels. */
+    bool clipIs (const SessionClip& c, const juce::AudioBuffer<float>& want, juce::int64 length)
+    {
+        if (c.audio == nullptr || c.length != length || c.audio->getNumChannels() != want.getNumChannels())
+            return false;
+
+        juce::AudioBuffer<float> got (want.getNumChannels(), (int) length);
+        c.audio->read (got, 0, c.offset, (int) length);
+
+        for (int ch = 0; ch < want.getNumChannels(); ++ch)
+            for (int i = 0; i < (int) length; ++i)
+                if (got.getSample (ch, i) != want.getSample (ch, i))
+                    return false;
+
+        return true;
+    }
+
+    void testSeveralTracks()
+    {
+        constexpr int roundTrip = 517;
+        const juce::int64 punchIn = 20003, punchOut = 33001, preroll = 24000, length = punchOut - punchIn;
+
+        // Track 1 plays; tracks 2 and 3 record, from inputs 1-2 and 3; a new track records from inputs 1-2 too.
+        auto initial = rampSession();
+        const auto a = initial.addTrack().id;
+        const auto b = initial.addTrack().id;
+        Session session;
+        session.reset (initial, {});
+        const auto before = session.getState();
+
+        Loopback loop (session, roundTrip);
+        loop.recorder.start();
+        loop.second.start();
+
+        for (int i = 0; i < 6; ++i)
+            loop.cycle();
+
+        loop.player.play (punchIn - preroll, std::numeric_limits<juce::int64>::max() / 4);
+
+        while (loop.player.getPlayedFrame().load() < punchOut + roundTrip + 4 * blockSize)
+            loop.cycle();
+
+        std::map<Recorder*, Recorder::Take> takes;
+        takes[&loop.recorder] = loop.recorder.stop();
+        takes[&loop.second] = loop.second.stop();
+        loop.player.pause();
+
+        juce::AudioBuffer<float> mix (2, (int) length), left (1, (int) length);
+        SessionMixer::Buffers buffers;
+        SessionMixer::render (*before, punchIn, mix, 0, (int) length, buffers);
+
+        for (int i = 0; i < (int) length; ++i)
+            left.setSample (0, i, -0.5f * mix.getSample (0, i));
+
+        auto state = *before;
+        juce::StringArray saved;
+        const auto save = [&] (const AudioDocument::Snapshot&, const juce::String& name, juce::String&)
+        {
+            saved.add (name);
+            return juce::File ("/takes/" + name + ".wav");
+        };
+
+        const std::vector<std::pair<juce::uint32, Recorder*>> tracks { { a, &loop.recorder }, { b, &loop.second }, { 0, &loop.recorder } };
+        const auto result = SessionRecording::land (state, tracks, takes, punchIn, punchOut, roundTrip, false, save);
+        const auto* onA = state.findTrack (a);
+        const auto* onB = state.findTrack (b);
+        const auto& added = state.tracks.back();
+        check (result.landed == 3 && saved.size() == 2 && SessionRecording::describe (result, false) == "Record 3 Tracks"
+                   && state.tracks.size() == before->tracks.size() + 1 && state.tracks[0].clips.size() == 1,
+               "several tracks: three tracks land in one go, from two inputs saved once each; the unarmed track is untouched");
+
+        check (onA->clips.size() == 1 && onA->clips[0].position == punchIn && clipIs (onA->clips[0], mix, length)
+                   && onB->clips.size() == 1 && onB->clips[0].position == punchIn && clipIs (onB->clips[0], left, length),
+               "several tracks: each take lands at the punch-in, bit for bit what its input carried (two recorders, one anchor)");
+
+        check (added.clips.size() == 1 && added.clips[0].audio == onA->clips[0].audio && added.clips[0].source == onA->clips[0].source,
+               "several tracks: tracks recording from the same input share its take and file");
+
+        auto failed = *before;
+        const auto refused = SessionRecording::land (failed, tracks, takes, punchIn, punchOut, roundTrip, false,
+                                                     [] (const AudioDocument::Snapshot&, const juce::String&, juce::String& error)
+                                                     {
+                                                         error = "disk full";
+                                                         return juce::File();
+                                                     });
+        check (refused.landed == 0 && refused.error == "disk full" && failed.tracks.size() == before->tracks.size()
+                   && failed.findTrack (a)->clips.empty(),
+               "several tracks: when a take can't be saved, nothing lands");
+
+        check (SessionRecording::describe ({ 1, 1, {} }, false) == "Record" && SessionRecording::describe ({ 1, 4, {} }, true) == "Loop Record (4 takes)"
+                   && SessionRecording::describe ({ 2, 3, {} }, true) == "Loop Record 2 Tracks",
+               "several tracks: the undo step says what was recorded");
+    }
+
+    void testTrackInputFile (juce::AudioFormatManager& formats)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().input = { 4, 2 };
+        s.addTrack().input = { 7, 1 };
+        s.addTrack();
+        s.addBus();
+
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (s, file);
+        const auto loaded = SessionFile::load (file, formats);
+        file.deleteFile();
+
+        check (error.isEmpty() && loaded.state.tracks.size() == 4 && loaded.state.tracks[0].input == TrackInput { 4, 2 }
+                   && loaded.state.tracks[1].input == TrackInput { 7, 1 } && loaded.state.tracks[2].input.isDefault()
+                   && loaded.state.tracks[3].input.isDefault(),
+               "several tracks: each track's input comes back from a session file");
     }
 }
 
@@ -653,4 +802,6 @@ void runTrackRecordingTests (juce::AudioFormatManager& formats)
     testTakeLimits();
     testTakesFile (formats);
     testMonitoring();
+    testSeveralTracks();
+    testTrackInputFile (formats);
 }

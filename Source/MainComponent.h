@@ -50,7 +50,8 @@ private:
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
-    void updateMonitoring();
+    void updateInputs();
+    bool isRecording();
 
     // File
     void openFile (const juce::File&);
@@ -124,7 +125,7 @@ private:
     void startRecording();
     void stopRecording();
     void startSessionRecording();
-    void finishSessionRecording (const Recorder::Take&);
+    void finishSessionRecording (const std::map<Recorder*, Recorder::Take>&);
     juce::File recordingsFolder() const;
     void showAudioSettings();
     void showPluginList();
@@ -172,12 +173,12 @@ private:
     juce::int64 punchIn = 0, punchOut = -1;
     int recordLatency = 0;
 
-    // A take going onto a session track (the armed one, or a new one when recordTrackId is 0)
-    // rather than into the document.
+    // Takes going onto session tracks (the armed ones, or a new one) rather than into the document.
     bool recordingSession = false, recordChangedRate = false;
     bool loopRecording = false, recordingLoop = false;   // the option, and a take under way that loops
     bool inputMonitoring = false;                        // the armed track plays its input
-    juce::uint32 recordTrackId = 0;
+    std::vector<std::pair<juce::uint32, Recorder*>> recordTracks;   // the tracks recording (0: a new one), and from what
+    juce::String lastInputError;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

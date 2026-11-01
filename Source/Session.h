@@ -123,6 +123,17 @@ struct EffectEnvelope
 
     A bus is a track with no clips that plays what other tracks send it, through its own effects,
     volume and pan. Buses send nowhere themselves. */
+/** The device inputs a track records from: a first channel (absolute) and 1 or 2 channels, or
+    the recording input chosen in the window (first < 0). */
+struct TrackInput
+{
+    int first = -1, channels = 0;
+
+    bool isDefault() const noexcept                       { return first < 0 || channels <= 0; }
+    bool operator== (const TrackInput& o) const noexcept  { return isDefault() ? o.isDefault() : first == o.first && channels == o.channels; }
+    bool operator!= (const TrackInput& o) const noexcept  { return ! operator== (o); }
+};
+
 struct SessionTrack
 {
     juce::uint32 id = 0;
@@ -131,6 +142,7 @@ struct SessionTrack
     float gainDb = 0.0f;
     float pan = 0.0f;                      // -1 (left) to +1 (right)
     bool mute = false, solo = false;
+    TrackInput input;                      // what it records from (tracks only)
     std::vector<SessionClip> clips;
     std::vector<SessionSend> sends;
     Envelope volumeEnvelope, panEnvelope;  // dB, and -1 to +1

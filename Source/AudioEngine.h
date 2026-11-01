@@ -45,10 +45,10 @@ public:
     /** Plays [start, end) over and over once it gets there (end <= start: no loop). */
     void setLoop (juce::int64 start, juce::int64 end)         { loopStart = start; loopEnd = end; }
 
-    /** Input monitoring, on the audio thread before each block: the device input for this cycle,
-        to join track trackId (0: none). It is kept in order, so however the transport's resampler
-        splits its reads, the input plays through as one stream. */
-    void feedLive (juce::uint32 trackId, const juce::AudioBuffer<float>& input, int numChannels, int numFrames);
+    /** Input monitoring, on the audio thread before each block: this cycle's input, its channels
+        going to the tracks the layout says (none: off). It is kept in order, so however the
+        transport's resampler splits its reads, the input plays through as one stream. */
+    void feedLive (const SessionMixer::Live& layout, const juce::AudioBuffer<float>& input, int numFrames);
 
     /** While stopped: the live input alone (the clips silent) through the session at the cursor. */
     void renderLive (const juce::AudioSourceChannelInfo&);
@@ -76,13 +76,12 @@ private:
     std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
 
     // Input monitoring (audio thread): a FIFO of input frames, and a block taken from it.
-    juce::uint32 liveTrack = 0;
-    int liveChannels = 0, liveRead = 0, liveCount = 0, blocksRead = 0;
+    SessionMixer::Live live;
+    int liveRead = 0, liveCount = 0, blocksRead = 0;
     juce::AudioBuffer<float> liveRing, liveBlock;
 
     void refreshState();
-    const SessionMixer::LiveInput* takeLive (int numFrames, bool clips);
-    SessionMixer::LiveInput live;
+    const SessionMixer::Live* takeLive (int numFrames, bool clips);
     void renderRun (juce::int64 start, const juce::AudioSourceChannelInfo&, int destStart, int numFrames);
 };
 
@@ -120,15 +119,22 @@ public:
     void setPositionFrames (juce::int64);
     juce::int64 getStopFrame() const noexcept     { return stopAt; }
 
-    /** Input monitoring: in session mode, the device input (setMonitorInput) plays through this
-        track, joining its clips before its effects, while playing or stopped (0: off). Needs the
-        device at the session's rate. */
-    void setMonitoredTrack (juce::uint32 trackId)  { monitoredTrack = trackId; }
-    juce::uint32 getMonitoredTrack() const noexcept { return monitoredTrack.load(); }
+    /** A track and the inputs it monitors: 1 or 2 from firstInput, numbered as the device
+        callback numbers its (active) inputs. */
+    struct MonitoredTrack
+    {
+        juce::uint32 trackId = 0;
+        int firstInput = 0, numInputs = 0;
+    };
 
-    /** On the audio thread, before the block of the same device cycle is processed: the input to
-        monitor (numChannels 0: none). */
-    void setMonitorInput (const float* const* channels, int numChannels, int numFrames);
+    /** Input monitoring: in session mode, each of these tracks plays its inputs (given each cycle
+        by setMonitorInput), joining its clips before its effects, while playing or stopped. Needs
+        the device at the session's rate. Up to SessionMixer::Live::maxTracks; none: off. */
+    void setMonitoredTracks (const std::vector<MonitoredTrack>&);
+
+    /** On the audio thread, before the block of the same device cycle is processed: the device
+        callback's inputs. */
+    void setMonitorInput (const float* const* inputs, int numInputs, int numFrames);
 
     /** The document frame after the last one sent to the output while playing. The audio thread
         advances it by each block it plays, so a recorder running later in the same device cycle can
@@ -167,9 +173,14 @@ private:
     juce::int64 stopAt = -1;
     double sourceRate = 0.0;
     std::atomic<juce::int64> playedFrame { 0 };
-    std::atomic<juce::uint32> monitoredTrack { 0 };
-    juce::AudioBuffer<float> monitorInput;     // audio thread: this cycle's input
-    int monitorChannels = 0, monitorFrames = 0;
+    juce::SpinLock monitoredLock;
+    std::array<MonitoredTrack, SessionMixer::Live::maxTracks> monitored;   // guarded by the lock
+    int numMonitored = 0;
+    std::array<MonitoredTrack, SessionMixer::Live::maxTracks> monitorTracks;   // audio thread's copy
+    int numMonitorTracks = 0;
+    juce::AudioBuffer<float> monitorInput;     // audio thread: this cycle's input, two channels a track
+    SessionMixer::Live monitorLayout;
+    int monitorFrames = 0;
     double deviceRate = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DocumentPlayerProcessor)
@@ -223,8 +234,21 @@ public:
 
     Recorder& getRecorder()                       { return *recorder; }
 
-    /** Input monitoring: the recording input plays through this session track (0: off). */
-    void setMonitoredTrack (juce::uint32 trackId) { player->setMonitoredTrack (trackId); }
+    /** Several tracks at once: the inputs armed tracks record from. Each distinct one other than
+        the recording input gets a recorder of its own, run after the player like the first, and
+        its channels are turned on too. Call while not recording; does nothing when they are the
+        same as before. Returns an error message, or empty on success. */
+    juce::String setTrackInputs (const std::vector<TrackInput>&);
+
+    /** The recorder for a track's input: the first one for the default input (or its channels),
+        else one made by setTrackInputs; nullptr when there is none. */
+    Recorder* getRecorderFor (const TrackInput&);
+
+    /** Every recorder: the first, then one for each extra input. */
+    std::vector<Recorder*> getRecorders();
+
+    /** Input monitoring: these tracks play what comes in on their inputs (none: off). */
+    void setMonitoredTracks (const std::vector<std::pair<juce::uint32, TrackInput>>&);
 
     /** Frames from a document frame leaving the player to the same moment arriving back at the
         recorder: device output and input latency (each including a buffer) plus the rack's latency. */
@@ -294,6 +318,13 @@ private:
     int outputPairFirstChannel = 0;
     int inputFirstChannel = 0, inputNumChannels = 0;
     std::unique_ptr<Recorder> recorder;
+    std::vector<std::pair<TrackInput, std::unique_ptr<Recorder>>> extraRecorders;
+    std::vector<TrackInput> requestedInputs;   // the last setTrackInputs, and the recording input then
+    TrackInput requestedMain;
+    juce::BigInteger appliedInputs;            // the device's inputs on after they were last set
+    bool trackInputsCurrent = false;
+    bool deviceOpen = false;
+    juce::String applyInputChannels();
     class MonitorTap;
     std::unique_ptr<MonitorTap> monitorTap;
     std::shared_ptr<bool> alive = std::make_shared<bool> (true);

@@ -821,6 +821,12 @@ juce::String save (const SessionState& state, const juce::File& target,
         track->setAttribute ("mute", t.mute);
         track->setAttribute ("solo", t.solo);
 
+        if (! t.input.isDefault())
+        {
+            track->setAttribute ("inputFirst", t.input.first);
+            track->setAttribute ("inputChannels", t.input.channels);
+        }
+
         const auto writeEnvelope = [track] (const Envelope& envelope) -> juce::XmlElement*
         {
             if (envelope.isEmpty())
@@ -929,6 +935,9 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.pan = (float) trackXml->getDoubleAttribute ("pan");
         track.mute = trackXml->getBoolAttribute ("mute");
         track.solo = trackXml->getBoolAttribute ("solo");
+
+        if (const auto channels = trackXml->getIntAttribute ("inputChannels"); ! track.isBus && (channels == 1 || channels == 2))
+            track.input = { juce::jmax (0, trackXml->getIntAttribute ("inputFirst")), channels };
 
         for (auto* envelopeXml : trackXml->getChildWithTagNameIterator ("ENVELOPE"))
         {

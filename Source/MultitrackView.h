@@ -41,12 +41,18 @@ public:
     juce::Range<juce::int64> getTimeSelection() const noexcept { return timeSelection; }
     void setTimeSelection (juce::Range<juce::int64>);
 
-    /** The track armed for recording (its id), or 0. One track at a time. */
-    juce::uint32 getArmedTrack() const noexcept   { return armedTrackId; }
-    void setArmedTrack (juce::uint32 trackId);
+    /** The tracks armed for recording (their ids, in the session's order). Each records from its
+        own input; buses can't be armed. */
+    std::vector<juce::uint32> getArmedTracks() const;
+    bool isArmed (juce::uint32 trackId) const;
+    void setArmed (juce::uint32 trackId, bool armed);
 
-    /** Shows the take under way: the part of the session it covers on the armed track (or a new
-        track below the last), empty when nothing is recording. */
+    /** Sets what a track records from, as one undo step. The I button on a track offers the
+        device's inputs. */
+    void setTrackInput (juce::uint32 trackId, TrackInput);
+
+    /** Shows the takes under way: the part of the session they cover on the armed tracks (or a
+        new track below the last), empty when nothing is recording. */
     void showRecording (juce::Range<juce::int64>);
 
     /** The selected track (the one last clicked), or -1. */
@@ -173,6 +179,7 @@ private:
     void drawRuler (juce::Graphics&, juce::Rectangle<int>) const;
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;
     void selectTrack (int track);
+    void showInputMenu (juce::uint32 trackId, juce::Component& target);
     void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
     void showSends (juce::uint32 trackId, juce::Component& target);
     void showAutomationMenu (juce::uint32 trackId, juce::Component& target);
@@ -187,7 +194,8 @@ private:
     double framesPerPixel = 1000.0, viewStart = 0.0;
     int scrollY = 0;
     juce::int64 cursor = 0;
-    juce::uint32 selectedClip = 0, selectedTrackId = 0, armedTrackId = 0;
+    juce::uint32 selectedClip = 0, selectedTrackId = 0;
+    std::set<juce::uint32> armed;
     juce::Range<juce::int64> timeSelection, recording;
 
     Drag drag = Drag::none;

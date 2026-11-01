@@ -110,12 +110,13 @@ namespace
             dest.addFrom (ch, destStart, *from, ch, 0, n, gain);
     }
 
-    /** The live input, panned like a clip, into frames [0, numFrames) of out. */
-    void addLive (const LiveInput& live, juce::AudioBuffer<float>& out, int numFrames, const float* pans, float pan)
+    /** A live input, panned like a clip, into frames [0, numFrames) of out. */
+    void addLive (const LiveInput& live, const juce::AudioBuffer<float>& audio, juce::AudioBuffer<float>& out, int numFrames,
+                  const float* pans, float pan)
     {
-        const auto channels = juce::jmin (2, live.numChannels, live.audio->getNumChannels());
-        const auto* inLeft = live.audio->getReadPointer (0);
-        const auto* inRight = live.audio->getReadPointer (channels - 1);
+        const auto channels = juce::jlimit (1, 2, live.numChannels);
+        const auto* inLeft = audio.getReadPointer (live.firstChannel);
+        const auto* inRight = audio.getReadPointer (live.firstChannel + channels - 1);
         auto* outLeft = out.getWritePointer (0);
         auto* outRight = out.getWritePointer (1);
 
@@ -198,7 +199,7 @@ namespace
 }
 
 void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<float>& dest, int destStart, int numFrames,
-             Buffers& buffers, Inserts* inserts, const LiveInput* live)
+             Buffers& buffers, Inserts* inserts, const Live* live)
 {
     for (int ch = 0; ch < dest.getNumChannels(); ++ch)
         dest.clear (ch, destStart, numFrames);
@@ -237,8 +238,11 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         else
             buffers.track.clear (0, numFrames);
 
-        if (live != nullptr && live->trackId == track.id && live->audio != nullptr && live->numChannels > 0)
-            addLive (*live, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
+        if (live != nullptr && live->audio != nullptr)
+            for (int i = 0; i < live->count; ++i)
+                if (const auto& in = live->inputs[(size_t) i]; in.trackId == track.id && in.numChannels > 0
+                                                                && in.firstChannel + in.numChannels <= live->audio->getNumChannels())
+                    addLive (in, *live->audio, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
 
         if (inserts != nullptr && inserts->isActive (track.id))
             inserts->process (track, start + own + ahead, buffers.track, numFrames);

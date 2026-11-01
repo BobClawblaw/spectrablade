@@ -63,8 +63,11 @@ public:
 
         arm.setClickingTogglesState (true);
         arm.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffd0453a));
-        arm.setTooltip ("Arm for recording: Record puts the take on this track");
-        arm.onClick = [this] { view.setArmedTrack (arm.getToggleState() ? trackId : 0); };
+        arm.setTooltip ("Arm for recording: Record puts a take on each armed track, from its input");
+        arm.onClick = [this] { view.setArmed (trackId, arm.getToggleState()); };
+
+        inputButton.setTooltip ("The input this track records from");
+        inputButton.onClick = [this] { view.showInputMenu (trackId, inputButton); };
 
         for (auto* b : { &mute, &solo })
         {
@@ -129,7 +132,7 @@ public:
             };
         }
 
-        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &arm, &mute, &solo, &gain, &pan, &sendsButton, &automationButton })
+        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &arm, &mute, &solo, &gain, &pan, &sendsButton, &inputButton, &automationButton })
             addAndMakeVisible (c);
     }
 
@@ -163,7 +166,11 @@ public:
         isBus = t.isBus;
         sendsButton.setVisible (! isBus);
         arm.setVisible (! isBus);
-        arm.setToggleState (view.armedTrackId == trackId, juce::dontSendNotification);
+        arm.setToggleState (view.isArmed (trackId), juce::dontSendNotification);
+        inputButton.setVisible (! isBus);
+        inputButton.setButtonText (t.input.isDefault() ? juce::String ("In")
+                                   : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
+                                                           : juce::String (t.input.first + 1));
         sendsButton.setButtonText (t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
         sendsButton.setToggleState (! t.sends.empty(), juce::dontSendNotification);
         effectsButton.setTooltip (isBus ? "This bus's effects" : "This track's effects");
@@ -242,7 +249,9 @@ public:
 
         if (! isBus)
         {
-            sendsButton.setBounds (bottom.removeFromRight (64));
+            sendsButton.setBounds (bottom.removeFromRight (56));
+            bottom.removeFromRight (4);
+            inputButton.setBounds (bottom.removeFromRight (40));
             bottom.removeFromRight (4);
         }
 
@@ -262,7 +271,7 @@ public:
 private:
     MultitrackView& view;
     juce::Label name;
-    juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, automationButton { "A" };
+    juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
     juce::Slider gain, pan;
     juce::Colour colour;
     bool isSelected = false, isBus = false;
@@ -685,8 +694,8 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
     if (! state->findClip (selectedClip).has_value())
         selectedClip = 0;
 
-    if (state->findTrack (armedTrackId) == nullptr)
-        armedTrackId = 0;
+    for (auto it = armed.begin(); it != armed.end();)
+        it = state->findTrack (*it) == nullptr ? armed.erase (it) : std::next (it);
 
     for (auto it = shownEnvelopes.begin(); it != shownEnvelopes.end();)
         it = state->findTrack (it->first) == nullptr ? shownEnvelopes.erase (it) : std::next (it);
@@ -1390,18 +1399,25 @@ void MultitrackView::paint (juce::Graphics& g)
 
         if (! recording.isEmpty())
         {
-            auto lane = (int) s.tracks.size();
+            std::vector<int> lanes;
 
             for (int t = 0; t < (int) s.tracks.size(); ++t)
-                if (s.tracks[(size_t) t].id == armedTrackId)
-                    lane = t;
+                if (isArmed (s.tracks[(size_t) t].id))
+                    lanes.push_back (t);
+
+            if (lanes.empty())
+                lanes.push_back ((int) s.tracks.size());
 
             const auto x0 = xForFrame (recording.getStart()), x1 = xForFrame (recording.getEnd());
-            const auto r = juce::Rectangle<float> (x0, (float) laneTop (lane) + 2.0f, juce::jmax (1.0f, x1 - x0), (float) trackHeight - 4.0f);
-            g.setColour (juce::Colour (0xffd0453a).withAlpha (0.3f));
-            g.fillRoundedRectangle (r, 3.0f);
-            g.setColour (juce::Colour (0xffd0453a));
-            g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
+
+            for (auto lane : lanes)
+            {
+                const auto r = juce::Rectangle<float> (x0, (float) laneTop (lane) + 2.0f, juce::jmax (1.0f, x1 - x0), (float) trackHeight - 4.0f);
+                g.setColour (juce::Colour (0xffd0453a).withAlpha (0.3f));
+                g.fillRoundedRectangle (r, 3.0f);
+                g.setColour (juce::Colour (0xffd0453a));
+                g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
+            }
         }
 
         g.setColour (cursorColour);
@@ -1460,12 +1476,74 @@ void MultitrackView::setTimeSelection (juce::Range<juce::int64> range)
         onSelectionChanged();
 }
 
-void MultitrackView::setArmedTrack (juce::uint32 trackId)
+std::vector<juce::uint32> MultitrackView::getArmedTracks() const
+{
+    std::vector<juce::uint32> ids;
+
+    for (auto& t : shown().tracks)
+        if (armed.count (t.id) > 0)
+            ids.push_back (t.id);
+
+    return ids;
+}
+
+bool MultitrackView::isArmed (juce::uint32 trackId) const
+{
+    return armed.count (trackId) > 0;
+}
+
+void MultitrackView::setArmed (juce::uint32 trackId, bool on)
 {
     const auto* t = shown().findTrack (trackId);
-    armedTrackId = t != nullptr && ! t->isBus ? trackId : 0;
+
+    if (on && t != nullptr && ! t->isBus)
+        armed.insert (trackId);
+    else
+        armed.erase (trackId);
+
     rebuildHeaders();
     repaint();
+}
+
+void MultitrackView::setTrackInput (juce::uint32 trackId, TrackInput input)
+{
+    editTrack (trackId, "Track Input", false, [input] (SessionTrack& t) { t.input = input.isDefault() ? TrackInput() : input; });
+}
+
+void MultitrackView::showInputMenu (juce::uint32 trackId, juce::Component& target)
+{
+    const auto* t = shown().findTrack (trackId);
+
+    if (t == nullptr)
+        return;
+
+    constexpr int stereoBase = 1000, monoBase = 2000;
+    const auto names = engine.getDeviceInputChannelNames();
+    const auto current = t->input;
+    juce::PopupMenu menu;
+    menu.addItem (1, "Recording Input (chosen at the bottom of the window)", true, current.isDefault());
+    menu.addSeparator();
+
+    for (int ch = 0; ch + 1 < names.size(); ch += 2)
+        menu.addItem (stereoBase + ch, names[ch] + " / " + names[ch + 1], true, current == TrackInput { ch, 2 });
+
+    menu.addSeparator();
+
+    for (int ch = 0; ch < names.size(); ++ch)
+        menu.addItem (monoBase + ch, names[ch] + " (mono)", true, current == TrackInput { ch, 1 });
+
+    if (names.isEmpty())
+        menu.addItem (-1, "No inputs on this device", false, false);
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
+        [this, trackId, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
+        {
+            if (safe == nullptr || result <= 0)
+                return;
+
+            setTrackInput (trackId, result >= monoBase ? TrackInput { result - monoBase, 1 }
+                                    : result >= stereoBase ? TrackInput { result - stereoBase, 2 } : TrackInput());
+        });
 }
 
 void MultitrackView::showRecording (juce::Range<juce::int64> range)

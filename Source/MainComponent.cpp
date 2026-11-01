@@ -3,6 +3,7 @@
 #include "OfflineRender.h"
 #include "PluginScanner.h"
 #include "SampleRateConverter.h"
+#include "SessionRecording.h"
 #include "SpectralEdit.h"
 
 namespace
@@ -432,7 +433,7 @@ MainComponent::MainComponent()
     playButton.onClick     = [this] { togglePlay(); };
     stopButton.onClick     = [this]
     {
-        if (engine.getRecorder().isRecording())
+        if (isRecording())
             stopRecording();
         else
             engine.getPlayer().pause();
@@ -468,7 +469,7 @@ MainComponent::MainComponent()
     {
         const auto id = inputChoice.getSelectedId();
 
-        if (id <= 0 || engine.getRecorder().isRecording())
+        if (id <= 0 || isRecording())
             return;
 
         const auto first = id >= monoInputBase ? id - monoInputBase : id >= stereoInputBase ? id - stereoInputBase : 0;
@@ -551,7 +552,7 @@ MainComponent::~MainComponent()
    #if JUCE_MAC
     juce::MenuBarModel::setMacMainMenu (nullptr);
    #endif
-    if (engine.getRecorder().isRecording())
+    if (isRecording())
         engine.getRecorder().stop();   // the take is lost: the app is closing
 
     saveSettings();
@@ -684,7 +685,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress (juce::KeyPress::homeKey, 0); info.setActive (hasAudio); break;
         case cmdGoToEnd:    info.setInfo ("Go to End", "Move the cursor to the end", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::endKey, 0); info.setActive (hasAudio); break;
-        case cmdRecord:     info.setInfo (engine.getRecorder().isRecording() ? "Stop Recording" : "Record",
+        case cmdRecord:     info.setInfo (isRecording() ? "Stop Recording" : "Record",
                                           "Record from the input", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, shift); break;
 
@@ -729,11 +730,11 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
         case cmdSnapping:   info.setInfo ("Snapping", "Line dragged clips, edges, fades and points up with clip edges, the cursor and the ruler", "Multitrack", 0);
                             info.addDefaultKeypress ('s', 0); info.setTicked (multitrack.isSnapping()); info.setActive (multitrackMode); break;
-        case cmdInputMonitoring: info.setInfo ("Input Monitoring", "Hear the recording input through the armed track's effects, volume and pan", "Multitrack", 0);
+        case cmdInputMonitoring: info.setInfo ("Input Monitoring", "Hear each armed track's input through its effects, volume and pan", "Multitrack", 0);
                             info.addDefaultKeypress ('i', 0); info.setTicked (inputMonitoring); info.setActive (multitrackMode); break;
         case cmdLoopRecording: info.setInfo ("Loop Recording", "Record over the time range again and again, keeping each pass as a take", "Multitrack", 0);
                             info.addDefaultKeypress ('l', 0); info.setTicked (loopRecording);
-                            info.setActive (multitrackMode && ! engine.getRecorder().isRecording()); break;
+                            info.setActive (multitrackMode && ! isRecording()); break;
         case cmdWriteAutomation: info.setInfo ("Write Automation", "While playing, dragging a track's volume or pan writes it into its envelope", "Multitrack", 0);
                             info.addDefaultKeypress ('w', 0); info.setTicked (multitrack.isWritingAutomation()); info.setActive (multitrackMode); break;
         case cmdCrossfade:  info.setInfo ("Crossfade Overlaps", "Crossfade a clip moved or trimmed over part of another", "Multitrack", 0);
@@ -796,7 +797,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
     }
 
     // While recording, the document must stay as it is so the take lands where it was started.
-    if (engine.getRecorder().isRecording() && id != cmdRecord && id != cmdPlayPause && id != cmdAddMarker)
+    if (isRecording() && id != cmdRecord && id != cmdPlayPause && id != cmdAddMarker)
         info.setActive (false);
 }
 
@@ -870,7 +871,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMixDown:    chooseMixDownFile(); break;
         case cmdInputMonitoring:
             inputMonitoring = ! inputMonitoring;
-            updateMonitoring();
+            updateInputs();
             commands.commandStatusChanged();
             break;
         case cmdLoopRecording:
@@ -966,10 +967,38 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
     commands.commandStatusChanged();
 }
 
-void MainComponent::updateMonitoring()
+bool MainComponent::isRecording()
 {
-    // The armed track can change at any time; buses are never armed.
-    engine.setMonitoredTrack (inputMonitoring && multitrackMode ? multitrack.getArmedTrack() : 0);
+    const auto recorders = engine.getRecorders();
+    return std::any_of (recorders.begin(), recorders.end(), [] (auto* r) { return r->isRecording(); });
+}
+
+void MainComponent::updateInputs()
+{
+    // Arming and track inputs can change at any time: keep the armed tracks' inputs on (not while
+    // recording, when the recorders must stay as they are) and monitored when that is on.
+    const auto state = engine.session.getState();
+    std::vector<TrackInput> inputs;
+    std::vector<std::pair<juce::uint32, TrackInput>> monitored;
+
+    for (auto id : multitrack.getArmedTracks())
+    {
+        if (const auto* t = state->findTrack (id))
+        {
+            inputs.push_back (t->input);
+            monitored.emplace_back (id, t->input);
+        }
+    }
+
+    if (! isRecording())
+    {
+        if (const auto error = engine.setTrackInputs (inputs); error.isNotEmpty() && error != lastInputError)
+            juce::Logger::writeToLog ("Track inputs: " + error);
+        else if (error.isEmpty())
+            lastInputError = {};
+    }
+
+    engine.setMonitoredTracks (inputMonitoring && multitrackMode ? monitored : std::vector<std::pair<juce::uint32, TrackInput>>());
 }
 
 void MainComponent::timerCallback()
@@ -977,14 +1006,14 @@ void MainComponent::timerCallback()
     auto& player = engine.getPlayer();
     auto& recorder = engine.getRecorder();
 
-    updateMonitoring();
+    updateInputs();
 
     if (multitrackMode)
     {
         const auto rate = engine.session.getSampleRate();
-        recordButton.setToggleState (recorder.isRecording(), juce::dontSendNotification);
+        recordButton.setToggleState (isRecording(), juce::dontSendNotification);
 
-        if (recorder.isRecording() && recordingSession)
+        if (isRecording() && recordingSession)
         {
             // The take so far, as it will land: what has come back through the input by now.
             const auto played = player.getPlayedFrame().load() - recordLatency;
@@ -1000,7 +1029,7 @@ void MainComponent::timerCallback()
         }
 
         const auto pos = player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor();
-        timeLabel.setText ((recorder.isRecording() ? "REC " : "") + formatTime (pos, rate), juce::dontSendNotification);
+        timeLabel.setText ((isRecording() ? "REC " : "") + formatTime (pos, rate), juce::dontSendNotification);
         playButton.setButtonText (player.isPlaying() ? "Pause" : "Play");
 
         const auto state = engine.session.getState();
@@ -1126,7 +1155,7 @@ void MainComponent::refreshInputChoices()
     const auto count = engine.getInputNumChannels();
     inputChoice.setSelectedId (count == 2 ? stereoInputBase + first : count == 1 ? monoInputBase + first : noInputId,
                                juce::dontSendNotification);
-    inputChoice.setEnabled (! engine.getRecorder().isRecording());
+    inputChoice.setEnabled (! isRecording());
     inputMeter.setNumChannels (engine.getRecorder().isInputActive() ? count : 0);
 }
 
@@ -1169,7 +1198,7 @@ void MainComponent::confirmQuit (std::function<void()> proceed)
 //==============================================================================
 void MainComponent::setMultitrack (bool on)
 {
-    if (on == multitrackMode || engine.getRecorder().isRecording())
+    if (on == multitrackMode || isRecording())
         return;
 
     engine.getPlayer().pause();
@@ -2121,7 +2150,7 @@ void MainComponent::applyRackToSelection()
 //==============================================================================
 void MainComponent::togglePlay()
 {
-    if (engine.getRecorder().isRecording())
+    if (isRecording())
     {
         stopRecording();
         return;
@@ -2234,7 +2263,7 @@ void MainComponent::convertSampleRate (double newRate)
 
 void MainComponent::toggleRecord()
 {
-    if (engine.getRecorder().isRecording())
+    if (isRecording())
         stopRecording();
     else
         startRecording();
@@ -2253,15 +2282,15 @@ void MainComponent::startRecording()
         return;
     }
 
-    if (! recorder.isInputActive())
-    {
-        showError ("Record", "Choose an input to record from first (Input, at the bottom of the window).");
-        return;
-    }
-
     if (multitrackMode)
     {
         startSessionRecording();
+        return;
+    }
+
+    if (! recorder.isInputActive())
+    {
+        showError ("Record", "Choose an input to record from first (Input, at the bottom of the window).");
         return;
     }
 
@@ -2313,33 +2342,43 @@ void MainComponent::startRecording()
 
 void MainComponent::stopRecording()
 {
-    auto& recorder = engine.getRecorder();
-
-    if (! recorder.isRecording())
+    if (! isRecording())
         return;
 
-    auto take = recorder.stop();
+    std::map<Recorder*, Recorder::Take> takes;
+
+    for (auto* r : engine.getRecorders())
+        if (r->isRecording())
+            takes[r] = r->stop();
+
     engine.getPlayer().pause();
     engine.getPlayer().clearLoop();
     refreshInputChoices();
     commands.commandStatusChanged();
+    juce::int64 dropped = 0;
 
-    juce::Logger::writeToLog ("Recorded " + juce::String (take.clip.getNumFrames()) + " frames, anchor "
-                              + juce::String (take.anchorRecorded) + " -> " + juce::String (take.anchorPlayed)
-                              + ", dropped " + juce::String (take.droppedFrames));
+    for (auto& [r, t] : takes)
+    {
+        juce::Logger::writeToLog ("Recorded " + juce::String (t.clip.getNumFrames()) + " frames from input "
+                                  + juce::String (r->getInputFirstChannel() + 1) + " x" + juce::String (r->getInputNumChannels())
+                                  + ", anchor " + juce::String (t.anchorRecorded) + " -> " + juce::String (t.anchorPlayed)
+                                  + ", dropped " + juce::String (t.droppedFrames));
+        dropped += t.droppedFrames;
+    }
 
-    if (take.droppedFrames > 0)
-        showError ("Record", juce::String (take.droppedFrames) + " frames were lost because the computer could not keep up. "
+    if (dropped > 0)
+        showError ("Record", juce::String (dropped) + " frames were lost because the computer could not keep up. "
                                "Listen to the take before keeping it.");
 
     if (recordingSession)
     {
         recordingSession = false;
         multitrack.showRecording ({});
-        finishSessionRecording (take);
+        finishSessionRecording (takes);
         return;
     }
 
+    const auto& take = takes.begin()->second;
     const auto placement = Recorder::place (take, punchIn, punchOut, recordLatency);
 
     if (placement.takeEnd <= placement.takeStart)
@@ -2359,10 +2398,40 @@ void MainComponent::stopRecording()
 
 void MainComponent::startSessionRecording()
 {
-    auto& recorder = engine.getRecorder();
     auto& player = engine.getPlayer();
     auto& session = engine.session;
     const auto deviceRate = engine.deviceManager.getCurrentAudioDevice()->getCurrentSampleRate();
+
+    // Each armed track records from its input's recorder; with none armed, the take goes onto a
+    // new track from the recording input.
+    updateInputs();
+    recordTracks.clear();
+
+    for (auto id : multitrack.getArmedTracks())
+    {
+        const auto* t = session.getState()->findTrack (id);
+        auto* r = engine.getRecorderFor (t->input);
+
+        if (r == nullptr || ! r->isInputActive())
+        {
+            showError ("Record", "The input " + t->name + " records from is not on. Choose one with its In button, "
+                                 "or the recording input at the bottom of the window.");
+            return;
+        }
+
+        recordTracks.emplace_back (id, r);
+    }
+
+    if (recordTracks.empty())
+    {
+        if (! engine.getRecorder().isInputActive())
+        {
+            showError ("Record", "Choose an input to record from first (Input, at the bottom of the window).");
+            return;
+        }
+
+        recordTracks.emplace_back (0, &engine.getRecorder());
+    }
 
     const auto rateDiffers = ! juce::exactlyEqual (session.getSampleRate(), deviceRate);
 
@@ -2389,15 +2458,26 @@ void MainComponent::startSessionRecording()
     punchIn = range.isEmpty() ? multitrack.getCursor() : range.getStart();
     punchOut = range.isEmpty() ? -1 : range.getEnd();
     recordLatency = engine.getRoundTripLatency();
-    recordTrackId = multitrack.getArmedTrack();
     recordingLoop = loopRecording && ! range.isEmpty();
 
     player.pause();
+    std::set<Recorder*> started;
 
-    if (! recorder.start())
+    for (auto& [id, r] : recordTracks)
     {
-        showError ("Record", "The recorder could not start.");
-        return;
+        if (started.count (r) > 0)
+            continue;
+
+        if (! r->start())
+        {
+            for (auto* s : started)
+                s->stop();
+
+            showError ("Record", "The recorder could not start.");
+            return;
+        }
+
+        started.insert (r);
     }
 
     // Always play, from the preroll: the performer hears the session, and the player's frame
@@ -2409,9 +2489,10 @@ void MainComponent::startSessionRecording()
     if (recordingLoop)
         player.setLoop (punchIn, punchOut);
 
-    juce::Logger::writeToLog ("Recording to the session: input " + juce::String (engine.getInputFirstChannel() + 1) + " x"
-                              + juce::String (engine.getInputNumChannels()) + ", punch in " + juce::String (punchIn)
-                              + ", punch out " + juce::String (punchOut) + ", round trip " + juce::String (recordLatency));
+    juce::Logger::writeToLog ("Recording to the session: " + juce::String ((int) recordTracks.size()) + " track(s) from "
+                              + juce::String ((int) started.size()) + " input(s), punch in " + juce::String (punchIn)
+                              + ", punch out " + juce::String (punchOut) + (recordingLoop ? ", looping" : "")
+                              + ", round trip " + juce::String (recordLatency));
     refreshInputChoices();
     commands.commandStatusChanged();
 }
@@ -2427,35 +2508,12 @@ juce::File MainComponent::recordingsFolder() const
     return juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("SpectraBlade").getChildFile ("Recordings");
 }
 
-void MainComponent::finishSessionRecording (const Recorder::Take& take)
+void MainComponent::finishSessionRecording (const std::map<Recorder*, Recorder::Take>& takes)
 {
-    // A loop's complete passes become takes of one clip, kept together in one file.
-    const auto passes = recordingLoop ? Recorder::placeLoop (take, punchIn, punchOut, recordLatency)
-                                      : std::vector<Recorder::Placement> { Recorder::place (take, punchIn, punchOut, recordLatency) };
-    const auto asTakes = recordingLoop && passes.size() > 1;
+    const auto looped = recordingLoop;
     recordingLoop = false;
 
-    if (passes.empty() || passes.front().takeEnd <= passes.front().takeStart)
-        return;
-
-    const auto placement = passes.front();
-    const auto takeEnd = passes.back().takeEnd;
-    const AudioSnapshot takeAudio (take.clip.numChannels, take.clip.segments);
-    const auto clip = AudioEdits::copy (takeAudio, placement.takeStart, takeEnd, take.clip.sampleRate);
-    auto audio = std::make_shared<const AudioSnapshot> (clip.numChannels, clip.segments);
-
-    auto state = *engine.session.getState();
-    auto track = -1;
-
-    for (int t = 0; t < (int) state.tracks.size(); ++t)
-        if (state.tracks[(size_t) t].id == recordTrackId)
-            track = t;
-
-    // The take is kept as a 32-bit float WAV, so it is exactly what came in.
     const auto folder = recordingsFolder();
-    const auto trackName = track >= 0 ? state.tracks[(size_t) track].name : juce::String ("Take");
-    const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (trackName) + " "
-                                                          + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"), ".wav", false);
 
     if (const auto made = folder.createDirectory(); made.failed())
     {
@@ -2463,29 +2521,29 @@ void MainComponent::finishSessionRecording (const Recorder::Take& take)
         return;
     }
 
-    if (const auto error = AudioFileIO::save (*audio, state.sampleRate, file, 32, engine.formatManager); error.isNotEmpty())
+    // Takes are kept as 32-bit float WAVs, so they are exactly what came in.
+    auto state = *engine.session.getState();
+    const auto stamp = juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S");
+    const auto save = [&] (const AudioDocument::Snapshot& audio, const juce::String& trackName, juce::String& error)
     {
-        showError ("Record", "Could not save the take: " + error);
+        const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (trackName) + " " + stamp, ".wav", false);
+        error = AudioFileIO::save (*audio, state.sampleRate, file, 32, engine.formatManager);
+        return file;
+    };
+
+    const auto result = SessionRecording::land (state, recordTracks, takes, punchIn, punchOut, recordLatency, looped, save);
+
+    if (result.error.isNotEmpty())
+    {
+        showError ("Record", "Could not save the take: " + result.error);
         return;
     }
 
-    if (asTakes)
-    {
-        std::vector<juce::int64> offsets;
-
-        for (auto& pass : passes)
-            offsets.push_back (pass.takeStart - placement.takeStart);
-
-        SessionEdits::recordTakes (state, track, file, std::move (audio), placement.destStart, punchOut - punchIn, offsets);
-    }
-    else
-    {
-        SessionEdits::recordClip (state, track, file, std::move (audio), placement.destStart);
-    }
+    if (result.landed == 0)
+        return;
 
     // One undo step, which also takes back the rate change of a session that had no audio yet.
-    engine.session.apply (std::move (state), asTakes ? "Loop Record (" + juce::String ((int) passes.size()) + " takes)" : juce::String ("Record"),
-                          recordChangedRate);
+    engine.session.apply (std::move (state), SessionRecording::describe (result, looped), recordChangedRate);
     multitrack.setTimeSelection ({});
 }
 

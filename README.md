@@ -6,9 +6,16 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 22: recording several tracks at once**
+- Arm as many tracks as you like with their R buttons. Each track's In button chooses what it records from: the recording input chosen at the bottom of the window (the default), any stereo pair of the interface's inputs, or any single input. The choice is saved with the session, and changing it is an undo step.
+- Record then puts a take on every armed track, each from its own input, over the same range (or loop, as takes); with none armed, the take still goes onto a new track. Tracks recording from the same input share one file. All the takes land as one undo step ("Record 3 Tracks").
+- Each input other than the recording input gets a recorder of its own. Every recorder pairs its input with the frame the player sent in the same audio cycle, so all the takes line up with each other and with the session. The armed tracks' inputs are turned on as you arm them, which may restart the audio device for a moment.
+- Input Monitoring now plays each armed track's own input through that track (up to 16 tracks).
+- Measured by the tests: a punch-in through the real player, looped back into two recorders at once (inputs 1-2 with the session's output, input 3 with minus half its left side), lands on three tracks, each take bit for bit what its input carried; the two tracks recording from inputs 1-2 share one take and file, and the unarmed track is untouched. Two monitored tracks each play their own input, panned by their own pan, bit for bit. Also checked: a take that can't be saved lands nothing, the undo step names, track inputs in session files, and in the view, arming several tracks (not a bus), choosing a track's input as an undo step, and a deleted track no longer armed. Recording several inputs of a real interface was not tried by hand, and the integration tests don't turn on more than one input.
+
 **Milestone 21: input monitoring through a track's effects**
 - Turn on Multitrack > Input Monitoring (I) to hear the recording input through the armed track: it joins the track's clips before its effects, so you hear it through the effects, volume, pan, sends and buses, and through the output rack. It works while stopped, playing and recording. Takes are still recorded dry, straight from the input.
-- Monitoring needs a recording input chosen in the audio settings and the interface at the session's sample rate; with no track armed, or the armed track muted, nothing is monitored. Use headphones with a microphone: through speakers it feeds back.
+- Monitoring needs a recording input (Input, at the bottom of the window) and the interface at the session's sample rate; with no track armed, or the armed track muted, nothing is monitored. Use headphones with a microphone: through speakers it feeds back.
 - What you hear comes later than the input by the track's effects' latency, plus the most latency among the buses it sends to (the mixer lines everything up to the slowest path), plus the output rack's latency, 3 frames the player reads ahead, and the interface's own input and output latency. While playing, the track's clips play under the input as before, including over a range being recorded.
 - Measured by the tests, through the real player with a test effect that delays by 64 frames and halves: stopped, the output is the input through the track's pan and the effect, bit for bit, 64 frames late; playing, every frame is the session mix plus that, bit for bit, 67 frames late. Off, on a muted track, or with the device at another rate, nothing of the input plays; a stereo input on a centred track without effects plays unchanged. The tap that hands the device's input to the player was not run with a real interface, and monitoring was not tried by hand.
 
@@ -72,7 +79,7 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - The take is lined up with the round-trip latency, as in the editor, and saved as a 32-bit float WAV in a "<session> Recordings" folder beside the session file (in Music/SpectraBlade/Recordings while the session is unsaved). Past the end of the session the player plays silence, so a take there still lines up.
 - A session with no audio yet takes the interface's sample rate; otherwise the interface must run at the session's rate.
 - Measured by the tests: the session's own output, looped back with 731 frames of latency into the recorder during a punch-in through the real player, lands bit for bit equal to the session mix over the range. Also checked: clearing a range (clips inside, across each edge, and a split from one clip), placing a take onto an armed track, a bus or no track, and recording from past the end of an empty session.
-- Not yet: several armed tracks at once. Loop recording came in milestone 20, input monitoring in milestone 21.
+- Later milestones added loop recording into takes (20), input monitoring (21) and recording several tracks at once (22).
 
 **Milestone 12: buses and sends**
 - Multitrack > Add Bus (Cmd+Shift+B) adds a bus: a row with no clips that plays what tracks send it, through its own effects (the FX button), volume and pan. Its lane lists the tracks feeding it.
@@ -210,7 +217,7 @@ The tests run against the real machine:
 - Effect automation: a test plug-in's parameter following its envelope bit for bit across block sizes, after a jump, behind chain latency and after reordering; bypass, removed effects, slot ids and session files; touches in an effect's window reported in order, envelope values not taken for touches, and touched parameters held off their envelopes.
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
-- Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit.
+- Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
 - Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
 - Loudness against the EBU Tech 3341 and 3342 signals at two rates, 5.1 channel weights, gating, true peak between samples, measuring part of a file, and cancelling.
@@ -252,4 +259,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: recording several armed tracks at once
+1. Multitrack, continued: a metronome and count-in for recording (tempo, time signature, a click on the output)

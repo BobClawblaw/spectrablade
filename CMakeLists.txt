@@ -55,6 +55,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SessionMixer.cpp
     Source/TrackEffects.cpp
     Source/Recorder.cpp
+    Source/SessionRecording.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
     Source/WaveformView.cpp
@@ -121,6 +122,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SessionMixer.cpp
     Source/TrackEffects.cpp
     Source/Recorder.cpp
+    Source/SessionRecording.cpp
     Source/PluginScanner.cpp
     Source/MultitrackView.cpp)
 # Plug-in bundles that misbehave on purpose, for the scan tests (see Tests/TestBundle.cpp).

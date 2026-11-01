@@ -46,8 +46,8 @@ void SessionSource::prepareToPlay (int blockSize, double)
     // does not allocate on the audio thread.
     const auto frames = juce::jmax (8192, 4 * blockSize);
     buffers.reserve (frames);
-    liveBlock.setSize (2, frames);
-    liveRing.setSize (2, juce::nextPowerOfTwo (2 * frames));
+    liveBlock.setSize (2 * SessionMixer::Live::maxTracks, frames);
+    liveRing.setSize (2 * SessionMixer::Live::maxTracks, juce::nextPowerOfTwo (2 * frames));
     liveRead = liveCount = 0;
     nextFrame = -1;
 }
@@ -61,24 +61,25 @@ void SessionSource::refreshState()
     }
 }
 
-void SessionSource::feedLive (juce::uint32 trackId, const juce::AudioBuffer<float>& input, int numChannels, int numFrames)
+void SessionSource::feedLive (const SessionMixer::Live& layout, const juce::AudioBuffer<float>& input, int numFrames)
 {
     const auto size = liveRing.getNumSamples();
 
-    if (trackId == 0 || numChannels <= 0 || numFrames <= 0 || numFrames > size / 2)
+    if (layout.count == 0 || numFrames <= 0 || numFrames > size / 2)
     {
-        liveTrack = 0;
+        live.count = 0;
         liveRead = liveCount = 0;
         return;
     }
 
-    liveTrack = trackId;
-    liveChannels = juce::jmin (2, numChannels);
+    live.inputs = layout.inputs;
+    live.count = layout.count;
+    const auto channels = juce::jmin (input.getNumChannels(), liveRing.getNumChannels());
     const auto mask = size - 1;
 
-    for (int ch = 0; ch < 2; ++ch)
+    for (int ch = 0; ch < channels; ++ch)
     {
-        const auto* in = input.getReadPointer (juce::jmin (ch, liveChannels - 1));
+        const auto* in = input.getReadPointer (ch);
         auto* ring = liveRing.getWritePointer (ch);
 
         for (int i = 0; i < numFrames; ++i)
@@ -97,9 +98,9 @@ void SessionSource::feedLive (juce::uint32 trackId, const juce::AudioBuffer<floa
     }
 }
 
-const SessionMixer::LiveInput* SessionSource::takeLive (int numFrames, bool clips)
+const SessionMixer::Live* SessionSource::takeLive (int numFrames, bool clips)
 {
-    if (liveTrack == 0 || numFrames > liveBlock.getNumSamples())
+    if (live.count == 0 || numFrames > liveBlock.getNumSamples())
         return nullptr;
 
     // Short of input (the resampler's first read wants a few frames more): silence first.
@@ -107,7 +108,7 @@ const SessionMixer::LiveInput* SessionSource::takeLive (int numFrames, bool clip
     const auto pad = numFrames - have;
     const auto mask = liveRing.getNumSamples() - 1;
 
-    for (int ch = 0; ch < 2; ++ch)
+    for (int ch = 0; ch < liveBlock.getNumChannels(); ++ch)
     {
         const auto* ring = liveRing.getReadPointer (ch);
         auto* out = liveBlock.getWritePointer (ch);
@@ -119,7 +120,8 @@ const SessionMixer::LiveInput* SessionSource::takeLive (int numFrames, bool clip
 
     liveRead = (liveRead + have) & mask;
     liveCount -= have;
-    live = { liveTrack, &liveBlock, liveChannels, clips };
+    live.audio = &liveBlock;
+    live.clips = clips;
     return &live;
 }
 
@@ -255,18 +257,50 @@ void DocumentPlayerProcessor::setPositionFrames (juce::int64 frame)
 void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
 {
     deviceRate = sampleRate;
-    monitorInput.setSize (2, juce::jmax (8192, 4 * blockSize));
+    monitorInput.setSize (2 * SessionMixer::Live::maxTracks, juce::jmax (8192, 4 * blockSize));
     monitorFrames = 0;
     transport.prepareToPlay (blockSize, sampleRate);
 }
 
-void DocumentPlayerProcessor::setMonitorInput (const float* const* channels, int numChannels, int numFrames)
+void DocumentPlayerProcessor::setMonitoredTracks (const std::vector<MonitoredTrack>& tracks)
 {
-    monitorChannels = channels != nullptr && numFrames <= monitorInput.getNumSamples() ? juce::jmin (2, numChannels) : 0;
-    monitorFrames = numFrames;
+    const juce::SpinLock::ScopedLockType lock (monitoredLock);
+    numMonitored = 0;
 
-    for (int ch = 0; ch < monitorChannels; ++ch)
-        monitorInput.copyFrom (ch, 0, channels[ch], numFrames);
+    for (auto& t : tracks)
+        if (t.trackId != 0 && (t.numInputs == 1 || t.numInputs == 2) && numMonitored < (int) monitored.size())
+            monitored[(size_t) numMonitored++] = t;
+}
+
+void DocumentPlayerProcessor::setMonitorInput (const float* const* inputs, int numInputs, int numFrames)
+{
+    // Pick up a new list of tracks when the message thread is not changing it.
+    if (const juce::SpinLock::ScopedTryLockType lock (monitoredLock); lock.isLocked())
+    {
+        monitorTracks = monitored;
+        numMonitorTracks = numMonitored;
+    }
+
+    monitorFrames = numFrames;
+    monitorLayout.count = 0;
+
+    if (inputs == nullptr || numFrames > monitorInput.getNumSamples())
+        return;
+
+    for (int i = 0; i < numMonitorTracks; ++i)
+    {
+        const auto& t = monitorTracks[(size_t) i];
+
+        if (t.firstInput < 0 || t.firstInput + t.numInputs > numInputs)
+            continue;
+
+        const auto channel = 2 * monitorLayout.count;
+
+        for (int c = 0; c < t.numInputs; ++c)
+            monitorInput.copyFrom (channel + c, 0, inputs[t.firstInput + c], numFrames);
+
+        monitorLayout.inputs[(size_t) monitorLayout.count++] = { t.trackId, channel, t.numInputs };
+    }
 }
 
 void DocumentPlayerProcessor::releaseResources()
@@ -277,10 +311,9 @@ void DocumentPlayerProcessor::releaseResources()
 void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     const auto numFrames = buffer.getNumSamples();
-    const auto track = monitoredTrack.load();
-    const auto monitoring = mode == Mode::session && track != 0 && monitorChannels > 0 && monitorFrames == numFrames
+    const auto monitoring = mode == Mode::session && monitorLayout.count > 0 && monitorFrames == numFrames
                             && juce::exactlyEqual (sourceRate, deviceRate);
-    sessionSource.feedLive (monitoring ? track : 0, monitorInput, monitorChannels, numFrames);
+    sessionSource.feedLive (monitoring ? monitorLayout : SessionMixer::Live(), monitorInput, numFrames);
     monitorFrames = 0;
 
     juce::AudioSourceChannelInfo info (&buffer, 0, numFrames);
@@ -297,11 +330,11 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 }
 
 //==============================================================================
-/** Runs before the player in each device cycle and hands it the recording input to monitor. */
+/** Runs before the player in each device cycle and hands it the input to monitor. */
 class AudioEngine::MonitorTap final : public juce::AudioIODeviceCallback
 {
 public:
-    MonitorTap (DocumentPlayerProcessor& p, const Recorder& r) : player (p), recorder (r) {}
+    explicit MonitorTap (DocumentPlayerProcessor& p) : player (p) {}
 
     void audioDeviceIOCallbackWithContext (const float* const* inputs, int numInputs, float* const* outputs, int numOutputs,
                                            int numSamples, const juce::AudioIODeviceCallbackContext&) override
@@ -310,9 +343,7 @@ public:
             if (outputs[ch] != nullptr)
                 juce::FloatVectorOperations::clear (outputs[ch], numSamples);
 
-        const auto [first, count] = recorder.getMappedInput();
-        const auto usable = first >= 0 && count > 0 && first + count <= numInputs;
-        player.setMonitorInput (usable ? inputs + first : nullptr, usable ? count : 0, numSamples);
+        player.setMonitorInput (inputs, numInputs, numSamples);
     }
 
     void audioDeviceAboutToStart (juce::AudioIODevice*) override {}
@@ -320,7 +351,6 @@ public:
 
 private:
     DocumentPlayerProcessor& player;
-    const Recorder& recorder;
 };
 
 //==============================================================================
@@ -337,7 +367,7 @@ AudioEngine::AudioEngine()
     using IO = juce::AudioProcessorGraph::AudioGraphIOProcessor;
     outputNode = graph.addNode (std::make_unique<IO> (IO::audioOutputNode));
     recorder = std::make_unique<Recorder> (player->getPlayedFrame());
-    monitorTap = std::make_unique<MonitorTap> (*player, *recorder);
+    monitorTap = std::make_unique<MonitorTap> (*player);
 
     graphPlayer.setProcessor (&graph);
     deviceManager.addChangeListener (this);
@@ -354,6 +384,9 @@ AudioEngine::~AudioEngine()
     deviceManager.removeAudioCallback (recorder.get());
     deviceManager.removeAudioCallback (&graphPlayer);
     deviceManager.removeAudioCallback (monitorTap.get());
+
+    for (auto& [input, extra] : extraRecorders)
+        deviceManager.removeAudioCallback (extra.get());
     graphPlayer.setProcessor (nullptr);
     deviceManager.closeAudioDevice();
 }
@@ -370,6 +403,11 @@ juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
     deviceManager.addAudioCallback (monitorTap.get());
     deviceManager.addAudioCallback (&graphPlayer);
     deviceManager.addAudioCallback (recorder.get());
+
+    for (auto& [input, extra] : extraRecorders)
+        deviceManager.addAudioCallback (extra.get());
+
+    deviceOpen = true;
     rebuildConnections();
     return error;
 }
@@ -437,34 +475,144 @@ juce::StringArray AudioEngine::getDeviceInputChannelNames() const
 
 juce::String AudioEngine::setInput (int firstChannel, int numChannels)
 {
-    auto setup = deviceManager.getAudioDeviceSetup();
-    setup.useDefaultInputChannels = false;
-    setup.inputChannels.clear();
-
     const auto names = getDeviceInputChannelNames();
     numChannels = juce::jlimit (0, 2, juce::jmin (numChannels, names.size() - firstChannel));
-
-    if (numChannels > 0)
-    {
-        setup.inputDeviceName = inputDeviceNameFor (setup);
-        setup.inputChannels.setRange (firstChannel, numChannels, true);
-    }
-
     inputFirstChannel = juce::jmax (0, firstChannel);
     inputNumChannels = juce::jmax (0, numChannels);
 
     if (inputNumChannels > 0)
         recorder->setInput (inputFirstChannel, inputNumChannels);
 
+    return applyInputChannels();
+}
+
+juce::String AudioEngine::applyInputChannels()
+{
+    // On: the recording input and every extra input, and nothing else.
+    auto setup = deviceManager.getAudioDeviceSetup();
+    setup.useDefaultInputChannels = false;
+    setup.inputChannels.clear();
+    const auto numDeviceInputs = getDeviceInputChannelNames().size();
+
+    if (inputNumChannels > 0)
+        setup.inputChannels.setRange (inputFirstChannel, inputNumChannels, true);
+
+    for (auto& [input, extra] : extraRecorders)
+        setup.inputChannels.setRange (input.first, input.channels, true);
+
+    setup.inputChannels.setRange (numDeviceInputs, juce::jmax (0, setup.inputChannels.getHighestBit() + 1 - numDeviceInputs), false);
+
+    if (! setup.inputChannels.isZero())
+        setup.inputDeviceName = inputDeviceNameFor (setup);
+
     auto error = deviceManager.setAudioDeviceSetup (setup, true);
 
-    // A setup that needed no restart does not call the recorder back, so update it here too.
+    // A setup that needed no restart does not call the recorders back, so update them here too.
     if (auto* device = deviceManager.getCurrentAudioDevice())
-        recorder->configure (device->getCurrentSampleRate(), inputNumChannels > 0 ? device->getActiveInputChannels()
-                                                                                  : juce::BigInteger());
+    {
+        const auto active = device->getActiveInputChannels();
+        appliedInputs = active;
+        recorder->configure (device->getCurrentSampleRate(), inputNumChannels > 0 ? active : juce::BigInteger());
+
+        for (auto& [input, extra] : extraRecorders)
+            extra->configure (device->getCurrentSampleRate(), active);
+    }
 
     sendChangeMessage();
     return error;
+}
+
+juce::String AudioEngine::setTrackInputs (const std::vector<TrackInput>& inputs)
+{
+    // The distinct inputs that are not the recording input. This is called often, so it returns
+    // before asking the device anything when they are what they were.
+    const TrackInput main { inputNumChannels > 0 ? inputFirstChannel : -1, inputNumChannels };
+    std::vector<TrackInput> requested;
+
+    for (auto& input : inputs)
+        if (! input.isDefault() && input != main && std::find (requested.begin(), requested.end(), input) == requested.end())
+            requested.push_back (input);
+
+    std::sort (requested.begin(), requested.end(), [] (auto& a, auto& b) { return std::tie (a.first, a.channels) < std::tie (b.first, b.channels); });
+
+    // After the device changed what is on (another device, Audio Settings), check them again.
+    const auto stale = ! trackInputsCurrent;
+    trackInputsCurrent = true;
+
+    if (! stale && requested == requestedInputs && requestedMain == main)
+        return {};
+
+    requestedInputs = requested;
+    requestedMain = main;
+    const auto numDeviceInputs = getDeviceInputChannelNames().size();
+    std::vector<TrackInput> wanted, current;
+
+    for (auto& input : requested)
+        if (input.first + input.channels <= numDeviceInputs)
+            wanted.push_back (input);
+
+    for (auto& [input, extra] : extraRecorders)
+        current.push_back (input);
+
+    if (wanted == current)
+        return stale ? applyInputChannels() : juce::String();
+
+    for (auto& [input, extra] : extraRecorders)
+    {
+        jassert (! extra->isRecording());
+
+        if (deviceOpen)
+            deviceManager.removeAudioCallback (extra.get());
+    }
+
+    extraRecorders.clear();
+
+    for (auto& input : wanted)
+    {
+        auto extra = std::make_unique<Recorder> (player->getPlayedFrame());
+        extra->setInput (input.first, input.channels);
+
+        // Added after the player (and the first recorder), so it too sees what was just played.
+        if (deviceOpen)
+            deviceManager.addAudioCallback (extra.get());
+
+        extraRecorders.emplace_back (input, std::move (extra));
+    }
+
+    return applyInputChannels();
+}
+
+Recorder* AudioEngine::getRecorderFor (const TrackInput& input)
+{
+    if (input.isDefault() || (input.first == inputFirstChannel && input.channels == inputNumChannels))
+        return inputNumChannels > 0 ? recorder.get() : nullptr;
+
+    for (auto& [extraInput, extra] : extraRecorders)
+        if (extraInput == input)
+            return extra.get();
+
+    return nullptr;
+}
+
+std::vector<Recorder*> AudioEngine::getRecorders()
+{
+    std::vector<Recorder*> all { recorder.get() };
+
+    for (auto& [input, extra] : extraRecorders)
+        all.push_back (extra.get());
+
+    return all;
+}
+
+void AudioEngine::setMonitoredTracks (const std::vector<std::pair<juce::uint32, TrackInput>>& tracks)
+{
+    std::vector<DocumentPlayerProcessor::MonitoredTrack> monitored;
+
+    for (auto& [trackId, input] : tracks)
+        if (auto* r = getRecorderFor (input); r != nullptr && r->isInputActive())
+            monitored.push_back ({ trackId, r->getMappedInput().first, r->getMappedInput().second });
+
+    player->setMonitoredTracks (monitored);
 }
 
 int AudioEngine::getRoundTripLatency() const
@@ -523,7 +671,11 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
         return;
     }
 
-    // Device, sample rate, buffer size or active channels changed.
+    // Device, sample rate, buffer size or active channels changed. If the inputs on are not the
+    // ones last set, the track inputs are checked again.
+    if (auto* device = deviceManager.getCurrentAudioDevice(); device == nullptr || device->getActiveInputChannels() != appliedInputs)
+        trackInputsCurrent = false;
+
     rebuildConnections();
     sendChangeMessage();
 }

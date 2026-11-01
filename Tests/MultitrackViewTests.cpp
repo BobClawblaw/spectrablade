@@ -331,6 +331,37 @@ void runMultitrackViewTests (AudioEngine& engine)
         check (clip (id).activeTake == 2 && clip (id).offset == 48000, "view: undo goes back to the take that was playing");
     }
 
+    // Several tracks armed at once, each with its own input; buses can't be armed.
+    {
+        SessionState several;
+        several.sampleRate = rate;
+        const auto one = several.addTrack().id;
+        const auto two = several.addTrack().id;
+        const auto three = several.addTrack().id;
+        const auto bus = several.addBus().id;
+        engine.session.reset (several, {});
+        Mouse::settle();
+
+        view.setArmed (three, true);
+        view.setArmed (one, true);
+        view.setArmed (bus, true);
+        check (view.getArmedTracks() == std::vector<juce::uint32> { one, three } && ! view.isArmed (two) && ! view.isArmed (bus),
+               "view: several tracks can be armed at once, in the session's order; a bus can't");
+
+        view.setTrackInput (one, { 2, 2 });
+        const auto* t = engine.session.getState()->findTrack (one);
+        check (t->input == TrackInput { 2, 2 } && engine.session.getUndoDescription() == "Track Input",
+               "view: choosing a track's input is one undo step");
+
+        auto without = *engine.session.getState();
+        SessionEdits::removeTrack (without, 2);
+        engine.session.apply (std::move (without), "Delete Track");
+        Mouse::settle();
+        check (view.getArmedTracks() == std::vector<juce::uint32> { one }, "view: a deleted track is no longer armed");
+
+        view.setArmed (one, false);
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }
