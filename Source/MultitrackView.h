@@ -97,6 +97,10 @@ public:
         to their end, so pastes follow each other. */
     void pasteClip();
 
+    /** Repeats the clip clicked last end to end up to the end of the time range, as one undo
+        step. False when there is no such clip or the range doesn't end after it. */
+    bool repeatSelectedClip();
+
     /** Places copies of the selected clips right after them, each on its own track, over what is
         there, and selects the copies. */
     void duplicateSelectedClip();

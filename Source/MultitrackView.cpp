@@ -2100,6 +2100,18 @@ void MultitrackView::pasteClip()
     setCursor (end);
 }
 
+bool MultitrackView::repeatSelectedClip()
+{
+    auto next = *engine.session.getState();
+    const auto copies = SessionEdits::repeatClip (next, selectedClip, timeSelection.getEnd());
+
+    if (copies == 0)
+        return false;
+
+    engine.session.apply (std::move (next), "Repeat Clip (" + juce::String (copies) + (copies == 1 ? " copy)" : " copies)"));
+    return true;
+}
+
 void MultitrackView::duplicateSelectedClip()
 {
     auto next = *engine.session.getState();

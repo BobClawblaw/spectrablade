@@ -245,6 +245,17 @@ namespace SessionEdits
         onto a new track. Returns the copy's id. */
     juce::uint32 placeClip (SessionState&, int track, const SessionClip&, juce::int64 position);
 
+    /** Fills from a clip's end up to `until` with copies of it laid end to end on its track (over
+        what is there), the last cut short at `until`. Returns how many copies were placed. */
+    int repeatClip (SessionState&, juce::uint32 clipId, juce::int64 until);
+
+    /** The part of a clip's audio it plays, back to front. */
+    AudioDocument::Snapshot reversedAudio (const SessionClip&);
+
+    /** Makes a clip play reversed audio (from reversedAudio(), saved as file): it plays all of it
+        from its start, its fades change ends, and other takes go. */
+    bool reverseClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot reversed);
+
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
         (or split in two) and lose their fade on the cut side. False when nothing was there. */
     bool clearRange (SessionState&, int track, juce::int64 start, juce::int64 end);

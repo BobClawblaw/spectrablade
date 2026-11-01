@@ -1,4 +1,5 @@
 #include "Session.h"
+#include "AudioEdits.h"
 #include "AudioFileIO.h"
 #include "Metronome.h"
 #include "SampleRateConverter.h"
@@ -457,6 +458,56 @@ juce::uint32 placeClip (SessionState& s, int track, const SessionClip& clip, juc
     clearRange (s, track, copy.position, copy.getEnd());
     s.tracks[(size_t) track].clips.push_back (std::move (copy));
     return s.tracks[(size_t) track].clips.back().id;
+}
+
+int repeatClip (SessionState& s, juce::uint32 clipId, juce::int64 until)
+{
+    const auto where = s.findClip (clipId);
+
+    if (! where.has_value())
+        return 0;
+
+    const auto clip = s.tracks[(size_t) where->first].clips[(size_t) where->second];
+    auto copies = 0;
+
+    for (auto at = clip.getEnd(); at < until && clip.length > 0; at += clip.length)
+    {
+        const auto id = placeClip (s, where->first, clip, at);
+
+        if (at + clip.length > until)
+            trimClip (s, id, at, until);
+
+        ++copies;
+    }
+
+    return copies;
+}
+
+AudioDocument::Snapshot reversedAudio (const SessionClip& c)
+{
+    if (c.audio == nullptr || c.length <= 0)
+        return nullptr;
+
+    const AudioSnapshot part (c.audio->getNumChannels(), c.audio->slice (c.offset, c.offset + c.length));
+    return AudioEdits::reverse (part, 0, part.getNumFrames());
+}
+
+bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot reversed)
+{
+    auto* c = find (s, clipId);
+
+    if (c == nullptr || reversed == nullptr)
+        return false;
+
+    c->source = file;
+    c->length = reversed->getNumFrames();
+    c->audio = std::move (reversed);
+    c->offset = 0;
+    std::swap (c->fadeIn, c->fadeOut);
+    c->takes.clear();
+    c->activeTake = 0;
+    limitFades (*c);
+    return true;
 }
 
 bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)

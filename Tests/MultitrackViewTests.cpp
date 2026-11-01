@@ -842,6 +842,73 @@ void runMultitrackViewTests (AudioEngine& engine)
         Mouse::settle();
     }
 
+    // Repeating a clip to the end of the time range, and reversing one.
+    {
+        juce::AudioBuffer<float> counting (2, 1000);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 1000; ++i)
+                counting.setSample (ch, i, (float) (i + 1) * (ch == 0 ? 0.001f : -0.0005f));
+
+        std::vector<AudioSnapshot::Segment> segments { { std::make_shared<const AudioBlock> (std::move (counting)), 0, 1000 } };
+        const auto audio = std::make_shared<const AudioSnapshot> (2, std::move (segments));
+
+        SessionState repeated;
+        repeated.sampleRate = rate;
+        repeated.addTrack();
+        const auto id = SessionEdits::addClip (repeated, 0, juce::File ("/tmp/count.wav"), audio, 10000);
+        SessionEdits::trimClip (repeated, id, 10100, 10400);   // plays frames 100 to 399
+        SessionEdits::setClipFades (repeated, id, 50, 20);
+        SessionEdits::addClip (repeated, 0, juce::File ("/tmp/other.wav"), silence (5000), 10500);
+
+        auto filled = repeated;
+        const auto copies = SessionEdits::repeatClip (filled, id, 11000);
+        std::vector<std::pair<juce::int64, juce::int64>> spans;
+
+        for (auto& c : filled.tracks[0].clips)
+            spans.emplace_back (c.position, c.getEnd());
+
+        std::sort (spans.begin(), spans.end());
+        check (copies == 2 && spans == std::vector<std::pair<juce::int64, juce::int64>> { { 10100, 10400 }, { 10400, 10700 }, { 10700, 11000 }, { 11000, 15500 } }
+                   && SessionEdits::repeatClip (filled, id, 10300) == 0,
+               "repeat: copies end to end up to the range's end, over what was there, the last cut short");
+
+        engine.session.reset (repeated, {});
+        view.zoomToRange ({ 10000, 11000 });
+        Mouse::settle();
+        const auto shownFrames = view.getVisibleFrames();
+        const auto zoomedX = [&] (juce::int64 frame)
+        {
+            return (float) MultitrackView::headerWidth + (float) (((double) frame - shownFrames.getStart()) / (shownFrames.getLength() / timelineWidth));
+        };
+        mouse.click ({ zoomedX (10250), bodyY });
+        view.setTimeSelection ({ 0, 10950 });
+        const auto viaView = view.repeatSelectedClip() && engine.session.getUndoDescription() == "Repeat Clip (2 copies)";
+        check (viaView, "repeat: from the view, on the selected clip to the end of the time range, as one undo step");
+        view.setTimeSelection ({});
+
+        const auto& original = repeated.tracks[0].clips[0];
+        const auto reversed = SessionEdits::reversedAudio (original);
+        auto backwards = reversed != nullptr && reversed->getNumFrames() == 300 && reversed->getNumChannels() == 2;
+
+        if (backwards)
+        {
+            juce::AudioBuffer<float> got (2, 300);
+            reversed->read (got, 0, 0, 300);
+
+            for (int i = 0; i < 300; ++i)
+                for (int ch = 0; ch < 2; ++ch)
+                    backwards = backwards && juce::exactlyEqual (got.getSample (ch, i), (float) (400 - i) * (ch == 0 ? 0.001f : -0.0005f));
+        }
+
+        auto flipped = repeated;
+        SessionEdits::reverseClip (flipped, id, juce::File ("/tmp/count Reversed.wav"), reversed);
+        const auto& r = flipped.tracks[0].clips[0];
+        check (backwards && r.position == 10100 && r.offset == 0 && r.length == 300 && r.fadeIn == 20 && r.fadeOut == 50
+                   && r.source == juce::File ("/tmp/count Reversed.wav") && r.audio == reversed,
+               "reverse: the part the clip plays, back to front bit for bit, in place, its fades changing ends");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

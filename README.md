@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 36: repeating and reversing clips**
+- Multitrack > Repeat Clip to Range End lays copies of the selected clip end to end after it, up to the end of the time range, over whatever was on the track there; the last copy is cut short at the range's end. All the copies are one undo step ("Repeat Clip (3 copies)"). Copies share the clip's audio.
+- Multitrack > Reverse Clip writes the part of the selected clip that plays, back to front, to a 32-bit float WAV ("Vocal Reversed.wav") in the session's recordings folder, and the clip plays that instead, in the same place; its fade in and fade out change ends. Other takes of the clip are dropped. It is one undo step; undo goes back to the original file, which is untouched. The file is written on the main thread, so a long clip holds the window for the moment it takes.
+- Measured by the tests: a 300-frame clip repeated to a range's end gives two copies, the second cut short, and the clip that was in the way cut back; repeating to a point before the clip's end does nothing; through the real view, the selected clip repeated to the time range's end as "Repeat Clip (2 copies)"; a trimmed stereo clip reversed bit for bit, in place, with its fades swapped. The Reverse Clip command itself (writing the file) was not run by the tests, and none of it was tried by hand.
+
 **Milestone 35: clip properties**
 - Multitrack > Clip Properties (Cmd Shift I) opens a small window, kept above the others, that follows the selected clip: its file (and take), name, start and length in seconds, gain in dB, and fade in and out in seconds. Type a value and press Return, or click away, to apply it as an undo step ("Move Clip", "Trim Clip", "Clip Gain", "Clip Fade In", "Rename Clip"...); Escape puts the field back. A value that can't apply (not a number, a start before 0, a length of 0) shows the clip's setting again, and lengths and fades are limited as when dragging. Undo and edits elsewhere show in the window at once.
 - Measured by the tests, through the real component: nothing shown without a selected clip, then a clip's settings once it is selected; typing a start, length, gain, both fades and a name, each as the right edit and undo step; text that isn't a number and a negative start refused; undo showing at once; a clip that goes away no longer shown. The window and its menu item were not checked by the tests, and none of it was tried by hand.
@@ -296,6 +301,7 @@ The tests run against the real machine:
 - Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
+- Repeating clips to a range's end and reversing them bit for bit.
 - Clip properties: typing each of a clip's settings, refused values, and following undo.
 - Exporting stems: which tracks, their file names, and the stems adding up to the mix bit for bit.
 - Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
@@ -345,4 +351,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: reversing a clip, and a loop of a clip repeated to fill a range
+1. Multitrack, continued: punch recording with pre-roll and post-roll set in seconds
