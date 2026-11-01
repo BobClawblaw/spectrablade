@@ -20,24 +20,49 @@ void DocumentSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info
     }
 
     auto& buffer = *info.buffer;
-    const auto start = position.load();
-    const auto stop = stopFrame.load();
-    auto count = info.numSamples;
+    auto start = position.load();
+    const auto from = loopStart.load(), to = loopEnd.load();
 
-    if (stop >= 0)
-        count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) info.numSamples, stop - start);
+    // A loop: up to its end, then back to its start, as often as the block needs.
+    if (to > from && start < to)
+    {
+        for (int done = 0; done < info.numSamples;)
+        {
+            const auto n = (int) juce::jmin ((juce::int64) (info.numSamples - done), to - start);
+            readRun (buffer, info.startSample + done, start, n);
+            done += n;
+            start += n;
 
-    snapshot->read (buffer, info.startSample, start, count);
+            if (start >= to)
+                start = from;
+        }
 
-    if (count < info.numSamples)
-        buffer.clear (info.startSample + count, info.numSamples - count);
+        position = start;
+    }
+    else
+    {
+        readRun (buffer, info.startSample, start, info.numSamples);
+        position = start + info.numSamples;
+    }
 
     // Mono documents play on both sides.
     if (snapshot->getNumChannels() == 1)
         for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
             buffer.copyFrom (ch, info.startSample, buffer, 0, info.startSample, info.numSamples);
+}
 
-    position = start + info.numSamples;
+void DocumentSource::readRun (juce::AudioBuffer<float>& buffer, int destStart, juce::int64 start, int numFrames)
+{
+    const auto stop = stopFrame.load();
+    auto count = numFrames;
+
+    if (stop >= 0)
+        count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) numFrames, stop - start);
+
+    snapshot->read (buffer, destStart, start, count);
+
+    if (count < numFrames)
+        buffer.clear (destStart + count, numFrames - count);
 }
 
 //==============================================================================
@@ -233,7 +258,7 @@ void DocumentPlayerProcessor::resetSource()
     stopAt = -1;
     source.setStopFrame (-1);
     sessionSource.setStopFrame (-1);
-    sessionSource.setLoop (0, 0);
+    clearLoop();
 }
 
 void DocumentPlayerProcessor::play (juce::int64 startFrame, juce::int64 stopFrame)

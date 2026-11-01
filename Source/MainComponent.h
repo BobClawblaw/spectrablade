@@ -232,6 +232,14 @@ private:
     // Takes going onto session tracks (the armed ones, or a new one) rather than into the document.
     bool recordingSession = false, recordChangedRate = false;
     bool loopRecording = false, recordingLoop = false;   // the option, and a take under way that loops
+    bool loopPlayback = false;                 // the option: a selection or time range plays over and over
+    juce::Range<juce::int64> playingLoop;      // the loop playing now (empty: none)
+
+    /** The selection (file) or time range (session) that plays when Play is pressed. */
+    juce::Range<juce::int64> playRange() const;
+
+    /** Loops the player over the play range while looping is on and something plays; else none. */
+    void updatePlaybackLoop();
     bool inputMonitoring = false;                        // the armed tracks play their inputs
     bool countIn = false;                                // record after a bar of clicks
     SessionRecording::Rolls rolls;                       // pre-roll and post-roll, kept in the settings

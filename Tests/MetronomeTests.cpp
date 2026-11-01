@@ -279,6 +279,48 @@ namespace
                "tempo map: snapping lands on the beats and bars of the changed tempo");
     }
 
+    void testLoopPlayback()
+    {
+        // The open file looping over a selection: 1000 to 3000 again and again, each frame's
+        // sample telling where it came from.
+        Session session;
+        Rig rig (session);
+        juce::AudioBuffer<float> b (1, 20000);
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            b.setSample (0, i, (float) i * 1.0e-5f);
+
+        rig.document.reset (AudioEdits::fromBuffer (std::move (b)), rate, {}, 24);
+        rig.player.setMode (DocumentPlayerProcessor::Mode::document);
+        rig.player.prepareToPlay (rate, blockSize);
+        rig.player.play (1000, 3000);
+        rig.player.setLoop (1000, 3000);
+        rig.run (40);
+        const auto position = rig.player.getPositionFrames();
+        rig.player.clearLoop();
+        rig.run (20);
+        rig.player.pause();
+
+        auto looped = true;
+
+        for (size_t j = 0; j < 40 * blockSize; ++j)
+            looped = looped && rig.sent[0][j] == (float) (1000 + (int) (j % 2000)) * 1.0e-5f && rig.sent[1][j] == rig.sent[0][j];
+
+        // Cleared, it plays on to the selection's end and then silence.
+        const auto after = 40 * blockSize;
+        const auto resumed = 1000 + (int) (after % 2000);
+        auto stopped = true;
+
+        for (size_t j = after; j < rig.sent[0].size(); ++j)
+        {
+            const auto frame = resumed + (int) (j - after);
+            stopped = stopped && rig.sent[0][j] == (frame < 3000 ? (float) frame * 1.0e-5f : 0.0f);
+        }
+
+        check (looped && stopped && position >= 1000 && position < 3000,
+               "loop playback: the file plays its selection over and over, sample for sample; cleared, it plays to the end of the selection and stops");
+    }
+
     void testSnapping()
     {
         // At 133.7 a minute and 44.1 kHz beats fall between frames; snapping lands on the frame
@@ -343,6 +385,7 @@ void runMetronomeTests (juce::AudioFormatManager& formats)
 {
     testGrid();
     testTempoMap();
+    testLoopPlayback();
     testClicks();
     testSnapping();
     testFile (formats);

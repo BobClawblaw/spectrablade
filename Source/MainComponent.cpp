@@ -32,6 +32,7 @@ namespace
     constexpr const char* prerollKey      = "preroll";
     constexpr const char* postrollKey     = "postroll";
     constexpr const char* laneHeightKey   = "laneHeight";
+    constexpr const char* loopPlaybackKey = "loopPlayback";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -57,7 +58,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -634,6 +635,7 @@ MainComponent::MainComponent()
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
     multitrack.setFindingZeroCrossings (settings->getBoolValue (zeroCrossingsKey, false));
+    loopPlayback = settings->getBoolValue (loopPlaybackKey, false);
     multitrack.setLaneHeight (settings->getIntValue (laneHeightKey, MultitrackView::trackHeight));
     rolls.preroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (prerollKey, rolls.preroll));
     rolls.postroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (postrollKey, rolls.postroll));
@@ -853,7 +855,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdQuantize; ++id)
+    for (int id = cmdOpen; id <= cmdLoopPlayback; ++id)
         ids.add (id);
 }
 
@@ -900,6 +902,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
 
         case cmdPlayPause:  info.setInfo ("Play/Pause", "Play the selection, or from the cursor", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, 0); info.setActive (hasAudio); break;
+        case cmdLoopPlayback: info.setInfo ("Loop Playback", "Play the selection or time range over and over", "Transport", 0);
+                            info.addDefaultKeypress ('l', cmd); info.setTicked (loopPlayback); break;
         case cmdGoToStart:  info.setInfo ("Go to Start", "Move the cursor to the start", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::homeKey, 0); info.setActive (hasAudio); break;
         case cmdGoToEnd:    info.setInfo ("Go to End", "Move the cursor to the end", "Transport", 0);
@@ -1165,6 +1169,12 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdReverse:    applySimpleEffect ("Reverse", &AudioEdits::reverse, false); break;
         case cmdApplyRack:  applyRackToSelection(); break;
         case cmdPlayPause:  togglePlay(); break;
+        case cmdLoopPlayback:
+            loopPlayback = ! loopPlayback;
+            appProperties.getUserSettings()->setValue (loopPlaybackKey, loopPlayback);
+            updatePlaybackLoop();
+            commands.commandStatusChanged();
+            break;
         case cmdGoToStart:  if (multitrackMode) multitrack.setCursor (0); else waveform.setCursor (0); break;
         case cmdGoToEnd:    if (multitrackMode) multitrack.setCursor (engine.session.getState()->getLength());
                             else waveform.setCursor (engine.document.getNumFrames());
@@ -1356,7 +1366,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems, cmdExportRegions }); break;
-        case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
+        case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
@@ -1430,6 +1440,7 @@ void MainComponent::timerCallback()
     auto& player = engine.getPlayer();
     auto& recorder = engine.getRecorder();
     keepRecoveryCopy();
+    updatePlaybackLoop();
 
     updateInputs();
 
@@ -3335,27 +3346,45 @@ void MainComponent::togglePlay()
         return;
     }
 
-    if (multitrackMode)
-    {
-        // As in the editor: a time range plays and stops at its end.
-        const auto range = multitrack.getTimeSelection();
-        const auto cursor = multitrack.getCursor();
+    // A selection or time range plays and stops at its end (or, looping, starts again);
+    // otherwise play from the cursor to the end.
+    const auto range = playRange();
+    const auto cursor = multitrackMode ? multitrack.getCursor() : waveform.getCursor();
+    const auto length = multitrackMode ? engine.session.getState()->getLength() : engine.document.getNumFrames();
 
-        if (! range.isEmpty())
-            player.play (range.getStart(), range.getEnd());
-        else
-            player.play (cursor >= engine.session.getState()->getLength() ? 0 : cursor, -1);
-
-        return;
-    }
-
-    // A selection plays and stops at its end; otherwise play from the cursor to the end.
-    const auto sel = waveform.getSelection();
-
-    if (sel.isEmpty())
-        player.play (waveform.getCursor() >= engine.document.getNumFrames() ? 0 : waveform.getCursor(), -1);
+    if (! range.isEmpty())
+        player.play (range.getStart(), range.getEnd());
     else
-        player.play (sel.getStart(), sel.getEnd());
+        player.play (cursor >= length ? 0 : cursor, -1);
+
+    playingLoop = {};
+    updatePlaybackLoop();
+}
+
+juce::Range<juce::int64> MainComponent::playRange() const
+{
+    return multitrackMode ? multitrack.getTimeSelection() : waveform.getSelection();
+}
+
+void MainComponent::updatePlaybackLoop()
+{
+    auto& player = engine.getPlayer();
+
+    // Loop recording keeps its own loop.
+    if (isRecording())
+        return;
+
+    const auto wanted = loopPlayback && player.isPlaying() ? playRange() : juce::Range<juce::int64>();
+
+    if (wanted == playingLoop)
+        return;
+
+    playingLoop = wanted;
+
+    if (wanted.isEmpty())
+        player.clearLoop();
+    else
+        player.setLoop (wanted.getStart(), wanted.getEnd());
 }
 
 void MainComponent::chooseSampleRate()
@@ -3666,8 +3695,13 @@ void MainComponent::startSessionRecording()
     recordingSession = true;
     player.play (from, std::numeric_limits<juce::int64>::max() / 4);
 
+    // A playback loop gives way: a take loops only with loop recording.
+    playingLoop = {};
+
     if (recordingLoop)
         player.setLoop (punchIn, punchOut);
+    else
+        player.clearLoop();
 
     juce::Logger::writeToLog ("Recording to the session: " + juce::String ((int) recordTracks.size()) + " track(s) from "
                               + juce::String ((int) started.size()) + " input(s), punch in " + juce::String (punchIn)

@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 66: loop playback**
+- Transport > Loop Playback (Cmd L) makes a selection in the editor, or the time range in a session, play over and over instead of stopping at its end, through the effects rack or the tracks' effects as usual; the metronome follows. Changing the selection or range while it plays moves the loop (within a twentieth of a second), and turning the option off lets it play on to the end of the range and stop. With nothing selected, playback runs from the cursor as before. The option is remembered.
+- Loop recording keeps its own loop: starting a take drops the playback loop, and an ordinary take never loops.
+- Measured by the tests: the file player looping a 2,000-frame selection for 10,240 frames, every sample the one expected, on both channels; then, with the loop cleared, playing on to the selection's end and silence after it. The session player's looping was already measured (Milestone 20 and the metronome tests). The menu item, following a changed range, the key and the session side from the menu were not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
+
 **Milestone 65: fade shapes**
 - A clip's fade in and fade out each have a shape, chosen from the clip's right-click menu (Fade In Shape, Fade Out Shape) for every selected clip: S-Curve (the raised cosine every fade used before, still the default), Linear, Equal Power (a quarter sine: two crossfading keep the power of unrelated sounds steady), Slow Start (squared) and Fast Start. Each change is an undo step; locked clips keep theirs. The lanes draw each fade in its shape, and playback, mixdowns, bounces, stems and regions all use it. Shapes other than the S-curve are saved with the session.
 - Measured by the tests: each shape from 0 to 1, and half way at 0.5, 0.5, 0.7071, 0.25 and 0.75; two equal-power fades summing to a power of 1 (within 0.000001) every 10 frames across a crossfade; the mix of a steady clip following each shape in and out, every 7th frame, within 0.000001; the S-curve computed with the same expression as before, and every earlier fade and crossfade test passing unchanged; locked clips refused; the undo step from the view; and shapes through a session file, with the default left out. How the curves look, and the menu, were not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
@@ -468,6 +473,7 @@ The tests run against the real machine:
 - Quantizing clips to seconds and to beats, and snapping dropped files.
 - Recovery copies: writing, finding, clearing, and a recovered session needing saving.
 - Fade shapes: their levels, the mix, the menu step and the session file.
+- Loop playback in the file player, sample for sample.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.

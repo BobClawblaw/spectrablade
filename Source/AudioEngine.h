@@ -16,6 +16,9 @@ public:
     /** Frames from this one onwards play as silence (-1 = play to the end). */
     void setStopFrame (juce::int64 frame)                     { stopFrame = frame; }
 
+    /** Plays [start, end) over and over once it gets there (end <= start: no loop). */
+    void setLoop (juce::int64 start, juce::int64 end)         { loopStart = start; loopEnd = end; }
+
     void prepareToPlay (int, double) override                 {}
     void releaseResources() override                          {}
     void getNextAudioBlock (const juce::AudioSourceChannelInfo&) override;
@@ -29,7 +32,9 @@ private:
     AudioDocument& document;
     AudioDocument::Snapshot snapshot;      // audio thread's own reference
     juce::uint32 snapshotVersion = 0;
-    std::atomic<juce::int64> position { 0 }, stopFrame { -1 };
+    std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
+
+    void readRun (juce::AudioBuffer<float>&, int destStart, juce::int64 start, int numFrames);
 };
 
 //==============================================================================
@@ -114,11 +119,11 @@ public:
     /** Plays from start; stops by itself at stopFrame (-1 = the end). */
     void play (juce::int64 startFrame, juce::int64 stopFrame);
 
-    /** In session mode, plays [start, end) over and over once it gets there, until play() or
-        clearLoop(). The played frame keeps counting on through each pass, so frame f of pass k
-        (from 0) is played frame f + k * (end - start). */
-    void setLoop (juce::int64 start, juce::int64 end)      { sessionSource.setLoop (start, end); }
-    void clearLoop()                                       { sessionSource.setLoop (0, 0); }
+    /** Plays [start, end) of the document or session over and over once it gets there, until
+        clearLoop() or the mode changes. The played frame keeps counting on through each pass, so
+        frame f of pass k (from 0) is played frame f + k * (end - start). */
+    void setLoop (juce::int64 start, juce::int64 end)      { source.setLoop (start, end); sessionSource.setLoop (start, end); }
+    void clearLoop()                                       { setLoop (0, 0); }
     void pause()                                  { transport.stop(); }
     bool isPlaying() const                        { return transport.isPlaying(); }
     juce::int64 getPositionFrames() const;
