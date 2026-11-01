@@ -217,6 +217,15 @@ void WaveformView::setCursor (juce::int64 frame)
     setSelection ({ frame, frame });
 }
 
+void WaveformView::showFrame (juce::int64 frame)
+{
+    setCursor (frame);
+    const auto width = framesPerPixel * juce::jmax (1, getWidth());
+
+    if ((double) frame < viewStart || (double) frame >= viewStart + width)
+        setView ((double) frame - width * 0.1, framesPerPixel);
+}
+
 void WaveformView::selectAll()
 {
     band = {};

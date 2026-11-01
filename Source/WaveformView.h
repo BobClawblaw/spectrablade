@@ -33,9 +33,14 @@ public:
     /** Empty when there is no selection. */
     juce::Range<juce::int64> getSelection() const       { return selection; }
     juce::int64 getCursor() const                       { return cursor; }
+    juce::Range<double> getVisibleFrames() const        { return { viewStart, viewStart + framesPerPixel * juce::jmax (1, getWidth()) }; }
     void setSelection (juce::Range<juce::int64>);
     void setCursor (juce::int64 frame);
     void selectAll();
+
+    /** Moves the cursor to a frame and scrolls it into view (a tenth of the way in) when it is
+        out of view, keeping the zoom. */
+    void showFrame (juce::int64 frame);
 
     void zoomIn();
     void zoomOut();

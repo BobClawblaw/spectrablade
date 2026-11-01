@@ -513,6 +513,18 @@ void runMultitrackViewTests (AudioEngine& engine)
                "view: Select Between Markers selects around the cursor, from the session's start or to the last clip's end; nothing past it; no edit");
         view.setTimeSelection ({});
 
+        // Going to a time far out of view scrolls there, keeping the zoom; one in view doesn't scroll.
+        const auto viewBefore = view.getVisibleFrames();
+        const auto zoomBefore = viewBefore.getLength();
+        view.showFrame (48000 * 300);
+        const auto far = view.getVisibleFrames();
+        view.showFrame (48000 * 300 + 4800);
+        check (view.getCursor() == 48000 * 300 + 4800 && far.contains (48000.0 * 300) && std::abs (far.getLength() - zoomBefore) < 1.0
+                   && std::abs (far.getStart() - (48000.0 * 300 - zoomBefore * 0.1)) < 1.0 && view.getVisibleFrames() == far,
+               "view: showing a frame out of view scrolls it a tenth of the way in, keeping the zoom; one in view doesn't scroll, even past the session's end");
+        view.scrollTo (viewBefore.getStart());
+        Mouse::settle();
+
         // Double-clicking an empty spot in the marker lane adds a marker there, snapped with
         // snapping on (3 px past the clip's end lands on it).
         const auto wasSnapping = view.isSnapping();

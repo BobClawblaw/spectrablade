@@ -1298,7 +1298,9 @@ void MultitrackView::setView (double start, double fpp)
 {
     const auto width = (double) juce::jmax (1, timelineArea().getWidth());
     framesPerPixel = juce::jlimit (0.05, 1.0e6, fpp);
-    const auto length = (double) juce::jmax (shown().getLength(), (juce::int64) (shown().sampleRate * 60.0));
+    // As far as the session, a minute, or a screen past the cursor, whichever is furthest.
+    const auto length = juce::jmax ((double) juce::jmax (shown().getLength(), (juce::int64) (shown().sampleRate * 60.0)),
+                                    (double) cursor + width * framesPerPixel);
     viewStart = juce::jlimit (0.0, juce::jmax (0.0, length - width * framesPerPixel * 0.5), start);
     updateScrollBars();
     repaint();
@@ -2908,15 +2910,19 @@ bool MultitrackView::showMarker (int index)
 
     const auto m = markers[(size_t) index];
     setTimeSelection (m.isRegion() ? juce::Range<juce::int64> (m.start, m.getEnd()) : juce::Range<juce::int64>());
-    setCursor (m.start);
+    showFrame (m.start);
+    return true;
+}
 
-    // A tenth of the way in unless it starts in view already.
+void MultitrackView::showFrame (juce::int64 frame)
+{
+    setCursor (frame);
+
+    // A tenth of the way in unless it is in view already.
     const auto width = (double) juce::jmax (1, timelineArea().getWidth()) * framesPerPixel;
 
-    if ((double) m.start < viewStart || (double) m.start >= viewStart + width)
-        setView ((double) m.start - width * 0.1, framesPerPixel);
-
-    return true;
+    if ((double) frame < viewStart || (double) frame >= viewStart + width)
+        setView ((double) frame - width * 0.1, framesPerPixel);
 }
 
 bool MultitrackView::deleteMarker (int index)

@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 90: go to time**
+- Transport > Go to Time... (Cmd J) asks for a time, starting from the cursor's, and moves the cursor there, scrolling it a tenth of the way into view when it is out of view, at the same zoom. It reads seconds ("83.5" or "83.5 s"), minutes and seconds ("1:23.5"), or hours, minutes and seconds ("1:01:23.5"); in a session also bar and beat ("5|3", or "5|3.5" for halfway through the beat), counted from 1 and following tempo and time-signature changes. A time it can't read, a beat past the end of its bar, or bar and beat in the single-file editor gives a message instead. In the editor the cursor stops at the end of the file.
+- The multitrack view now scrolls as far as a screen past the cursor, so a cursor put past the end of the session can be seen.
+- Measured by the tests: the three time forms at 48 kHz (83.5 s to frame 4,008,000, and so on), spaces around them, and 11 malformed, negative or out-of-range entries refused; bar and beat at 120 beats a minute in 4 with a change to 60 in 3 at bar 3, including a fraction of a beat and spaces around the bar line, and 8 that don't exist refused; and the multitrack view scrolling to 300 s in a shorter session at the same zoom, with the frame a tenth of the way in, then not scrolling for a frame already in view. The dialog, the menu item and the single-file editor's scrolling were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 89: tap tempo**
 - Multitrack > Tap Tempo (T) sets the session's tempo from taps: from the second tap on, the tempo is the average spacing of the last eight taps, rounded to hundredths of a beat a minute and kept to 20 to 400. A pause of 3 s or more starts a new run. Each run of taps is one undo step ("Tap Tempo"). It sets the tempo from the start of the session; tempo changes later on stay as they are.
 - Measured by the tests: taps half a second apart giving 120 from the second tap; uneven spacings averaged; a 0.7 s spacing giving 85.71; only the last 8 of 12 spacings counting; a 3 s pause or a tap earlier than the last starting again; very fast taps held at 400; and on a session, a run of taps undone in one step, a tap giving the tempo already set changing nothing, and a second run its own step. The key and menu item (which read the system clock) were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -604,6 +609,7 @@ The tests run against the real machine:
 - Marker list search: names, case, rows mapped to markers and following edits.
 - Polarity: inverted tracks and buses through the mixer, freezing, the strip switch and the session file.
 - Tap tempo: averaging, rounding, the window of taps, restarts, limits and undo steps.
+- Go to time: the time forms, bars and beats across tempo changes, refusals, and scrolling there.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -657,4 +663,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Go to Time: type a time, in seconds or as bars and beats, to move the cursor there
+1. File > Open Recent: the last ten files and sessions opened, kept between launches

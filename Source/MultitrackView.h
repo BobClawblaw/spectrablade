@@ -44,6 +44,10 @@ public:
     juce::int64 getCursor() const noexcept        { return cursor; }
     void setCursor (juce::int64 frame);
 
+    /** Moves the cursor to a frame and scrolls it into view (a tenth of the way in) when it is
+        out of view, keeping the zoom. */
+    void showFrame (juce::int64 frame);
+
     /** The time range dragged across the timeline (empty when there is none). */
     juce::Range<juce::int64> getTimeSelection() const noexcept { return timeSelection; }
     void setTimeSelection (juce::Range<juce::int64>);

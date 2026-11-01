@@ -60,7 +60,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -911,7 +911,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdTapTempo; ++id)
+    for (int id = cmdOpen; id <= cmdGoToTime; ++id)
         ids.add (id);
 }
 
@@ -1173,6 +1173,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress (juce::KeyPress::leftKey, alt); info.setActive (! doc.getMarkers().empty()); break;
         case cmdNextMarker: info.setInfo ("Next Marker", "Move the cursor to the next marker", "Markers", 0);
                             info.addDefaultKeypress (juce::KeyPress::rightKey, alt); info.setActive (! doc.getMarkers().empty()); break;
+        case cmdGoToTime:   info.setInfo ("Go to Time...", "Move the cursor to a time typed in seconds, minutes and seconds, or bar and beat", "Transport", 0);
+                            info.addDefaultKeypress ('j', cmd); info.setActive (multitrackMode || hasAudio); break;
         case cmdSelectBetweenMarkers: info.setInfo ("Select Between Markers", "Select from the marker at or before the cursor to the next one", "Markers", 0);
                             info.setActive (! doc.getMarkers().empty()); break;
         case cmdDeleteAllMarkers: info.setInfo ("Delete All Markers", "Remove every marker and region", "Markers", 0);
@@ -1421,6 +1423,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdSelectBetweenMarkers: selectBetweenMarkers(); break;
+        case cmdGoToTime: showGoToTime(); break;
         case cmdDeleteAllMarkers:
             if (multitrackMode)
             {
@@ -1467,7 +1470,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
-        case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
+        case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdGoToTime }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
@@ -3072,6 +3075,37 @@ void MainComponent::goToMarker (bool forwards)
 
     if (const auto target = MarkerEdits::nextStop (engine.document.getMarkers(), waveform.getCursor(), forwards))
         waveform.setCursor (*target);
+}
+
+void MainComponent::showGoToTime()
+{
+    const auto rate = multitrackMode ? engine.session.getSampleRate() : engine.document.getSampleRate();
+    const auto cursor = multitrackMode ? multitrack.getCursor() : waveform.getCursor();
+    auto* box = new juce::AlertWindow ("Go to Time",
+                                       multitrackMode ? "Seconds (83.5), minutes and seconds (1:23.5), or bar and beat (5|3)."
+                                                      : "Seconds (83.5) or minutes and seconds (1:23.5).",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("time", formatTime (cursor, rate));
+    box->addButton ("Go", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, rate] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto typed = box->getTextEditorContents ("time");
+        const auto state = engine.session.getState();
+        const auto map = state->tempoMap();
+        const auto frame = TimeEntry::parse (typed, rate, multitrackMode ? &map : nullptr);
+
+        if (! frame)
+            showError ("Go to Time", "\"" + typed.trim() + "\" is not a time this can go to.");
+        else if (multitrackMode)
+            multitrack.showFrame (*frame);
+        else
+            waveform.showFrame (juce::jmin (*frame, engine.document.getNumFrames()));
+    }), true);
 }
 
 void MainComponent::selectBetweenMarkers()

@@ -5,6 +5,7 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/Metronome.h"
 #include "../Source/TapTempo.h"
+#include "../Source/TimeEntry.h"
 #include "TestUtils.h"
 #include "MetronomeTests.h"
 
@@ -459,6 +460,41 @@ namespace
     }
 }
 
+namespace
+{
+    void testTimeEntry()
+    {
+        using Frame = std::optional<juce::int64>;
+        const auto at = [] (const char* text) { return TimeEntry::parse (text, 48000.0); };
+        check (at ("83.5") == Frame (4008000) && at ("83.5 s") == Frame (4008000) && at ("1:23.5") == Frame (4008000)
+                   && at (" 2:00 ") == Frame (5760000) && at ("1:01:23.5") == Frame (176808000) && at ("0") == Frame (0)
+                   && at ("0.00001") == Frame (0) && at (".5") == Frame (24000),
+               "go to time: seconds, minutes and seconds, and hours, minutes and seconds");
+
+        auto bad = 0;
+
+        for (auto text : { "", "abc", "-1", "1:75", "1.5:20", "1:2:3:4", "1..2", "5|3", "1:", ":5", "1e3" })
+            bad += at (text).has_value() ? 1 : 0;
+
+        check (bad == 0, "go to time: negative, malformed and out-of-range times, and bars without a tempo map, are refused (" + juce::String (bad) + " read)");
+
+        // 120 beats a minute in 4 from the start (24000 frames a beat); 60 in 3 from the third bar.
+        const std::vector<Metronome::TempoChange> changes { { 2, 60.0, 3 } };
+        const Metronome::TempoMap map (120.0, 4, changes, 48000.0);
+        const auto bars = [&map] (const char* text) { return TimeEntry::parse (text, 48000.0, &map); };
+        check (bars ("1|1") == Frame (0) && bars ("5|3") == Frame (576000) && bars ("2|4.5") == Frame (180000)
+                   && bars ("3|2") == Frame (240000) && bars (" 3 | 3 ") == Frame (288000) && bars ("83.5") == Frame (4008000),
+               "go to time: bar and beat, a fraction of a beat, across a change of tempo and time signature");
+
+        auto badBars = 0;
+
+        for (auto text : { "0|1", "1|0", "1|5", "3|4", "1.5|1", "2|", "|2", "1|2|3" })
+            badBars += bars (text).has_value() ? 1 : 0;
+
+        check (badBars == 0, "go to time: bars and beats that don't exist are refused (" + juce::String (badBars) + " read)");
+    }
+}
+
 void runMetronomeTests (juce::AudioFormatManager& formats)
 {
     testGrid();
@@ -468,4 +504,5 @@ void runMetronomeTests (juce::AudioFormatManager& formats)
     testSnapping();
     testFile (formats);
     testTapTempo();
+    testTimeEntry();
 }

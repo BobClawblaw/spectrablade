@@ -6,6 +6,7 @@
 #include "LevelMeter.h"
 #include "LoadReadout.h"
 #include "TapTempo.h"
+#include "TimeEntry.h"
 #include "Loudness.h"
 #include "MultitrackView.h"
 #include "NoiseReduction.h"
@@ -93,6 +94,7 @@ private:
     void addMarker();
     void goToMarker (bool forwards);
     void selectBetweenMarkers();
+    void showGoToTime();
 
     // Effects
     void askForDecibels (const juce::String& title, const juce::String& label, float initial,
