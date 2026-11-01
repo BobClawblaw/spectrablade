@@ -538,6 +538,46 @@ namespace
         check (byName && byTrack && byFile && none && kickBefore && refiltered && list.getNumRows() == 3 && list.getSearch().isEmpty(),
                "clip list: the search shows clips whose name, file or track holds the text, ignoring case and spaces around it, and follows edits");
 
+        // Sorting by a header: each column in order (by value, by session track order, by name),
+        // backwards on request, and back to time order.
+        const auto column = [&list] (int which)
+        {
+            juce::StringArray values;
+
+            for (int row = 0; row < list.getNumRows(); ++row)
+                values.add (list.getText (row, which));
+
+            return values;
+        };
+
+        const auto ordered = [] (const juce::StringArray& values, bool numeric, bool forwards)
+        {
+            for (int i = 1; i < values.size(); ++i)
+            {
+                const auto order = numeric ? (values[i - 1].getDoubleValue() < values[i].getDoubleValue() ? -1 : values[i - 1].getDoubleValue() > values[i].getDoubleValue() ? 1 : 0)
+                                           : values[i - 1].compareNatural (values[i]);
+
+                if (forwards ? order > 0 : order < 0)
+                    return false;
+            }
+
+            return true;
+        };
+
+        list.setSort (C::length, false);
+        const auto longestFirst = ordered (column (C::length), true, false);
+        const auto sorted = engine.session.getState();
+        const auto where = sorted->findClip (list.getClip (0));
+        const auto rowMapsClip = where && list.getText (0, C::name) == sorted->tracks[(size_t) where->first].clips[(size_t) where->second].name;
+        list.setSort (C::name, true);
+        const auto byNameSorted = ordered (column (C::name), false, true);
+        list.setSort (C::track, true);
+        const auto tracks = column (C::track);
+        const auto trackOrder = tracks.indexOf ("Bass") < 0 || tracks.indexOf ("Drums") < 0 || tracks.indexOf ("Drums") < tracks.indexOf ("Bass");
+        list.setSort (0, true);
+        check (list.getNumRows() == 3 && longestFirst && rowMapsClip && byNameSorted && trackOrder && ordered (column (C::start), true, true),
+               "clip list: sorted by length backwards, by name and by track order, each row still its clip, and back to time order");
+
         engine.session.reset ({}, {});
         settle();
     }

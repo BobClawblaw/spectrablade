@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 117: sorting the clip list**
+- Clicking a column header of the clip list sorts it by that column, and clicking it again reverses it: tracks in their order in the session, start and length by value, and name, file and state as text ignoring case with numbers in order. Rows that tie keep time order. The search, the highlighted row of the selected clip and clicking a row work the same while sorted, and edits keep the sort.
+- Measured by the tests, through a real clip list with three clips on two tracks: sorted by length longest first, by name, and by track (Drums, the first track, before Bass), with the first row still choosing the clip it shows, then back to time order. Clicking the headers with the mouse was not done by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 116: sorting the marker list**
 - Clicking a column header of the marker list sorts it by that column, and clicking it again reverses it: names ignoring case with numbers in order ("Take 2" before "Take 10"), or start, end or length, with points counting as ending where they start. Rows that tie keep time order. The search and the row-to-marker mapping work the same while sorted, and edits keep the sort.
 - Measured by the tests, through a real marker list: "take 10", "Take 2", "intro" and "Take 1" sort by name as intro, Take 1, Take 2, take 10; by length, longest first, as Take 2, intro, then the two points in time order; the first row then maps to the right marker; and the list goes back to time order. Clicking the headers with the mouse was not done by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -742,6 +746,7 @@ The tests run against the real machine:
 - Renaming markers in sequence: time order, two or three digits, one undo step in the session.
 - Markers from CSV: round trip, other rates, cut to the file, bad files refused, merged without repeats.
 - Sorting the marker list: by name, naturally and ignoring case; by length backwards; back to time order.
+- Sorting the clip list: by length backwards, name and track order, rows still mapping to their clips.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -795,4 +800,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Clip list: sorting by clicking the column headers, as the marker list does
+1. Editor: Normalize each channel on its own, as an option in the Normalize dialog

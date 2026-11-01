@@ -6,7 +6,9 @@
     whether it is locked or muted. The row of the selected clip is highlighted; clicking a row
     asks for that clip to be shown. Follows the session, so edits and undo show here at once.
     The search box above it shows only the clips whose name, file or track contains what is
-    typed, ignoring case. */
+    typed, ignoring case. Clicking a column header sorts by that column, and again reverses it:
+    tracks in their session order, times by value, text ignoring case with numbers in order;
+    rows that tie keep time order. */
 class ClipList final : public juce::Component,
                        private juce::TableListBoxModel,
                        private juce::ChangeListener,
@@ -40,6 +42,9 @@ public:
     void setSearch (const juce::String&);
     juce::String getSearch() const                      { return search.getText(); }
 
+    /** Sorts by a column, as clicking its header does; 0 goes back to time order. */
+    void setSort (int column, bool forwards);
+
     void resized() override;
 
 private:
@@ -47,6 +52,8 @@ private:
     {
         juce::uint32 clip;
         juce::StringArray cells;   // in the order of Column
+        int trackIndex;
+        juce::int64 position, length;
     };
 
     void paintRowBackground (juce::Graphics&, int row, int width, int height, bool selected) override;
@@ -54,12 +61,15 @@ private:
     void cellClicked (int row, int column, const juce::MouseEvent&) override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
+    void sortOrderChanged (int column, bool forwards) override;
     void rebuild();
 
     AudioEngine& engine;
     std::function<juce::uint32()> selected;
     std::function<void (juce::uint32)> choose;
     std::vector<Row> rows;
+    int sortColumn = 0;   // 0: time order
+    bool sortForwards = true;
     juce::TextEditor search;
     juce::TableListBox table { {}, this };
 

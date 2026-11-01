@@ -86,7 +86,27 @@ void ClipList::rebuild()
             flags.add ("Muted");
 
         rows.push_back ({ c->id, { tr.name, c->name, juce::String ((double) c->position / s->sampleRate, 3),
-                                   juce::String ((double) c->length / s->sampleRate, 3), c->source.getFileName(), flags.joinIntoString (", ") } });
+                                   juce::String ((double) c->length / s->sampleRate, 3), c->source.getFileName(), flags.joinIntoString (", ") },
+                          t, c->position, c->length });
+    }
+
+    if (sortColumn != 0)
+    {
+        std::stable_sort (rows.begin(), rows.end(), [this] (const Row& a, const Row& b)
+        {
+            const auto order = [this, &a, &b]() -> int
+            {
+                switch (sortColumn)
+                {
+                    case track:  return a.trackIndex < b.trackIndex ? -1 : (a.trackIndex > b.trackIndex ? 1 : 0);
+                    case start:  return a.position < b.position ? -1 : (a.position > b.position ? 1 : 0);
+                    case length: return a.length < b.length ? -1 : (a.length > b.length ? 1 : 0);
+                    default:     return a.cells[sortColumn - track].compareNatural (b.cells[sortColumn - track]);
+                }
+            }();
+
+            return sortForwards ? order < 0 : order > 0;
+        });
     }
 
     table.updateContent();
@@ -127,6 +147,20 @@ void ClipList::timerCallback()
         table.deselectAllRows();
     else if (const auto row = (int) std::distance (rows.begin(), it); row != table.getSelectedRow())
         table.selectRow (row);
+}
+
+void ClipList::setSort (int column, bool forwards)
+{
+    // The header tells the table later; sorting now keeps this in step with what the caller sees.
+    table.getHeader().setSortColumnId (column, forwards);
+    sortOrderChanged (column, forwards);
+}
+
+void ClipList::sortOrderChanged (int column, bool forwards)
+{
+    sortColumn = column;
+    sortForwards = forwards;
+    rebuild();
 }
 
 void ClipList::changeListenerCallback (juce::ChangeBroadcaster*)
