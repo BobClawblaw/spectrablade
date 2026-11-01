@@ -1152,6 +1152,24 @@ void runMultitrackViewTests (AudioEngine& engine)
                "clip colours: chosen for every selected clip as one undo step, and kept in session files");
     }
 
+    // Duplicating a track from the view.
+    {
+        SessionState two;
+        two.sampleRate = rate;
+        two.addTrack().name = "Lead";
+        two.addTrack().name = "Pad";
+        SessionEdits::addClip (two, 0, juce::File ("/tmp/lead.wav"), silence (4800), 0);
+        engine.session.reset (two, {});
+        Mouse::settle();
+        mouse.click ({ (float) MultitrackView::headerWidth + 500.0f, bodyY });   // an empty spot in the first lane
+        const auto copyId = view.duplicateSelectedTrack();
+        Mouse::settle();
+        const auto st = engine.session.getState();
+        check (copyId != 0 && st->tracks.size() == 3 && st->tracks[1].id == copyId && st->tracks[1].name == "Lead Copy"
+                   && st->tracks[1].clips.size() == 1 && view.getSelectedTrack() == 1 && engine.session.getUndoDescription() == "Duplicate Track",
+               "duplicate track: from the view as one undo step, with the copy selected");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

@@ -134,6 +134,10 @@ public:
     int getScrollY() const noexcept    { return scrollY; }
     void deleteSelectedTrack();
 
+    /** Duplicates the selected track as one undo step ("Duplicate Track") and selects the copy.
+        Returns the copy's id (0 with none selected); its effects are the caller's to copy. */
+    juce::uint32 duplicateSelectedTrack();
+
     /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise
         its marks in seconds, at the current zoom. Never before 0. */
     juce::int64 gridStepFrom (juce::int64 frame, bool later) const;

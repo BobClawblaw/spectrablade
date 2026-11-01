@@ -2287,6 +2287,20 @@ void MultitrackView::setSelectedClipsFlag (bool (*set) (SessionState&, juce::uin
         engine.session.apply (std::move (next), verb + (changed > 1 ? juce::String (changed) + " Clips" : juce::String ("Clip")));
 }
 
+juce::uint32 MultitrackView::duplicateSelectedTrack()
+{
+    auto next = *engine.session.getState();
+    const auto id = SessionEdits::duplicateTrack (next, getSelectedTrack());
+
+    if (id != 0)
+    {
+        selectedTrackId = id;
+        engine.session.apply (std::move (next), "Duplicate Track");
+    }
+
+    return id;
+}
+
 void MultitrackView::deleteSelectedTrack()
 {
     auto next = *engine.session.getState();

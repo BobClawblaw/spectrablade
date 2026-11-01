@@ -49,7 +49,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -720,7 +720,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdClipList; ++id)
+    for (int id = cmdOpen; id <= cmdDuplicateTrack; ++id)
         ids.add (id);
 }
 
@@ -884,6 +884,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             break;
         case cmdDeleteTrack: info.setInfo ("Delete Track", "Delete the selected track or bus", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
+        case cmdDuplicateTrack: info.setInfo ("Duplicate Track", "Copy the selected track or bus, with its clips, effects and settings", "Multitrack", 0);
+                            info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0 && ! isRecording()); break;
         case cmdSplitClip:  info.setInfo ("Split Clip", "Split the selected clip at the cursor", "Multitrack", 0);
                             info.addDefaultKeypress ('k', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
@@ -1034,6 +1036,7 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         }
         case cmdDeleteTrack: multitrack.deleteSelectedTrack(); break;
+        case cmdDuplicateTrack: duplicateTrack(); break;
         case cmdSnapping:
             multitrack.setSnapping (! multitrack.isSnapping());
             appProperties.getUserSettings()->setValue (snappingKey, multitrack.isSnapping());
@@ -1133,7 +1136,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1592,6 +1595,31 @@ void MainComponent::toggleMixer()
                                                                      }); });
 
     commands.commandStatusChanged();
+}
+
+void MainComponent::duplicateTrack()
+{
+    const auto state = engine.session.getState();
+    const auto index = multitrack.getSelectedTrack();
+
+    if (! juce::isPositiveAndBelow (index, (int) state->tracks.size()))
+        return;
+
+    // The copy's effects load after it lands, from the source's chain as a session file holds it.
+    auto effects = engine.getTrackEffects().createXml (state->tracks[(size_t) index].id);
+    const auto copy = multitrack.duplicateSelectedTrack();
+
+    if (copy == 0 || effects == nullptr)
+        return;
+
+    engine.session.markEffectsChanged();
+    engine.loadTrackEffects ({ { copy, std::shared_ptr<juce::XmlElement> (std::move (effects)) } }, [this] (const juce::String& errors)
+    {
+        engine.session.sendChangeMessage();   // the track headers show the effects
+
+        if (errors.isNotEmpty())
+            showError ("Track effects", "Some of the track's effects could not be copied:\n\n" + errors);
+    });
 }
 
 void MainComponent::toggleClipList()

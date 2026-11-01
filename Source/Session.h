@@ -298,6 +298,12 @@ namespace SessionEdits
     /** Removes a track or bus; removing a bus removes the sends to it. */
     bool removeTrack (SessionState&, int track);
 
+    /** Puts a copy of a track or bus right after it, named "Name Copy": its clips (sharing their
+        audio, as unlocked copies), sends, envelopes, volume, pan, mute, solo, group, colour and
+        input. Its effects are not in the state; copy them by the new id. Returns the copy's id,
+        or 0 when there is no such track. */
+    juce::uint32 duplicateTrack (SessionState&, int track);
+
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);
     bool removeSend (SessionState&, juce::uint32 trackId, juce::uint32 busId);

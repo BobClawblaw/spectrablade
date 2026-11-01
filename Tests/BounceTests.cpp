@@ -177,6 +177,29 @@ void runBounceTests()
                "clip mute: copies stay muted, and a bounce or stem of the track leaves the muted clip out");
     }
 
+    // A duplicated track: right after the source, everything copied with new ids, and alone it
+    // plays exactly as the source does.
+    {
+        const juce::Range<juce::int64> span (0, 12000);
+        auto doubled = session (-4.0f);
+        doubled.tracks[0].group = 2;
+        doubled.tracks[0].colour = 5;
+        doubled.tracks[0].volumeEnvelope.points = { { 0, -4.0f }, { 6000, -12.0f } };
+        SessionEdits::setClipLocked (doubled, doubled.tracks[0].clips[0].id, true);
+        const auto source = doubled.tracks[0];
+        const auto copyId = SessionEdits::duplicateTrack (doubled, 0);
+        const auto& copy = doubled.tracks[1];
+        const auto sameSettings = copy.id == copyId && copy.name == "Guitar Copy" && juce::exactlyEqual (copy.gainDb, source.gainDb)
+                                  && juce::exactlyEqual (copy.pan, source.pan) && copy.group == 2 && copy.colour == 5
+                                  && copy.volumeEnvelope.points == source.volumeEnvelope.points && copy.sends.size() == 1
+                                  && copy.sends[0].busId == source.sends[0].busId && copy.clips.size() == 1
+                                  && copy.clips[0].id != source.clips[0].id && copy.clips[0].audio == source.clips[0].audio
+                                  && ! copy.clips[0].locked && doubled.tracks[2].name == "Keys";
+        check (sameSettings && identical (mix (Bounce::isolate (doubled, copyId), span), mix (Bounce::isolate (doubled, source.id), span))
+                   && SessionEdits::duplicateTrack (doubled, 9) == 0,
+               "duplicate track: right after the source with its settings, sends, envelope and clips (unlocked, new ids), playing the same bit for bit");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");

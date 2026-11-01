@@ -123,6 +123,7 @@ private:
     void askForMixDownFormat (const juce::File&);
     void mixDown (const juce::File&, int bitDepth, juce::Range<juce::int64>);
     void bounceTrack();
+    void duplicateTrack();
     void reverseSelectedClip();
     void chooseStemsFolder();
     void exportStems (const juce::File& folder, juce::Range<juce::int64>);

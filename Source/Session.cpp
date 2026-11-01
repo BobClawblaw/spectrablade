@@ -674,6 +674,25 @@ bool moveTrack (SessionState& s, int from, int to)
     return true;
 }
 
+juce::uint32 duplicateTrack (SessionState& s, int track)
+{
+    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))
+        return 0;
+
+    auto copy = s.tracks[(size_t) track];
+    copy.id = s.nextId++;
+    copy.name = copy.name + " Copy";
+
+    for (auto& c : copy.clips)
+    {
+        c.id = s.nextId++;
+        c.locked = false;
+    }
+
+    s.tracks.insert (s.tracks.begin() + track + 1, std::move (copy));
+    return s.tracks[(size_t) track + 1].id;
+}
+
 bool removeTrack (SessionState& s, int track)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))

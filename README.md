@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 44: duplicating a track**
+- Multitrack > Duplicate Track puts a copy of the selected track or bus right after it, named "Name Copy", and selects it: its clips (sharing their audio, as unlocked copies), sends, envelopes, volume, pan, mute, solo, group, colour and input, as one undo step ("Duplicate Track"). Its effects are copied too, loaded after it lands from the source chain as a session file holds it (each plug-in's state, bypass and slot, so effect envelopes still find their effects); one that can't be loaded is named in a message.
+- Undoing the duplicate removes the track; its copied effects stay loaded but unused, as they do for a deleted track. Duplicating a bus doesn't copy the sends other tracks make to it.
+- Measured by the tests: the copy right after its source with every setting, the send, an envelope and its clip (unlocked, with new ids, sharing the audio), rendered alone bit for bit the same as the source; through the real view, the copy as one undo step and selected. Copying the effects was not checked by the tests (it runs in the app's window code), and none of it was tried by hand. The default-device test still hung opening the audio interface, as for Milestone 40; every other check passed.
+
 **Milestone 43: the clip list**
 - Multitrack > Clip List opens a window listing every clip in the session in time order (clips that start together by track): its track, name, start and length in seconds, file, and whether it is locked or muted. The selected clip's row is highlighted.
 - Clicking a row selects that clip alone, with its track, puts the cursor at its start, and scrolls the timeline to it (a tenth of the way in, at the same zoom) and the lanes to its track when it is out of view. The list follows edits and undo as they happen.
@@ -340,6 +345,7 @@ The tests run against the real machine:
 - Muting clips: the mix, bounces and copies bit for bit, the view, and session files.
 - Clip colours: their own or the track's, the selection as one undo step, and session files.
 - The clip list: rows and columns, clicking a row, and following edits.
+- Duplicating a track: its settings and clips, playing the same bit for bit, and the view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -393,4 +399,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: renaming a track by double-clicking its name, and duplicating a track with its clips, effects and settings
+1. Multitrack, continued: hiding tracks from the lanes without muting them, and showing them again
