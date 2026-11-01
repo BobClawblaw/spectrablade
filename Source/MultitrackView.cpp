@@ -2438,6 +2438,42 @@ bool MultitrackView::closeGapsOnSelectedTrack()
     return true;
 }
 
+bool MultitrackView::clearTimeSelection()
+{
+    auto next = *engine.session.getState();
+
+    if (timeSelection.isEmpty() || ! SessionEdits::clearTime (next, timeSelection.getStart(), timeSelection.getEnd()))
+        return false;
+
+    engine.session.apply (std::move (next), "Clear Range");
+    return true;
+}
+
+bool MultitrackView::deleteTimeSelection()
+{
+    auto next = *engine.session.getState();
+    const auto range = timeSelection;
+
+    if (range.isEmpty() || ! SessionEdits::deleteTime (next, range.getStart(), range.getEnd()))
+        return false;
+
+    engine.session.apply (std::move (next), "Delete Time");
+    setTimeSelection ({});
+    setCursor (range.getStart());
+    return true;
+}
+
+bool MultitrackView::insertTimeAtSelection()
+{
+    auto next = *engine.session.getState();
+
+    if (timeSelection.isEmpty() || ! SessionEdits::insertTime (next, timeSelection.getStart(), timeSelection.getLength()))
+        return false;
+
+    engine.session.apply (std::move (next), "Insert Time");
+    return true;
+}
+
 juce::uint32 MultitrackView::duplicateSelectedTrack()
 {
     auto next = *engine.session.getState();

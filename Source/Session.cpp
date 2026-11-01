@@ -799,6 +799,152 @@ int closeGaps (SessionState& s, int track)
     return moved;
 }
 
+bool clearTime (SessionState& s, juce::int64 start, juce::int64 end)
+{
+    auto changed = false;
+
+    for (int t = 0; t < (int) s.tracks.size(); ++t)
+        changed = clearRange (s, t, start, end) || changed;
+
+    return changed;
+}
+
+namespace
+{
+    /** The envelope with [start, end) taken out: the line up to start and the line from end on
+        are kept as they were, end now falling at start. */
+    Envelope withoutTime (const Envelope& e, juce::int64 start, juce::int64 end)
+    {
+        if (e.points.empty() || e.points.back().frame < start)
+            return e;
+
+        Envelope out;
+
+        for (auto& p : e.points)
+            if (p.frame < start)
+                out.points.push_back (p);
+
+        if (! out.points.empty() && out.points.back().frame < start - 1)
+            out.points.push_back ({ start - 1, e.valueAt (start - 1) });
+
+        out.points.push_back ({ start, e.valueAt (end) });
+
+        for (auto& p : e.points)
+            if (p.frame > end)
+                out.points.push_back ({ p.frame - (end - start), p.value });
+
+        return out;
+    }
+
+    /** The envelope with `length` frames put in at `at`, holding its value there across them. */
+    Envelope withTime (const Envelope& e, juce::int64 at, juce::int64 length)
+    {
+        if (e.points.empty() || e.points.back().frame < at)
+            return e;
+
+        Envelope out;
+        const auto value = e.valueAt (at);
+        const auto pointAt = std::any_of (e.points.begin(), e.points.end(), [at] (auto& p) { return p.frame == at; });
+
+        for (auto& p : e.points)
+            if (p.frame < at)
+                out.points.push_back (p);
+
+        if (! out.points.empty())
+        {
+            out.points.push_back ({ at, value });
+
+            if (! pointAt)
+                out.points.push_back ({ at + length, value });
+        }
+
+        for (auto& p : e.points)
+            if (p.frame >= at)
+                out.points.push_back ({ p.frame + length, p.value });
+
+        return out;
+    }
+
+    /** Applies an envelope change to every envelope on every track; true when one changed. */
+    bool changeEnvelopes (SessionState& s, const std::function<Envelope (const Envelope&)>& change)
+    {
+        auto changed = false;
+
+        const auto update = [&] (Envelope& e)
+        {
+            auto next = change (e);
+            changed = changed || next != e;
+            e = std::move (next);
+        };
+
+        for (auto& track : s.tracks)
+        {
+            update (track.volumeEnvelope);
+            update (track.panEnvelope);
+
+            for (auto& effect : track.effectEnvelopes)
+                update (effect.envelope);
+        }
+
+        return changed;
+    }
+
+    /** Applies a marker change; true when the markers changed. */
+    bool changeMarkers (SessionState& s, Markers next)
+    {
+        const auto changed = next != s.markers;
+        s.markers = std::move (next);
+        return changed;
+    }
+}
+
+bool deleteTime (SessionState& s, juce::int64 start, juce::int64 end)
+{
+    if (start < 0 || end <= start)
+        return false;
+
+    auto changed = clearTime (s, start, end);
+
+    for (auto& track : s.tracks)
+        for (auto& c : track.clips)
+            if (! c.locked && c.position >= end)
+            {
+                c.position -= end - start;
+                changed = true;
+            }
+
+    changed = changeEnvelopes (s, [=] (const Envelope& e) { return withoutTime (e, start, end); }) || changed;
+    return changeMarkers (s, MarkerEdits::afterReplace (s.markers, start, end, 0)) || changed;
+}
+
+bool insertTime (SessionState& s, juce::int64 at, juce::int64 length)
+{
+    if (at < 0 || length <= 0)
+        return false;
+
+    auto changed = false;
+    std::vector<juce::uint32> across;
+
+    for (auto& track : s.tracks)
+        for (auto& c : track.clips)
+            if (! c.locked && c.position < at && at < c.getEnd())
+                across.push_back (c.id);
+
+    for (auto id : across)
+        changed = splitClip (s, id, at) || changed;
+
+    for (auto& track : s.tracks)
+        for (auto& c : track.clips)
+            if (! c.locked && c.position >= at)
+            {
+                c.position += length;
+                changed = true;
+            }
+
+    changed = changeEnvelopes (s, [=] (const Envelope& e) { return withTime (e, at, length); }) || changed;
+    return changeMarkers (s, MarkerEdits::afterReplace (s.markers, at, at, length)) || changed;
+}
+
 juce::uint32 duplicateTrack (SessionState& s, int track)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))

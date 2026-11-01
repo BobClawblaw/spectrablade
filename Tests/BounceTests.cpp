@@ -369,6 +369,89 @@ void runBounceTests()
                "track templates: settings, note, input, sends by bus name and effects through a file, not clips, group or mute; a missing bus named");
     }
 
+    {
+        // Session-wide time edits: Guitar plays 1000 to 10000, Keys 0 to 12000.
+        const auto original = session (0.0f);
+        const auto silent = [] (const juce::AudioBuffer<float>& b)
+        {
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                if (b.getMagnitude (ch, 0, b.getNumSamples()) > 0.0f)
+                    return false;
+
+            return true;
+        };
+
+        auto cleared = original;
+        const auto didClear = SessionEdits::clearTime (cleared, 2000, 5000);
+        check (didClear && identical (mix (cleared, { 0, 2000 }), mix (original, { 0, 2000 })) && silent (mix (cleared, { 2000, 5000 }))
+                   && identical (mix (cleared, { 5000, 12000 }), mix (original, { 5000, 12000 }))
+                   && ! SessionEdits::clearTime (cleared, 50000, 60000),
+               "clear range: every track silent across it and bit for bit the same either side; false where nothing is");
+
+        auto deleted = original;
+        const auto didDelete = SessionEdits::deleteTime (deleted, 2000, 5000);
+        check (didDelete && identical (mix (deleted, { 0, 2000 }), mix (original, { 0, 2000 }))
+                   && identical (mix (deleted, { 2000, 9000 }), mix (original, { 5000, 12000 })) && deleted.getLength() == 9000,
+               "delete time: what was after the range plays right after what was before it, bit for bit, on every track");
+
+        auto inserted = original;
+        const auto didInsert = SessionEdits::insertTime (inserted, 3000, 2000);
+        check (didInsert && identical (mix (inserted, { 0, 3000 }), mix (original, { 0, 3000 })) && silent (mix (inserted, { 3000, 5000 }))
+                   && identical (mix (inserted, { 5000, 14000 }), mix (original, { 3000, 12000 })) && inserted.getLength() == 14000
+                   && inserted.tracks[0].clips.size() == 2 && inserted.tracks[1].clips.size() == 2,
+               "insert time: clips across it split, empty time there, and what was after it plays later, bit for bit");
+
+        // Envelopes, markers and locked clips.
+        auto marked = original;
+        marked.tracks[0].volumeEnvelope.points = { { 0, -4.0f }, { 6000, -12.0f }, { 9000, -2.0f } };
+        marked.tracks[1].panEnvelope.points = { { 4000, 0.5f } };
+        marked.markers = { { 1000, 0, "a" }, { 3000, 0, "b" }, { 8000, 0, "c" } };
+        SessionEdits::addClip (marked, 1, juce::File ("/takes/pad.wav"), ramp (1, 1000, 0.1f), 13000);
+        SessionEdits::addClip (marked, 0, juce::File ("/takes/hit.wav"), ramp (1, 1000, 0.1f), 6000);
+        const auto lockedId = marked.tracks[0].clips.back().id;
+        SessionEdits::setClipLocked (marked, lockedId, true);
+        const auto oldVolume = marked.tracks[0].volumeEnvelope, oldPan = marked.tracks[1].panEnvelope;
+        const auto lastStart = [] (const SessionTrack& t)
+        {
+            juce::int64 last = -1;
+
+            for (auto& c : t.clips)
+                last = juce::jmax (last, c.position);
+
+            return last;
+        };
+        const auto lockedAt = [] (const SessionState& st, juce::uint32 id)
+        {
+            const auto where = st.findClip (id);
+            return where.has_value() ? st.tracks[(size_t) where->first].clips[(size_t) where->second].position : (juce::int64) -1;
+        };
+
+        auto cut = marked;
+        SessionEdits::deleteTime (cut, 2000, 5000);
+        auto shapeKept = true;
+
+        for (juce::int64 f = 0; f < 12000; f += 250)
+            shapeKept = shapeKept && std::abs (cut.tracks[0].volumeEnvelope.valueAt (f) - oldVolume.valueAt (f < 2000 ? f : f + 3000)) < 1.0e-4f
+                        && std::abs (cut.tracks[1].panEnvelope.valueAt (f) - oldPan.valueAt (f < 2000 ? f : f + 3000)) < 1.0e-6f;
+
+        check (shapeKept && cut.markers.size() == 2 && cut.markers[0].start == 1000 && cut.markers[1].start == 5000 && cut.markers[1].name == "c"
+                   && lockedAt (cut, lockedId) == 6000 && lastStart (cut.tracks[1]) == 10000,
+               "delete time: envelopes keep their shape either side, markers inside go and later ones move back, a locked clip stays put");
+
+        auto opened = marked;
+        SessionEdits::insertTime (opened, 3000, 2000);
+        auto held = true;
+
+        for (juce::int64 f = 0; f < 14000; f += 250)
+            held = held && std::abs (opened.tracks[0].volumeEnvelope.valueAt (f) - oldVolume.valueAt (f < 3000 ? f : f < 5000 ? 3000 : f - 2000)) < 1.0e-4f
+                   && std::abs (opened.tracks[1].panEnvelope.valueAt (f) - oldPan.valueAt (f < 3000 ? f : f < 5000 ? 3000 : f - 2000)) < 1.0e-6f;
+
+        check (held && opened.markers.size() == 3 && opened.markers[0].start == 1000 && opened.markers[2].start == 10000
+                   && lockedAt (opened, lockedId) == 6000 && lastStart (opened.tracks[1]) == 15000
+                   && ! SessionEdits::insertTime (opened, 3000, 0) && ! SessionEdits::deleteTime (opened, 4000, 4000),
+               "insert time: envelopes hold their value across it and keep their shape after, later markers move on, a locked clip stays put");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");

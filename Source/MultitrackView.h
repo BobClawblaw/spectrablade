@@ -152,6 +152,20 @@ public:
         step ("Close Gaps"). False when nothing moved. */
     bool closeGapsOnSelectedTrack();
 
+    /** Clears the time range on every track (SessionEdits::clearTime) as one undo step ("Clear
+        Range"). False with no range or nothing there. */
+    bool clearTimeSelection();
+
+    /** Takes the time range out of the session (SessionEdits::deleteTime) as one undo step
+        ("Delete Time"), then puts the cursor at its start with no range. False with no range or
+        nothing changed. */
+    bool deleteTimeSelection();
+
+    /** Puts as much empty time as the range is long in at its start (SessionEdits::insertTime),
+        as one undo step ("Insert Time"). The range then covers the new time. False with no range
+        or nothing changed. */
+    bool insertTimeAtSelection();
+
     /** Hides a track or bus from the lanes (it still plays, and stays in the mixer) or shows it
         again, as an undo step ("Hide Track", "Show Track"). Right-click a header to hide it. */
     void setTrackHidden (juce::uint32 trackId, bool hidden);

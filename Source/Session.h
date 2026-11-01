@@ -334,6 +334,23 @@ namespace SessionEdits
         ones after them close up to them. Returns how many clips moved. */
     int closeGaps (SessionState&, int track);
 
+    /** Clears [start, end) on every track, hidden ones too, as clearRange does. False when
+        nothing was there. */
+    bool clearTime (SessionState&, juce::int64 start, juce::int64 end);
+
+    /** Takes [start, end) out of the session's time. On every track, hidden ones too, it is
+        cleared as clearRange does, and the clips, envelope points and markers after it move back
+        by its length; envelopes keep their shape on both sides, and markers follow as
+        MarkerEdits::afterReplace has them. Locked clips stay as they are, where they are. False
+        when nothing changed. */
+    bool deleteTime (SessionState&, juce::int64 start, juce::int64 end);
+
+    /** Puts `length` frames of empty time into the session at `at`. On every track, hidden ones
+        too, clips across it are split there, and the clips, envelope points and markers from it on
+        move later by `length`; envelopes hold their value at `at` over the new time. Locked clips
+        stay as they are, where they are. False when nothing changed. */
+    bool insertTime (SessionState&, juce::int64 at, juce::int64 length);
+
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);
     bool removeSend (SessionState&, juce::uint32 trackId, juce::uint32 busId);

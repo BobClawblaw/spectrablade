@@ -1426,6 +1426,36 @@ void runMultitrackViewTests (AudioEngine& engine)
                "overview: the clip is drawn where it lies in the session");
     }
 
+    {
+        // Time edits on the range, from the view: one undo step each.
+        SessionState timed;
+        timed.sampleRate = rate;
+        timed.addTrack();
+        timed.addTrack();
+        SessionEdits::addClip (timed, 0, juce::File ("/tmp/t1.wav"), silence (96000), 0);
+        SessionEdits::addClip (timed, 1, juce::File ("/tmp/t2.wav"), silence (96000), 48000);
+        engine.session.reset (timed, {});
+        Mouse::settle();
+        view.setTimeSelection ({});
+        const auto noRange = ! view.clearTimeSelection() && ! view.deleteTimeSelection() && ! view.insertTimeAtSelection();
+        view.setTimeSelection ({ 24000, 72000 });
+        const auto inserted = view.insertTimeAtSelection();
+        const auto insertStep = engine.session.getUndoDescription();
+        const auto insertedLength = engine.session.getState()->getLength();
+        const auto rangeKept = view.getTimeSelection() == juce::Range<juce::int64> (24000, 72000);
+        const auto deleted = view.deleteTimeSelection();
+        const auto deleteStep = engine.session.getUndoDescription();
+        check (noRange && inserted && insertStep == "Insert Time" && insertedLength == 144000 + 48000 && rangeKept
+                   && deleted && deleteStep == "Delete Time" && engine.session.getState()->getLength() == 144000
+                   && view.getTimeSelection().isEmpty() && view.getCursor() == 24000,
+               "time edits: none without a range; insert time keeps the range over the new time, delete time leaves the cursor at its start");
+        view.setTimeSelection ({ 24000, 72000 });
+        const auto clearedRange = view.clearTimeSelection();
+        check (clearedRange && engine.session.getUndoDescription() == "Clear Range" && engine.session.getState()->tracks[0].clips.size() == 2
+                   && engine.session.getState()->getLength() == 144000,
+               "time edits: clear range cuts every track across the range, as one step");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

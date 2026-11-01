@@ -6,6 +6,14 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 58: clearing, deleting and inserting time**
+- Three commands in the Multitrack menu work on the time range across the whole session, every track and bus, hidden ones too, each as one undo step:
+  - Clear Range cuts every track's clips across the range and leaves the time empty; clips are split where the range starts and ends.
+  - Delete Time takes the range out: it is cleared, and the clips, envelope points and markers after it move back by its length. Envelopes keep their shape on both sides; markers inside go and regions across it shrink, as in the single-file editor. The cursor goes to where the range started, and the range goes.
+  - Insert Time puts in as much empty time as the range is long, at its start: clips across it are split there, and the clips, envelope points and markers from it on move later. Envelopes hold their value at that point across the new time. The range then covers the new time.
+- Locked clips stay as they are, where they are, so Delete Time and Insert Time can leave one overlapping clips that moved, or a gap.
+- Measured by the tests: on a session with a send and a bus, the mix after each edit compared with the mix before, bit for bit: the same up to the range, silent across a cleared or inserted range, and the same after it, shifted by its length; envelopes (volume and pan) matching the old ones every 250 frames, shifted; markers inside a deleted range gone and later ones moved; a locked clip staying put; nothing done with no range or an empty one; and the undo steps, cursor and range from the view. Effect-parameter envelopes go through the same code but were not tested separately; none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 57: the session overview**
 - In multitrack mode a strip above the lanes shows the whole session in miniature: each shown track's clips as a band in their colours (muted ones grey), the cursor, and a frame around the part the lanes show. It spans the session's end, at least a minute, and as far as the lanes show. Clicking or dragging in it centres the lanes there at the same zoom; the lanes' own limits apply (they don't start before zero). It follows the lanes' scrolling and zoom, and the cursor while playing.
 - Measured by the tests, through the real strip: a ten-second session spanning the one-minute floor; a click at the middle centring the lanes on 30 s and a drag near the end on 59 s, with the zoom unchanged; a drag to the left edge stopping at zero; and the clip drawn where it lies. How it looks and feels was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -417,6 +425,7 @@ The tests run against the real machine:
 - Track templates: what they keep, sends by bus name, and a file round trip.
 - Saving a copy with audio: copies, numbering, missing files, and the moved copy opening.
 - The session overview: its span, clicking and dragging to scroll, and drawing.
+- Time edits: clearing, deleting and inserting time across every track, with envelopes, markers and locked clips.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -470,4 +479,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: range selection across tracks (drag in empty lane space with a modifier to select a time range over several tracks), then cut, copy, delete and silence on that range
+1. Multitrack, continued: copying and pasting the time range across every track (its clips, envelope points and markers together), pasting as inserted time
