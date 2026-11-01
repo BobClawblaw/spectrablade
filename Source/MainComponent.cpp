@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdFitRegions);
+            || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1303,6 +1303,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
             case cmdRegionsFromMarkers: info.setActive (std::any_of (session.getState()->markers.begin(), session.getState()->markers.end(),
                                                                      [] (const Marker& m) { return ! m.isRegion(); })); break;
             case cmdRenameMarkers: info.setActive (! session.getState()->markers.empty()); break;
+            case cmdFitRegions: info.shortName = "Fit Regions to Clips"; info.description = "Shrink every region to the clips inside it";
+                            info.setActive (std::any_of (session.getState()->markers.begin(), session.getState()->markers.end(),
+                                                         [] (const Marker& m) { return m.isRegion(); })); break;
             case cmdSelectRegion: info.setActive (std::any_of (session.getState()->markers.begin(), session.getState()->markers.end(),
                                                                [] (const Marker& m) { return m.isRegion(); })); break;
             default:        if (isEditorOnly (id)) info.setActive (false); break;
@@ -3517,6 +3520,18 @@ void MainComponent::askForSilence (const juce::String& title, std::function<void
 
 void MainComponent::fitRegionsToSound()
 {
+    if (multitrackMode)
+    {
+        auto next = *engine.session.getState();
+
+        if (SessionEdits::fitRegionsToClips (next) > 0)
+            engine.session.apply (std::move (next), "Fit Regions to Clips");
+        else
+            showError ("Fit Regions to Clips", "Every region already starts and ends with its clips, or holds none.");
+
+        return;
+    }
+
     auto& doc = engine.document;
     auto markers = doc.getMarkers();
 

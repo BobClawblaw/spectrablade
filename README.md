@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 125: Fit Regions to Clips**
+- In the session, the same Markers menu command reads Fit Regions to Clips: it shrinks every region to the span of the clips overlapping it, on any track and muted ones included, within the region, so Export Regions leaves out the empty time around them. Regions over no clip, and point markers, are left alone. It is one undo step, and says so when nothing would change.
+- Measured by the tests: with clips from 0 to 12,000 frames on two tracks, a region from 500 to 20,000 becomes 500 to 12,000, while a region past every clip, one already from 0 to 12,000 and a point marker are unchanged. The command in the session view was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 124: Fit Regions to Sound**
 - Markers > Fit Regions to Sound (in the editor) shrinks every region to the span from its first frame above the level Trim Silence last used to its last, so a region drawn loosely around a take hugs it. The audio is not changed. Regions holding nothing above the level, and point markers, are left alone. It is one undo step, and says so when nothing would change.
 - Measured by the tests: a region from inside a long pause into the sound after it now starts exactly where the sound does; a region wholly inside the pause, a point marker and a region already starting and ending on sound are unchanged. Trimming a region's end was not tested separately (it is the same search as Trim Silence's, which was), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -782,6 +786,7 @@ The tests run against the real machine:
 - Markers at silences: the middles of pauses between sounds, none for silence at the ends, capped.
 - Shorten pauses: cut from the middle down to the time, both ends kept, bit for bit.
 - Fit regions to sound: a loose region trimmed to its sound; silent, point and tight ones left.
+- Fit regions to clips: a region cut to the clips in it; empty, fitting and point ones left.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -835,4 +840,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Session: Fit Regions to Clips, shrinking each region to the clips inside it
+1. Session: Regions from Clips, adding a region for each group of overlapping clips

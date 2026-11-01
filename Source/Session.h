@@ -306,6 +306,10 @@ namespace SessionEdits
     /** Sets the shape of a clip's fade in (or out). False for a locked clip or when it is so. */
     bool setClipFadeShape (SessionState&, juce::uint32 clipId, bool fadeOut, FadeShape);
 
+    /** Shrinks each region to the span of the clips overlapping it (muted ones too), on any track,
+        within the region; regions overlapping no clip are left alone. Returns how many changed. */
+    int fitRegionsToClips (SessionState&);
+
     bool removeClip (SessionState&, juce::uint32 clipId);
 
     /** Locks or unlocks a clip. Moving, trimming, splitting, fading, changing the gain, take or

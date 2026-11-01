@@ -863,6 +863,39 @@ bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     return true;
 }
 
+int fitRegionsToClips (SessionState& s)
+{
+    auto changed = 0;
+
+    for (auto& m : s.markers)
+    {
+        if (! m.isRegion())
+            continue;
+
+        const juce::Range<juce::int64> region (m.start, m.getEnd());
+        juce::Range<juce::int64> span;
+        auto any = false;
+
+        for (auto& t : s.tracks)
+            for (auto& c : t.clips)
+                if (const auto overlap = region.getIntersectionWith ({ c.position, c.getEnd() }); ! overlap.isEmpty())
+                {
+                    span = any ? span.getUnionWith (overlap) : overlap;
+                    any = true;
+                }
+
+        if (any && span != region)
+        {
+            m.start = span.getStart();
+            m.length = span.getLength();
+            ++changed;
+        }
+    }
+
+    MarkerEdits::sort (s.markers);
+    return changed;
+}
+
 bool setClipFadeShape (SessionState& s, juce::uint32 clipId, bool fadeOut, FadeShape shape)
 {
     auto* c = findUnlocked (s, clipId);

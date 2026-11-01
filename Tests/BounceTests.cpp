@@ -707,6 +707,14 @@ void runBounceTests()
         check (fileRegions.size() == 2 && fileRegions[0].first == files[0].first && fileRegions[1].first == files[1].first
                    && fileRegions[1].second.getFileName() == "Take - 02 Chorus.wav",
                "save each region: an open file's regions named and numbered the same way");
+
+        // Fitting regions to clips (0 to 12,000 across both tracks): one running past them is cut to
+        // their end; one past every clip and one already fitting are left.
+        auto fitting = session (0.0f);
+        fitting.markers = { { 500, 19500, "Loose" }, { 15000, 1000, "Empty" }, { 0, 12000, "Fits" }, { 300, 0, "Point" } };
+        const auto fitCount = SessionEdits::fitRegionsToClips (fitting);
+        check (fitCount == 1 && fitting.markers == Markers { { 0, 12000, "Fits" }, { 300, 0, "Point" }, { 500, 11500, "Loose" }, { 15000, 1000, "Empty" } },
+               "fit regions to clips: a region cut to the clips inside it; one with no clips, one already fitting and a point left alone");
     }
 
     {
