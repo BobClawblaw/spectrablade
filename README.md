@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 96: a region from clips**
+- Markers > Add Region from Clips adds a region running from the start of the earliest selected clip to the end of the latest, whatever tracks they are on, as an undo step. With one clip selected the region takes the clip's name; with several it is named like other new regions ("Region 01", ...).
+- Measured by the tests, through the real view: two clips on two tracks giving one region from the first's start to the later end, as an undo step; one clip giving a region of its own length named after it; and nothing with no clip selected. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 95: duplicating time**
 - Multitrack > Duplicate Time (Cmd Option D) puts a copy of the time range in right after it, on every track: clips, envelopes and markers, moving everything after it on, as Copy Time then Paste Time at the range's end would, in one undo step ("Duplicate Time"). The copy becomes the time range and the cursor goes to its start, so doing it again repeats the section once more. What Copy Time copied is left as it was.
 - Measured by the tests, through the real view: a clip and a marker in the range repeated 12,000 frames on, a clip on another track after the range moved on by the same, the copy selected, and the copied time untouched; doing it again making a third copy and moving the later clip on again; and nothing without a time range. The menu item and key were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -635,6 +639,7 @@ The tests run against the real machine:
 - Next and previous clip: time order along a track, the ends, and starting from the cursor.
 - The clip list as CSV: order, times, flags and quoting.
 - Duplicate time: clips and markers repeated, later clips moved on, and repeating it.
+- Region from clips: spans, names and no selection.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -688,4 +693,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers: Add Region from Clips, a region spanning the selected clips
+1. Multitrack, continued: Unsolo All and Unmute All, clearing every track's solo or mute in one step

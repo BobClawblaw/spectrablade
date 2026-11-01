@@ -2278,6 +2278,34 @@ void MultitrackView::addMarker()
     engine.session.apply (std::move (next), "Add " + m.name);
 }
 
+bool MultitrackView::addRegionFromSelectedClips()
+{
+    const auto ids = getSelectedClips();
+    auto next = *engine.session.getState();
+
+    if (ids.empty())
+        return false;
+
+    auto start = std::numeric_limits<juce::int64>::max();
+    juce::int64 end = 0;
+    juce::String name;
+
+    for (auto id : ids)
+    {
+        const auto where = next.findClip (id);
+        const auto& c = next.tracks[(size_t) where->first].clips[(size_t) where->second];
+        start = juce::jmin (start, c.position);
+        end = juce::jmax (end, c.getEnd());
+        name = c.name;
+    }
+
+    Marker m { start, end - start, ids.size() == 1 && name.isNotEmpty() ? name : MarkerEdits::nextName (next.markers, true) };
+    next.markers.push_back (m);
+    MarkerEdits::sort (next.markers);
+    engine.session.apply (std::move (next), "Add " + m.name);
+    return true;
+}
+
 void MultitrackView::addMarkerAt (juce::int64 frame)
 {
     auto next = *engine.session.getState();

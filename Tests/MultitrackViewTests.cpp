@@ -1506,6 +1506,33 @@ void runMultitrackViewTests (AudioEngine& engine)
                "duplicate time: the range's clips and markers repeated right after it, what follows moved on, the copy selected for the next; the copied time untouched");
     }
 
+    // A region from the selected clips.
+    {
+        SessionState spread;
+        spread.sampleRate = rate;
+        spread.addTrack();
+        spread.addTrack();
+        const auto early = SessionEdits::addClip (spread, 0, juce::File ("/tmp/intro.wav"), silence (8000), 10000);
+        SessionEdits::addClip (spread, 1, juce::File ("/tmp/pad.wav"), silence (30000), 14000);   // ends last, at 44000
+        spread.markers = { { 5000, 0, "Count" } };
+        engine.session.reset (spread, {});
+        Mouse::settle();
+
+        view.selectAllClips();
+        const auto both = view.addRegionFromSelectedClips() && engine.session.getState()->markers.size() == 2
+                          && engine.session.getState()->markers[1] == Marker { 10000, 34000, "Region 01" }
+                          && engine.session.getUndoDescription() == "Add Region 01";
+        view.showClip (early);
+        const auto one = view.addRegionFromSelectedClips() && engine.session.getState()->markers.size() == 3
+                         && engine.session.getState()->markers[1] == Marker { 10000, 8000, "intro" };
+        view.setTimeSelection ({ 60000, 70000 });
+        view.selectClipsInRange();
+        view.setTimeSelection ({});
+        const auto none = ! view.addRegionFromSelectedClips() && engine.session.getState()->markers.size() == 3;
+        check (both && one && none,
+               "region from clips: spans the selected clips, named after the clip when there is one, as an undo step; nothing with none selected");
+    }
+
     // Selecting the next and previous clip along a track.
     {
         SessionState row;

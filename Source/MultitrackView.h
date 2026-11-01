@@ -74,6 +74,11 @@ public:
         marker lane does this (snapped, with snapping on). */
     void addMarkerAt (juce::int64 frame);
 
+    /** Adds a region from the start of the earliest selected clip to the end of the latest, as an
+        undo step, named after the clip when there is only one, otherwise "Region 01" and so on.
+        False with no clip selected. */
+    bool addRegionFromSelectedClips();
+
     /** Moves the cursor to the nearest marker or region edge after it (or before it). Returns
         false when there is none. */
     bool goToMarker (bool forwards);
