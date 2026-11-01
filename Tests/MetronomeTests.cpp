@@ -492,6 +492,15 @@ namespace
             badBars += bars (text).has_value() ? 1 : 0;
 
         check (badBars == 0, "go to time: bars and beats that don't exist are refused (" + juce::String (badBars) + " read)");
+
+        // Set Selection: a start and length in a 10 s file, the end cut to the file's.
+        using Span = std::optional<juce::Range<juce::int64>>;
+        const auto span = [] (const char* start, const char* length) { return TimeEntry::parseRange (start, length, 48000.0, 480000); };
+        check (span ("1.5", "2") == Span ({ 72000, 168000 }) && span ("0:09", "0:05") == Span ({ 432000, 480000 })
+                   && span ("0", "10") == Span ({ 0, 480000 }),
+               "set selection: start and length typed as times, the end cut to the file's");
+        check (! span ("10", "1") && ! span ("1", "0") && ! span ("abc", "1") && ! span ("1", "") && ! span ("-1", "1"),
+               "set selection: a start at or past the end, a zero length and unreadable times are refused");
     }
 }
 

@@ -72,4 +72,17 @@ namespace TimeEntry
 
         return (juce::int64) std::llround (total * sampleRate);
     }
+
+    /** The range a typed start and length name in a file `total` frames long, its end cut to the
+        file's; nothing when either can't be read, the length is 0, or the start is at or past the end. */
+    inline std::optional<juce::Range<juce::int64>> parseRange (const juce::String& start, const juce::String& length,
+                                                                double sampleRate, juce::int64 total)
+    {
+        const auto from = parse (start, sampleRate), frames = parse (length, sampleRate);
+
+        if (! from || ! frames || *frames <= 0 || *from >= total)
+            return {};
+
+        return juce::Range<juce::int64> (*from, juce::jmin (total, *from + *frames));
+    }
 }

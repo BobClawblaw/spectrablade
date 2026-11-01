@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdBalance);
+            || (id >= cmdRemoveDc && id <= cmdSetSelection);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdBalance; ++id)
+    for (int id = cmdOpen; id <= cmdSetSelection; ++id)
         ids.add (id);
 }
 
@@ -965,6 +965,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
         case cmdSwapChannels: info.setInfo ("Swap Channels", "Exchange left and right in the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
+        case cmdSetSelection: info.setInfo ("Set Selection...", "Type the start and length of the selection", "Edit", 0);
+                            info.setActive (hasAudio); break;
         case cmdSelectAudible: info.setInfo ("Select Audible Span", "Select from the first sound to the last, at the level Trim Silence last used", "Edit", 0);
                             info.setActive (hasAudio); break;
         case cmdMixToMono:  info.setInfo ("Mix to Mono", "Average the channels into one", "Effects", 0);
@@ -1307,6 +1309,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSwapChannels: applySimpleEffect ("Swap Channels", &AudioEdits::swapChannels, false); break;
         case cmdInsertSilence: showInsertSilence(); break;
         case cmdSelectAudible: selectAudibleSpan(); break;
+        case cmdSetSelection: showSetSelection(); break;
         case cmdMixToMono:  convertChannels (1); break;
         case cmdMakeStereo: convertChannels (2); break;
         case cmdTrimSilence: askForDecibels ("Trim Silence", "Threshold (dB)", silenceThresholdDb, [this] (float db) { trimSilence (db); }); break;
@@ -1531,7 +1534,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
-        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
         case 2:
         {
             add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut });
@@ -3317,6 +3320,35 @@ void MainComponent::selectAudibleSpan()
         waveform.setSelection (*audible);
     else
         showError ("Select Audible Span", "The whole file is at or below " + juce::String (silenceThresholdDb, 1) + " dB.");
+}
+
+void MainComponent::showSetSelection()
+{
+    const auto rate = engine.document.getSampleRate();
+    const auto sel = waveform.getSelection();
+    auto* box = new juce::AlertWindow ("Set Selection", "Seconds (83.5) or minutes and seconds (1:23.5).",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("start", formatTime (sel.isEmpty() ? waveform.getCursor() : sel.getStart(), rate), "Start");
+    box->addTextEditor ("length", formatTime (sel.getLength(), rate), "Length");
+    box->addButton ("Select", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, rate] (int result)
+    {
+        if (result != 1)
+            return;
+
+        if (const auto range = TimeEntry::parseRange (box->getTextEditorContents ("start"), box->getTextEditorContents ("length"),
+                                                      rate, engine.document.getNumFrames()))
+        {
+            waveform.setSelection (*range);
+            waveform.showFrame (range->getStart());
+        }
+        else
+        {
+            showError ("Set Selection", "That start and length don't name part of the file: the start must be before its end and the length more than 0.");
+        }
+    }), true);
 }
 
 void MainComponent::showBalance()

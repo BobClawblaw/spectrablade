@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 107: Set Selection**
+- Edit > Set Selection asks for a start and a length, each in seconds or minutes and seconds, filled in from the current selection (or the cursor), then selects that span and scrolls to its start. A length running past the end of the file is cut to it; a start at or past the end, a zero length or a time that can't be read is refused with a message.
+- Measured by the tests: in a 10-second file at 48 kHz, 1.5 and 2 select frames 72,000 to 168,000, 0:09 and 0:05 select 432,000 to the end at 480,000, and 0 and 10 the whole file; a start of 10, a length of 0, and unreadable, empty or negative times give nothing. The dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 106: Balance**
 - Effects > Balance asks for a position from -100 (all left) to 100 (all right) and moves the balance of the selection, or the whole file, by lowering the side moved away from, with the same law a session track's pan applies to a stereo clip (half right: the left down 3 dB). It is offered for two-channel files only; a mono file can be made stereo first. Zero changes nothing and adds no undo step.
 - Measured by the tests: half right leaves the right channel bit-identical and multiplies the left by exactly the mixer's gain for that position (within float rounding of the square root of a half) inside the range, and nothing outside it. The dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -691,6 +695,7 @@ The tests run against the real machine:
 - Mix to Mono and Make Stereo: exact averages and copies across blocks, and undo.
 - Editor fade shapes: linear in and slow-start out, exact at every frame.
 - Balance: the mixer's stereo pan law, inside the range only.
+- Set Selection: typed starts and lengths, cut to the file, bad ones refused.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -744,4 +749,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Set Selection, typing the start and length of the selection
+1. Editor: Extend Selection to Cursor, and Shift-click to extend the selection
