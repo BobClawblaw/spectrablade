@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/ClipProperties.h"
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
 #include "TestUtils.h"
@@ -224,8 +225,66 @@ namespace
     }
 }
 
+namespace
+{
+    void testClipProperties (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        const auto id = SessionEdits::addClip (s, 0, juce::File ("/takes/vocal.wav"), constant (1, 96000, 0.5f), 48000);
+        engine.session.reset (s, {});
+        juce::uint32 selected = 0;
+        ClipProperties properties (engine, [&selected] { return selected; });
+        properties.setSize (340, 250);
+        const auto settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+        using Field = ClipProperties::Field;
+        const auto text = [&] (Field f) { return properties.getEditor (f).getText(); };
+        const auto type = [&] (Field f, const juce::String& value)
+        {
+            properties.getEditor (f).setText (value, false);
+            properties.apply (f);
+            settle();
+        };
+        const auto clip = [&] { return engine.session.getState()->tracks[0].clips[0]; };
+
+        const auto empty = properties.getShownClip() == 0 && text (Field::name).isEmpty() && ! properties.getEditor (Field::start).isEnabled();
+        selected = id;
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);   // its timer notices the selection
+        check (empty && properties.getShownClip() == id && text (Field::name) == "vocal" && text (Field::start) == "1.000"
+                   && text (Field::length) == "2.000" && text (Field::gain) == "0.0" && text (Field::fadeIn) == "0.000",
+               "clip properties: nothing without a selected clip, then the selected clip's settings in seconds and dB");
+
+        type (Field::start, "2.5");
+        const auto moved = clip().position == 120000 && engine.session.getUndoDescription() == "Move Clip";
+        type (Field::length, "1.25");
+        const auto trimmed = clip().length == 60000 && clip().position == 120000 && engine.session.getUndoDescription() == "Trim Clip";
+        type (Field::gain, "-4.5");
+        type (Field::fadeIn, "0.1");
+        type (Field::fadeOut, "0.2");
+        type (Field::name, "Lead vocal");
+        const auto c = clip();
+        check (moved && trimmed && juce::exactlyEqual (c.gainDb, -4.5f) && c.fadeIn == 4800 && c.fadeOut == 9600 && c.name == "Lead vocal"
+                   && engine.session.getUndoDescription() == "Rename Clip",
+               "clip properties: typing a start, length, gain, fades and name edits the clip, each as an undo step");
+
+        type (Field::length, "nonsense");
+        const auto refused = text (Field::length) == "1.250";
+        type (Field::start, "-3");
+        engine.session.undo();
+        settle();
+        check (refused && clip().position == 120000 && text (Field::name) == "vocal",
+               "clip properties: text that isn't a setting shows the clip's again, and undo shows here at once");
+
+        engine.session.reset ({}, {});
+        settle();
+        check (properties.getShownClip() == 0, "clip properties: a clip that goes away is no longer shown");
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
+    testClipProperties (engine);
     testLevels();
     testMixerView (engine);
     testGroups (engine);

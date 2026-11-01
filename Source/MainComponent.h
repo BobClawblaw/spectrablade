@@ -45,6 +45,7 @@ public:
 private:
     class PluginEditorWindow;
     class MixerWindow;
+    class ClipPropertiesWindow;
     class PluginListWindow;
     class RackRenderJob;
     class BackgroundJob;
@@ -134,6 +135,7 @@ private:
     void showAudioSettings();
     void showTempoDialog();
     void toggleMixer();
+    void toggleClipProperties();
     void showPluginList();
     void showEditor (int slotIndex);
     void showEditor (juce::AudioProcessor&);
@@ -170,6 +172,7 @@ private:
     juce::OwnedArray<PluginEditorWindow> editorWindows;
     std::unique_ptr<PluginListWindow> pluginListWindow;
     std::unique_ptr<MixerWindow> mixerWindow;
+    std::unique_ptr<ClipPropertiesWindow> clipPropertiesWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
     std::optional<NoiseReduction::Print> noisePrint;

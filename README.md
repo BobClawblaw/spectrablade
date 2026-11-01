@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 35: clip properties**
+- Multitrack > Clip Properties (Cmd Shift I) opens a small window, kept above the others, that follows the selected clip: its file (and take), name, start and length in seconds, gain in dB, and fade in and out in seconds. Type a value and press Return, or click away, to apply it as an undo step ("Move Clip", "Trim Clip", "Clip Gain", "Clip Fade In", "Rename Clip"...); Escape puts the field back. A value that can't apply (not a number, a start before 0, a length of 0) shows the clip's setting again, and lengths and fades are limited as when dragging. Undo and edits elsewhere show in the window at once.
+- Measured by the tests, through the real component: nothing shown without a selected clip, then a clip's settings once it is selected; typing a start, length, gain, both fades and a name, each as the right edit and undo step; text that isn't a number and a negative start refused; undo showing at once; a clip that goes away no longer shown. The window and its menu item were not checked by the tests, and none of it was tried by hand.
+
 **Milestone 34: exporting stems**
 - Multitrack > Export Stems... asks for a folder and writes every track that has clips to a 32-bit float WAV of its own, as it goes to the mix: its clips through fresh copies of its effects, its volume, pan and automation. They cover the time range, or the whole session from its start, so they line up when imported together. Files are named "Song - 01 Drums.wav" after the session and the track, numbered in order; a file of the same name in the folder is replaced. It runs in the background and can be cancelled.
 - A muted track's stem is written as it would play unmuted, and solo is ignored. Buses get no stems, and a track's sends are not in its stem, so with buses the stems don't add up to the mix.
@@ -292,6 +296,7 @@ The tests run against the real machine:
 - Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
+- Clip properties: typing each of a clip's settings, refused values, and following undo.
 - Exporting stems: which tracks, their file names, and the stems adding up to the mix bit for bit.
 - Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
 - Copying, pasting and duplicating clips through the view, over what was on the track, and several clips selected, moved, pasted, duplicated and deleted together.
@@ -340,4 +345,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a clip's own fades and gain shown and edited from a clip inspector panel
+1. Multitrack, continued: reversing a clip, and a loop of a clip repeated to fill a range
