@@ -1,5 +1,6 @@
 #include "OfflineRender.h"
 #include "AudioEdits.h"
+#include "TrackEffects.h"
 
 namespace OfflineRender
 {
@@ -141,5 +142,80 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
     }
 
     return {};
+}
+
+juce::String loadTrackEffects (const std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>& effects,
+                               juce::AudioPluginFormatManager& formats,
+                               double sampleRate,
+                               TrackEffects& into)
+{
+    juce::StringArray errors;
+    into.prepare (sampleRate);
+
+    for (auto& [trackId, xml] : effects)
+    {
+        if (xml == nullptr)
+            continue;
+
+        for (auto* slotXml : xml->getChildWithTagNameIterator ("SLOT"))
+        {
+            juce::PluginDescription description;
+
+            if (auto* d = slotXml->getChildByName ("PLUGIN"); d == nullptr || ! description.loadFromXml (*d))
+            {
+                errors.add ("A track effect is missing its plug-in description.");
+                continue;
+            }
+
+            juce::String error;
+            auto plugin = formats.createPluginInstance (description, sampleRate, TrackEffects::maxBlock, error);
+
+            if (plugin == nullptr)
+            {
+                errors.add (description.name + ": " + (error.isNotEmpty() ? error : juce::String ("could not be created.")));
+                continue;
+            }
+
+            // State after preparing, as the live chains are restored.
+            auto* instance = plugin.get();
+            instance->setNonRealtime (true);
+            into.add (trackId, std::move (plugin));
+            into.setBypassed (trackId, into.getNumSlots (trackId) - 1, slotXml->getBoolAttribute ("bypassed"));
+
+            if (auto* stateXml = slotXml->getChildByName ("STATE"))
+            {
+                juce::MemoryBlock state;
+
+                if (state.fromBase64Encoding (stateXml->getAllSubText()))
+                    instance->setStateInformation (state.getData(), (int) state.getSize());
+            }
+        }
+    }
+
+    return errors.joinIntoString ("\n");
+}
+
+bool mixSession (const SessionState& state, juce::Range<juce::int64> range, juce::AudioBuffer<float>& dest,
+                 SessionMixer::Inserts* inserts, const std::function<bool (float)>& progress)
+{
+    const auto total = (int) range.getLength();
+    dest.setSize (2, total);
+
+    SessionMixer::Buffers buffers;
+    buffers.reserve (blockSize);
+
+    if (inserts != nullptr)
+        SessionMixer::prime (state, range.getStart(), buffers, *inserts);
+
+    for (int done = 0; done < total; done += blockSize)
+    {
+        const auto count = juce::jmin (blockSize, total - done);
+        SessionMixer::render (state, range.getStart() + done, dest, done, count, buffers, inserts);
+
+        if (progress != nullptr && ! progress ((float) (done + count) / (float) total))
+            return false;
+    }
+
+    return true;
 }
 }

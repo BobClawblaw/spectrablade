@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 15: mixing a session down to a file**
+- Multitrack > Mix Down (Cmd+Shift+E) writes the session to a WAV, AIFF or FLAC file: the time range if there is one, otherwise the whole session from its start to the end of its last clip. Choose the sample format (32-bit float, or an integer depth with dither) and a tail of up to 10 s after the end, so effects such as reverbs can ring out.
+- The mixdown is what playback plays: every track's and bus's effects, sends, envelopes, mute and solo, with delay compensation, primed so a range that starts part way in is already in time. It runs behind a progress window on fresh copies of the effects, set for offline processing, so playback and the live effects are left alone. An effect that can't be loaded is left out, and the file is written with a note naming it.
+- Measured by the tests: the whole session mixes down bit for bit like playback's mix. A range starting part way in, with effects delaying a track by 300 frames, a bus by 700 and another track by 55, matches playback from the start bit for bit. Fresh copies of Apple's AUDelay load in order with their bypass and are heard in the mix, an effect that can't load is named and left out, a 32-bit float file reads back bit for bit, and the mixdown can be cancelled.
+
 **Milestone 14: automation, fade handles and snapping**
 - Each track and bus has an A button: show its volume or pan envelope over its lane, or clear one. Click the line to add a point, drag a point to move it (it stays between its neighbours), Option-click a point to delete it. Pan envelopes have left at the top. Every change is one undo step, and envelopes are saved in the session file.
 - While a track has an envelope, it governs that parameter and the fader or pan control is greyed out, showing the envelope's value at the cursor. Clearing the envelope hands control back to the fader.
@@ -167,6 +172,7 @@ The tests run against the real machine:
 - Multitrack: the mixer (pan laws, gains, mute, solo, trims, fades, block-size independence), clip edits (split, trim, move, delete), undo with merged steps, session files (round trip after moving the folder, shared audio read once, rate conversion, missing files), and session playback through the player.
 - Automation and the multitrack view: volume and pan envelopes in the mixer (against the settings they replace, ramps, steps, block sizes, sends, latency) and in session files, fade limits, snapping rules, and the view driven by the mouse (fade handles, snapping, envelope points).
 - Track effects: delay compensation bit for bit across tracks with different latencies and block sizes, playing from a jump, bypass, reordering, removal, saving each chain in the session file, and a real Apple Audio Unit on a track.
+- Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
@@ -210,4 +216,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: effect-parameter automation, recording automation while playing, crossfades between overlapping clips, and mixing the session down to a file
+1. Multitrack, continued: effect-parameter automation, recording automation while playing, and crossfades between overlapping clips

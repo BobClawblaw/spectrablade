@@ -113,6 +113,9 @@ private:
     void saveSessionAs (std::function<void (bool saved)> done = {});
     void chooseFilesForSession();
     void addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame);
+    void chooseMixDownFile();
+    void askForMixDownFormat (const juce::File&);
+    void mixDown (const juce::File&, int bitDepth, juce::Range<juce::int64>);
 
     // Transport and windows
     void togglePlay();

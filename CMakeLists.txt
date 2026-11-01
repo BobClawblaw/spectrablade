@@ -101,6 +101,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/BusTests.cpp
     Tests/AutomationTests.cpp
     Tests/MultitrackViewTests.cpp
+    Tests/MixDownTests.cpp
     Tests/TrackRecordingTests.cpp
     Tests/PluginTests.cpp
     Source/AudioDocument.cpp

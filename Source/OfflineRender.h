@@ -1,6 +1,9 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "SessionMixer.h"
+
+class TrackEffects;
 
 namespace OfflineRender
 {
@@ -17,4 +20,20 @@ namespace OfflineRender
                                      double sampleRate,
                                      juce::AudioBuffer<float>& audio,
                                      const std::function<bool (float progress)>& progress);
+
+    /** Loads fresh instances of each track's effects (TrackEffects::createXml(), keyed by track id)
+        into `into`, prepared at this rate for offline processing, so the live chains keep playing.
+        A plug-in that can't be created is left out and named in the returned errors (one per line).
+
+        Call from a background thread, as for processThroughRack(). */
+    juce::String loadTrackEffects (const std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>& effects,
+                                   juce::AudioPluginFormatManager& formats,
+                                   double sampleRate,
+                                   TrackEffects& into);
+
+    /** Mixes session frames [range.start, range.end) into dest (resized to two channels) as
+        playback would, primed for the range's start so effects and their delay compensation are
+        already in time. Returns false if progress cancelled it. */
+    bool mixSession (const SessionState&, juce::Range<juce::int64> range, juce::AudioBuffer<float>& dest,
+                     SessionMixer::Inserts*, const std::function<bool (float progress)>& progress);
 }

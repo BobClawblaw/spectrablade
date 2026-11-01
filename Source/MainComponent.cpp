@@ -37,7 +37,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping
+        cmdAddBus, cmdSnapping, cmdMixDown
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -631,7 +631,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSnapping; ++id)
+    for (int id = cmdOpen; id <= cmdMixDown; ++id)
         ids.add (id);
 }
 
@@ -727,6 +727,11 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
         case cmdSnapping:   info.setInfo ("Snapping", "Line dragged clips, edges, fades and points up with clip edges, the cursor and the ruler", "Multitrack", 0);
                             info.addDefaultKeypress ('s', 0); info.setTicked (multitrack.isSnapping()); info.setActive (multitrackMode); break;
+        case cmdMixDown:    info.setInfo ("Mix Down...", "Mix the session, or its time range, to an audio file", "Multitrack", 0);
+                            info.addDefaultKeypress ('e', cmd | shift);
+                            info.setActive (multitrackMode && backgroundJob == nullptr
+                                            && (engine.session.getState()->getLength() > 0 || ! multitrack.getTimeSelection().isEmpty()));
+                            break;
         case cmdDeleteTrack: info.setInfo ("Delete Track", "Delete the selected track or bus", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdSplitClip:  info.setInfo ("Split Clip", "Split the selected clip at the cursor", "Multitrack", 0);
@@ -851,6 +856,7 @@ bool MainComponent::perform (const InvocationInfo& info)
             commands.commandStatusChanged();
             break;
         case cmdSplitClip:  multitrack.splitSelectedClip(); break;
+        case cmdMixDown:    chooseMixDownFile(); break;
         case cmdSpectralAttenuate:
             askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
             break;
@@ -895,7 +901,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1234,6 +1240,115 @@ void MainComponent::saveSession (std::function<void (bool)> done)
 
     if (done != nullptr)
         done (error.isEmpty());
+}
+
+void MainComponent::chooseMixDownFile()
+{
+    const auto session = engine.session.getFile();
+    const auto suggested = session != juce::File() ? session.withFileExtension ("wav")
+                                                   : juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Mixdown.wav");
+
+    chooser = std::make_unique<juce::FileChooser> ("Mix down to", suggested, "*.wav;*.aif;*.aiff;*.flac");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              auto file = fc.getResult();
+
+                              if (file == juce::File())
+                                  return;
+
+                              if (! file.hasFileExtension ("wav;aif;aiff;flac"))
+                                  file = file.withFileExtension ("wav");
+
+                              askForMixDownFormat (file);
+                          });
+}
+
+void MainComponent::askForMixDownFormat (const juce::File& file)
+{
+    const auto depths = AudioFileIO::bitDepthsFor (file, engine.formatManager);
+
+    if (depths.isEmpty())
+    {
+        showError ("Mix Down", "SpectraBlade can't write " + file.getFileExtension() + " files.");
+        return;
+    }
+
+    // The time range if there is one, otherwise the whole session from its start.
+    const auto timeRange = multitrack.getTimeSelection();
+    const auto range = ! timeRange.isEmpty() ? timeRange : juce::Range<juce::int64> (0, engine.session.getState()->getLength());
+    const auto rate = engine.session.getSampleRate();
+    const auto seconds = [rate] (juce::int64 frame) { return juce::String ((double) frame / rate, 2) + " s"; };
+    const auto what = ! timeRange.isEmpty() ? "the time range, " + seconds (range.getStart()) + " to " + seconds (range.getEnd())
+                                            : "the whole session, " + seconds (range.getLength());
+
+    auto* box = new juce::AlertWindow ("Mix Down", "Mixes " + what + ", as it plays, to " + file.getFileName() + ".",
+                                       juce::MessageBoxIconType::NoIcon);
+    juce::StringArray names;
+
+    for (auto d : depths)
+        names.add (d == 32 ? juce::String ("32-bit float") : juce::String (d) + "-bit (dithered)");
+
+    box->addComboBox ("depth", names, "Sample format");
+    box->getComboBoxComponent ("depth")->setSelectedItemIndex (0);
+
+    // Effects such as reverbs ring on past the last clip: the tail keeps that.
+    const std::array<double, 5> tails { 0.0, 1.0, 2.0, 5.0, 10.0 };
+    box->addComboBox ("tail", { "None", "1 s", "2 s", "5 s", "10 s" }, "Tail after the end");
+    box->getComboBoxComponent ("tail")->setSelectedItemIndex (0);
+    box->addButton ("Mix Down", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create (
+        [this, box, file, depths, range, rate, tails] (int result)
+        {
+            if (result != 1)
+                return;
+
+            const auto depth = depths[box->getComboBoxComponent ("depth")->getSelectedItemIndex()];
+            const auto tail = (juce::int64) std::llround (tails[(size_t) box->getComboBoxComponent ("tail")->getSelectedItemIndex()] * rate);
+            mixDown (file, depth, range.withEnd (range.getEnd() + tail));
+        }), true);
+}
+
+void MainComponent::mixDown (const juce::File& file, int bitDepth, juce::Range<juce::int64> range)
+{
+    const auto state = engine.session.getState();
+    const auto rate = engine.session.getSampleRate();
+    auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
+
+    for (auto& track : state->tracks)
+        if (auto xml = engine.getTrackEffects().createXml (track.id))
+            (*effects)[track.id] = std::move (xml);
+
+    // Fresh plug-ins, made and run on the job's thread. The job is deleted on the message thread,
+    // and these with it, as some plug-ins require.
+    auto inserts = std::make_shared<TrackEffects>();
+    auto error = std::make_shared<juce::String>();
+    auto warnings = std::make_shared<juce::String>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Mixing down...",
+        [this, state, rate, effects, inserts, error, warnings, file, bitDepth, range] (const std::function<bool (float)>& progress)
+        {
+            *warnings = OfflineRender::loadTrackEffects (*effects, engine.pluginFormatManager, rate, *inserts);
+            juce::AudioBuffer<float> mix;
+
+            if (! OfflineRender::mixSession (*state, range, mix, inserts.get(), progress))
+                return false;
+
+            *error = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (mix)), rate, file, bitDepth, engine.formatManager);
+            return true;
+        },
+        [error, warnings, file]
+        {
+            if (error->isNotEmpty())
+                showError ("Mix Down", *error);
+            else if (warnings->isNotEmpty())
+                showError ("Mix Down", file.getFileName() + " was written without these effects, which could not be loaded:\n" + *warnings);
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::saveSessionAs (std::function<void (bool)> done)
