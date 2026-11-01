@@ -8,6 +8,7 @@
 #include "MultitrackView.h"
 #include "NoiseReduction.h"
 #include "RackView.h"
+#include "SessionOverview.h"
 #include "SessionRecording.h"
 #include "WaveformView.h"
 
@@ -181,6 +182,7 @@ private:
 
     WaveformView waveform { engine };
     MultitrackView multitrack { engine };
+    SessionOverview overview { engine, multitrack };
     bool multitrackMode = false;
     RackView rackView { engine };
 

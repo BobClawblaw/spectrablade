@@ -1075,6 +1075,11 @@ void MultitrackView::setView (double start, double fpp)
     repaint();
 }
 
+void MultitrackView::scrollTo (double startFrame)
+{
+    setView (startFrame, framesPerPixel);
+}
+
 void MultitrackView::zoomAround (float x, double factor)
 {
     const auto anchor = viewStart + (double) (x - (float) headerWidth) * framesPerPixel;

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 57: the session overview**
+- In multitrack mode a strip above the lanes shows the whole session in miniature: each shown track's clips as a band in their colours (muted ones grey), the cursor, and a frame around the part the lanes show. It spans the session's end, at least a minute, and as far as the lanes show. Clicking or dragging in it centres the lanes there at the same zoom; the lanes' own limits apply (they don't start before zero). It follows the lanes' scrolling and zoom, and the cursor while playing.
+- Measured by the tests, through the real strip: a ten-second session spanning the one-minute floor; a click at the middle centring the lanes on 30 s and a drag near the end on 59 s, with the zoom unchanged; a drag to the left edge stopping at zero; and the clip drawn where it lies. How it looks and feels was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 56: saving a copy with its audio**
 - File > Save a Copy with Audio... asks for a new folder's name and saves a copy of the session there, with every audio file it uses (each clip's, and each take's) copied into an Audio folder beside it, so the folder can be moved or sent as a whole. A file used several times is copied once; a second file with the same name (ignoring case) is numbered ("Take 2.wav"). The open session stays as it was, pointing at its own files.
 - Files the session uses that aren't there are named afterwards; their clips still point where they were.
@@ -412,6 +416,7 @@ The tests run against the real machine:
 - The undo history: listing steps, going back and forward by clicking, and new steps.
 - Track templates: what they keep, sends by bus name, and a file round trip.
 - Saving a copy with audio: copies, numbering, missing files, and the moved copy opening.
+- The session overview: its span, clicking and dragging to scroll, and drawing.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -465,4 +470,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a session overview strip above the lanes showing every clip in miniature, dragging it to scroll
+1. Multitrack, continued: range selection across tracks (drag in empty lane space with a modifier to select a time range over several tracks), then cut, copy, delete and silence on that range

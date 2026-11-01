@@ -244,6 +244,9 @@ public:
     /** The session frames the timeline shows, from its left edge to its right. */
     juce::Range<double> getVisibleFrames() const;
 
+    /** Scrolls the lanes so they start at this session frame, keeping the zoom. */
+    void scrollTo (double startFrame);
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;

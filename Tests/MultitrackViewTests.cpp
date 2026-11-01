@@ -2,6 +2,7 @@
 #include "../Source/AudioEdits.h"
 #include "../Source/AudioFileIO.h"
 #include "../Source/MultitrackView.h"
+#include "../Source/SessionOverview.h"
 #include "../Source/TrackColours.h"
 #include "../Source/TrackEffects.h"
 #include "TestUtils.h"
@@ -1380,6 +1381,49 @@ void runMultitrackViewTests (AudioEngine& engine)
         Mouse::settle();
         check (atCrossing && engine.session.getState()->tracks[0].clips[0].getEnd() == 1062,
                "zero crossings: with the option on a split lands on the nearest crossing, without it at the cursor");
+    }
+
+    {
+        // The overview strip spans the session (at least a minute) and scrolls the lanes, keeping the zoom.
+        SessionState overviewed;
+        overviewed.sampleRate = rate;
+        overviewed.addTrack();
+        SessionEdits::addClip (overviewed, 0, juce::File ("/tmp/o.wav"), silence (480000), 0);
+        engine.session.reset (overviewed, {});
+        view.zoomToRange ({ 0, 96000 });
+        Mouse::settle();
+        SessionOverview overview (engine, view);
+        overview.setSize (600, SessionOverview::height);
+        const auto span = view.getVisibleFrames().getLength();
+        const auto press = [&] (float px, bool dragged)
+        {
+            const auto now = juce::Time::getCurrentTime();
+            const juce::Point<float> at { px, 10.0f };
+            const juce::MouseEvent e { juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys::leftButtonModifier,
+                                       juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                       juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                                       juce::MouseInputSource::defaultTiltY, &overview, &overview, now, at, now, 1, dragged };
+            dragged ? overview.mouseDrag (e) : overview.mouseDown (e);
+        };
+
+        check (juce::exactlyEqual (overview.getTotalFrames(), rate * 60.0) && overview.frameAt (300.0f) == (juce::int64) (rate * 30.0)
+                   && std::abs (overview.xFor (rate * 15.0) - 150.0f) < 0.001f,
+               "overview: a ten-second session spans the one-minute floor across the strip");
+        press (300.0f, false);
+        const auto clicked = view.getVisibleFrames();
+        press (590.0f, true);
+        const auto dragged = view.getVisibleFrames();
+        press (0.0f, true);
+        const auto atStart = view.getVisibleFrames();
+        check (std::abs (clicked.getStart() - (rate * 30.0 - span / 2.0)) < 1.0 && std::abs (clicked.getLength() - span) < 1.0e-6
+                   && std::abs (dragged.getStart() - (rate * 59.0 - span / 2.0)) < 1.0 && juce::exactlyEqual (atStart.getStart(), 0.0),
+               "overview: clicking centres the lanes there, dragging follows, the start stops at zero, the zoom stays");
+
+        juce::Image strip (juce::Image::ARGB, 600, SessionOverview::height, true);
+        juce::Graphics g (strip);
+        overview.paint (g);
+        check (strip.getPixelAt (30, 4) != strip.getPixelAt (300, 4),
+               "overview: the clip is drawn where it lies in the session");
     }
 
     engine.session.reset ({}, {});

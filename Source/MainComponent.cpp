@@ -602,6 +602,7 @@ MainComponent::MainComponent()
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
     addChildComponent (multitrack);
+    addChildComponent (overview);
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
     multitrack.setFindingZeroCrossings (settings->getBoolValue (zeroCrossingsKey, false));
@@ -744,6 +745,8 @@ void MainComponent::resized()
     rackView.setBounds (r.removeFromRight (juce::jlimit (300, 420, r.getWidth() / 3)));
     r.removeFromRight (8);
     waveform.setBounds (r);
+    overview.setBounds (r.removeFromTop (SessionOverview::height));
+    r.removeFromTop (4);
     multitrack.setBounds (r);
 }
 
@@ -1486,6 +1489,7 @@ void MainComponent::setMultitrack (bool on)
     engine.getPlayer().setMode (on ? DocumentPlayerProcessor::Mode::session : DocumentPlayerProcessor::Mode::document);
     waveform.setVisible (! on);
     multitrack.setVisible (on);
+    overview.setVisible (on);
     refreshTitle();
     timerCallback();
     commands.commandStatusChanged();
