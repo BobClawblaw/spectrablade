@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 144: Add Markers at Clipping**
+- Markers > Add Markers at Clipping puts a marker at the first frame of every run of three or more samples at full scale (the runs Find Next Clipping selects), at most 1,000 of them, so every clipped spot can be checked from the marker list. A spot that already has a marker gets no second one. It says so when there is no clipping, and it is one undo step. Add Markers at Silences now shares the same code for adding the markers.
+- Measured by the tests: on a file with clipped runs of 2, 3 and 4 samples, the starts are the 3- and 4-sample runs' first frames in order (all three with a run length of 2), a count of 1 keeps only the first, and a level above full scale finds none. The menu item was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 143: Stereo Correlation**
 - Loudness Statistics now also shows, for a stereo file, how alike its two channels are over the selection or the whole file: +1 when they are the same, about 0 when they are unrelated, and -1 when one is the other inverted (a sign that Invert Left or Invert Right Channel is needed). It is left out for mono files and when a channel is silent.
 - Measured by the tests: two identical sine channels give +1 and a sine against its inverse gives -1, each within 1e-9; two different ramps give a value between; a silent channel or a mono file gives none. The dialog line was not seen by hand. The whole suite passed, the default-device test included.
@@ -876,6 +880,7 @@ The tests run against the real machine:
 - Copy one channel to the other: the target replaced in the range, the source untouched.
 - Noise gate: quiet stretches faded and zeroed, the sound around them bit for bit.
 - Stereo correlation: +1 for the same channels, -1 for one inverted, none for mono.
+- Clipping starts: the first frame of every clipped run, in order, capped at the count.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -929,4 +934,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Mark Clipping, a marker at the start of every clipped run in the file
+1. Editor: Repair Selection, redrawing a few selected frames as a smooth curve between their neighbours

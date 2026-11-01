@@ -91,6 +91,9 @@ namespace AudioEdits
         when any channel reaches the level. */
     std::optional<juce::Range<juce::int64>> nextClipping (const AudioSnapshot&, juce::int64 from, float level, int minRun);
 
+    /** The first frame of every such run in the audio, in order; at most maxCount of them. */
+    std::vector<juce::int64> clippingStarts (const AudioSnapshot&, float level, int minRun, size_t maxCount);
+
     /** The first run of at least minFrames frames at or after `from` where every channel is at or
         below level (absolute); nothing when there is none. */
     std::optional<juce::Range<juce::int64>> nextQuiet (const AudioSnapshot&, juce::int64 from, float level, juce::int64 minFrames);

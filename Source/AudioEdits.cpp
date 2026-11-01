@@ -585,6 +585,16 @@ Snapshot gateQuiet (const AudioSnapshot& s, juce::int64 start, juce::int64 end, 
     return gated;
 }
 
+std::vector<juce::int64> clippingStarts (const AudioSnapshot& s, float level, int minRun, size_t maxCount)
+{
+    std::vector<juce::int64> starts;
+
+    for (auto run = nextClipping (s, 0, level, minRun); run && starts.size() < maxCount; run = nextClipping (s, run->getEnd(), level, minRun))
+        starts.push_back (run->getStart());
+
+    return starts;
+}
+
 std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
 {
     std::vector<juce::int64> middles;

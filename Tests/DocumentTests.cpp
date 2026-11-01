@@ -272,6 +272,11 @@ namespace
         check (firstRun == juce::Range<juce::int64> (65535, 65538) && lastRun == juce::Range<juce::int64> (139996, 140000)
                    && ! AudioEdits::nextClipping (*clippedSnap, 140000, 0.999f, 3) && AudioEdits::nextClipping (*clippedSnap, 0, 0.999f, 2) == juce::Range<juce::int64> (1000, 1002),
                "find clipping: runs of the length or longer, on any channel, across a block edge and at the end; shorter ones skipped");
+        check (AudioEdits::clippingStarts (*clippedSnap, 0.999f, 3, 10) == std::vector<juce::int64> { 65535, 139996 }
+                   && AudioEdits::clippingStarts (*clippedSnap, 0.999f, 2, 10) == std::vector<juce::int64> { 1000, 65535, 139996 }
+                   && AudioEdits::clippingStarts (*clippedSnap, 0.999f, 2, 1) == std::vector<juce::int64> { 1000 }
+                   && AudioEdits::clippingStarts (*clippedSnap, 1.5f, 1, 10).empty(),
+               "clipping starts: the first frame of every run, in order, capped at the count; none above full scale");
 
         using R = juce::Range<juce::int64>;
         check (AudioEdits::stepSelection ({ 100, 300 }, 1000, true) == R (300, 500) && AudioEdits::stepSelection ({ 100, 300 }, 1000, false) == R (0, 200)
