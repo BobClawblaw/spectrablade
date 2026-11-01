@@ -680,6 +680,28 @@ std::vector<juce::int64> clippingStarts (const AudioSnapshot& s, float level, in
     return starts;
 }
 
+std::vector<juce::Range<juce::int64>> soundsBetween (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
+{
+    std::vector<juce::Range<juce::int64>> sounds;
+    juce::int64 from = 0;
+
+    while (from < s.getNumFrames() && sounds.size() < maxCount)
+    {
+        const auto quiet = nextQuiet (s, from, level, minFrames);
+        const auto soundEnd = quiet ? quiet->getStart() : s.getNumFrames();
+
+        if (soundEnd > from)
+            sounds.emplace_back (from, soundEnd);
+
+        if (! quiet)
+            break;
+
+        from = quiet->getEnd();
+    }
+
+    return sounds;
+}
+
 std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
 {
     std::vector<juce::int64> middles;

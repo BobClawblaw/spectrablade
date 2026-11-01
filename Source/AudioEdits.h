@@ -134,6 +134,10 @@ namespace AudioEdits
         left bit for bit. Nothing (nullptr) when the range holds no such stretch. */
     Snapshot gateQuiet (const AudioSnapshot&, juce::int64 start, juce::int64 end, float level, juce::int64 minFrames, juce::int64 fadeFrames);
 
+    /** The stretches of sound between quiet stretches of at least minFrames (as nextQuiet finds
+        them, silence at the start and end included), in order; at most maxCount of them. */
+    std::vector<juce::Range<juce::int64>> soundsBetween (const AudioSnapshot&, float level, juce::int64 minFrames, size_t maxCount);
+
     /** The middle frame of each of those pauses. */
     std::vector<juce::int64> quietMiddles (const AudioSnapshot&, float level, juce::int64 minFrames, size_t maxCount);
 

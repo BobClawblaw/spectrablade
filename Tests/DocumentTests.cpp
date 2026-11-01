@@ -530,6 +530,24 @@ namespace
         check (widthRight && ! AudioEdits::stereoWidth (*rampSnap, 0, 1000, 0.5f) && ! AudioEdits::stereoWidth (*twoSnap, 0, 1000, -1.0f),
                "stereo width: 0 makes both channels the mid, 1 keeps them, 2 doubles the side, only in the range; mono or a negative width refused");
 
+        // Silence 0..100, sound 100..300, a 50-frame gap, sound 350..500, a 20-frame gap, sound
+        // 520..800, silence to the end: with a 30-frame minimum the 20-frame gap doesn't split.
+        juce::AudioBuffer<float> takes (1, 1000);
+        takes.clear();
+
+        for (auto [from, to] : { std::pair { 100, 300 }, std::pair { 350, 500 }, std::pair { 520, 800 } })
+            for (int i = from; i < to; ++i)
+                takes.setSample (0, i, 0.5f);
+
+        const auto takesSnap = AudioEdits::fromBuffer (std::move (takes));
+        using Spans = std::vector<R>;
+        check (AudioEdits::soundsBetween (*takesSnap, 0.01f, 30, 100) == Spans { { 100, 300 }, { 350, 800 } }
+                   && AudioEdits::soundsBetween (*takesSnap, 0.01f, 10, 100) == Spans { { 100, 300 }, { 350, 500 }, { 520, 800 } }
+                   && AudioEdits::soundsBetween (*takesSnap, 0.01f, 10, 2).size() == 2
+                   && AudioEdits::soundsBetween (*takesSnap, 0.9f, 10, 100).empty()
+                   && AudioEdits::soundsBetween (*rampSnap, 0.0001f, 10, 100) == Spans { { 0, 1000 } },
+               "sounds between silences: each stretch of sound, short gaps not splitting, the silent ends left out, capped; none in silence, the whole file with no gap");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

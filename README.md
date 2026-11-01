@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 156: Add Regions over Sounds**
+- Markers > Add Regions over Sounds asks for a level and a time (the same settings as Find Silence) and puts a region over every stretch of sound between silences at least that long, at most 1,000 of them, leaving out the silence at the start and end of the file. Shorter gaps don't split a sound. The regions can then be saved with Save Each Region As or fitted with Fit Regions to Sound. A sound that already has a region exactly over it gets no second one. It is one undo step.
+- Measured by the tests: on a file with sounds at 100–300, 350–500 and 520–800 and silence around them, a 30-frame minimum gives 100–300 and 350–800 (the 20-frame gap doesn't split), a 10-frame minimum gives all three, a cap of 2 keeps two, a level above the sound gives none, and a ramp with no gap gives the whole file. The dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 155: Stereo Width**
 - Effects > Stereo Width asks for a width (50 % to start, remembered while the app runs) and scales the difference between a stereo file's channels by it, in the selection or the whole file, keeping their sum: 0 % makes the file mono in both channels, 100 % leaves it, and up to 200 % widens it. It is offered only for stereo files, and it is one undo step.
 - Measured by the tests: on two different ramps, a width of 0 over the first half makes both channels equal and their mean (to 1e-6) and leaves the second half bit for bit; a width of 1 gives back the input to within 1e-6, and 2 gives the mid plus and minus twice the side to within 1e-6; a mono file or a negative width is refused. How it sounds was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -936,6 +940,7 @@ The tests run against the real machine:
 - Gain ramp: even in decibels from the first frame to the last, the rest untouched.
 - Pan ramp: Balance's pan law moved evenly from one position to the other.
 - Stereo width: the side scaled and the mid kept, only in the range.
+- Sounds between silences: each stretch of sound, short gaps not splitting, silent ends left out.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -989,4 +994,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers: Regions over Sounds, a region over each stretch of sound between silences, to split takes
+1. Editor: Select Next Sound, selecting the next stretch of sound after the cursor
