@@ -28,4 +28,10 @@ namespace TrackColours
 
         return t.isBus ? juce::Colour (0xff9aa3ad) : juce::Colour (palette[(size_t) (juce::jmax (0, index) % automaticCount)].argb);
     }
+
+    /** A clip's colour: its own, or else its track's. */
+    inline juce::Colour of (const SessionClip& c, const SessionTrack& t, int index)
+    {
+        return juce::isPositiveAndBelow (c.colour, (int) palette.size()) ? juce::Colour (palette[(size_t) c.colour].argb) : of (t, index);
+    }
 }

@@ -121,6 +121,10 @@ public:
     /** Mutes (or unmutes) every selected clip as one undo step ("Mute Clip", "Unmute 2 Clips").
         A muted clip is drawn grey and isn't heard, but can be edited as usual. */
     void setSelectedClipsMuted (bool muted);
+
+    /** Gives every selected clip a colour from TrackColours::palette, or -1 for its track's, as
+        one undo step ("Clip Colour"). Right-click a clip for its Colour menu. */
+    void setSelectedClipsColour (int colour);
     void deleteSelectedTrack();
 
     /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise
@@ -295,7 +299,7 @@ private:
     void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
     void showSends (juce::uint32 trackId, juce::Component& target);
     void showAutomationMenu (juce::uint32 trackId, juce::Component& target);
-    void showTakesMenu (juce::uint32 clipId);
+    void showClipMenu (juce::uint32 clipId);
     void editTrack (juce::uint32 trackId, const juce::String& description, bool merge,
                     const std::function<void (SessionTrack&)>& change);
 

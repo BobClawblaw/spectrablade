@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include "../Source/AudioFileIO.h"
 #include "../Source/MultitrackView.h"
+#include "../Source/TrackColours.h"
 #include "../Source/TrackEffects.h"
 #include "TestUtils.h"
 #include "MultitrackViewTests.h"
@@ -1097,6 +1098,58 @@ void runMultitrackViewTests (AudioEngine& engine)
                    && ! loaded.state.tracks[0].clips[1].muted && engine.session.getUndoDescription() == "Unmute Clip"
                    && ! view.areSelectedClipsMuted() && view.getSelectedClip() == hushed,
                "clip mute: muting and unmuting from the view as undo steps, a muted clip still drags, and session files keep it");
+    }
+
+    // Clip colours: their own or the track's, chosen for the selection, and kept in session files.
+    {
+        SessionState painted;
+        painted.sampleRate = rate;
+        painted.addTrack();
+        const auto first = SessionEdits::addClip (painted, 0, juce::File ("/tmp/first.wav"), silence (24000), 0);
+        const auto second = SessionEdits::addClip (painted, 0, juce::File ("/tmp/second.wav"), silence (24000), 48000);
+        const auto& paintedTrack = painted.tracks[0];
+        const auto trackColour = TrackColours::of (paintedTrack.clips[0], paintedTrack, 0) == TrackColours::of (paintedTrack, 0);
+        SessionEdits::setClipLocked (painted, first, true);
+        const auto own = SessionEdits::setClipColour (painted, first, 3) && ! SessionEdits::setClipColour (painted, first, 3)
+                         && TrackColours::of (painted.tracks[0].clips[0], painted.tracks[0], 0) == juce::Colour (TrackColours::palette[3].argb);
+        auto outside = painted;
+        SessionEdits::setClipColour (outside, first, 42);
+        check (trackColour && own && outside.tracks[0].clips[0].colour == -1,
+               "clip colours: a clip takes its track's colour until it has its own, locked or not; one outside the palette means the track's");
+
+        engine.session.reset (painted, {});
+        view.zoomToRange ({ 0, 96000 });
+        Mouse::settle();
+        const auto paintFrames = view.getVisibleFrames();
+        const auto paintX = [&] (juce::int64 frame)
+        {
+            return (float) MultitrackView::headerWidth + (float) (((double) frame - paintFrames.getStart()) / (paintFrames.getLength() / timelineWidth));
+        };
+
+        mouse.click ({ paintX (12000), bodyY });
+        mouse.click ({ paintX (60000), bodyY }, juce::ModifierKeys::shiftModifier);
+        view.setSelectedClipsColour (6);
+        Mouse::settle();
+        const auto both = engine.session.getUndoDescription() == "Clip Colour" && engine.session.getState()->tracks[0].clips[0].colour == 6
+                          && engine.session.getState()->tracks[0].clips[1].colour == 6;
+
+        const auto folder = juce::File::createTempFile ("painting");
+        folder.createDirectory();
+        const auto wav = folder.getChildFile ("painted.wav");
+        auto onDisk = *engine.session.getState();
+        onDisk.tracks[0].clips[1].colour = -1;
+
+        for (auto& c : onDisk.tracks[0].clips)
+            c.source = wav;
+
+        const auto file = folder.getChildFile ("painting.sbsession");
+        const auto wrote = AudioFileIO::save (*silence (24000), rate, wav, 24, engine.formatManager).isEmpty()
+                           && SessionFile::save (onDisk, file).isEmpty();
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        folder.deleteRecursively();
+        check (both && second != 0 && wrote && loaded.state.tracks[0].clips.size() == 2 && loaded.state.tracks[0].clips[0].colour == 6
+                   && loaded.state.tracks[0].clips[1].colour == -1,
+               "clip colours: chosen for every selected clip as one undo step, and kept in session files");
     }
 
     engine.session.reset ({}, {});

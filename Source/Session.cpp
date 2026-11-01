@@ -3,6 +3,7 @@
 #include "AudioFileIO.h"
 #include "Metronome.h"
 #include "SampleRateConverter.h"
+#include "TrackColours.h"
 
 //==============================================================================
 juce::int64 SessionState::getLength() const
@@ -369,6 +370,20 @@ bool removeClip (SessionState& s, juce::uint32 clipId)
 
     auto& clips = s.tracks[(size_t) where->first].clips;
     clips.erase (clips.begin() + where->second);
+    return true;
+}
+
+bool setClipColour (SessionState& s, juce::uint32 clipId, int colour)
+{
+    auto* c = find (s, clipId);
+
+    if (! juce::isPositiveAndBelow (colour, (int) TrackColours::palette.size()))
+        colour = -1;
+
+    if (c == nullptr || c->colour == colour)
+        return false;
+
+    c->colour = colour;
     return true;
 }
 
@@ -1088,6 +1103,9 @@ juce::String save (const SessionState& state, const juce::File& target,
             if (c.muted)
                 clip->setAttribute ("muted", true);
 
+            if (c.colour >= 0)
+                clip->setAttribute ("colour", c.colour);
+
             if (! c.takes.empty())
             {
                 clip->setAttribute ("activeTake", c.activeTake);
@@ -1237,6 +1255,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.fadeOut = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeOut").getLargeIntValue());
             clip.locked = clipXml->getBoolAttribute ("locked");
             clip.muted = clipXml->getBoolAttribute ("muted");
+            clip.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, clipXml->getIntAttribute ("colour", -1));
 
             // Takes, kept only when every one's audio is there; otherwise the clip plays the one it had.
             std::vector<SessionClip::Take> takes;

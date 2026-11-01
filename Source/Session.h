@@ -17,6 +17,7 @@ struct SessionClip
     juce::int64 fadeIn = 0, fadeOut = 0;   // frames, raised-cosine
     bool locked = false;                   // the edits below leave it where it is, as it is
     bool muted = false;                    // stays in place but isn't heard (in playback, mixdowns, bounces and stems)
+    int colour = -1;                       // a place in TrackColours::palette, or -1 for its track's colour
 
     static constexpr float minGainDb = -60.0f, maxGainDb = 24.0f;
 
@@ -241,6 +242,10 @@ namespace SessionEdits
 
     /** Mutes or unmutes a clip, locked or not. False when it is already so. */
     bool setClipMuted (SessionState&, juce::uint32 clipId, bool muted);
+
+    /** Gives a clip, locked or not, a colour of its own (a place in TrackColours::palette), or its
+        track's with -1 or any value outside the palette. False when it already has that one. */
+    bool setClipColour (SessionState&, juce::uint32 clipId, int colour);
 
     /** Puts take `index` of a clip in use. It keeps its place and length where the take's audio
         allows; otherwise it is cut back to what the take has. */

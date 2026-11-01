@@ -629,7 +629,7 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
         });
 }
 
-void MultitrackView::showTakesMenu (juce::uint32 clipId)
+void MultitrackView::showClipMenu (juce::uint32 clipId)
 {
     const auto where = shown().findClip (clipId);
 
@@ -637,17 +637,34 @@ void MultitrackView::showTakesMenu (juce::uint32 clipId)
         return;
 
     const auto& clip = shown().tracks[(size_t) where->first].clips[(size_t) where->second];
+    const juce::Component::SafePointer<MultitrackView> safe (this);
     juce::PopupMenu menu;
 
-    for (int i = 0; i < (int) clip.takes.size(); ++i)
-        menu.addItem (i + 1, "Take " + juce::String (i + 1), true, i == clip.activeTake);
+    if (clip.takes.size() > 1)
+    {
+        for (int i = 0; i < (int) clip.takes.size(); ++i)
+            menu.addItem ("Take " + juce::String (i + 1), ! clip.locked, i == clip.activeTake,
+                          [safe, clipId, i] { if (safe != nullptr) safe->chooseTake (clipId, i); });
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(),
-        [this, clipId, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
-        {
-            if (safe != nullptr && result > 0)
-                chooseTake (clipId, result - 1);
-        });
+        menu.addSeparator();
+    }
+
+    juce::PopupMenu colours;
+    colours.addItem ("Track's", true, clip.colour < 0, [safe] { if (safe != nullptr) safe->setSelectedClipsColour (-1); });
+
+    for (int c = 0; c < (int) TrackColours::palette.size(); ++c)
+    {
+        juce::PopupMenu::Item item (TrackColours::palette[(size_t) c].name);
+        item.setTicked (clip.colour == c);
+        item.setColour (juce::Colour (TrackColours::palette[(size_t) c].argb));
+        item.setAction ([safe, c] { if (safe != nullptr) safe->setSelectedClipsColour (c); });
+        colours.addItem (std::move (item));
+    }
+
+    menu.addSubMenu ("Colour", colours);
+    menu.addItem ("Lock", true, areSelectedClipsLocked(), [safe] { if (safe != nullptr) safe->setSelectedClipsLocked (! safe->areSelectedClipsLocked()); });
+    menu.addItem ("Mute", true, areSelectedClipsMuted(), [safe] { if (safe != nullptr) safe->setSelectedClipsMuted (! safe->areSelectedClipsMuted()); });
+    menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
 }
 
 void MultitrackView::chooseTake (juce::uint32 clipId, int index)
@@ -1411,7 +1428,7 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
 void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& c) const
 {
     const auto r = clipBounds (track, c);
-    const auto colour = c.muted ? juce::Colour (0xff6e7681) : TrackColours::of (shown().tracks[(size_t) track], track);
+    const auto colour = c.muted ? juce::Colour (0xff6e7681) : TrackColours::of (c, shown().tracks[(size_t) track], track);
     const auto selected = isClipSelected (c.id);
 
     g.setColour (colour.withAlpha (0.18f));
@@ -2216,6 +2233,18 @@ void MultitrackView::setSelectedClipsMuted (bool muted)
     setSelectedClipsFlag (SessionEdits::setClipMuted, muted, muted ? "Mute " : "Unmute ");
 }
 
+void MultitrackView::setSelectedClipsColour (int colour)
+{
+    auto next = *engine.session.getState();
+    auto changed = false;
+
+    for (auto id : getSelectedClips())
+        changed = SessionEdits::setClipColour (next, id, colour) || changed;
+
+    if (changed)
+        engine.session.apply (std::move (next), "Clip Colour");
+}
+
 void MultitrackView::setSelectedClipsFlag (bool (*set) (SessionState&, juce::uint32, bool), bool on, const juce::String& verb)
 {
     auto next = *engine.session.getState();
@@ -2376,16 +2405,18 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // A right-click on a clip with takes picks the one it plays.
+    // A right-click on a clip opens its menu: the take it plays, its colour, locking and muting.
+    // It keeps a selection the clip is in, so the menu works on all of them.
     if (const auto hit = clipAt (p); hit.has_value() && e.mods.isPopupMenu())
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
-        selectClip (clip.id, false);
+
+        if (! isClipSelected (clip.id))
+            selectClip (clip.id, false);
+
+        selectedClip = clip.id;
         selectTrack (hit->first);
-
-        if (clip.takes.size() > 1)
-            showTakesMenu (clip.id);
-
+        showClipMenu (clip.id);
         return;
     }
 
