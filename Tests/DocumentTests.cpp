@@ -289,6 +289,18 @@ namespace
                    && ! AudioEdits::nextQuiet (*gapSnap, 130000, quietLevel, 150),
                "find silence: the first stretch quiet on every channel for the time, across a block edge; shorter or one-sided gaps skipped");
 
+        // The middles of the pauses between sounds: of the 100-frame gap and the long one; silence
+        // leading or ending the file is no pause; the count is capped.
+        juce::AudioBuffer<float> framed (2, 300000);
+        framed.clear();
+        gapSnap->read (framed, 0, 0, 200000);
+        const auto withTail = AudioEdits::fromBuffer (std::move (framed));
+        const auto middles = AudioEdits::quietMiddles (*gapSnap, quietLevel, 100, 10);
+        const auto trailing = AudioEdits::quietMiddles (*withTail, quietLevel, 100, 10);
+        check (middles == std::vector<juce::int64> { 1050, 95000 } && trailing == middles
+                   && AudioEdits::quietMiddles (*gapSnap, quietLevel, 100, 1) == std::vector<juce::int64> { 1050 },
+               "markers at silences: the middle of each pause between sounds, none for silence ending the file, at most the count asked for");
+
         // Balance: half right lowers the left by 3 dB, the right untouched.
         const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
         const auto halfRight = SessionMixer::panGains (0.5f, 2);

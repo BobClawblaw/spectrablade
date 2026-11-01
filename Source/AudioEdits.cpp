@@ -477,4 +477,25 @@ std::optional<juce::Range<juce::int64>> nextQuiet (const AudioSnapshot& s, juce:
         return true;
     });
 }
+
+std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
+{
+    std::vector<juce::int64> middles;
+    juce::int64 from = 0;
+
+    while (middles.size() < maxCount)
+    {
+        const auto run = nextQuiet (s, from, level, minFrames);
+
+        if (! run)
+            break;
+
+        if (run->getStart() > 0 && run->getEnd() < s.getNumFrames())
+            middles.push_back (run->getStart() + run->getLength() / 2);
+
+        from = run->getEnd();
+    }
+
+    return middles;
+}
 }

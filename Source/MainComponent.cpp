@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdSaveRegions) || id == cmdFindClipping || id == cmdFindSilence;
+            || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdMarkersAtSilences);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdFindSilence; ++id)
+    for (int id = cmdOpen; id <= cmdMarkersAtSilences; ++id)
         ids.add (id);
 }
 
@@ -973,6 +973,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdSwapChannels: info.setInfo ("Swap Channels", "Exchange left and right in the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
         case cmdSetSelection: info.setInfo ("Set Selection...", "Type the start and length of the selection", "Edit", 0);
+                            info.setActive (hasAudio); break;
+        case cmdMarkersAtSilences: info.setInfo ("Add Markers at Silences...", "Put a marker in the middle of every pause between sounds, to split takes", "Markers", 0);
                             info.setActive (hasAudio); break;
         case cmdFindSilence: info.setInfo ("Find Next Silence...", "Select the next stretch quieter than a level for at least a chosen time", "Edit", 0);
                             info.setActive (hasAudio); break;
@@ -1340,7 +1342,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdInsertSilence: showInsertSilence(); break;
         case cmdSelectAudible: selectAudibleSpan(); break;
         case cmdFindClipping: findNextClipping(); break;
-        case cmdFindSilence: showFindSilence(); break;
+        case cmdFindSilence: askForSilence ("Find Next Silence", [this] (juce::int64 frames) { findNextSilence (frames); }); break;
+        case cmdMarkersAtSilences: askForSilence ("Add Markers at Silences", [this] (juce::int64 frames) { addMarkersAtSilences (frames); }); break;
         case cmdSetSelection: showSetSelection(); break;
         case cmdMixToMono:  convertChannels (1); break;
         case cmdMakeStereo: convertChannels (2); break;
@@ -1589,7 +1592,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdGoToTime }); break;
-        case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, 0, cmdDeleteAllMarkers }); break;
+        case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdRegionsFromMarkers, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
@@ -3476,9 +3479,9 @@ void MainComponent::trimSilence (float thresholdDb)
                    MarkerEdits::afterCrop (doc.getMarkers(), audible->getStart(), audible->getEnd()));
 }
 
-void MainComponent::showFindSilence()
+void MainComponent::askForSilence (const juce::String& title, std::function<void (juce::int64)> found)
 {
-    auto* box = new juce::AlertWindow ("Find Next Silence", "The next stretch after the cursor (or the selection) at or below the level for at least the time.",
+    auto* box = new juce::AlertWindow (title, "Silence is every channel at or below the level for at least the time.",
                                        juce::MessageBoxIconType::NoIcon, this);
     box->addTextEditor ("level", juce::String (silenceThresholdDb, 1), "Level (dB)");
     box->getTextEditor ("level")->setInputRestrictions (8, "-.0123456789");
@@ -3486,7 +3489,7 @@ void MainComponent::showFindSilence()
     box->addButton ("Find", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, title, found] (int result)
     {
         if (result != 1)
             return;
@@ -3496,14 +3499,45 @@ void MainComponent::showFindSilence()
 
         if (! frames || *frames <= 0)
         {
-            showError ("Find Next Silence", "The time must be more than 0.");
+            showError (title, "The time must be more than 0.");
             return;
         }
 
         silenceThresholdDb = juce::jmin (box->getTextEditorContents ("level").getFloatValue(), 0.0f);
         silenceMinSeconds = (double) *frames / rate;
-        findNextSilence (*frames);
+        found (*frames);
     }), true);
+}
+
+void MainComponent::addMarkersAtSilences (juce::int64 minFrames)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio())
+        return;
+
+    const auto middles = AudioEdits::quietMiddles (*doc.getSnapshot(), juce::Decibels::decibelsToGain (silenceThresholdDb, -200.0f), minFrames,
+                                                   (size_t) MarkerEdits::maxIntervalMarkers);
+    auto markers = doc.getMarkers();
+    auto added = 0;
+
+    for (auto frame : middles)
+    {
+        if (std::any_of (markers.begin(), markers.end(), [frame] (const Marker& m) { return ! m.isRegion() && m.start == frame; }))
+            continue;
+
+        markers.push_back ({ frame, 0, MarkerEdits::nextName (markers, false) });
+        ++added;
+    }
+
+    if (added == 0)
+    {
+        showError ("Add Markers at Silences", "No pause between sounds stays at or below " + juce::String (silenceThresholdDb, 1) + " dB for that long.");
+        return;
+    }
+
+    MarkerEdits::sort (markers);
+    doc.setMarkers (std::move (markers), "Add " + juce::String (added) + (added == 1 ? " Marker" : " Markers"));
 }
 
 void MainComponent::findNextSilence (juce::int64 minFrames)

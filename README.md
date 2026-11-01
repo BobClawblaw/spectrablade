@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 122: Add Markers at Silences**
+- Markers > Add Markers at Silences (in the editor) asks for the same level and time as Find Next Silence and puts a point marker in the middle of every pause between sounds: silence at the very start or end of the file is not a pause and gets none. Frames already holding a point marker are skipped, at most 1,000 are added, and it is one undo step. With Regions from Markers and Save Each Region As, a recording of several takes can be split into a file per take.
+- Measured by the tests: in the Find Next Silence test signal, pauses of at least 100 frames get markers at exactly their middles, 1,050 and 95,000; the same audio followed by 100,000 frames of silence gives the same two; asking for at most one gives the first. Naming, skipping taken frames and the undo step were not exercised by the tests (they work as Add Markers at Intervals' do, which was), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 121: Find Next Silence**
 - Edit > Find Next Silence asks for a level (the one Trim Silence last used, -60 dB to start) and a time (half a second to start) and selects the next stretch where every channel stays at or below that level for at least that long, searching from the cursor or the end of the selection, and scrolls to it. The level it is given becomes the one Trim Silence and Select Audible Span use too, and the time is remembered while the app runs. When there is none it says so. Find Next Clipping now shares its search with it, unchanged in what it finds.
 - Measured by the tests: in 200,000 frames of a full-level tone, with a 100-frame gap, a 200-frame gap on the left channel only and a 70,000-frame gap crossing a block edge, asking for 150 frames finds exactly the long gap, asking for 100 finds the short one, and nothing is found past the long gap; the clipping test still passed after the search was shared. The dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -767,6 +771,7 @@ The tests run against the real machine:
 - Channel levels: peak, RMS and DC offset per channel, exact across blocks.
 - Find clipping: runs on any channel, across a block edge and at the end; short ones skipped.
 - Find silence: quiet on every channel for the time, across a block edge; short or one-sided gaps skipped.
+- Markers at silences: the middles of pauses between sounds, none for silence at the ends, capped.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -820,4 +825,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Markers at Silences, putting a marker in the middle of every stretch Find Next Silence would find, to split takes
+1. Editor: Delete Silences, removing every pause longer than a chosen time down to a chosen length
