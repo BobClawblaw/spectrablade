@@ -354,4 +354,28 @@ Snapshot normalize (const AudioSnapshot& s, juce::int64 start, juce::int64 end, 
     const auto factor = juce::Decibels::decibelsToGain (targetDecibels) / peak;
     return processRange (s, start, end, [factor] (auto& b) { b.applyGain (factor); });
 }
+
+Snapshot normalizeChannels (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float targetDecibels)
+{
+    const auto r = clampRange (s, start, end);
+    std::vector<float> factors;
+    auto anySound = false;
+
+    for (int ch = 0; ch < s.getNumChannels(); ++ch)
+    {
+        const auto range = s.getPeak (ch, r.getStart(), r.getEnd());
+        const auto peak = juce::jmax (std::abs (range.getStart()), std::abs (range.getEnd()));
+        anySound = anySound || peak > 0.0f;
+        factors.push_back (peak > 0.0f ? juce::Decibels::decibelsToGain (targetDecibels) / peak : 1.0f);
+    }
+
+    if (! anySound)
+        return nullptr;
+
+    return processRange (s, r.getStart(), r.getEnd(), [&factors] (juce::AudioBuffer<float>& b)
+    {
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            b.applyGain (ch, 0, b.getNumSamples(), factors[(size_t) ch]);
+    });
+}
 }

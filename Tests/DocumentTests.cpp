@@ -214,6 +214,29 @@ namespace
 
         check (swapExact, "swap channels: left and right exchanged inside the range, unchanged outside it");
 
+        // Normalizing each channel apart: left 0.5 / -0.5 and right 0.25 / -0.25 both reach -6.0206 dB
+        // (gain 0.5); a silent channel stays silent; all silence gives nothing.
+        juce::AudioBuffer<float> uneven (2, 100);
+        juce::AudioBuffer<float> quietRight (2, 100);
+        quietRight.clear();
+
+        for (int i = 0; i < 100; ++i)
+        {
+            uneven.setSample (0, i, i % 2 == 0 ? 0.5f : -0.5f);
+            uneven.setSample (1, i, i % 2 == 0 ? 0.25f : -0.25f);
+            quietRight.setSample (0, i, 0.25f);
+        }
+
+        const auto target = juce::Decibels::gainToDecibels (0.5f);
+        const auto even = readAll (*AudioEdits::normalizeChannels (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (uneven)), 0, 100, target));
+        const auto oneSided = readAll (*AudioEdits::normalizeChannels (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (quietRight)), 0, 100, target));
+        juce::AudioBuffer<float> hushed (2, 100);
+        hushed.clear();
+        check (std::abs (even.getMagnitude (0, 0, 100) - 0.5f) < 1.0e-6f && std::abs (even.getMagnitude (1, 0, 100) - 0.5f) < 1.0e-6f
+                   && std::abs (oneSided.getMagnitude (0, 0, 100) - 0.5f) < 1.0e-6f && juce::exactlyEqual (oneSided.getMagnitude (1, 0, 100), 0.0f)
+                   && AudioEdits::normalizeChannels (*AudioEdits::fromBuffer (std::move (hushed)), 0, 100, target) == nullptr,
+               "normalize channels: each channel's peak brought to the level on its own; a silent one left silent; all silence refused");
+
         // Balance: half right lowers the left by 3 dB, the right untouched.
         const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
         const auto halfRight = SessionMixer::panGains (0.5f, 2);

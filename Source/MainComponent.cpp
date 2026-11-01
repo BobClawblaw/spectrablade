@@ -3826,16 +3826,34 @@ void MainComponent::applyNormalize()
         return;
     }
 
-    askForDecibels ("Normalize", "Peak level (dBFS)", -0.1f, [this] (float db)
+    auto* box = new juce::AlertWindow ("Normalize", {}, juce::MessageBoxIconType::NoIcon);
+    box->addTextEditor ("db", juce::String (-0.1f, 2), "Peak level (dBFS)");
+    box->getTextEditor ("db")->setInputRestrictions (8, "-.0123456789");
+    auto apart = std::make_shared<juce::ToggleButton> ("Each channel on its own");
+    apart->setSize (260, 24);
+    apart->setToggleState (normalizeChannelsApart, juce::dontSendNotification);
+    apart->setEnabled (engine.document.getNumChannels() > 1);
+    box->addCustomComponent (apart.get());
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, apart] (int result)
     {
+        if (result != 1)
+            return;
+
+        normalizeChannelsApart = apart->getToggleState();
+        const auto db = juce::jmin (box->getTextEditorContents ("db").getFloatValue(), 0.0f);
         const auto r = selectionOrAll();
-        auto next = AudioEdits::normalize (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), juce::jmin (db, 0.0f));
+        const auto snapshot = engine.document.getSnapshot();
+        auto next = normalizeChannelsApart ? AudioEdits::normalizeChannels (*snapshot, r.getStart(), r.getEnd(), db)
+                                           : AudioEdits::normalize (*snapshot, r.getStart(), r.getEnd(), db);
 
         if (next == nullptr)
             showError ("Normalize", "The selection is silent.");
         else
             applyEdit (std::move (next), "Normalize", waveform.getSelection());
-    });
+    }), true);
 }
 
 void MainComponent::measureLoudness (std::function<void (const Loudness::Result&, juce::Range<juce::int64>)> done)
