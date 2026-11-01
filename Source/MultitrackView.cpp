@@ -406,7 +406,7 @@ public:
         view.repaint();
 
         if (to >= 0)
-            view.moveTrack (index(), to);
+            view.dropTrack (index(), to);
     }
 
     const juce::uint32 trackId;
@@ -1980,13 +1980,22 @@ void MultitrackView::paint (juce::Graphics& g)
             }
         }
 
-        // A track being moved: a line where it would land, above or below the track there.
+        // A track being moved: a line where it would land, above or below the track there, or
+        // the folder it would go into, outlined.
         if (trackDropIndex >= 0)
         {
             const auto from = getSelectedTrack();
-            const auto y = trackDropIndex > from ? laneTop (trackDropIndex + 1) : laneTop (trackDropIndex);
             g.setColour (cursorColour);
-            g.fillRect (0, y - 1, getWidth(), 3);
+
+            if (dropsIntoFolder (from, trackDropIndex))
+            {
+                g.drawRect (juce::Rectangle<int> (0, laneTop (trackDropIndex), getWidth(), laneHeight), 3);
+            }
+            else
+            {
+                const auto y = trackDropIndex > from ? laneTop (trackDropIndex + 1) : laneTop (trackDropIndex);
+                g.fillRect (0, y - 1, getWidth(), 3);
+            }
         }
 
         g.setColour (cursorColour);
@@ -3099,6 +3108,38 @@ void MultitrackView::setTrackGroup (juce::uint32 trackId, int group)
 {
     editTrack (trackId, group == 0 ? juce::String ("Ungroup Track") : "Group " + juce::String (group), false,
                [group] (SessionTrack& t) { t.group = juce::jlimit (0, SessionTrack::maxGroups, group); });
+}
+
+bool MultitrackView::dropsIntoFolder (int from, int to) const
+{
+    const auto& tracks = shown().tracks;
+    return juce::isPositiveAndBelow (from, (int) tracks.size()) && juce::isPositiveAndBelow (to, (int) tracks.size())
+        && tracks[(size_t) to].isFolder && ! tracks[(size_t) from].isFolder;
+}
+
+void MultitrackView::dropTrack (int from, int to)
+{
+    auto next = *engine.session.getState();
+    const auto count = (int) next.tracks.size();
+
+    if (! juce::isPositiveAndBelow (from, count) || ! juce::isPositiveAndBelow (to, count)
+        || ! next.tracks[(size_t) to].isFolder || next.tracks[(size_t) from].isFolder)
+    {
+        moveTrack (from, to);
+        return;
+    }
+
+    // Just below the folder: where it is now, once the track has left its place above it.
+    const auto trackId = next.tracks[(size_t) from].id;
+    const auto joined = SessionEdits::setTrackFolder (next, trackId, next.tracks[(size_t) to].id);
+    const auto below = from < to ? to : to + 1;
+    const auto moved = SessionEdits::moveTrack (next, from, below);
+
+    if (! joined && ! moved)
+        return;
+
+    selectedTrackId = trackId;
+    engine.session.apply (std::move (next), "Move to Folder");
 }
 
 void MultitrackView::moveTrack (int from, int to)

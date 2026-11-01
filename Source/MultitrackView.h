@@ -250,6 +250,11 @@ public:
     /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */
     void moveTrack (int from, int to);
 
+    /** Where a header dragged from `from` lands on the track at `to`: onto a folder, a track or
+        bus goes in it, just below it ("Move to Folder"); otherwise it moves there (moveTrack). */
+    void dropTrack (int from, int to);
+    bool dropsIntoFolder (int from, int to) const;
+
     bool isSnapping() const noexcept              { return snapping; }
 
     /** With this on, splits and dragged clip edges move to the nearest zero crossing of the

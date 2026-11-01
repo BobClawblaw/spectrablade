@@ -1724,6 +1724,23 @@ void runMultitrackViewTests (AudioEngine& engine)
         check (header != nullptr && collapsed && cTakesRow && opened,
                "folders: the triangle collapses a folder, its tracks leaving the lanes and the selection; going to one's clip expands it again");
         check (moved && out, "folders: putting a track in a folder and taking it out are undo steps");
+
+        // Dropped on a folder's header, a track goes in it, just below it, from below or above.
+        const auto aId = st().tracks[0].id, cId = st().tracks[3].id;
+        const auto intoFolder = folderView.dropsIntoFolder (3, 1) && ! folderView.dropsIntoFolder (1, 3) && ! folderView.dropsIntoFolder (3, 2);
+        folderView.dropTrack (3, 1);
+        Mouse::settle();
+        const auto fromBelow = engine.session.getUndoDescription() == "Move to Folder" && st().tracks[2].id == cId && st().tracks[2].folderId == folderId
+                               && st().tracks[3].name == "B";
+        folderView.dropTrack (0, 1);
+        Mouse::settle();
+        const auto fromAbove = st().tracks[0].id == folderId && st().tracks[1].id == aId && st().tracks[1].folderId == folderId
+                               && folderView.getSelectedTrack() == 1;
+        folderView.dropTrack (3, 2);
+        Mouse::settle();
+        const auto plainMove = engine.session.getUndoDescription() == "Move Track" && st().tracks[2].name == "B" && st().tracks[2].folderId == folderId;
+        check (intoFolder && fromBelow && fromAbove && plainMove,
+               "folders: a header dropped on a folder's puts its track in, just below the folder, as an undo step; dropped elsewhere it just moves");
     }
 
     {
