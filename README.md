@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 100: Swap Channels**
+- Effects > Swap Channels exchanges left and right in the selection, or the whole file when nothing is selected. It is offered only for two-channel files and is one undo step.
+- Measured by the tests: inside the range each channel holds exactly what the other held, outside it nothing changes, and a mono file passed to the edit comes back bit-identical. The menu item, and its being greyed out for mono files, were not checked by the tests or by hand. The whole suite passed, the default-device test included.
+
 **Milestone 99: Remove DC Offset**
 - Effects > Remove DC Offset takes each channel's average level out of the selection, or the whole file when nothing is selected, so the audio sits centred on zero. The average is summed in double precision. It is one undo step, like the other effects.
 - Measured by the tests: a square wave of plus and minus 0.5 raised by 0.25, and a constant -0.1 on the second channel, come back exactly as plus and minus 0.5 and exactly 0 inside the range, with every sample outside it unchanged. The menu item was not chosen by the tests, and it was not tried by hand. The whole suite passed, the default-device test included.
@@ -655,6 +659,7 @@ The tests run against the real machine:
 - Unsolo and unmute all: tracks, buses and folders, and undo.
 - Moving between tracks: down and up, hidden tracks, and scrolling the lane and header into view.
 - Remove DC Offset: each channel centred exactly, nothing outside the range changed.
+- Swap Channels: exchanged exactly inside the range, mono unchanged.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -708,4 +713,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Swap Channels, exchanging left and right in the selection or the whole file of a stereo recording
+1. Editor: Insert Silence, adding a chosen length of silence at the cursor

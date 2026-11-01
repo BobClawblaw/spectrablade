@@ -175,6 +175,19 @@ Snapshot removeDcOffset (const AudioSnapshot& s, juce::int64 start, juce::int64 
     });
 }
 
+Snapshot swapChannels (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+{
+    return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)
+    {
+        if (b.getNumChannels() < 2)
+            return;
+
+        auto* left = b.getWritePointer (0);
+        auto* right = b.getWritePointer (1);
+        std::swap_ranges (left, left + b.getNumSamples(), right);
+    });
+}
+
 Snapshot fadeIn (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)

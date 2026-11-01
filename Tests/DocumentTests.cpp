@@ -200,6 +200,24 @@ namespace
 
         check (dcExact, "remove DC offset: each channel's average over the range taken out, exactly; nothing outside it");
 
+        // Swapping: left and right exchanged inside the range only; a mono file is left as it is.
+        const auto swapped = readAll (*AudioEdits::swapChannels (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900));
+        auto swapExact = true;
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            const auto inside = i >= 100 && i < 900;
+            swapExact = swapExact && juce::exactlyEqual (swapped.getSample (0, i), offset.getSample (inside ? 1 : 0, i))
+                        && juce::exactlyEqual (swapped.getSample (1, i), offset.getSample (inside ? 0 : 1, i));
+        }
+
+        check (swapExact, "swap channels: left and right exchanged inside the range, unchanged outside it");
+
+        juce::AudioBuffer<float> monoIn (1, 1000);
+        monoIn.copyFrom (0, 0, offset, 0, 0, 1000);
+        const auto monoOut = readAll (*AudioEdits::swapChannels (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (monoIn)), 0, 1000));
+        check (monoOut.getNumChannels() == 1 && identical (monoOut, monoIn), "swap channels: a mono file comes back unchanged");
+
         auto faded = readAll (*AudioEdits::fadeIn (*original, 1000, 2000));
         check (faded.getSample (0, 1000) == 0.0f && faded.getSample (0, 1999) == signal.getSample (0, 1999)
                    && faded.getSample (0, 999) == signal.getSample (0, 999),

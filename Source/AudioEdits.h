@@ -40,6 +40,9 @@ namespace AudioEdits
 
     /** Takes each channel's average level over [start, end) out of it, so it sits centred on 0. */
     Snapshot removeDcOffset (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+
+    /** Exchanges the first two channels over [start, end); with fewer than two it changes nothing. */
+    Snapshot swapChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
     Snapshot fadeIn (const AudioSnapshot&, juce::int64 start, juce::int64 end);
     Snapshot fadeOut (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
