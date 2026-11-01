@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "AudioFileIO.h"
+#include "Bounce.h"
 #include "Metronome.h"
 #include "MixerView.h"
 #include "OfflineRender.h"
@@ -42,7 +43,7 @@ namespace
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
         cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, cmdMixer,
-        cmdDuplicateClip
+        cmdDuplicateClip, cmdBounceTrack
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -662,7 +663,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDuplicateClip; ++id)
+    for (int id = cmdOpen; id <= cmdBounceTrack; ++id)
         ids.add (id);
 }
 
@@ -764,6 +765,11 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
         case cmdMixer:      info.setInfo ("Mixer", "A window with a strip for each track and bus, and the master meter", "Multitrack", 0);
                             info.addDefaultKeypress ('m', cmd | shift); info.setTicked (mixerWindow != nullptr); break;
+        case cmdBounceTrack: info.setInfo ("Bounce Track", "Render the selected track through its effects onto a new track, and mute it", "Multitrack", 0);
+                            info.setActive (multitrackMode && backgroundJob == nullptr && multitrack.getSelectedTrack() >= 0
+                                            && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].isBus
+                                            && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].clips.empty());
+                            break;
         case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip right after it", "Multitrack", 0);
                             info.addDefaultKeypress ('d', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
@@ -829,6 +835,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (session.canRedo()); break;
             case cmdDelete: info.shortName = "Delete Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
             case cmdSelectAll: info.shortName = "Select All Clips"; info.setActive (hasClips); break;
+            case cmdZoomSelection: info.shortName = "Zoom to Time Range"; info.setActive (! multitrack.getTimeSelection().isEmpty()); break;
             case cmdCut:    info.shortName = "Cut Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
             case cmdCopy:   info.shortName = "Copy Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
             case cmdPaste:  info.shortName = "Paste Clip"; info.setActive (multitrack.canPaste()); break;
@@ -885,7 +892,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdZoomIn:     if (multitrackMode) multitrack.zoomIn(); else waveform.zoomIn(); break;
         case cmdZoomOut:    if (multitrackMode) multitrack.zoomOut(); else waveform.zoomOut(); break;
         case cmdZoomFit:    if (multitrackMode) multitrack.zoomToFit(); else waveform.zoomToFit(); break;
-        case cmdZoomSelection: waveform.zoomToSelection(); break;
+        case cmdZoomSelection: if (multitrackMode) multitrack.zoomToRange (multitrack.getTimeSelection()); else waveform.zoomToSelection(); break;
+        case cmdBounceTrack: bounceTrack(); break;
         case cmdPlugins:    showPluginList(); break;
         case cmdAudioSettings: showAudioSettings(); break;
         case cmdSaveRack:   saveRack(); break;
@@ -1013,7 +1021,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdMixer, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, cmdDuplicateClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdMixDown }); break;
+        case 4: add ({ cmdMixer, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, cmdDuplicateClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1546,6 +1554,82 @@ void MainComponent::mixDown (const juce::File& file, int bitDepth, juce::Range<j
                 showError ("Mix Down", *error);
             else if (warnings->isNotEmpty())
                 showError ("Mix Down", file.getFileName() + " was written without these effects, which could not be loaded:\n" + *warnings);
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
+}
+
+void MainComponent::bounceTrack()
+{
+    const auto state = engine.session.getState();
+    const auto index = multitrack.getSelectedTrack();
+
+    if (! juce::isPositiveAndBelow (index, (int) state->tracks.size()) || state->tracks[(size_t) index].isBus)
+        return;
+
+    // The time range if there is one, otherwise from the start to the track's last clip.
+    const auto& track = state->tracks[(size_t) index];
+    const auto trackId = track.id;
+    const auto timeRange = multitrack.getTimeSelection();
+    juce::int64 end = 0;
+
+    for (auto& c : track.clips)
+        end = juce::jmax (end, c.getEnd());
+
+    const auto range = ! timeRange.isEmpty() ? timeRange : juce::Range<juce::int64> (0, end);
+    const auto rate = engine.session.getSampleRate();
+    const auto file = recordingsFolder().getNonexistentChildFile (juce::File::createLegalFileName (track.name) + " Bounce "
+                                                                      + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"),
+                                                                  ".wav", false);
+    auto alone = std::make_shared<SessionState> (Bounce::isolate (*state, trackId));
+    auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
+
+    if (auto xml = engine.getTrackEffects().createXml (trackId))
+        (*effects)[trackId] = std::move (xml);
+
+    auto inserts = std::make_shared<TrackEffects>();
+    auto audio = std::make_shared<AudioDocument::Snapshot>();
+    auto error = std::make_shared<juce::String>();
+    auto warnings = std::make_shared<juce::String>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Bouncing " + track.name + "...",
+        [this, alone, effects, inserts, audio, error, warnings, file, rate, range] (const std::function<bool (float)>& progress)
+        {
+            *warnings = OfflineRender::loadTrackEffects (*effects, engine.pluginFormatManager, rate, *inserts);
+            juce::AudioBuffer<float> mix;
+
+            if (! OfflineRender::mixSession (*alone, range, mix, inserts.get(), progress))
+                return false;
+
+            *audio = AudioEdits::fromBuffer (std::move (mix));
+
+            if (! file.getParentDirectory().createDirectory())
+                *error = "Could not make the folder " + file.getParentDirectory().getFullPathName();
+            else
+                *error = AudioFileIO::save (**audio, rate, file, 32, engine.formatManager);
+
+            return true;
+        },
+        [this, audio, error, warnings, file, trackId, range]
+        {
+            if (error->isNotEmpty())
+            {
+                showError ("Bounce Track", *error);
+                return;
+            }
+
+            auto next = *engine.session.getState();
+
+            if (Bounce::land (next, trackId, file, *audio, range.getStart()) == 0)
+            {
+                showError ("Bounce Track", "The track was deleted while it was bouncing; the bounce is in " + file.getFullPathName() + ".");
+                return;
+            }
+
+            engine.session.apply (std::move (next), "Bounce Track");
+
+            if (warnings->isNotEmpty())
+                showError ("Bounce Track", file.getFileName() + " was bounced without these effects, which could not be loaded:\n" + *warnings);
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();

@@ -708,6 +708,17 @@ void runMultitrackViewTests (AudioEngine& engine)
         check (view.getSelectedClips().empty() && view.getSelectedClip() == 0, "selection: clicking where there is no clip selects none");
     }
 
+    // Zoom to Time Range: the range fills the timeline, with 2.5% of it either side.
+    {
+        view.zoomToRange ({ 96000, 192000 });
+        const auto shownFrames = view.getVisibleFrames();
+        view.zoomToRange ({});
+        check (std::abs (shownFrames.getStart() - 93600.0) < 1.0e-6 && std::abs (shownFrames.getEnd() - 194400.0) < 1.0e-6
+                   && view.getVisibleFrames() == shownFrames,
+               "view: Zoom to Time Range shows the range with a margin either side (" + juce::String (shownFrames.getStart(), 1) + " to "
+                   + juce::String (shownFrames.getEnd(), 1) + "); an empty range changes nothing");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

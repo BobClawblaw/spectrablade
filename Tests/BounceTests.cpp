@@ -1,0 +1,122 @@
+#include <JuceHeader.h>
+#include "../Source/AudioEdits.h"
+#include "../Source/Bounce.h"
+#include "../Source/OfflineRender.h"
+#include "TestUtils.h"
+#include "BounceTests.h"
+
+namespace
+{
+    using TestUtils::check;
+
+    constexpr double rate = 48000.0;
+
+    AudioDocument::Snapshot ramp (int channels, int frames, float scale)
+    {
+        juce::AudioBuffer<float> b (channels, frames);
+
+        for (int ch = 0; ch < channels; ++ch)
+            for (int i = 0; i < frames; ++i)
+                b.setSample (ch, i, scale * (float) (ch + 1) * std::sin ((float) i * 0.01f));
+
+        return AudioEdits::fromBuffer (std::move (b));
+    }
+
+    juce::AudioBuffer<float> mix (const SessionState& s, juce::Range<juce::int64> range)
+    {
+        juce::AudioBuffer<float> out;
+        OfflineRender::mixSession (s, range, out, nullptr, [] (float) { return true; });
+        return out;
+    }
+
+    bool identical (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b)
+    {
+        if (a.getNumChannels() != b.getNumChannels() || a.getNumSamples() != b.getNumSamples())
+            return false;
+
+        for (int ch = 0; ch < a.getNumChannels(); ++ch)
+            if (std::memcmp (a.getReadPointer (ch), b.getReadPointer (ch), sizeof (float) * (size_t) a.getNumSamples()) != 0)
+                return false;
+
+        return true;
+    }
+
+    float largestDifference (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b)
+    {
+        auto most = 0.0f;
+
+        for (int ch = 0; ch < a.getNumChannels(); ++ch)
+            for (int i = 0; i < a.getNumSamples(); ++i)
+                most = juce::jmax (most, std::abs (a.getSample (ch, i) - b.getSample (ch, i)));
+
+        return most;
+    }
+
+    /** A mono track panned left sending to a bus after its volume, a stereo track, the bus. */
+    SessionState session (float guitarDb)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        auto& guitar = s.addTrack();
+        guitar.name = "Guitar";
+        guitar.pan = -0.3f;
+        guitar.gainDb = guitarDb;
+        s.addTrack().name = "Keys";
+        auto& bus = s.addBus();
+        bus.gainDb = -3.0f;
+        const auto busId = bus.id;
+        SessionEdits::setSend (s, s.tracks[0].id, { busId, -10.0f, false });
+        SessionEdits::addClip (s, 0, juce::File ("/takes/guitar.wav"), ramp (1, 9000, 0.5f), 1000);
+        SessionEdits::addClip (s, 1, juce::File ("/takes/keys.wav"), ramp (2, 12000, 0.2f), 0);
+        return s;
+    }
+}
+
+void runBounceTests()
+{
+    const juce::Range<juce::int64> range (0, 12000);
+
+    for (auto db : { 0.0f, -6.0f })
+    {
+        const auto s = session (db);
+        const auto guitar = s.tracks[0].id;
+        const auto full = mix (s, range);
+        auto alone = mix (Bounce::isolate (s, guitar), range);
+
+        auto bounced = s;
+        const auto id = Bounce::land (bounced, guitar, juce::File ("/takes/Guitar Bounce.wav"), AudioEdits::fromBuffer (std::move (alone)), 0);
+        const auto after = mix (bounced, range);
+
+        if (juce::exactlyEqual (db, 0.0f))
+        {
+            const auto& t = bounced.tracks;
+            check (id != 0 && t.size() == 4 && t[1].id == id && t[1].name == "Guitar Bounce" && t[0].mute && ! t[1].mute
+                       && t[1].clips.size() == 1 && t[1].clips[0].position == 0 && t[1].clips[0].length == 12000
+                       && t[1].clips[0].source == juce::File ("/takes/Guitar Bounce.wav") && t[1].sends.size() == 1
+                       && t[1].sends[0].busId == t[3].id && t[2].name == "Keys" && t[3].isBus,
+                   "bounce: lands on a new track after the source, with its sends, and mutes the source");
+            check (identical (full, after),
+                   "bounce: at 0 dB, the session mixes bit for bit the same after the bounce, through the bus too");
+        }
+        else
+        {
+            // The send now scales the bounced audio rather than the track's: a rounding apart.
+            const auto most = largestDifference (full, after);
+            check (most > 0.0f && most < 1.0e-6f,
+                   "bounce: at -6 dB the mix after it is within float rounding of the one before (" + juce::String (most, 10) + ")");
+        }
+    }
+
+    auto muted = session (0.0f);
+    muted.tracks[0].mute = true;
+    muted.tracks[1].solo = true;
+    const auto alone = Bounce::isolate (muted, muted.tracks[0].id);
+    const auto rendered = mix (alone, range);
+    check (alone.tracks.size() == 1 && alone.tracks[0].sends.empty() && rendered.getMagnitude (0, 12000) > 0.1f
+               && Bounce::isolate (muted, 9999).tracks.empty(),
+           "bounce: a muted track bounces as it would play unmuted, alone and without its sends");
+
+    auto gone = session (0.0f);
+    check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
+           "bounce: nothing lands when the source track is gone");
+}

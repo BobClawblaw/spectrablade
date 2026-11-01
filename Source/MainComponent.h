@@ -119,6 +119,7 @@ private:
     void chooseMixDownFile();
     void askForMixDownFormat (const juce::File&);
     void mixDown (const juce::File&, int bitDepth, juce::Range<juce::int64>);
+    void bounceTrack();
 
     // Transport and windows
     void togglePlay();

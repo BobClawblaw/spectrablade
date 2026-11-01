@@ -964,6 +964,20 @@ void MultitrackView::zoomToFit()
     setView (0.0, length * 1.05 / juce::jmax (1, timelineArea().getWidth()));
 }
 
+void MultitrackView::zoomToRange (juce::Range<juce::int64> range)
+{
+    if (range.isEmpty())
+        return;
+
+    const auto margin = (double) range.getLength() * 0.025;
+    setView ((double) range.getStart() - margin, ((double) range.getLength() + 2.0 * margin) / juce::jmax (1, timelineArea().getWidth()));
+}
+
+juce::Range<double> MultitrackView::getVisibleFrames() const
+{
+    return { viewStart, viewStart + framesPerPixel * timelineArea().getWidth() };
+}
+
 void MultitrackView::updateScrollBars()
 {
     const auto width = (double) juce::jmax (1, timelineArea().getWidth());

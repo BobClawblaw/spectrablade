@@ -24,6 +24,7 @@
 #include "TrackRecordingTests.h"
 #include "MetronomeTests.h"
 #include "MixerTests.h"
+#include "BounceTests.h"
 #include "PluginTests.h"
 #include "TestUtils.h"
 
@@ -344,6 +345,7 @@ int main (int argc, char* argv[])
         runTrackRecordingTests (engine.formatManager);
         runMetronomeTests (engine.formatManager);
         runMixerTests (engine);
+        runBounceTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

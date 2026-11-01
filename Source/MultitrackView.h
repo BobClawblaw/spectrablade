@@ -145,6 +145,12 @@ public:
     void zoomOut();
     void zoomToFit();
 
+    /** Fills the timeline with a range of the session, with a small margin either side. */
+    void zoomToRange (juce::Range<juce::int64>);
+
+    /** The session frames the timeline shows, from its left edge to its right. */
+    juce::Range<double> getVisibleFrames() const;
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;

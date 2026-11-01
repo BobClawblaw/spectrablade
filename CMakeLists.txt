@@ -57,6 +57,7 @@ target_sources(SpectraBlade PRIVATE
     Source/TrackEffects.cpp
     Source/Recorder.cpp
     Source/SessionRecording.cpp
+    Source/Bounce.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
     Source/WaveformView.cpp
@@ -109,6 +110,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/TrackRecordingTests.cpp
     Tests/MetronomeTests.cpp
     Tests/MixerTests.cpp
+    Tests/BounceTests.cpp
     Tests/PluginTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
@@ -128,6 +130,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/TrackEffects.cpp
     Source/Recorder.cpp
     Source/SessionRecording.cpp
+    Source/Bounce.cpp
     Source/PluginScanner.cpp
     Source/MixerView.cpp
     Source/MultitrackView.cpp)

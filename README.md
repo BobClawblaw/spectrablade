@@ -6,6 +6,13 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 30: bouncing a track, and zooming to the time range**
+- Multitrack > Bounce Track renders the selected track as it goes to the mix (its clips through its effects, volume, pan and automation) over the time range, or from the start to its last clip, into a 32-bit float WAV in the session's recordings folder. The bounce lands as one clip on a new track right after the source, named "Guitar Bounce" after it, and the source is muted, so the session sounds the same with the plug-ins' work done. It runs in the background with a progress bar and can be cancelled; the whole bounce is one undo step.
+- The new track takes over the source's sends, now fed with the bounced audio. A post-fader send carries the same signal as before, but a pre-fader send now carries the track after its volume, so it changes unless the volume was 0 dB.
+- Bouncing uses fresh copies of the track's effects, as mixing down does; one that can't be loaded is left out and named afterwards.
+- View > Zoom to Time Range (in place of Zoom to Selection while the session is showing) fills the timeline with the time range and 2.5% of it either side.
+- Measured by the tests: a track bounced (rendered alone, then landed) leaves the session mix bit for bit the same, through a bus it sends to, when its volume is 0 dB; at -6 dB the largest difference is 0.0000000298, from the send now scaling the bounced audio instead of the track's. The bounce lands after its source with its sends, the source muted; a muted track bounces as it would play; and Zoom to Time Range shows 93600 to 194400 for 96000 to 192000. The Bounce Track command itself (its background job, the file it writes, a track with plug-ins on it) was not run by the tests, and none of it was tried by hand.
+
 **Milestone 29: selecting several clips**
 - Shift-click clips to add them to the selection (Shift-click a selected one to take it out); Edit > Select All Clips (Cmd A) selects every clip in the session. Clicking where there is no clip selects none.
 - Drag any selected clip to move them all in time by the same amount, each staying on its own track; they stop when the earliest reaches the start of the session. With snapping on, the clip you drag snaps, and the other selected clips are not targets. With crossfading on, each one crossfades where it lands.
@@ -262,6 +269,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
 - Copying, pasting and duplicating clips through the view, over what was on the track, and several clips selected, moved, pasted, duplicated and deleted together.
 - Clip gain: normalizing against a brute-force peak, its limits, and Command-dragging a clip in the view.
 - Session markers: adding, going to, clicking and dragging them in the view, snapping to and with them, and session files.
@@ -308,4 +316,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a session overview of the whole timeline, and zooming to the time range
+1. Multitrack, continued: grouping tracks, so that volume, mute and solo changes apply to the whole group

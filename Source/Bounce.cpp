@@ -1,0 +1,46 @@
+#include "Bounce.h"
+
+namespace Bounce
+{
+SessionState isolate (const SessionState& s, juce::uint32 trackId)
+{
+    auto alone = s;
+    alone.tracks.clear();
+
+    if (const auto* track = s.findTrack (trackId))
+    {
+        auto t = *track;
+        t.sends.clear();
+        t.mute = false;
+        t.solo = false;
+        alone.tracks.push_back (std::move (t));
+    }
+
+    return alone;
+}
+
+juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file, AudioDocument::Snapshot audio, juce::int64 position)
+{
+    const auto source = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (source == s.tracks.end())
+        return 0;
+
+    const auto index = (int) std::distance (s.tracks.begin(), source);
+    const auto name = source->name + " Bounce";
+    const auto sends = source->sends;
+    source->mute = true;
+
+    auto& added = s.addTrack();
+    added.name = name;
+    const auto id = added.id;
+    SessionEdits::addClip (s, (int) s.tracks.size() - 1, file, std::move (audio), position);
+
+    for (auto& send : sends)
+        SessionEdits::setSend (s, id, send);
+
+    // From the end, where addTrack put it, to just after the source.
+    std::rotate (s.tracks.begin() + index + 1, s.tracks.end() - 1, s.tracks.end());
+    return id;
+}
+}
