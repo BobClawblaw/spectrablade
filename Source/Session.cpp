@@ -1063,6 +1063,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.hidden)
             track->setAttribute ("hidden", true);
 
+        if (t.note.isNotEmpty())
+            track->setAttribute ("note", t.note);
+
         if (! t.input.isDefault())
         {
             track->setAttribute ("inputFirst", t.input.first);
@@ -1127,6 +1130,9 @@ juce::String save (const SessionState& state, const juce::File& target,
 
             if (c.colour >= 0)
                 clip->setAttribute ("colour", c.colour);
+
+            if (c.note.isNotEmpty())
+                clip->setAttribute ("note", c.note);
 
             if (! c.takes.empty())
             {
@@ -1201,6 +1207,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.group = juce::jlimit (0, SessionTrack::maxGroups, trackXml->getIntAttribute ("group"));
         track.colour = juce::jlimit (-1, 7, trackXml->getIntAttribute ("colour", -1));
         track.hidden = trackXml->getBoolAttribute ("hidden");
+        track.note = trackXml->getStringAttribute ("note");
 
         if (const auto channels = trackXml->getIntAttribute ("inputChannels"); ! track.isBus && (channels == 1 || channels == 2))
             track.input = { juce::jmax (0, trackXml->getIntAttribute ("inputFirst")), channels };
@@ -1279,6 +1286,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.locked = clipXml->getBoolAttribute ("locked");
             clip.muted = clipXml->getBoolAttribute ("muted");
             clip.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, clipXml->getIntAttribute ("colour", -1));
+            clip.note = clipXml->getStringAttribute ("note");
 
             // Takes, kept only when every one's audio is there; otherwise the clip plays the one it had.
             std::vector<SessionClip::Take> takes;

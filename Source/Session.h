@@ -18,6 +18,7 @@ struct SessionClip
     bool locked = false;                   // the edits below leave it where it is, as it is
     bool muted = false;                    // stays in place but isn't heard (in playback, mixdowns, bounces and stems)
     int colour = -1;                       // a place in TrackColours::palette, or -1 for its track's colour
+    juce::String note;                     // free text, shown along the clip's bottom edge
 
     static constexpr float minGainDb = -60.0f, maxGainDb = 24.0f;
 
@@ -150,6 +151,7 @@ struct SessionTrack
     int group = 0;                         // 0 for none, or 1 to maxGroups: volume, mute and solo changes follow through it
     int colour = -1;                       // a place in TrackColours::palette, or -1 for one by its place in the list
     bool hidden = false;                   // left out of the lanes (it still plays and shows in the mixer)
+    juce::String note;                     // free text, shown in the header's tooltip
     TrackInput input;                      // what it records from (tracks only)
 
     static constexpr int maxGroups = 8;

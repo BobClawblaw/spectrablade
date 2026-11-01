@@ -154,6 +154,7 @@ private:
     void saveSettings();
 
     juce::ApplicationProperties appProperties;
+    juce::TooltipWindow tooltips { this, 700 };   // without one, no control's tooltip ever shows
     AudioEngine engine;
     juce::ApplicationCommandManager commands;
     AudioClip clipboard;

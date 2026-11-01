@@ -161,6 +161,7 @@ public:
     void update (const SessionTrack& t, int index, bool selected)
     {
         colour = TrackColours::of (t, index);
+        name.setTooltip (t.note);
         group = t.group;
         isSelected = selected;
         isBus = t.isBus;
@@ -308,6 +309,7 @@ public:
         juce::PopupMenu menu;
         menu.addSubMenu ("Group", groups);
         menu.addSubMenu ("Colour", colours);
+        menu.addItem ("Note...", [this] { view.askForTrackNote (trackId); });
         menu.addItem ("Hide", [this] { view.setTrackHidden (trackId, true); });
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
@@ -1538,6 +1540,13 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
         g.strokePath (curve, juce::PathStrokeType (1.0f));
     };
 
+    if (c.note.isNotEmpty() && body.getHeight() > 40)
+    {
+        g.setColour (juce::Colours::white.withAlpha (0.75f));
+        g.setFont (11.0f);
+        g.drawText (c.note, body.removeFromBottom (14).withTrimmedLeft (6).withTrimmedRight (6), juce::Justification::centredLeft, true);
+    }
+
     if (c.fadeIn > 0)
         drawFade ((float) r.getX(), xForFrame (c.position + c.fadeIn));
 
@@ -1857,6 +1866,33 @@ void MultitrackView::renameMarker (int index)
             engine.session.apply (std::move (next), "Rename " + old.name);
         }
     }), true);
+}
+
+void MultitrackView::askForTrackNote (juce::uint32 trackId)
+{
+    const auto* track = shown().findTrack (trackId);
+
+    if (track == nullptr)
+        return;
+
+    auto* box = new juce::AlertWindow ("Note for " + track->name, {}, juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("note", track->note);
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, trackId] (int result)
+    {
+        if (result == 1)
+            setTrackNote (trackId, box->getTextEditorContents ("note"));
+    }), true);
+}
+
+void MultitrackView::setTrackNote (juce::uint32 trackId, const juce::String& note)
+{
+    const auto* track = engine.session.getState()->findTrack (trackId);
+
+    if (track != nullptr && track->note != note.trim())
+        editTrack (trackId, "Track Note", false, [text = note.trim()] (SessionTrack& t) { t.note = text; });
 }
 
 void MultitrackView::showMarkerMenu (int index)

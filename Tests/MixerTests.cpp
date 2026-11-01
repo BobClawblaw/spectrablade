@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/ClipList.h"
 #include "../Source/ClipProperties.h"
 #include "../Source/MixerView.h"
@@ -268,6 +269,81 @@ namespace
 
 namespace
 {
+    void testNotes (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().name = "Vox";
+        const auto id = SessionEdits::addClip (s, 0, juce::File ("/takes/vox.wav"), constant (1, 48000, 0.5f), 0);
+        engine.session.reset (s, {});
+        ClipProperties properties (engine, [id] { return id; });
+        properties.setSize (340, 280);
+        const auto settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+        const auto type = [&] (ClipProperties::Field f, const juce::String& value)
+        {
+            properties.getEditor (f).setText (value, false);
+            properties.apply (f);
+            settle();
+        };
+        const auto clip = [&] { return engine.session.getState()->tracks[0].clips[0]; };
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+
+        type (ClipProperties::Field::note, "  breath at 0:01 ");
+        const auto noted = clip().note == "breath at 0:01" && engine.session.getUndoDescription() == "Clip Note";
+        auto locked = *engine.session.getState();
+        SessionEdits::setClipLocked (locked, id, true);
+        engine.session.apply (std::move (locked), "Lock Clip");
+        settle();
+        type (ClipProperties::Field::note, "");
+        type (ClipProperties::Field::start, "0.5");
+        check (noted && clip().note.isEmpty() && clip().position == 0 && properties.getEditor (ClipProperties::Field::start).getText() == "0.000",
+               "notes: typed into Clip Properties and cleared as undo steps, on a locked clip too, whose start stays put");
+
+        MultitrackView view (engine);
+        const auto trackId = engine.session.getState()->tracks[0].id;
+        view.setTrackNote (trackId, " double the chorus ");
+        settle();
+        auto tooltip = juce::String();
+
+        for (auto* area : view.getChildren())
+            for (auto* header : area->getChildren())
+                for (auto* control : header->getChildren())
+                    if (auto* label = dynamic_cast<juce::Label*> (control); label != nullptr && label->getText() == "Vox")
+                        tooltip = label->getTooltip();
+
+        const auto steps = engine.session.getUndoDescription();
+        const auto trimmed = engine.session.getState()->tracks[0].note == "double the chorus";
+        view.setTrackNote (trackId, "double the chorus");
+        engine.session.undo();   // the Track Note step: the same note again added none
+        settle();
+        const auto undone = engine.session.getState()->tracks[0].note.isEmpty();
+        engine.session.redo();
+        settle();
+        check (trimmed && steps == "Track Note" && tooltip == "double the chorus" && undone,
+               "notes: a track's note as an undo step, shown as its name's tooltip; the same note again changes nothing");
+
+        const auto folder = juce::File::createTempFile ("notes");
+        folder.createDirectory();
+        const auto wav = folder.getChildFile ("vox.wav");
+        auto onDisk = *engine.session.getState();
+        onDisk.tracks[0].clips[0].source = wav;
+        onDisk.tracks[0].clips[0].note = "comp from take 2 & 3 <keep>";
+        const auto file = folder.getChildFile ("notes.sbsession");
+        const auto wrote = AudioFileIO::save (*constant (1, 48000, 0.5f), rate, wav, 24, engine.formatManager).isEmpty()
+                           && SessionFile::save (onDisk, file).isEmpty();
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        folder.deleteRecursively();
+        check (wrote && loaded.state.tracks.size() == 1 && loaded.state.tracks[0].note == "double the chorus"
+                   && loaded.state.tracks[0].clips.size() == 1 && loaded.state.tracks[0].clips[0].note == "comp from take 2 & 3 <keep>",
+               "notes: session files keep track and clip notes, markup characters included");
+
+        engine.session.reset ({}, {});
+        settle();
+    }
+}
+
+namespace
+{
     void testClipList (AudioEngine& engine)
     {
         SessionState s;
@@ -389,4 +465,5 @@ void runMixerTests (AudioEngine& engine)
     testGroups (engine);
     testColours (engine);
     testClipList (engine);
+    testNotes (engine);
 }

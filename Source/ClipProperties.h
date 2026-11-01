@@ -3,7 +3,7 @@
 #include "AudioEngine.h"
 
 /** The selected clip's settings as numbers to read and type: its name, where it starts, how
-    long it is, its gain and its fades. Return (or leaving a field) applies a field as an undo
+    long it is, its gain, its fades and a note. Return (or leaving a field) applies a field as an undo
     step; a value that can't apply shows the clip's setting again. Follows the session, so undo
     and edits elsewhere show here at once. */
 class ClipProperties final : public juce::Component,
@@ -15,7 +15,7 @@ public:
     ClipProperties (AudioEngine&, std::function<juce::uint32()> clipToShow);
     ~ClipProperties() override;
 
-    enum class Field { name, start, length, gain, fadeIn, fadeOut };
+    enum class Field { name, start, length, gain, fadeIn, fadeOut, note };
 
     /** A field's editor, for typing into (as the tests do). */
     juce::TextEditor& getEditor (Field);
@@ -44,7 +44,7 @@ private:
         juce::TextEditor editor;
     };
 
-    std::array<Row, 6> rows;
+    std::array<Row, 7> rows;
     juce::Label info;   // the file and take, or "No clip selected"
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ClipProperties)

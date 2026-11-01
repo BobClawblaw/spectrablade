@@ -22,7 +22,7 @@ namespace
 ClipProperties::ClipProperties (AudioEngine& e, std::function<juce::uint32()> toShow)
     : engine (e), clipToShow (std::move (toShow))
 {
-    const juce::StringArray names { "Name", "Start (s)", "Length (s)", "Gain (dB)", "Fade in (s)", "Fade out (s)" };
+    const juce::StringArray names { "Name", "Start (s)", "Length (s)", "Gain (dB)", "Fade in (s)", "Fade out (s)", "Note" };
 
     for (size_t i = 0; i < rows.size(); ++i)
     {
@@ -106,6 +106,12 @@ void ClipProperties::apply (Field f)
             changed = frames.has_value() && *frames >= 0 && *frames != c.fadeOut && SessionEdits::setClipFades (next, c.id, c.fadeIn, *frames);
             description = "Clip Fade Out";
             break;
+        case Field::note:
+            // Any text, or none to clear it; locked clips take notes too.
+            changed = text.trim() != c.note;
+            next.tracks[(size_t) where->first].clips[(size_t) where->second].note = text.trim();
+            description = "Clip Note";
+            break;
     }
 
     if (changed)
@@ -147,8 +153,8 @@ void ClipProperties::refresh()
 
     const auto& c = state->tracks[(size_t) where->first].clips[(size_t) where->second];
     const auto rate = state->sampleRate;
-    const std::array<juce::String, 6> values { c.name, secondsText (c.position, rate), secondsText (c.length, rate),
-                                               juce::String (c.gainDb, 1), secondsText (c.fadeIn, rate), secondsText (c.fadeOut, rate) };
+    const std::array<juce::String, 7> values { c.name, secondsText (c.position, rate), secondsText (c.length, rate),
+                                               juce::String (c.gainDb, 1), secondsText (c.fadeIn, rate), secondsText (c.fadeOut, rate), c.note };
 
     for (size_t i = 0; i < rows.size(); ++i)
     {

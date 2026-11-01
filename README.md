@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 46: notes on tracks and clips**
+- Clip Properties has a Note field: any text, or none to clear it, as an undo step ("Clip Note"). Locked clips take notes too. A clip's note is drawn along its bottom edge when the lane is tall enough.
+- Right-click a track's or bus's header and choose Note... to type its note ("Track Note"); hovering over the track's name shows it.
+- Tooltips now show: the app had no tooltip window, so none of its controls' tooltips (these notes, and the existing ones on the header buttons and elsewhere) ever appeared.
+- Measured by the tests: a clip's note typed into the real Clip Properties, trimmed, and cleared as undo steps, on a locked clip whose start is still refused; a track's note as an undo step, as its name's tooltip, and the same note again adding no step; session files keeping both, with "&" and "<" in them. The Note... dialog, the drawn note and tooltips appearing on screen were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included: the audio interface opened normally again.
+
 **Milestone 45: hiding tracks**
 - Right-click a track's or bus's header and choose Hide, or use Multitrack > Hide Track on the selected one, to leave it out of the lanes; the tracks below close up. It still plays, keeps its place in the list and stays in the mixer window. View > Show All Tracks shows every hidden track again as one undo step; hiding and showing a track are undo steps too ("Hide Track", "Show Track").
 - A hidden track is no longer the selected track, and its clips leave the selection, so commands for the selection don't act on what can't be seen. Going to one of its clips from the clip list shows the track again.
@@ -352,6 +358,7 @@ The tests run against the real machine:
 - The clip list: rows and columns, clicking a row, and following edits.
 - Duplicating a track: its settings and clips, playing the same bit for bit, and the view.
 - Hiding tracks: the lanes closing up, the selection, showing them again, the mix, and session files.
+- Notes: on clips through Clip Properties, on tracks, and in session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -405,4 +412,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a note on each track and clip, typed in Clip Properties and the header menu, saved with the session
+1. Multitrack, continued: selecting every clip on a track, or after the cursor, from the Edit menu

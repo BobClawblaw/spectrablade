@@ -100,7 +100,7 @@ public:
     {
         setUsingNativeTitleBar (true);
         setContentOwned (new ClipProperties (audioEngine, [&view] { return view.getSelectedClip(); }), false);
-        centreWithSize (340, 250);
+        centreWithSize (340, 280);
         setAlwaysOnTop (true);
         setVisible (true);
     }

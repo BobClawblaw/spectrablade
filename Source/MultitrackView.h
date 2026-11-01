@@ -145,6 +145,10 @@ public:
     /** Shows every hidden track again, as one undo step. False when none was hidden. */
     bool showAllTracks();
 
+    /** Sets a track's or bus's note (empty to clear it) as an undo step ("Track Note"). Right-
+        click a header and choose Note... to type one; the header shows it as its tooltip. */
+    void setTrackNote (juce::uint32 trackId, const juce::String& note);
+
     /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise
         its marks in seconds, at the current zoom. Never before 0. */
     juce::int64 gridStepFrom (juce::int64 frame, bool later) const;
@@ -310,6 +314,7 @@ private:
     int markerAt (juce::Point<int>) const;
     void drawMarkers (juce::Graphics&, juce::Rectangle<int> area) const;
     void renameMarker (int index);
+    void askForTrackNote (juce::uint32 trackId);
     void showMarkerMenu (int index);
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;
     void selectTrack (int track);
