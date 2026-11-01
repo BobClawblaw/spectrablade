@@ -44,17 +44,104 @@ void SessionSource::prepareToPlay (int blockSize, double)
 {
     // Room for the largest block the transport's resampler is likely to ask for, so the mixer
     // does not allocate on the audio thread.
-    buffers.reserve (juce::jmax (8192, 4 * blockSize));
+    const auto frames = juce::jmax (8192, 4 * blockSize);
+    buffers.reserve (frames);
+    liveBlock.setSize (2, frames);
+    liveRing.setSize (2, juce::nextPowerOfTwo (2 * frames));
+    liveRead = liveCount = 0;
     nextFrame = -1;
 }
 
-void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
+void SessionSource::refreshState()
 {
     if (const auto v = session.getVersion(); state == nullptr || v != stateVersion)
     {
         state = session.getState();
         stateVersion = v;
     }
+}
+
+void SessionSource::feedLive (juce::uint32 trackId, const juce::AudioBuffer<float>& input, int numChannels, int numFrames)
+{
+    const auto size = liveRing.getNumSamples();
+
+    if (trackId == 0 || numChannels <= 0 || numFrames <= 0 || numFrames > size / 2)
+    {
+        liveTrack = 0;
+        liveRead = liveCount = 0;
+        return;
+    }
+
+    liveTrack = trackId;
+    liveChannels = juce::jmin (2, numChannels);
+    const auto mask = size - 1;
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto* in = input.getReadPointer (juce::jmin (ch, liveChannels - 1));
+        auto* ring = liveRing.getWritePointer (ch);
+
+        for (int i = 0; i < numFrames; ++i)
+            ring[(liveRead + liveCount + i) & mask] = in[i];
+    }
+
+    // Keep no more than this block and a few frames the resampler reads ahead, so input
+    // that was not read (stopped, a short read) never builds up into a delay.
+    liveCount += numFrames;
+    const auto keep = numFrames + 8;
+
+    if (liveCount > keep)
+    {
+        liveRead = (liveRead + liveCount - keep) & mask;
+        liveCount = keep;
+    }
+}
+
+const SessionMixer::LiveInput* SessionSource::takeLive (int numFrames, bool clips)
+{
+    if (liveTrack == 0 || numFrames > liveBlock.getNumSamples())
+        return nullptr;
+
+    // Short of input (the resampler's first read wants a few frames more): silence first.
+    const auto have = juce::jmin (numFrames, liveCount);
+    const auto pad = numFrames - have;
+    const auto mask = liveRing.getNumSamples() - 1;
+
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        const auto* ring = liveRing.getReadPointer (ch);
+        auto* out = liveBlock.getWritePointer (ch);
+        juce::FloatVectorOperations::clear (out, pad);
+
+        for (int i = 0; i < have; ++i)
+            out[pad + i] = ring[(liveRead + i) & mask];
+    }
+
+    liveRead = (liveRead + have) & mask;
+    liveCount -= have;
+    live = { liveTrack, &liveBlock, liveChannels, clips };
+    return &live;
+}
+
+void SessionSource::renderLive (const juce::AudioSourceChannelInfo& info)
+{
+    refreshState();
+    const auto* in = takeLive (info.numSamples, false);
+
+    if (in == nullptr)
+    {
+        info.clearActiveBufferRegion();
+        return;
+    }
+
+    SessionMixer::render (*state, position.load(), *info.buffer, info.startSample, info.numSamples, buffers, &inserts, in);
+    nextFrame = -1;     // playing from here starts in time, after a jump
+}
+
+void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
+{
+    ++blocksRead;
+    refreshState();
 
     auto start = position.load();
     const auto from = loopStart.load(), to = loopEnd.load();
@@ -94,7 +181,7 @@ void SessionSource::renderRun (juce::int64 start, const juce::AudioSourceChannel
     if (start != nextFrame)
         SessionMixer::prime (*state, start, buffers, inserts);
 
-    SessionMixer::render (*state, start, *info.buffer, destStart, count, buffers, &inserts);
+    SessionMixer::render (*state, start, *info.buffer, destStart, count, buffers, &inserts, takeLive (numFrames, true));
 
     if (count < numFrames)
         info.buffer->clear (destStart + count, numFrames - count);
@@ -167,7 +254,19 @@ void DocumentPlayerProcessor::setPositionFrames (juce::int64 frame)
 
 void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
 {
+    deviceRate = sampleRate;
+    monitorInput.setSize (2, juce::jmax (8192, 4 * blockSize));
+    monitorFrames = 0;
     transport.prepareToPlay (blockSize, sampleRate);
+}
+
+void DocumentPlayerProcessor::setMonitorInput (const float* const* channels, int numChannels, int numFrames)
+{
+    monitorChannels = channels != nullptr && numFrames <= monitorInput.getNumSamples() ? juce::jmin (2, numChannels) : 0;
+    monitorFrames = numFrames;
+
+    for (int ch = 0; ch < monitorChannels; ++ch)
+        monitorInput.copyFrom (ch, 0, channels[ch], numFrames);
 }
 
 void DocumentPlayerProcessor::releaseResources()
@@ -177,13 +276,52 @@ void DocumentPlayerProcessor::releaseResources()
 
 void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
-    juce::AudioSourceChannelInfo info (&buffer, 0, buffer.getNumSamples());
+    const auto numFrames = buffer.getNumSamples();
+    const auto track = monitoredTrack.load();
+    const auto monitoring = mode == Mode::session && track != 0 && monitorChannels > 0 && monitorFrames == numFrames
+                            && juce::exactlyEqual (sourceRate, deviceRate);
+    sessionSource.feedLive (monitoring ? track : 0, monitorInput, monitorChannels, numFrames);
+    monitorFrames = 0;
+
+    juce::AudioSourceChannelInfo info (&buffer, 0, numFrames);
     const auto playing = transport.isPlaying();
+    const auto blocksRead = sessionSource.getBlocksRead();
     transport.getNextAudioBlock (info);
 
+    // Stopped (the transport read nothing and played silence): the input plays on its own.
+    if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
+        sessionSource.renderLive (info);
+
     if (playing)
-        playedFrame += buffer.getNumSamples();
+        playedFrame += numFrames;
 }
+
+//==============================================================================
+/** Runs before the player in each device cycle and hands it the recording input to monitor. */
+class AudioEngine::MonitorTap final : public juce::AudioIODeviceCallback
+{
+public:
+    MonitorTap (DocumentPlayerProcessor& p, const Recorder& r) : player (p), recorder (r) {}
+
+    void audioDeviceIOCallbackWithContext (const float* const* inputs, int numInputs, float* const* outputs, int numOutputs,
+                                           int numSamples, const juce::AudioIODeviceCallbackContext&) override
+    {
+        for (int ch = 0; ch < numOutputs; ++ch)
+            if (outputs[ch] != nullptr)
+                juce::FloatVectorOperations::clear (outputs[ch], numSamples);
+
+        const auto [first, count] = recorder.getMappedInput();
+        const auto usable = first >= 0 && count > 0 && first + count <= numInputs;
+        player.setMonitorInput (usable ? inputs + first : nullptr, usable ? count : 0, numSamples);
+    }
+
+    void audioDeviceAboutToStart (juce::AudioIODevice*) override {}
+    void audioDeviceStopped() override {}
+
+private:
+    DocumentPlayerProcessor& player;
+    const Recorder& recorder;
+};
 
 //==============================================================================
 AudioEngine::AudioEngine()
@@ -199,6 +337,7 @@ AudioEngine::AudioEngine()
     using IO = juce::AudioProcessorGraph::AudioGraphIOProcessor;
     outputNode = graph.addNode (std::make_unique<IO> (IO::audioOutputNode));
     recorder = std::make_unique<Recorder> (player->getPlayedFrame());
+    monitorTap = std::make_unique<MonitorTap> (*player, *recorder);
 
     graphPlayer.setProcessor (&graph);
     deviceManager.addChangeListener (this);
@@ -214,6 +353,7 @@ AudioEngine::~AudioEngine()
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (recorder.get());
     deviceManager.removeAudioCallback (&graphPlayer);
+    deviceManager.removeAudioCallback (monitorTap.get());
     graphPlayer.setProcessor (nullptr);
     deviceManager.closeAudioDevice();
 }
@@ -225,7 +365,9 @@ juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
     // opens at its current sample rate, so other apps sharing the interface are not disturbed.
     auto error = deviceManager.initialise (0, 256, savedState, true);
 
-    // The recorder runs after the player in each cycle, so it sees what the player just played.
+    // The monitor tap runs before the player in each cycle, so the player hears this cycle's
+    // input; the recorder runs after it, so it sees what the player just played.
+    deviceManager.addAudioCallback (monitorTap.get());
     deviceManager.addAudioCallback (&graphPlayer);
     deviceManager.addAudioCallback (recorder.get());
     rebuildConnections();

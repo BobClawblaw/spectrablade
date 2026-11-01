@@ -25,6 +25,9 @@ public:
     void configure (double sampleRate, const juce::BigInteger& activeInputs);
     bool isInputActive() const noexcept           { return mappedFirst.load() >= 0; }
 
+    /** Where the chosen input is among the callback's (active) inputs: first and count, or -1, 0. */
+    std::pair<int, int> getMappedInput() const noexcept { return { mappedFirst.load(), mappedCount.load() }; }
+
     /** Peak level of input channel 0 or 1 since the last call (for meters). */
     float takePeak (int channel);
 

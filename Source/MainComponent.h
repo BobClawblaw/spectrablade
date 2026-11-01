@@ -50,6 +50,7 @@ private:
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void timerCallback() override;
+    void updateMonitoring();
 
     // File
     void openFile (const juce::File&);
@@ -175,6 +176,7 @@ private:
     // rather than into the document.
     bool recordingSession = false, recordChangedRate = false;
     bool loopRecording = false, recordingLoop = false;   // the option, and a take under way that loops
+    bool inputMonitoring = false;                        // the armed track plays its input
     juce::uint32 recordTrackId = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)

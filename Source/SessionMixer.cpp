@@ -110,6 +110,31 @@ namespace
             dest.addFrom (ch, destStart, *from, ch, 0, n, gain);
     }
 
+    /** The live input, panned like a clip, into frames [0, numFrames) of out. */
+    void addLive (const LiveInput& live, juce::AudioBuffer<float>& out, int numFrames, const float* pans, float pan)
+    {
+        const auto channels = juce::jmin (2, live.numChannels, live.audio->getNumChannels());
+        const auto* inLeft = live.audio->getReadPointer (0);
+        const auto* inRight = live.audio->getReadPointer (channels - 1);
+        auto* outLeft = out.getWritePointer (0);
+        auto* outRight = out.getWritePointer (1);
+
+        if (pans == nullptr)
+        {
+            const auto [left, right] = panGains (pan, channels);
+            juce::FloatVectorOperations::addWithMultiply (outLeft, inLeft, left, numFrames);
+            juce::FloatVectorOperations::addWithMultiply (outRight, inRight, right, numFrames);
+            return;
+        }
+
+        for (int i = 0; i < numFrames; ++i)
+        {
+            const auto [left, right] = panGains (pans[i], channels);
+            outLeft[i] += inLeft[i] * left;
+            outRight[i] += inRight[i] * right;
+        }
+    }
+
     /** The track's clips, panned, before its effects and volume, into frames [0, numFrames) of out.
         pans, when the pan is automated, holds the pan for each of those frames. */
     void renderTrack (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
@@ -173,7 +198,7 @@ namespace
 }
 
 void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<float>& dest, int destStart, int numFrames,
-             Buffers& buffers, Inserts* inserts)
+             Buffers& buffers, Inserts* inserts, const LiveInput* live)
 {
     for (int ch = 0; ch < dest.getNumChannels(); ++ch)
         dest.clear (ch, destStart, numFrames);
@@ -207,7 +232,13 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (panAutomated)
             track.panEnvelope.fill (start + own + ahead, pans, numFrames);
 
-        renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, panAutomated ? pans : nullptr);
+        if (live == nullptr || live->clips)
+            renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, panAutomated ? pans : nullptr);
+        else
+            buffers.track.clear (0, numFrames);
+
+        if (live != nullptr && live->trackId == track.id && live->audio != nullptr && live->numChannels > 0)
+            addLive (*live, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
 
         if (inserts != nullptr && inserts->isActive (track.id))
             inserts->process (track, start + own + ahead, buffers.track, numFrames);

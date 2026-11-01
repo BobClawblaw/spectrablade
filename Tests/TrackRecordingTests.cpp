@@ -4,6 +4,7 @@
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
 #include "../Source/AudioFileIO.h"
+#include "TestPlugins.h"
 #include "TestUtils.h"
 #include "TrackRecordingTests.h"
 
@@ -467,6 +468,179 @@ namespace
 
         folder.deleteRecursively();
     }
+
+    /** The session player with input monitoring, cycle by cycle: each cycle hands it the next
+        block of input, as the device's monitor tap would, and keeps what it played. */
+    struct MonitorRig
+    {
+        MonitorRig (Session& s, int inputChannels, double deviceRate = rate) : session (s), channels (inputChannels)
+        {
+            inserts.prepare (rate);
+            player.setMode (DocumentPlayerProcessor::Mode::session);
+            player.prepareToPlay (deviceRate, blockSize);
+
+            juce::Random random (20261101);
+
+            for (auto& in : input)
+                for (int i = 0; i < 400 * blockSize; ++i)
+                    in.push_back (random.nextFloat() - 0.5f);
+        }
+
+        ~MonitorRig()  { player.releaseResources(); }
+
+        void cycle()
+        {
+            const float* in[2] = { input[0].data() + fed, input[1].data() + fed };
+            player.setMonitorInput (in, channels, blockSize);
+            fed += blockSize;
+
+            juce::AudioBuffer<float> out (2, blockSize);
+            juce::MidiBuffer midi;
+            player.processBlock (out, midi);
+
+            for (int ch = 0; ch < 2; ++ch)
+                sent[(size_t) ch].insert (sent[(size_t) ch].end(), out.getReadPointer (ch), out.getReadPointer (ch) + blockSize);
+        }
+
+        /** The input as the track plays it: panned like a clip, then through the effect's gain. */
+        float heard (int ch, size_t frame, float pan, float effectGain) const
+        {
+            const auto [left, right] = SessionMixer::panGains (pan, channels);
+            return (input[channels == 1 ? 0 : (size_t) ch][frame] * (ch == 0 ? left : right)) * effectGain;
+        }
+
+        bool silent (size_t from) const
+        {
+            for (auto& s : sent)
+                for (size_t i = from; i < s.size(); ++i)
+                    if (s[i] != 0.0f)
+                        return false;
+
+            return true;
+        }
+
+        Session& session;
+        int channels;
+        AudioDocument document;
+        TrackEffects inserts;
+        DocumentPlayerProcessor player { document, session, inserts };
+        std::array<std::vector<float>, 2> input, sent;
+        size_t fed = 0;
+    };
+
+    void testMonitoring()
+    {
+        constexpr int effectLatency = 64;
+        constexpr float effectGain = 0.5f, pan = -0.4f;
+
+        // A clip on track 1; track 2 is armed, empty, panned left, through an effect that delays by
+        // 64 frames and halves.
+        auto initial = rampSession();
+        auto& armed = initial.addTrack();
+        armed.pan = pan;
+        const auto armedId = armed.id;
+        Session session;
+        session.reset (initial, {});
+        const auto before = session.getState();
+
+        MonitorRig rig (session, 1);
+        rig.inserts.add (armedId, std::make_unique<TestPlugins::DelayPlugin> (effectLatency, effectGain));
+        rig.player.setMonitoredTrack (armedId);
+
+        // Stopped: only the input plays, through the effect, from the cycle it arrives in.
+        for (int i = 0; i < 40; ++i)
+            rig.cycle();
+
+        auto same = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (size_t j = 0; same && j < rig.sent[0].size(); ++j)
+                same = rig.sent[(size_t) ch][j] == (j >= (size_t) effectLatency ? rig.heard (ch, j - effectLatency, pan, effectGain) : 0.0f);
+
+        check (same, "input monitoring: stopped, the input plays through the armed track's pan and effect, bit for bit, "
+                     "as late as the effect's latency");
+
+        // Playing from 10000: the clip plays as before, the input joins it. Find how late it comes.
+        const auto playedFrom = rig.sent[0].size();
+        const juce::int64 start = 10000;
+        rig.player.play (start, std::numeric_limits<juce::int64>::max() / 4);
+
+        for (int i = 0; i < 80; ++i)
+            rig.cycle();
+
+        const auto frames = (int) (rig.sent[0].size() - playedFrom);
+        juce::AudioBuffer<float> mix (2, frames);
+        SessionMixer::Buffers buffers;
+        SessionMixer::render (*before, start, mix, 0, frames, buffers);
+        int lag = -1;
+
+        for (int candidate = 0; lag < 0 && candidate <= 2 * effectLatency; ++candidate)
+        {
+            auto matches = true;
+
+            for (int ch = 0; matches && ch < 2; ++ch)
+            {
+                for (int k = 0; matches && k < frames; ++k)
+                {
+                    const auto j = playedFrom + (size_t) k;
+                    const auto live = k >= candidate ? rig.heard (ch, j - (size_t) candidate, pan, effectGain) : 0.0f;
+                    matches = rig.sent[(size_t) ch][j] == mix.getSample (ch, k) + live;
+                }
+            }
+
+            if (matches)
+                lag = candidate;
+        }
+
+        check (lag == effectLatency + 3,
+               "input monitoring: playing, every frame is the session mix plus the input through the effect, bit for bit, "
+               + juce::String (lag) + " frames late (the effect's 64 and the 3 the transport's resampler reads ahead)");
+
+        // Off, muted, or a device at another rate: nothing of the input plays.
+        rig.player.pause();
+        rig.cycle();      // the transport's last, faded block
+        const auto quietFrom = rig.sent[0].size();
+        rig.player.setMonitoredTrack (0);
+
+        for (int i = 0; i < 4; ++i)
+            rig.cycle();
+
+        check (rig.silent (quietFrom), "input monitoring: off, stopped playback is silent");
+
+        auto muted = initial;
+        muted.tracks[1].mute = true;
+        session.reset (muted, {});
+        rig.player.setMonitoredTrack (armedId);
+        const auto mutedFrom = rig.sent[0].size();
+
+        for (int i = 0; i < 4; ++i)
+            rig.cycle();
+
+        check (rig.silent (mutedFrom), "input monitoring: a muted armed track plays nothing of its input");
+
+        session.reset (initial, {});
+        MonitorRig other (session, 1, 44100.0);
+        other.player.setMonitoredTrack (armedId);
+
+        for (int i = 0; i < 4; ++i)
+            other.cycle();
+
+        check (other.silent (0), "input monitoring: with the device at another rate than the session, nothing is monitored");
+
+        // A stereo input on a centred track with no effect plays as it comes in.
+        auto stereo = initial;
+        stereo.tracks[1].pan = 0.0f;
+        session.reset (stereo, {});
+        MonitorRig pair (session, 2);
+        pair.player.setMonitoredTrack (armedId);
+
+        for (int i = 0; i < 4; ++i)
+            pair.cycle();
+
+        check (pair.sent[0] == std::vector<float> (pair.input[0].begin(), pair.input[0].begin() + 4 * blockSize)
+                   && pair.sent[1] == std::vector<float> (pair.input[1].begin(), pair.input[1].begin() + 4 * blockSize),
+               "input monitoring: a stereo input on a centred track without effects plays unchanged");
+    }
 }
 
 void runTrackRecordingTests (juce::AudioFormatManager& formats)
@@ -478,4 +652,5 @@ void runTrackRecordingTests (juce::AudioFormatManager& formats)
     testLoopRecordingThroughPlayer();
     testTakeLimits();
     testTakesFile (formats);
+    testMonitoring();
 }

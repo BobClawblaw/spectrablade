@@ -72,10 +72,22 @@ namespace SessionMixer
         }
     };
 
+    /** Audio coming in live on one track (input monitoring). It joins the track's clips, panned
+        by the track as a clip with that many channels would be, and goes on through its effects,
+        volume, sends and buses like them. */
+    struct LiveInput
+    {
+        juce::uint32 trackId = 0;
+        const juce::AudioBuffer<float>* audio = nullptr;   // the block's frames, from frame 0
+        int numChannels = 0;                               // 1 or 2
+        bool clips = true;                                 // false: the clips are silent (stopped)
+    };
+
     /** Replaces frames [destStart, destStart + numFrames) of dest (two channels or more; only the
-        first two are written, the rest cleared) with session frames [start, start + numFrames). */
+        first two are written, the rest cleared) with session frames [start, start + numFrames),
+        plus the live input when there is one. */
     void render (const SessionState&, juce::int64 start, juce::AudioBuffer<float>& dest, int destStart, int numFrames,
-                 Buffers&, Inserts* = nullptr);
+                 Buffers&, Inserts* = nullptr, const LiveInput* = nullptr);
 
     /** Before playing from start after a jump: resets every effect and delay line, then mixes
         the frames before start that the longest path needs, so the first block is already in time. */
