@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -70,7 +70,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || id == cmdGainRamp;
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || id == cmdGainRamp || id == cmdPanRamp;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -918,7 +918,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdGainRamp; ++id)
+    for (int id = cmdOpen; id <= cmdPanRamp; ++id)
         ids.add (id);
 }
 
@@ -971,6 +971,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdFadeOut:    info.setInfo ("Fade Out", "Fade out over the selection", "Effects", 0); info.setActive (hasSelection); break;
         case cmdCropMargins: info.setInfo ("Crop with Margins...", "Crop to the selection plus a time either side of it", "Edit", 0);
                             info.setActive (hasSelection); break;
+        case cmdPanRamp:    info.setInfo ("Pan Ramp...", "Move a stereo file's balance evenly from one position to another across the selection", "Effects", 0);
+                            info.setActive (hasSelection && doc.getNumChannels() == 2); break;
         case cmdGainRamp:   info.setInfo ("Gain Ramp...", "Change the gain evenly from one level to another across the selection", "Effects", 0);
                             info.setActive (hasSelection); break;
         case cmdFadeEdges:  info.setInfo ("Fade Selection Edges...", "Fade in at the start of the selection and out at its end", "Effects", 0);
@@ -1425,6 +1427,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdFadeOut:    applyFade (true); break;
         case cmdFadeEdges:  showFadeEdges(); break;
         case cmdGainRamp:   showGainRamp(); break;
+        case cmdPanRamp:    showPanRamp(); break;
         case cmdCropMargins: showCropMargins(); break;
         case cmdSilence:    applySimpleEffect ("Silence", &AudioEdits::silence, true); break;
         case cmdInvert:     applySimpleEffect ("Invert", &AudioEdits::invert, false); break;
@@ -1755,7 +1758,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdRemoveDc, cmdBalance, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
+            add ({ 0, cmdSilence, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack });
             break;
         }
@@ -3917,6 +3920,32 @@ void MainComponent::showBalance()
         if (result == 1 && pan != 0 && ! r.isEmpty())
             applyEdit (AudioEdits::balance (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), (float) pan / 100.0f),
                        "Balance", waveform.getSelection());
+    }), true);
+}
+
+void MainComponent::showPanRamp()
+{
+    auto* box = new juce::AlertWindow ("Pan Ramp", "The balance moves evenly from the first position at the start of the selection to the second "
+                                       "at its end, each from -100 (all left) to 100 (all right). The side moved away from is lowered.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("from", "-100", "Start");
+    box->addTextEditor ("to", "100", "End");
+
+    for (auto* name : { "from", "to" })
+        box->getTextEditor (name)->setInputRestrictions (4, "-0123456789");
+
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        const auto from = juce::jlimit (-100, 100, box->getTextEditorContents ("from").getIntValue());
+        const auto to = juce::jlimit (-100, 100, box->getTextEditorContents ("to").getIntValue());
+        const auto sel = waveform.getSelection();
+
+        if (result == 1 && ! sel.isEmpty())
+            if (auto next = AudioEdits::balanceRamp (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), (float) from / 100.0f, (float) to / 100.0f))
+                applyEdit (std::move (next), "Pan Ramp", sel);
     }), true);
 }
 

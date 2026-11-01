@@ -495,6 +495,23 @@ namespace
         check (rampRight && std::abs (ramped.getSample (0, 30) - 0.1f) < 1.0e-6f && std::abs (ramped.getSample (1, 20) - std::pow (10.0f, -0.5f)) < 1.0e-6f,
                "gain ramp: from 0 dB at the first frame to -20 dB at the last, even in decibels, on every channel; the rest untouched");
 
+        const auto panned = readAll (*AudioEdits::balanceRamp (*twoSnap, 100, 121, -1.0f, 1.0f));
+        const auto allLeft = readAll (*AudioEdits::balance (*twoSnap, 100, 121, -1.0f));
+        const auto panMiddle = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 0.0f));
+        const auto allRight = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 1.0f));
+        auto panRight = panned.getNumSamples() == 1000;
+
+        for (int ch = 0; ch < 2 && panRight; ++ch)
+            for (int i = 0; i < 1000 && panRight; ++i)
+                panRight = i < 100 || i >= 121 ? juce::exactlyEqual (panned.getSample (ch, i), twoRamps.getSample (ch, i))
+                         : i == 100            ? juce::exactlyEqual (panned.getSample (ch, i), allLeft.getSample (ch, i))
+                         : i == 110            ? juce::exactlyEqual (panned.getSample (ch, i), panMiddle.getSample (ch, i))
+                         : i == 120            ? juce::exactlyEqual (panned.getSample (ch, i), allRight.getSample (ch, i))
+                                               : true;
+
+        check (panRight && ! AudioEdits::balanceRamp (*rampSnap, 0, 1000, -1.0f, 1.0f),
+               "pan ramp: the first frame as Balance all left, the middle centred, the last all right, the rest untouched; mono refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

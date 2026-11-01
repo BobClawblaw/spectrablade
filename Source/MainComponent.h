@@ -128,6 +128,7 @@ private:
     void repairSelection();
     void showFadeEdges();
     void showGainRamp();
+    void showPanRamp();
     float rampFromDb = 0.0f, rampToDb = -6.0f;
     void showCropMargins();
     void showMoveMarkers();

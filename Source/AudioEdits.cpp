@@ -308,6 +308,27 @@ Snapshot balance (const AudioSnapshot& s, juce::int64 start, juce::int64 end, fl
     });
 }
 
+Snapshot balanceRamp (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float fromPan, float toPan)
+{
+    if (s.getNumChannels() != 2)
+        return nullptr;
+
+    return processRange (s, start, end, [fromPan, toPan] (juce::AudioBuffer<float>& b)
+    {
+        const auto n = b.getNumSamples();
+        auto* left = b.getWritePointer (0);
+        auto* right = b.getWritePointer (1);
+
+        for (int i = 0; i < n; ++i)
+        {
+            const auto pan = n > 1 ? fromPan + (toPan - fromPan) * (float) i / (float) (n - 1) : fromPan;
+            const auto [l, r] = SessionMixer::panGains (pan, 2);
+            left[i] *= l;
+            right[i] *= r;
+        }
+    });
+}
+
 Snapshot swapChannels (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)

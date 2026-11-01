@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 154: Pan Ramp**
+- Effects > Pan Ramp asks for a start and an end position (-100, all left, and 100, all right, to start) and moves a stereo file's balance evenly from one to the other across the selection, frame by frame, with the same pan law as Balance and a session track's pan. It is offered only for stereo files, and it is one undo step.
+- Measured by the tests: a ramp from all left to all right over 21 frames gives the first frame exactly what Balance all left gives, the middle frame exactly Balance centred, and the last exactly Balance all right, on both channels, and leaves every frame outside bit for bit; a mono file is refused. How it sounds was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 153: Gain Ramp**
 - Effects > Gain Ramp asks for a start and an end level (0 and -6 dB to start, each from -96 to +24 dB, remembered while the app runs) and changes the gain across the selection evenly in decibels, from the first level at its first frame to the second at its last, on every channel. Unlike a fade it can start or end at any level, so it can ease a section down or up by a few decibels. It is one undo step.
 - Measured by the tests: on a two-channel file of ones, a ramp from 0 to -20 dB over frames 10 to 30 gives frame 10 + k exactly the gain of -k dB to within 1e-6 (0.1 at frame 30) on both channels, and leaves every frame outside bit for bit. The dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -926,6 +930,7 @@ The tests run against the real machine:
 - Move markers in a range: only those starting inside it, refused past either end; signed times read.
 - Markers to zero crossings: points and region ends moved to the nearest crossing in reach.
 - Gain ramp: even in decibels from the first frame to the last, the rest untouched.
+- Pan ramp: Balance's pan law moved evenly from one position to the other.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -979,4 +984,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Pan Ramp, moving a stereo file's balance evenly from one position to another across the selection
+1. Effects: Stereo Width, narrowing or widening a stereo file by scaling the difference between its channels

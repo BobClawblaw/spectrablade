@@ -77,6 +77,10 @@ namespace AudioEdits
         -1 (left) to +1 (right), and the side moved away from is lowered. Other files are unchanged. */
     Snapshot balance (const AudioSnapshot&, juce::int64 start, juce::int64 end, float pan);
 
+    /** The same with the pan moving evenly from fromPan at the first frame of [start, end) to toPan
+        at the last; nullptr unless the audio has two channels. */
+    Snapshot balanceRamp (const AudioSnapshot&, juce::int64 start, juce::int64 end, float fromPan, float toPan);
+
     /** Exchanges the first two channels over [start, end); with fewer than two it changes nothing. */
     Snapshot swapChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
