@@ -547,6 +547,10 @@ namespace
                    && AudioEdits::soundsBetween (*takesSnap, 0.9f, 10, 100).empty()
                    && AudioEdits::soundsBetween (*rampSnap, 0.0001f, 10, 100) == Spans { { 0, 1000 } },
                "sounds between silences: each stretch of sound, short gaps not splitting, the silent ends left out, capped; none in silence, the whole file with no gap");
+        const auto soundFrom = [&takesSnap] (juce::int64 from) { return AudioEdits::nextSound (*takesSnap, from, 0.01f, 10); };
+        check (soundFrom (0) == R (100, 300) && soundFrom (300) == R (350, 500) && soundFrom (500) == R (520, 800) && soundFrom (150) == R (350, 500)
+                   && ! soundFrom (800) && AudioEdits::nextSound (*rampSnap, 0, 0.0001f, 10) == R (0, 1000) && ! AudioEdits::nextSound (*rampSnap, 5, 0.0001f, 10),
+               "next sound: the sound after the next silence, stepping on from each one's end; from 0 a file starting loud starts there; none after the last");
 
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.

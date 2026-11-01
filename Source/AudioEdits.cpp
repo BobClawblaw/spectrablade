@@ -702,6 +702,19 @@ std::vector<juce::Range<juce::int64>> soundsBetween (const AudioSnapshot& s, flo
     return sounds;
 }
 
+std::optional<juce::Range<juce::int64>> nextSound (const AudioSnapshot& s, juce::int64 from, float level, juce::int64 minFrames)
+{
+    const auto total = s.getNumFrames();
+    const auto quiet = nextQuiet (s, juce::jmax ((juce::int64) 0, from), level, minFrames);
+    const auto start = from <= 0 && (! quiet || quiet->getStart() > 0) ? 0 : quiet ? quiet->getEnd() : total;
+
+    if (start >= total)
+        return std::nullopt;
+
+    const auto after = nextQuiet (s, start, level, minFrames);
+    return juce::Range<juce::int64> (start, after ? after->getStart() : total);
+}
+
 std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
 {
     std::vector<juce::int64> middles;

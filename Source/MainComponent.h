@@ -138,6 +138,7 @@ private:
     double edgeFadeMs = 10.0;
     void addMarkersAtClipping();
     void addRegionsOverSounds (juce::int64 minFrames);
+    void selectNextSound();
     void addMarkersAt (const std::vector<juce::int64>& frames, const juce::String& title, const juce::String& noneFound);
     static constexpr double gateFadeSeconds = 0.01;
     void fitRegionsToSound();

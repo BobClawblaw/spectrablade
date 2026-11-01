@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 157: Select Next Sound**
+- Edit > Select Next Sound selects the next stretch of sound between silences, at the level and time Find Next Silence last used (-60 dB and half a second to start), without asking. It starts after the next silence from the cursor or the end of the selection, so choosing it again steps through the takes one by one; from the very start of a file that begins with sound, it selects that first sound. It says so when no sound follows.
+- Measured by the tests: on the file with sounds at 100–300, 350–500 and 520–800, stepping from 0 gives 100–300, then 350–500, then 520–800, then none; from inside the first sound it gives the second; a ramp with no silence gives the whole file from 0 and nothing from frame 5. The menu item was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 156: Add Regions over Sounds**
 - Markers > Add Regions over Sounds asks for a level and a time (the same settings as Find Silence) and puts a region over every stretch of sound between silences at least that long, at most 1,000 of them, leaving out the silence at the start and end of the file. Shorter gaps don't split a sound. The regions can then be saved with Save Each Region As or fitted with Fit Regions to Sound. A sound that already has a region exactly over it gets no second one. It is one undo step.
 - Measured by the tests: on a file with sounds at 100–300, 350–500 and 520–800 and silence around them, a 30-frame minimum gives 100–300 and 350–800 (the 20-frame gap doesn't split), a 10-frame minimum gives all three, a cap of 2 keeps two, a level above the sound gives none, and a ramp with no gap gives the whole file. The dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -941,6 +945,7 @@ The tests run against the real machine:
 - Pan ramp: Balance's pan law moved evenly from one position to the other.
 - Stereo width: the side scaled and the mid kept, only in the range.
 - Sounds between silences: each stretch of sound, short gaps not splitting, silent ends left out.
+- Next sound: the sound after the next silence, stepping on from each one's end.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -994,4 +999,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Select Next Sound, selecting the next stretch of sound after the cursor
+1. Effects: Tremolo, a gain that rises and falls at a chosen rate and depth across the selection
