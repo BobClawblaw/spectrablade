@@ -138,6 +138,13 @@ public:
         Returns the copy's id (0 with none selected); its effects are the caller's to copy. */
     juce::uint32 duplicateSelectedTrack();
 
+    /** Hides a track or bus from the lanes (it still plays, and stays in the mixer) or shows it
+        again, as an undo step ("Hide Track", "Show Track"). Right-click a header to hide it. */
+    void setTrackHidden (juce::uint32 trackId, bool hidden);
+
+    /** Shows every hidden track again, as one undo step. False when none was hidden. */
+    bool showAllTracks();
+
     /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise
         its marks in seconds, at the current zoom. Never before 0. */
     juce::int64 gridStepFrom (juce::int64 frame, bool later) const;
@@ -261,6 +268,7 @@ private:
     juce::Rectangle<int> timelineArea() const;
     int laneTop (int track) const;
     int trackAt (int y) const;
+    int rowOf (int track) const;    // its lane's place among the shown tracks
     float xForFrame (juce::int64 frame) const;
     juce::int64 frameForX (float x) const;
     juce::Rectangle<int> clipBounds (int track, const SessionClip&) const;

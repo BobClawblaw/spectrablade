@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 45: hiding tracks**
+- Right-click a track's or bus's header and choose Hide, or use Multitrack > Hide Track on the selected one, to leave it out of the lanes; the tracks below close up. It still plays, keeps its place in the list and stays in the mixer window. View > Show All Tracks shows every hidden track again as one undo step; hiding and showing a track are undo steps too ("Hide Track", "Show Track").
+- A hidden track is no longer the selected track, and its clips leave the selection, so commands for the selection don't act on what can't be seen. Going to one of its clips from the clip list shows the track again.
+- Measured by the tests, through the real view: hiding a track dropping its clip from the selection and its header, and a click in its old row picking the track below; going to its clip from a list showing it again; Show All Tracks as one undo step, and nothing to do when none is hidden; session files keeping which tracks are hidden; and the mix with every track and bus hidden bit for bit the same. The header menu item and the menu commands were not checked by the tests, and none of it was tried by hand. The default-device test still hung opening the audio interface, as for Milestone 40; every other check passed.
+
 **Milestone 44: duplicating a track**
 - Multitrack > Duplicate Track puts a copy of the selected track or bus right after it, named "Name Copy", and selects it: its clips (sharing their audio, as unlocked copies), sends, envelopes, volume, pan, mute, solo, group, colour and input, as one undo step ("Duplicate Track"). Its effects are copied too, loaded after it lands from the source chain as a session file holds it (each plug-in's state, bypass and slot, so effect envelopes still find their effects); one that can't be loaded is named in a message.
 - Undoing the duplicate removes the track; its copied effects stay loaded but unused, as they do for a deleted track. Duplicating a bus doesn't copy the sends other tracks make to it.
@@ -346,6 +351,7 @@ The tests run against the real machine:
 - Clip colours: their own or the track's, the selection as one undo step, and session files.
 - The clip list: rows and columns, clicking a row, and following edits.
 - Duplicating a track: its settings and clips, playing the same bit for bit, and the view.
+- Hiding tracks: the lanes closing up, the selection, showing them again, the mix, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -399,4 +405,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: hiding tracks from the lanes without muting them, and showing them again
+1. Multitrack, continued: a note on each track and clip, typed in Clip Properties and the header menu, saved with the session

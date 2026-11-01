@@ -308,6 +308,7 @@ public:
         juce::PopupMenu menu;
         menu.addSubMenu ("Group", groups);
         menu.addSubMenu ("Colour", colours);
+        menu.addItem ("Hide", [this] { view.setTrackHidden (trackId, true); });
         menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
@@ -785,10 +786,17 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 {
     state = engine.session.getState();
 
+    // Clips that went, or whose track was hidden, leave the selection.
     for (auto it = selectedClips.begin(); it != selectedClips.end();)
-        it = state->findClip (*it).has_value() ? std::next (it) : selectedClips.erase (it);
+    {
+        const auto where = state->findClip (*it);
+        it = where.has_value() && ! state->tracks[(size_t) where->first].hidden ? std::next (it) : selectedClips.erase (it);
+    }
 
-    if (! state->findClip (selectedClip).has_value())
+    if (const auto* t = state->findTrack (selectedTrackId); t != nullptr && t->hidden)
+        selectedTrackId = 0;
+
+    if (const auto where = state->findClip (selectedClip); ! where.has_value() || state->tracks[(size_t) where->first].hidden)
         selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
 
     for (auto it = armed.begin(); it != armed.end();)
@@ -963,8 +971,14 @@ void MultitrackView::rebuildHeaders()
 
 void MultitrackView::layoutHeaders()
 {
+    const auto& tracks = shown().tracks;
+
     for (size_t i = 0; i < headers.size(); ++i)
-        headers[i]->setBounds (0, (int) i * laneHeight - scrollY, headerArea.getWidth(), laneHeight);
+    {
+        const auto hidden = i < tracks.size() && tracks[i].hidden;
+        headers[i]->setVisible (! hidden);
+        headers[i]->setBounds (0, rowOf ((int) i) * laneHeight - scrollY, headerArea.getWidth(), hidden ? 0 : laneHeight);
+    }
 }
 
 void MultitrackView::resized()
@@ -983,9 +997,21 @@ juce::Rectangle<int> MultitrackView::timelineArea() const
     return getLocalBounds().withTrimmedLeft (headerWidth).withTrimmedRight (12).withTrimmedBottom (12).withTrimmedTop (rulerHeight);
 }
 
+int MultitrackView::rowOf (int track) const
+{
+    // Past the last track, rows go on as they would for new tracks.
+    const auto& tracks = shown().tracks;
+    auto row = 0;
+
+    for (int t = 0; t < juce::jmin (track, (int) tracks.size()); ++t)
+        row += tracks[(size_t) t].hidden ? 0 : 1;
+
+    return row + juce::jmax (0, track - (int) tracks.size());
+}
+
 int MultitrackView::laneTop (int track) const
 {
-    return rulerHeight + track * laneHeight - scrollY;
+    return rulerHeight + rowOf (track) * laneHeight - scrollY;
 }
 
 int MultitrackView::trackAt (int y) const
@@ -993,7 +1019,15 @@ int MultitrackView::trackAt (int y) const
     if (y < rulerHeight)
         return -1;
 
-    return (y - rulerHeight + scrollY) / laneHeight;
+    // The track shown in that row; past the shown ones, the places new tracks would take.
+    const auto& tracks = shown().tracks;
+    auto row = (y - rulerHeight + scrollY) / laneHeight;
+
+    for (int t = 0; t < (int) tracks.size(); ++t)
+        if (! tracks[(size_t) t].hidden && row-- == 0)
+            return t;
+
+    return (int) tracks.size() + row;
 }
 
 float MultitrackView::xForFrame (juce::int64 frame) const
@@ -1090,7 +1124,7 @@ void MultitrackView::updateScrollBars()
     hScroll.setCurrentRange (viewStart, width * framesPerPixel, juce::dontSendNotification);
 
     const auto visible = juce::jmax (1, timelineArea().getHeight());
-    const auto total = ((int) shown().tracks.size() + 1) * laneHeight;
+    const auto total = (rowOf ((int) shown().tracks.size()) + 1) * laneHeight;
     scrollY = juce::jlimit (0, juce::jmax (0, total - visible), scrollY);
     vScroll.setRangeLimits (0.0, (double) juce::jmax (total, visible), juce::dontSendNotification);
     vScroll.setCurrentRange ((double) scrollY, (double) visible, juce::dontSendNotification);
@@ -1534,8 +1568,11 @@ void MultitrackView::paint (juce::Graphics& g)
 
         for (int t = 0; t < (int) s.tracks.size(); ++t)
         {
+            if (s.tracks[(size_t) t].hidden)
+                continue;
+
             const auto lane = juce::Rectangle<int> (area.getX(), laneTop (t), area.getWidth(), laneHeight);
-            g.setColour (s.tracks[(size_t) t].id == selectedTrackId ? juce::Colour (0xff20262e) : (t % 2 == 0 ? laneColour : laneAlternate));
+            g.setColour (s.tracks[(size_t) t].id == selectedTrackId ? juce::Colour (0xff20262e) : (rowOf (t) % 2 == 0 ? laneColour : laneAlternate));
             g.fillRect (lane);
             g.setColour (laneLine);
             g.drawHorizontalLine (lane.getBottom() - 1, (float) lane.getX(), (float) lane.getRight());
@@ -1613,7 +1650,7 @@ void MultitrackView::paint (juce::Graphics& g)
             std::vector<int> lanes;
 
             for (int t = 0; t < (int) s.tracks.size(); ++t)
-                if (isArmed (s.tracks[(size_t) t].id))
+                if (isArmed (s.tracks[(size_t) t].id) && ! s.tracks[(size_t) t].hidden)
                     lanes.push_back (t);
 
             if (lanes.empty())
@@ -2253,7 +2290,13 @@ bool MultitrackView::showClip (juce::uint32 clipId)
         setView ((double) clip.position - width * 0.1, framesPerPixel);
 
     const auto visible = juce::jmax (1, timelineArea().getHeight());
-    const auto top = where->first * laneHeight;
+    if (shown().tracks[(size_t) where->first].hidden)
+    {
+        setTrackHidden (shown().tracks[(size_t) where->first].id, false);
+        changeListenerCallback (&engine.session);   // lay the lanes out with it now
+    }
+
+    const auto top = rowOf (where->first) * laneHeight;
 
     if (top < scrollY || top + laneHeight > scrollY + visible)
         scrollY = top;
@@ -2285,6 +2328,25 @@ void MultitrackView::setSelectedClipsFlag (bool (*set) (SessionState&, juce::uin
 
     if (changed > 0)
         engine.session.apply (std::move (next), verb + (changed > 1 ? juce::String (changed) + " Clips" : juce::String ("Clip")));
+}
+
+void MultitrackView::setTrackHidden (juce::uint32 trackId, bool hidden)
+{
+    editTrack (trackId, hidden ? "Hide Track" : "Show Track", false, [hidden] (SessionTrack& t) { t.hidden = hidden; });
+}
+
+bool MultitrackView::showAllTracks()
+{
+    auto next = *engine.session.getState();
+    auto any = false;
+
+    for (auto& t : next.tracks)
+        any = std::exchange (t.hidden, false) || any;
+
+    if (any)
+        engine.session.apply (std::move (next), "Show All Tracks");
+
+    return any;
 }
 
 juce::uint32 MultitrackView::duplicateSelectedTrack()

@@ -1170,6 +1170,68 @@ void runMultitrackViewTests (AudioEngine& engine)
                "duplicate track: from the view as one undo step, with the copy selected");
     }
 
+    // Hidden tracks: left out of the lanes, the rest closing up, and shown again.
+    {
+        SessionState three;
+        three.sampleRate = rate;
+
+        for (auto trackName : { "A", "B", "C" })
+            three.addTrack().name = trackName;
+
+        std::vector<juce::uint32> clipIds;
+
+        for (int t = 0; t < 3; ++t)
+            clipIds.push_back (SessionEdits::addClip (three, t, juce::File ("/tmp/hide.wav"), silence (96000), 0));
+
+        engine.session.reset (three, {});
+        view.zoomToRange ({ 0, 96000 });
+        Mouse::settle();
+        const auto hideFrames = view.getVisibleFrames();
+        const auto hideX = (float) MultitrackView::headerWidth + (float) ((48000.0 - hideFrames.getStart()) / (hideFrames.getLength() / timelineWidth));
+        const auto rowY = [] (int row) { return (float) (MultitrackView::rulerHeight + row * MultitrackView::trackHeight + 60); };
+        const auto shownHeaders = [&]
+        {
+            auto count = 0;
+
+            for (auto* area : view.getChildren())
+                for (auto* child : area->getChildren())
+                    count += child->getNumChildComponents() > 3 && child->isVisible() ? 1 : 0;
+
+            return count;
+        };
+
+        mouse.click ({ hideX, rowY (1) });
+        const auto bId = engine.session.getState()->tracks[1].id;
+        const auto pickedB = view.getSelectedClip() == clipIds[1];
+        view.setTrackHidden (bId, true);
+        Mouse::settle();
+        const auto hiddenStep = engine.session.getUndoDescription() == "Hide Track" && view.getSelectedClips().empty() && shownHeaders() == 2;
+        mouse.click ({ hideX, rowY (1) });
+        check (pickedB && hiddenStep && view.getSelectedClip() == clipIds[2] && view.getSelectedTrack() == 2,
+               "hiding: a hidden track leaves the lanes and the selection, and the track below takes its row");
+
+        view.showClip (clipIds[1]);
+        Mouse::settle();
+        const auto backByClip = ! engine.session.getState()->tracks[1].hidden && view.getSelectedClip() == clipIds[1] && shownHeaders() == 3;
+        view.setTrackHidden (bId, true);
+        view.setTrackHidden (engine.session.getState()->tracks[0].id, true);
+        Mouse::settle();
+        const auto allShown = view.showAllTracks() && engine.session.getUndoDescription() == "Show All Tracks" && ! view.showAllTracks();
+        Mouse::settle();
+        check (backByClip && allShown && shownHeaders() == 3,
+               "hiding: going to a hidden track's clip shows the track again, and Show All Tracks shows them all as one undo step");
+
+        SessionState bare;
+        bare.addTrack().hidden = true;
+        bare.addTrack();
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (bare, file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        file.deleteFile();
+        check (error.isEmpty() && loaded.state.tracks.size() == 2 && loaded.state.tracks[0].hidden && ! loaded.state.tracks[1].hidden,
+               "hiding: session files keep which tracks are hidden");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

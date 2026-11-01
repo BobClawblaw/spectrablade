@@ -1060,6 +1060,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.colour >= 0)
             track->setAttribute ("colour", t.colour);
 
+        if (t.hidden)
+            track->setAttribute ("hidden", true);
+
         if (! t.input.isDefault())
         {
             track->setAttribute ("inputFirst", t.input.first);
@@ -1197,6 +1200,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.solo = trackXml->getBoolAttribute ("solo");
         track.group = juce::jlimit (0, SessionTrack::maxGroups, trackXml->getIntAttribute ("group"));
         track.colour = juce::jlimit (-1, 7, trackXml->getIntAttribute ("colour", -1));
+        track.hidden = trackXml->getBoolAttribute ("hidden");
 
         if (const auto channels = trackXml->getIntAttribute ("inputChannels"); ! track.isBus && (channels == 1 || channels == 2))
             track.input = { juce::jmax (0, trackXml->getIntAttribute ("inputFirst")), channels };

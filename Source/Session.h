@@ -149,6 +149,7 @@ struct SessionTrack
     bool mute = false, solo = false;
     int group = 0;                         // 0 for none, or 1 to maxGroups: volume, mute and solo changes follow through it
     int colour = -1;                       // a place in TrackColours::palette, or -1 for one by its place in the list
+    bool hidden = false;                   // left out of the lanes (it still plays and shows in the mixer)
     TrackInput input;                      // what it records from (tracks only)
 
     static constexpr int maxGroups = 8;

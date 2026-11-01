@@ -200,6 +200,15 @@ void runBounceTests()
                "duplicate track: right after the source with its settings, sends, envelope and clips (unlocked, new ids), playing the same bit for bit");
     }
 
+    {
+        auto hidden = session (0.0f);
+
+        for (auto& t : hidden.tracks)
+            t.hidden = true;
+
+        check (identical (mix (hidden, { 0, 12000 }), mix (session (0.0f), { 0, 12000 })), "hiding: hidden tracks and buses still play, bit for bit");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");
