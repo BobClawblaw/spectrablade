@@ -58,6 +58,12 @@ namespace MarkerEdits
         many were turned. */
     int regionsFromPoints (Markers&, juce::int64 end);
 
+    /** The pieces a file of `end` frames splits into at its point markers, as regions: one from
+        each point marker to the next (or to end), named after it, and one named "Start" from frame
+        0 to the first when that is later than 0. Regions in the markers are ignored. Nothing when
+        there are no point markers before end. */
+    Markers piecesBetweenPoints (const Markers&, juce::int64 end);
+
     /** Names every marker and region, in time order, "<base> 01", "<base> 02", ... (three digits
         from 100 on). The base is trimmed; an empty one changes nothing and returns false. */
     bool renameInSequence (Markers&, const juce::String& base);

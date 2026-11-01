@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 149: Save Pieces Between Markers**
+- File > Save Pieces Between Markers As asks for a folder and splits the file at its point markers, saving each piece to a file of its own, named as Save Each Region As names them ("Take - 01 Intro.wav"): one piece from each marker to the next, or to the end, named after the marker, and a "Start" piece before the first marker when that is not at frame 0. Regions are ignored. It runs in the background like Save Each Region As and shares its code, and it is offered only when the file has a point marker.
+- Measured by the tests: markers at 100, 300, 700 and 1,000 (the end) with a region at 150 give Start 0+100, Intro 100+200, Verse 300+400 and Coda 700+300; a first marker at frame 0 gets no Start piece; only a region and a marker at the end give no pieces. The files themselves are written by the same code as Save Each Region As, which is tested; this command was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 148: Crop with Margins**
 - Edit > Crop with Margins asks for a time (half a second to start, remembered while the app runs) and crops the file to the selection plus that much audio either side, as far as the file goes, so a cut-out take keeps some room for fades. The markers are cropped with it, the selection stays on the same audio, and it is one undo step.
 - Measured by the tests: frames 1,000 to 2,000 with a 500-frame margin keep 500 to 2,500; a margin past either end of the file stops at the end; a negative margin adds nothing. The crop itself and its markers use the same code as Crop to Selection, already tested. The dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -901,6 +905,7 @@ The tests run against the real machine:
 - Fade selection edges: a fade in and a fade out at the ends, each at most half the range.
 - Audible range in a range: only the sound inside it, in document frames.
 - Crop margins: the range widened either side, kept inside the file.
+- Pieces between markers: the file split at its point markers, a Start piece before the first.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -954,4 +959,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Save Pieces Between Markers, each stretch from one marker to the next saved as its own file
+1. Editor: Delete Markers in Selection, removing only the markers and regions that start inside it

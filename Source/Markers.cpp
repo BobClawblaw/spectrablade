@@ -114,6 +114,27 @@ int regionsFromPoints (Markers& markers, juce::int64 end)
     return turned;
 }
 
+Markers piecesBetweenPoints (const Markers& markers, juce::int64 end)
+{
+    Markers pieces;
+
+    for (const auto& m : markers)
+        if (! m.isRegion() && m.start >= 0 && m.start < end)
+            pieces.push_back (m);
+
+    if (pieces.empty())
+        return {};
+
+    sort (pieces);
+
+    if (pieces.front().start > 0)
+        pieces.insert (pieces.begin(), Marker { 0, 0, "Start" });
+
+    regionsFromPoints (pieces, end);
+    pieces.erase (std::remove_if (pieces.begin(), pieces.end(), [] (const Marker& m) { return ! m.isRegion(); }), pieces.end());
+    return pieces;
+}
+
 bool renameInSequence (Markers& markers, const juce::String& base)
 {
     const auto trimmed = base.trim();

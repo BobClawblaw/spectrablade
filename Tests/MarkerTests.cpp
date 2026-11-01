@@ -111,6 +111,24 @@ namespace
                "markers: regions from markers run each point to the next and the last to the end, keeping names and colours ("
                    + made.joinIntoString (" ") + ")");
 
+        // Pieces between markers: a "Start" piece before the first point, each point to the next,
+        // regions and points at or past the end left out; none without points; no "Start" at frame 0.
+        const auto describePieces = [] (const Markers& pieces)
+        {
+            juce::StringArray out;
+
+            for (auto& m : pieces)
+                out.add (m.name + "@" + juce::String (m.start) + "+" + juce::String (m.length));
+
+            return out.joinIntoString (" ");
+        };
+        const auto pieces = describePieces (MarkerEdits::piecesBetweenPoints (
+            { { 700, 0, "Coda" }, { 100, 0, "Intro" }, { 150, 50, "Hit" }, { 300, 0, "Verse" }, { 1000, 0, "End" } }, 1000));
+        const auto fromZero = describePieces (MarkerEdits::piecesBetweenPoints ({ { 0, 0, "A" }, { 500, 0, "B" } }, 1000));
+        check (pieces == "Start@0+100 Intro@100+200 Verse@300+400 Coda@700+300" && fromZero == "A@0+500 B@500+500"
+                   && MarkerEdits::piecesBetweenPoints ({ { 150, 50, "Hit" }, { 1000, 0, "End" } }, 1000).empty(),
+               "markers: pieces between markers cover the file from the start, one per point, regions ignored (" + pieces + ")");
+
         // Renaming in sequence: time order, regions included, colours kept; an empty name refused.
         auto renamed = toRegions;
         juce::StringArray names;

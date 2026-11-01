@@ -72,8 +72,8 @@ private:
     void save();
     void saveAs (std::function<void (bool saved)> done = {});
     void saveSelectionAs();
-    void chooseFileRegionsFolder();
-    void saveFileRegions (const juce::File& folder);
+    void chooseFileRegionsFolder (bool betweenMarkers);
+    void saveFileRegions (const juce::File& folder, bool betweenMarkers);
 
     /** Asks for a file to save audio to and its sample format, then calls chosen with them, or with
         no file when the person cancels or picks a type that can't be written. */
