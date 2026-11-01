@@ -183,6 +183,7 @@ private:
 
     /** Writes the markers of the session (in multitrack mode) or the open file as CSV. */
     void chooseMarkersCsv();
+    void chooseClipsCsv();
     void toggleUndoHistory();
     void toggleNotes();
     void showPluginList();

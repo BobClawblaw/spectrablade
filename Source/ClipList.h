@@ -20,6 +20,14 @@ public:
 
     enum Column { track = 1, name, start, length, file, state };
 
+    /** Every clip as (track index, clip), in the list's order: by start, then by track. */
+    static std::vector<std::pair<int, const SessionClip*>> inOrder (const SessionState&);
+
+    /** Every clip as CSV (RFC 4180, with a header line), in the list's order: track, name, start,
+        end and length in seconds, the file's full path, locked and muted (yes or empty), then
+        start and length in frames. Fields holding a comma, quote or line break are quoted. */
+    static juce::String toCsv (const SessionState&);
+
     int getNumRows() override                           { return (int) rows.size(); }
     juce::String getText (int row, int column) const;
     juce::uint32 getClip (int row) const;

@@ -1266,6 +1266,28 @@ namespace
                "open recent: newest first, ten kept, reopening moves to the top, kept in the settings, gone files left off the menu, and cleared");
     }
 
+    void testClipsCsv()
+    {
+        SessionState s;
+        s.sampleRate = 48000.0;
+        s.addTrack().name = "Drums, room";
+        s.addTrack().name = "Bass";
+        SessionEdits::addClip (s, 0, juce::File ("/takes/kick.wav"), constant (1, 24000, 0.5f), 96000);
+        const auto quoted = SessionEdits::addClip (s, 1, juce::File ("/takes/riff \"A\".wav"), constant (1, 12000, 0.5f), 48000);
+        SessionEdits::addClip (s, 0, juce::File ("/takes/snare.wav"), constant (1, 6000, 0.5f), 48000);
+        SessionEdits::setClipLocked (s, quoted, true);
+        SessionEdits::setClipMuted (s, quoted, true);
+
+        const auto csv = ClipList::toCsv (s);
+        const juce::String expected ("Track,Name,Start (s),End (s),Length (s),File,Locked,Muted,Start (frames),Length (frames)\r\n"
+                                     "\"Drums, room\",snare,1.000000,1.125000,0.125000,/takes/snare.wav,,,48000,6000\r\n"
+                                     "Bass,\"riff \"\"A\"\"\",1.000000,1.250000,0.250000,\"/takes/riff \"\"A\"\".wav\",yes,yes,48000,12000\r\n"
+                                     "\"Drums, room\",kick,2.000000,2.500000,0.500000,/takes/kick.wav,,,96000,24000\r\n");
+        check (csv == expected && ClipList::toCsv ({}).upToFirstOccurrenceOf ("\r\n", false, false).startsWith ("Track,Name"),
+               "clip list as CSV: a header, clips in the list's order with seconds and frames, locked and muted, and fields quoted where needed"
+                   + juce::String (csv == expected ? "" : "\n" + csv));
+    }
+
     void testLoadReadout (AudioEngine& engine)
     {
         LoadReadout::Reading now { 0.123, 0 };
@@ -1330,4 +1352,5 @@ void runMixerTests (AudioEngine& engine)
     testSoloSafe (engine);
     testStripMenu (engine);
     testRecentFiles();
+    testClipsCsv();
 }

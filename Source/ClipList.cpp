@@ -30,45 +30,64 @@ ClipList::~ClipList()
     engine.session.removeChangeListener (this);
 }
 
+std::vector<std::pair<int, const SessionClip*>> ClipList::inOrder (const SessionState& s)
+{
+    std::vector<std::pair<int, const SessionClip*>> clips;
+
+    for (size_t t = 0; t < s.tracks.size(); ++t)
+        for (auto& c : s.tracks[t].clips)
+            clips.emplace_back ((int) t, &c);
+
+    std::stable_sort (clips.begin(), clips.end(), [] (auto& a, auto& b)
+    {
+        return std::tie (a.second->position, a.first) < std::tie (b.second->position, b.first);
+    });
+
+    return clips;
+}
+
+juce::String ClipList::toCsv (const SessionState& s)
+{
+    const auto field = [] (juce::String text)
+    {
+        return text.containsAnyOf (",\"\r\n") ? "\"" + text.replace ("\"", "\"\"") + "\"" : text;
+    };
+    const auto seconds = [&s] (juce::int64 frames) { return juce::String ((double) frames / s.sampleRate, 6); };
+    juce::String csv ("Track,Name,Start (s),End (s),Length (s),File,Locked,Muted,Start (frames),Length (frames)\r\n");
+
+    for (auto [t, c] : inOrder (s))
+        csv << field (s.tracks[(size_t) t].name) << "," << field (c->name) << "," << seconds (c->position) << "," << seconds (c->getEnd()) << ","
+            << seconds (c->length) << "," << field (c->source.getFullPathName()) << "," << (c->locked ? "yes" : "") << ","
+            << (c->muted ? "yes" : "") << "," << juce::String (c->position) << "," << juce::String (c->length) << "\r\n";
+
+    return csv;
+}
+
 void ClipList::rebuild()
 {
     const auto s = engine.session.getState();
     const auto wanted = search.getText().trim();
-    std::vector<std::tuple<juce::int64, int, Row>> found;
-
-    for (size_t t = 0; t < s->tracks.size(); ++t)
-    {
-        const auto& tr = s->tracks[t];
-
-        for (auto& c : tr.clips)
-        {
-            if (wanted.isNotEmpty() && ! c.name.containsIgnoreCase (wanted) && ! c.source.getFileName().containsIgnoreCase (wanted)
-                && ! tr.name.containsIgnoreCase (wanted))
-                continue;
-
-            juce::StringArray flags;
-
-            if (c.locked)
-                flags.add ("Locked");
-
-            if (c.muted)
-                flags.add ("Muted");
-
-            Row row { c.id, { tr.name, c.name, juce::String ((double) c.position / s->sampleRate, 3),
-                              juce::String ((double) c.length / s->sampleRate, 3), c.source.getFileName(), flags.joinIntoString (", ") } };
-            found.emplace_back (c.position, (int) t, std::move (row));
-        }
-    }
-
-    std::stable_sort (found.begin(), found.end(), [] (auto& a, auto& b)
-    {
-        return std::tie (std::get<0> (a), std::get<1> (a)) < std::tie (std::get<0> (b), std::get<1> (b));
-    });
-
     rows.clear();
 
-    for (auto& f : found)
-        rows.push_back (std::move (std::get<2> (f)));
+    for (auto [t, c] : inOrder (*s))
+    {
+        const auto& tr = s->tracks[(size_t) t];
+
+        if (wanted.isNotEmpty() && ! c->name.containsIgnoreCase (wanted) && ! c->source.getFileName().containsIgnoreCase (wanted)
+            && ! tr.name.containsIgnoreCase (wanted))
+            continue;
+
+        juce::StringArray flags;
+
+        if (c->locked)
+            flags.add ("Locked");
+
+        if (c->muted)
+            flags.add ("Muted");
+
+        rows.push_back ({ c->id, { tr.name, c->name, juce::String ((double) c->position / s->sampleRate, 3),
+                                   juce::String ((double) c->length / s->sampleRate, 3), c->source.getFileName(), flags.joinIntoString (", ") } });
+    }
 
     table.updateContent();
     timerCallback();
