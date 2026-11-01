@@ -129,6 +129,8 @@ private:
     void showFadeEdges();
     void showGainRamp();
     void showTremolo();
+    void showEcho();
+    int echoDelayMs = 250, echoFeedbackPercent = 40;
     double tremoloRateHz = 5.0;
     int tremoloDepthPercent = 50;
     void showPanRamp();

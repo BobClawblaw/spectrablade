@@ -52,6 +52,12 @@ namespace AudioEdits
         second from the first frame of [start, end). Nullptr for a rate that isn't positive, a depth
         outside 0 to 1, or a sample rate that isn't positive. */
     Snapshot tremolo (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, double rateHz, float depth);
+
+    /** An echo inside [start, end): each frame gets the output delayFrames earlier times feedback
+        added, so every repeat is feedback times quieter than the one before; nothing rings past the
+        range. Nullptr for a delay that isn't positive or a feedback outside 0 to maxEchoFeedback. */
+    Snapshot echo (const AudioSnapshot&, juce::int64 start, juce::int64 end, juce::int64 delayFrames, float feedback);
+    constexpr float maxEchoFeedback = 0.95f;
     Snapshot silence (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
     /** Puts frames of silence in at a frame, moving what follows later. frames must fit in an int. */

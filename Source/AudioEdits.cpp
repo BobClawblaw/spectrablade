@@ -226,6 +226,23 @@ Snapshot tremolo (const AudioSnapshot& s, juce::int64 start, juce::int64 end, do
     });
 }
 
+Snapshot echo (const AudioSnapshot& s, juce::int64 start, juce::int64 end, juce::int64 delayFrames, float feedback)
+{
+    if (delayFrames <= 0 || feedback < 0.0f || feedback > maxEchoFeedback)
+        return nullptr;
+
+    return processRange (s, start, end, [delayFrames, feedback] (juce::AudioBuffer<float>& b)
+    {
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        {
+            auto* x = b.getWritePointer (ch);
+
+            for (juce::int64 i = delayFrames; i < b.getNumSamples(); ++i)
+                x[i] += feedback * x[i - delayFrames];
+        }
+    });
+}
+
 Snapshot silence (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (auto& b) { b.clear(); });

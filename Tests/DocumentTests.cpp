@@ -511,6 +511,23 @@ namespace
                    && ! AudioEdits::tremolo (*rampSnap, 0, 1000, 44100.0, 0.0, 0.5f) && ! AudioEdits::tremolo (*rampSnap, 0, 1000, 44100.0, 5.0, 1.5f),
                "tremolo: a raised-cosine dip by the depth once a cycle from the range's start, the rest untouched; no rate or too deep refused");
 
+        juce::AudioBuffer<float> click (2, 1000);
+        click.clear();
+        click.setSample (0, 100, 1.0f);
+        click.setSample (1, 100, -0.5f);
+        click.setSample (0, 900, 1.0f);
+        const auto echoed = readAll (*AudioEdits::echo (*AudioEdits::fromBuffer (std::move (click)), 100, 450, 100, 0.5f));
+        auto echoRight = echoed.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && echoRight; ++i)
+        {
+            const auto repeat = i >= 100 && i < 450 && (i - 100) % 100 == 0 ? std::pow (0.5f, (float) ((i - 100) / 100)) : 0.0f;
+            echoRight = juce::exactlyEqual (echoed.getSample (0, i), i == 900 ? 1.0f : repeat) && juce::exactlyEqual (echoed.getSample (1, i), -0.5f * repeat);
+        }
+
+        check (echoRight && ! AudioEdits::echo (*rampSnap, 0, 1000, 0, 0.5f) && ! AudioEdits::echo (*rampSnap, 0, 1000, 10, AudioEdits::maxEchoFeedback + 0.01f),
+               "echo: repeats every delay, each half the last, on every channel, stopping at the range's end; no delay or too much feedback refused");
+
         const auto panned = readAll (*AudioEdits::balanceRamp (*twoSnap, 100, 121, -1.0f, 1.0f));
         const auto allLeft = readAll (*AudioEdits::balance (*twoSnap, 100, 121, -1.0f));
         const auto panMiddle = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 0.0f));
