@@ -651,6 +651,15 @@ namespace
             }
         }
 
+        for (size_t i = 0; i < s.markers.size(); ++i)
+        {
+            if ((int) i != targets.ignoreMarker)
+            {
+                consider (s.markers[i].start);
+                consider (s.markers[i].getEnd());
+            }
+        }
+
         if (targets.gridBeats > 0)
         {
             // The grid beats either side of the frame.
@@ -907,6 +916,16 @@ juce::String save (const SessionState& state, const juce::File& target,
         }
     }
 
+    for (auto& m : state.markers)
+    {
+        auto* marker = root.createNewChildElement ("MARKER");
+        marker->setAttribute ("name", m.name);
+        marker->setAttribute ("start", juce::String (m.start));
+
+        if (m.isRegion())
+            marker->setAttribute ("length", juce::String (m.length));
+    }
+
     juce::TemporaryFile temp (target);
 
     if (! root.writeTo (temp.getFile()))
@@ -1050,6 +1069,17 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             track.clips.push_back (std::move (clip));
         }
     }
+
+    for (auto* markerXml : root->getChildWithTagNameIterator ("MARKER"))
+    {
+        Marker m;
+        m.name = markerXml->getStringAttribute ("name");
+        m.start = juce::jmax ((juce::int64) 0, markerXml->getStringAttribute ("start").getLargeIntValue());
+        m.length = juce::jmax ((juce::int64) 0, markerXml->getStringAttribute ("length").getLargeIntValue());
+        state.markers.push_back (m);
+    }
+
+    MarkerEdits::sort (state.markers);
 
     // Indices to ids; sends to anything but a bus are dropped.
     const auto pending = state.tracks;

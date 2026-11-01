@@ -74,6 +74,19 @@ Markers afterCrop (const Markers& markers, juce::int64 start, juce::int64 end)
     return result;
 }
 
+std::optional<juce::int64> nextStop (const Markers& markers, juce::int64 from, bool forwards)
+{
+    std::optional<juce::int64> target;
+
+    for (const auto& m : markers)
+        for (auto frame : { m.start, m.getEnd() })
+            if (forwards ? frame > from && (! target || frame < *target)
+                         : frame < from && (! target || frame > *target))
+                target = frame;
+
+    return target;
+}
+
 juce::String nextName (const Markers& markers, bool region)
 {
     const juce::String base (region ? "Region " : "Marker ");

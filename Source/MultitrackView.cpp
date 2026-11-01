@@ -9,6 +9,8 @@ namespace
     const juce::Colour laneLine (0xff2a2f37);
     const juce::Colour cursorColour (0xffffd34d);
     const juce::Colour playColour (0xffffffff);
+    const juce::Colour markerColour (0xffff8a3d);
+    const juce::Colour regionColour (0xff58a6ff);
 
     constexpr int edgeGrab = 6;   // pixels from a clip's edge that trim instead of move
 
@@ -1502,7 +1504,8 @@ void MultitrackView::paint (juce::Graphics& g)
         }
     }
 
-    drawRuler (g, { area.getX(), 0, area.getWidth(), rulerHeight });
+    drawRuler (g, { area.getX(), 0, area.getWidth(), timeRulerHeight });
+    drawMarkers (g, area);
 
     if (! timeSelection.isEmpty())
     {
@@ -1511,14 +1514,182 @@ void MultitrackView::paint (juce::Graphics& g)
         g.setColour (cursorColour.withAlpha (0.35f));
 
         if (x1 > x0)
-            g.fillRect (juce::Rectangle<float> (x0, (float) rulerHeight - 5.0f, x1 - x0, 5.0f));
+            g.fillRect (juce::Rectangle<float> (x0, (float) timeRulerHeight - 5.0f, x1 - x0, 5.0f));
     }
     g.setColour (juce::Colour (0xff1b1e23));
     g.fillRect (0, 0, headerWidth, rulerHeight);
     g.setColour (juce::Colours::lightgrey);
     g.setFont (12.0f);
-    g.drawText (juce::String (s.sampleRate / 1000.0, 1) + " kHz session", juce::Rectangle<int> (8, 0, headerWidth - 8, rulerHeight),
+    g.drawText (juce::String (s.sampleRate / 1000.0, 1) + " kHz session", juce::Rectangle<int> (8, 0, headerWidth - 8, timeRulerHeight),
                 juce::Justification::centredLeft);
+}
+
+//==============================================================================
+int MultitrackView::markerAt (juce::Point<int> p) const
+{
+    if (p.x < headerWidth || p.y < timeRulerHeight || p.y >= rulerHeight)
+        return -1;
+
+    const auto& markers = shown().markers;
+    int best = -1;
+    auto bestDistance = 7.0f;
+
+    for (size_t i = 0; i < markers.size(); ++i)
+    {
+        const auto d = std::abs (xForFrame (markers[i].start) - (float) p.x);
+
+        if (! markers[i].isRegion() && d < bestDistance)
+        {
+            best = (int) i;
+            bestDistance = d;
+        }
+    }
+
+    if (best >= 0)
+        return best;
+
+    for (size_t i = 0; i < markers.size(); ++i)
+    {
+        const auto& m = markers[i];
+
+        if (m.isRegion() && (float) p.x >= xForFrame (m.start) - 3.0f && (float) p.x <= xForFrame (m.getEnd()) + 3.0f
+            && (best < 0 || m.length < markers[(size_t) best].length))
+            best = (int) i;
+    }
+
+    return best;
+}
+
+void MultitrackView::drawMarkers (juce::Graphics& g, juce::Rectangle<int> area) const
+{
+    const auto lane = juce::Rectangle<int> (area.getX(), timeRulerHeight, area.getWidth(), markerLaneHeight).toFloat();
+    g.setColour (juce::Colour (0xff181b20));
+    g.fillRect (lane);
+
+    g.saveState();
+    g.reduceClipRegion (area.getX(), 0, area.getWidth(), area.getBottom());
+    g.setFont (11.0f);
+    const auto& markers = shown().markers;
+    const auto top = lane.getBottom(), bottom = (float) area.getBottom();
+
+    for (size_t i = 0; i < markers.size(); ++i)
+    {
+        const auto& m = markers[i];
+        const auto x1 = xForFrame (m.start);
+        const auto active = drag == Drag::marker && (int) i == dragMarker;
+
+        if (m.isRegion())
+        {
+            const auto x2 = xForFrame (m.getEnd());
+
+            if (x2 < (float) area.getX() || x1 > (float) area.getRight())
+                continue;
+
+            const auto bar = juce::Rectangle<float> (x1, lane.getY() + 2.0f, juce::jmax (2.0f, x2 - x1), lane.getHeight() - 4.0f);
+            g.setColour (regionColour.withAlpha (active ? 0.75f : 0.45f));
+            g.fillRoundedRectangle (bar, 2.0f);
+            g.setColour (regionColour.withAlpha (0.45f));
+            g.drawVerticalLine ((int) x1, top, bottom);
+            g.drawVerticalLine ((int) x2, top, bottom);
+            g.setColour (juce::Colours::white);
+            g.drawText (m.name, bar.reduced (4.0f, 0.0f), juce::Justification::centredLeft, true);
+        }
+        else
+        {
+            if (x1 < (float) area.getX() - 100.0f || x1 > (float) area.getRight())
+                continue;
+
+            juce::Path flag;
+            flag.addTriangle (x1, lane.getY() + 2.0f, x1 + 7.0f, lane.getCentreY(), x1, lane.getBottom() - 2.0f);
+            g.setColour (active ? markerColour.brighter (0.4f) : markerColour);
+            g.fillPath (flag);
+            g.setColour (markerColour.withAlpha (0.55f));
+            g.drawVerticalLine ((int) x1, top, bottom);
+            g.setColour (juce::Colours::white);
+            g.drawText (m.name, juce::Rectangle<float> (x1 + 9.0f, lane.getY(), 120.0f, lane.getHeight()), juce::Justification::centredLeft, true);
+        }
+    }
+
+    g.restoreState();
+}
+
+void MultitrackView::addMarker()
+{
+    auto next = *engine.session.getState();
+    auto& player = engine.getPlayer();
+    Marker m;
+
+    // While the session plays (or records), what is playing; otherwise the time range or the cursor.
+    if (player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session)
+        m.start = juce::jmax ((juce::int64) 0, player.getPositionFrames());
+    else if (! timeSelection.isEmpty())
+        m = { timeSelection.getStart(), timeSelection.getLength(), {} };
+    else
+        m.start = cursor;
+
+    m.name = MarkerEdits::nextName (next.markers, m.isRegion());
+    next.markers.push_back (m);
+    MarkerEdits::sort (next.markers);
+    engine.session.apply (std::move (next), "Add " + m.name);
+}
+
+bool MultitrackView::goToMarker (bool forwards)
+{
+    const auto target = MarkerEdits::nextStop (engine.session.getState()->markers, cursor, forwards);
+
+    if (target)
+        setCursor (*target);
+
+    return target.has_value();
+}
+
+void MultitrackView::renameMarker (int index)
+{
+    const auto& markers = engine.session.getState()->markers;
+
+    if (! juce::isPositiveAndBelow (index, (int) markers.size()))
+        return;
+
+    const auto old = markers[(size_t) index];
+    auto* box = new juce::AlertWindow ("Rename", {}, juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("name", old.name);
+    box->addButton ("Rename", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, old] (int result)
+    {
+        const auto name = box->getTextEditorContents ("name").trim();
+
+        if (result != 1 || name.isEmpty() || name == old.name)
+            return;
+
+        // Found again by value: the markers may have changed while the box was open.
+        auto next = *engine.session.getState();
+
+        if (auto it = std::find (next.markers.begin(), next.markers.end(), old); it != next.markers.end())
+        {
+            it->name = name;
+            engine.session.apply (std::move (next), "Rename " + old.name);
+        }
+    }), true);
+}
+
+void MultitrackView::showMarkerMenu (int index)
+{
+    const auto old = engine.session.getState()->markers[(size_t) index];
+    juce::PopupMenu menu;
+    menu.addItem ("Rename...", [this, index] { renameMarker (index); });
+    menu.addItem ("Delete " + old.name, [this, old]
+    {
+        auto next = *engine.session.getState();
+
+        if (auto it = std::find (next.markers.begin(), next.markers.end(), old); it != next.markers.end())
+        {
+            next.markers.erase (it);
+            engine.session.apply (std::move (next), "Delete " + old.name);
+        }
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
 
 //==============================================================================
@@ -1699,6 +1870,32 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
     if (p.x < headerWidth)
         return;
 
+    if (p.y >= timeRulerHeight && p.y < rulerHeight)
+    {
+        if (const auto index = markerAt (p); index >= 0)
+        {
+            const auto m = shown().markers[(size_t) index];
+
+            if (e.mods.isPopupMenu())
+            {
+                showMarkerMenu (index);
+                return;
+            }
+
+            if (m.isRegion())
+                setTimeSelection ({ m.start, m.getEnd() });
+            else
+                setTimeSelection ({});
+
+            setCursor (m.start);
+            drag = Drag::marker;
+            dragMarker = index;
+            dragMarkerGrab = frameForX ((float) p.x) - m.start;
+            dragDescription = "Move " + m.name;
+            return;
+        }
+    }
+
     if (p.y < rulerHeight)
     {
         drag = Drag::range;
@@ -1841,6 +2038,27 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
             SessionEdits::setEnvelope (next, next.tracks[(size_t) dragEnvelope.track].id, dragEnvelope.parameter, std::move (envelope));
             break;
         }
+        case Drag::marker:
+        {
+            if (! juce::isPositiveAndBelow (dragMarker, (int) next.markers.size()))
+                break;
+
+            auto& m = next.markers[(size_t) dragMarker];
+            auto start = juce::jmax ((juce::int64) 0, frameForX ((float) p.x) - dragMarkerGrab);
+
+            if (snapping)
+            {
+                // Either edge of a region may snap; against the session as it was, without this marker.
+                auto targets = snapTargets (0, false);
+                targets.ignoreMarker = dragMarker;
+                start = juce::jmax ((juce::int64) 0, start + SessionSnap::snapSpan (*state, { start, start + m.length }, snapTolerance(), targets));
+            }
+
+            m.start = start;
+            setCursor (start);
+            setTimeSelection (m.isRegion() ? juce::Range<juce::int64> (start, m.getEnd()) : juce::Range<juce::int64>());
+            break;
+        }
         case Drag::none:
         case Drag::range:
             break;
@@ -1860,6 +2078,7 @@ void MultitrackView::mouseUp (const juce::MouseEvent&)
     {
         auto next = std::move (*preview);
         preview.reset();
+        MarkerEdits::sort (next.markers);
         engine.session.apply (std::move (next), dragDescription);
     }
 
@@ -1871,7 +2090,11 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
     auto cursorShape = juce::MouseCursor::NormalCursor;
     const auto p = e.getPosition();
 
-    if (const auto envelope = envelopeAt (p))
+    if (markerAt (p) >= 0)
+    {
+        cursorShape = juce::MouseCursor::DraggingHandCursor;
+    }
+    else if (const auto envelope = envelopeAt (p))
     {
         cursorShape = envelope->point >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::CrosshairCursor;
     }
@@ -1891,6 +2114,12 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
 void MultitrackView::mouseDoubleClick (const juce::MouseEvent& e)
 {
     const auto p = e.getPosition();
+
+    if (const auto index = markerAt (p); index >= 0)
+    {
+        renameMarker (index);
+        return;
+    }
 
     if (envelopeAt (p).has_value())
         return;

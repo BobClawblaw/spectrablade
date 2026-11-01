@@ -35,6 +35,9 @@ namespace MarkerEdits
         regions that overlap it, moved so start becomes frame 0. */
     Markers afterCrop (const Markers&, juce::int64 start, juce::int64 end);
 
+    /** The nearest marker start or region end after from (or before it, going backwards). */
+    std::optional<juce::int64> nextStop (const Markers&, juce::int64 from, bool forwards);
+
     /** A name not used yet: "Marker 01", "Region 01", ... */
     juce::String nextName (const Markers&, bool region);
 

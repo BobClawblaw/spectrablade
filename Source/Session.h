@@ -172,6 +172,7 @@ struct SessionState
     double tempo = 120.0;                  // beats a minute, for the metronome
     int beatsPerBar = 4;
     std::vector<SessionTrack> tracks;
+    Markers markers;                       // points and regions on the session's time, kept sorted
     juce::uint32 nextId = 1;
 
     /** The end of the last clip. */
@@ -272,6 +273,7 @@ namespace SessionSnap
     {
         std::vector<juce::int64> extra;
         juce::uint32 ignoreClip = 0;
+        int ignoreMarker = -1;             // the index of a marker being dragged
         juce::int64 gridStep = 0;
         int gridBeats = 0;
     };

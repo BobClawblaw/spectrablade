@@ -393,6 +393,103 @@ void runMultitrackViewTests (AudioEngine& engine)
                    + juce::String (inSeconds) + ")");
     }
 
+    // Markers on the session's time: added at the cursor and over the time range, gone to, clicked,
+    // dragged with snapping, snapped to, and saved.
+    {
+        SessionState marked;
+        marked.sampleRate = rate;
+        marked.addTrack();
+        SessionEdits::addClip (marked, 0, juce::File ("/tmp/marked.wav"), silence (96000), 48000);
+        const auto id = marked.tracks[0].clips[0].id;
+        engine.session.reset (marked, {});
+        view.setTimeSelection ({});
+        view.setCursor (200000);
+        Mouse::settle();
+
+        view.addMarker();
+        view.setTimeSelection ({ 300000, 360000 });
+        view.addMarker();
+        view.setTimeSelection ({});
+        Mouse::settle();
+        auto markers = engine.session.getState()->markers;
+        check (markers.size() == 2 && markers[0] == Marker { 200000, 0, "Marker 01" } && markers[1] == Marker { 300000, 60000, "Region 01" }
+                   && engine.session.getUndoDescription() == "Add Region 01",
+               "view: Add Marker marks the cursor, or makes a region of the time range, as undo steps");
+
+        view.setCursor (0);
+        std::vector<juce::int64> stops;
+
+        while (view.goToMarker (true))
+            stops.push_back (view.getCursor());
+
+        view.goToMarker (false);
+        check (stops == std::vector<juce::int64> { 200000, 300000, 360000 } && view.getCursor() == 300000,
+               "view: Next Marker stops at each marker and region edge, Previous Marker goes back");
+
+        const auto laneY = (float) MultitrackView::timeRulerHeight + (float) MultitrackView::markerLaneHeight * 0.5f;
+        view.setCursor (0);
+        mouse.click ({ x (200000) + 2.0f, laneY });
+        const auto clickedMarker = view.getCursor();
+        mouse.click ({ x (330000), laneY });
+        check (clickedMarker == 200000 && view.getCursor() == 300000 && view.getTimeSelection() == juce::Range<juce::int64> (300000, 360000)
+                   && engine.session.getUndoDescription() == "Add Region 01"
+                   && mouse.cursorAt ({ x (200000), laneY }) == juce::MouseCursor::DraggingHandCursor,
+               "view: clicking a marker moves the cursor to it, clicking a region selects it, and neither is an edit");
+
+        // Grabbed 2 px right of its flag and dropped 3 px past the clip's end: it snaps to the end.
+        view.setTimeSelection ({});
+        mouse.drag ({ x (200000) + 2.0f, laneY }, { x (144000) + 5.0f, laneY });
+        markers = engine.session.getState()->markers;
+        check (markers[0].start == 144000 && markers[0].name == "Marker 01" && markers[1].start == 300000 && view.getCursor() == 144000
+                   && engine.session.getUndoDescription() == "Move Marker 01",
+               "view: a dragged marker snaps to a clip's end, as an undo step (" + juce::String (markers[0].start) + ")");
+
+        // A clip moved so its start comes 3 px after the region's start snaps to it; without the
+        // markers it lands where it is dropped.
+        const auto clipGrab = juce::Point<float> (x (60000), bodyY);
+        const auto toRegion = x (300000) + 3.0f - x (48000);
+        mouse.drag (clipGrab, clipGrab.translated (toRegion, 0.0f));
+        const auto onRegion = clip (id).position;
+        engine.session.undo();
+        auto unmarked = *engine.session.getState();
+        unmarked.markers.clear();
+        engine.session.apply (std::move (unmarked), "Delete All Markers");
+        Mouse::settle();
+        mouse.drag (clipGrab, clipGrab.translated (toRegion, 0.0f));
+        const auto withoutMarkers = clip (id).position;
+        check (onRegion == 300000 && withoutMarkers != 300000,
+               "view: a clip dragged near a region's start snaps to it (" + juce::String (onRegion) + "), and not without it ("
+                   + juce::String (withoutMarkers) + ")");
+        engine.session.undo();
+        engine.session.undo();
+        Mouse::settle();
+
+        // The marker being dragged is not a target for itself.
+        SessionState one;
+        one.markers = { { 1000, 0, "Marker 01" } };
+        SessionSnap::Targets targets, ignoring;
+        ignoring.ignoreMarker = 0;
+        check (SessionSnap::snap (one, 1003, 10, targets) == 1000 && SessionSnap::snap (one, 1003, 10, ignoring) == 1003
+                   && SessionSnap::snap (one, 1100, 10, targets) == 1100,
+               "snapping: markers are targets, except the one being dragged");
+
+        // Session files keep them, sorted, at their frames.
+        auto saved = *engine.session.getState();
+        saved.markers = { { 5000000000, 0, "Late" }, { 300000, 60000, "Chorus" }, { 300000, 0, "Drop" } };
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (saved, file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        file.deleteFile();
+        check (error.isEmpty() && loaded.state.markers == Markers { { 300000, 0, "Drop" }, { 300000, 60000, "Chorus" }, { 5000000000, 0, "Late" } },
+               "session files: markers and regions are saved and loaded, in order");
+
+        check (MarkerEdits::nextStop ({ { 10, 5, "R" }, { 12, 0, "M" } }, 10, true) == 12
+                   && MarkerEdits::nextStop ({ { 10, 5, "R" }, { 12, 0, "M" } }, 12, true) == 15
+                   && ! MarkerEdits::nextStop ({ { 10, 5, "R" } }, 15, true).has_value()
+                   && MarkerEdits::nextStop ({ { 10, 5, "R" } }, 15, false) == 10,
+               "markers: the next stop is the nearest marker or region edge in that direction");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

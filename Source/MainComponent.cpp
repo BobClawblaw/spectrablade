@@ -829,6 +829,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasClips); break;
             case cmdShowWaveform: case cmdShowSpectrogram: case cmdShowBoth:
                             info.setTicked (false); break;
+            case cmdAddMarker: info.shortName = multitrack.getTimeSelection().isEmpty() ? "Add Marker" : "Add Region";
+                            info.setActive (true); break;
+            case cmdPreviousMarker: case cmdNextMarker: case cmdDeleteAllMarkers:
+                            info.setActive (! session.getState()->markers.empty()); break;
             default:        if (isEditorOnly (id)) info.setActive (false); break;
         }
     }
@@ -953,7 +957,18 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdClickRepair: askForClickRepair(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
-        case cmdDeleteAllMarkers: engine.document.setMarkers ({}, "Delete All Markers"); break;
+        case cmdDeleteAllMarkers:
+            if (multitrackMode)
+            {
+                auto next = *engine.session.getState();
+                next.markers.clear();
+                engine.session.apply (std::move (next), "Delete All Markers");
+            }
+            else
+            {
+                engine.document.setMarkers ({}, "Delete All Markers");
+            }
+            break;
         default:            return false;
     }
 
@@ -1508,7 +1523,9 @@ void MainComponent::mixDown (const juce::File& file, int bitDepth, juce::Range<j
             if (! OfflineRender::mixSession (*state, range, mix, inserts.get(), progress))
                 return false;
 
-            *error = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (mix)), rate, file, bitDepth, engine.formatManager);
+            // The session's markers go with it, where the format holds them.
+            *error = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (mix)), rate, file, bitDepth, engine.formatManager,
+                                        MarkerEdits::afterCrop (state->markers, range.getStart(), range.getEnd()));
             return true;
         },
         [error, warnings, file]
@@ -1775,6 +1792,12 @@ void MainComponent::applySpectral (float gainDb)
 
 void MainComponent::addMarker()
 {
+    if (multitrackMode)
+    {
+        multitrack.addMarker();
+        return;
+    }
+
     auto& doc = engine.document;
     auto& player = engine.getPlayer();
     const auto sel = waveform.getSelection();
@@ -1797,21 +1820,13 @@ void MainComponent::addMarker()
 
 void MainComponent::goToMarker (bool forwards)
 {
-    const auto& markers = engine.document.getMarkers();
-    const auto cursor = waveform.getCursor();
-    std::optional<juce::int64> target;
-
-    for (const auto& m : markers)
+    if (multitrackMode)
     {
-        for (auto frame : { m.start, m.isRegion() ? m.getEnd() : m.start })
-        {
-            if (forwards ? frame > cursor && (! target || frame < *target)
-                         : frame < cursor && (! target || frame > *target))
-                target = frame;
-        }
+        multitrack.goToMarker (forwards);
+        return;
     }
 
-    if (target)
+    if (const auto target = MarkerEdits::nextStop (engine.document.getMarkers(), waveform.getCursor(), forwards))
         waveform.setCursor (*target);
 }
 

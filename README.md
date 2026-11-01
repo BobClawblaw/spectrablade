@@ -6,6 +6,13 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 26: markers in sessions**
+- Sessions have markers and regions, as files do, shown in a lane under the multitrack ruler with a line down through the tracks. The Markers menu works on the session while it is showing: Add Marker (M) marks the play position while playing or recording, otherwise the cursor, or makes a region of the time range; Previous and Next Marker (Option Left and Right) move the cursor to the nearest marker or region edge; Delete All Markers removes them. Adding and deleting are undo steps.
+- In the lane, click a marker to move the cursor to it, or a region to select its range; drag one to move it; double-click to rename it; right-click to rename or delete it.
+- With snapping on, markers and both ends of regions are snap targets for anything dragged, and a dragged marker or region snaps to clip edges, the other markers and the ruler's marks.
+- Markers are saved in the session file, and a mixdown to WAV carries the markers and regions inside the mixed range as cue points (AIFF keeps the points).
+- Measured by the tests, through the real view: Add Marker at the cursor and over a time range, as undo steps; Next and Previous Marker stopping at each marker and region edge; clicking a marker and a region; a marker dragged to 3 pixels past a clip's end landing on it as "Move Marker 01"; a clip dragged near a region's start snapping to it, and not once the markers are gone; the marker being dragged not snapping to itself; markers in session files. Not checked by the tests: the markers in a mixdown (the app does it with the tested crop and file code, but the mixdown command itself is not run by the tests), renaming and the right-click menu; none of it was tried by hand.
+
 **Milestone 25: a mixer window**
 - Multitrack > Mixer (Cmd Shift M) opens a window with a strip for each track and bus, in the session's order: its name, pan, mute and solo, a volume fader (-60 to +12 dB, double-click for 0 dB) with its level in dB, and a meter. A master strip on the right meters what goes to the outputs, after the effects rack. With many tracks the strips scroll sideways.
 - The strips edit the session just as the track headers do: each change is an undo step ("Track Volume", "Track Pan", "Mute", "Solo"), a fader's drag one step, and undo, redo or an edit elsewhere shows on the strips at once. A track or bus with a volume or pan envelope follows it as the session plays, and its fader or pan can't be moved here.
@@ -237,6 +244,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- Session markers: adding, going to, clicking and dragging them in the view, snapping to and with them, and session files.
 - The mixer window: track and bus peaks measured as the session mixes, and the strips editing the session (volume, pan, mute, solo, undo, automated tracks, meters).
 - The metronome: the beat grid and click, clicks through the real player (on, during a count-in, through a loop, at another device rate) bit for bit, snapping to beats and bars, and the tempo in session files.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
@@ -280,4 +288,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: markers in sessions, to jump to and to snap to
+1. Multitrack, continued: normalizing a clip and a clip gain handle, to set its level by dragging

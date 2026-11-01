@@ -10,11 +10,15 @@
     timeline to select a time range; drop audio files to add them as clips. A track's R button
     arms it for recording.
 
+    Under the ruler, the marker lane shows the session's markers and regions: click one to move
+    the cursor to it (a region selects its range), drag it to move it, double-click it to rename
+    it, right-click it to rename or delete it.
+
     A track's A button shows its volume or pan envelope, or one for a parameter of its effects,
     over its lane: click the line to add a point, drag points to move them, Option-click one to
     delete it.
 
-    With snapping on, whatever is dragged lines up with clip edges, the cursor, the time range
+    With snapping on, whatever is dragged lines up with clip edges, markers, the cursor, the time range
     and the ruler's marks (seconds, or bars and beats) when it comes within a few pixels of one. With crossfading on, a clip
     moved or trimmed so that it partly overlaps another on its track crossfades with it. */
 class MultitrackView final : public juce::Component,
@@ -54,6 +58,14 @@ public:
     /** Shows the takes under way: the part of the session they cover on the armed tracks (or a
         new track below the last), empty when nothing is recording. */
     void showRecording (juce::Range<juce::int64>);
+
+    /** Adds a marker where the session is playing, or else a region over the time range or a
+        marker at the cursor, as an undo step. */
+    void addMarker();
+
+    /** Moves the cursor to the nearest marker or region edge after it (or before it). Returns
+        false when there is none. */
+    bool goToMarker (bool forwards);
 
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;
@@ -122,13 +134,14 @@ public:
     bool isInterestedInFileDrag (const juce::StringArray&) override;
     void filesDropped (const juce::StringArray&, int x, int y) override;
 
-    static constexpr int headerWidth = 220, rulerHeight = 24, trackHeight = 104;
+    static constexpr int headerWidth = 220, timeRulerHeight = 24, markerLaneHeight = 16,
+                         rulerHeight = timeRulerHeight + markerLaneHeight, trackHeight = 104;
 
 private:
     class TrackHeader;
     class SendsPanel;
 
-    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint };
+    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker };
 
     /** A point of a shown envelope, or a place on its line. */
     struct EnvelopeHit
@@ -187,6 +200,13 @@ private:
     juce::int64 snapTolerance() const;
 
     void drawRuler (juce::Graphics&, juce::Rectangle<int>) const;
+
+    /** The marker (or region) under p in the marker lane, or -1. Point markers win, then the
+        shortest region, so nested regions stay reachable. */
+    int markerAt (juce::Point<int>) const;
+    void drawMarkers (juce::Graphics&, juce::Rectangle<int> area) const;
+    void renameMarker (int index);
+    void showMarkerMenu (int index);
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;
     void selectTrack (int track);
     void showInputMenu (juce::uint32 trackId, juce::Component& target);
@@ -212,6 +232,8 @@ private:
     Drag drag = Drag::none;
     juce::int64 dragFrame = 0;             // frame under the mouse when the drag began (or the range's anchor)
     SessionClip dragClip;                  // the clip as it was
+    int dragMarker = -1;                   // the marker being dragged, and the frames from its start to the mouse
+    juce::int64 dragMarkerGrab = 0;
     int dragTrack = 0;
     EnvelopeHit dragEnvelope;              // the point being dragged
     Envelope dragEnvelopeBase;             // its envelope, with the point, as the drag began
