@@ -92,6 +92,10 @@ namespace AudioEdits
         its two ends (half of keepFrames each side, the odd frame after); in order. */
     std::vector<juce::Range<juce::int64>> pauseCuts (const std::vector<juce::Range<juce::int64>>& pauses, juce::int64 keepFrames);
 
+    /** A selection moved later (or earlier) by its own length, stopping at the file's start or end
+        with its length kept; the same range when it is empty or already there. */
+    juce::Range<juce::int64> stepSelection (juce::Range<juce::int64>, juce::int64 total, bool later);
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

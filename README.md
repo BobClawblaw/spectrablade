@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 133: Step Selection**
+- Edit > Step Selection Later (Alt Shift Right) and Step Selection Earlier (Alt Shift Left) move the editor's selection by its own length, so a file can be heard or edited one same-sized stretch after another, and scroll to it. At the start or end of the file the selection stops there with its length kept.
+- Measured by the tests: a 200-frame selection at 100 in a 1,000-frame file steps to 300 and back to 0, one at 700 stops at 800 to 1,000 and stays there, and an empty selection doesn't move. The keys and the commands were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 132: Copy Selection Time**
 - Edit > Copy Selection Time puts the selection's (or the session's time range's) start, end and length on the clipboard as one line of text, tab-separated, each written as Go to Time reads it ("1:23.500", with hours from an hour on), ready to paste into a spreadsheet or a note.
 - Measured by the tests: 1.5 to 3.5 seconds at 48 kHz is written "0:01.500", "0:03.500" and "0:02.000"; an hour and a bit reads "1:02:05.001" and ten minutes "10:00.000"; a written time read back by Go to Time is the same frame. The clipboard itself was not written by the tests (they would overwrite the person's clipboard), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -821,6 +825,7 @@ The tests run against the real machine:
 - Marker list count and buttons: counts with the search, Delete for the highlighted marker only.
 - Clip list count line: clips, locked and muted, and the shown clips' total length.
 - Copy selection time: start, end and length as text Go to Time reads back.
+- Step selection: by its own length, stopping at the ends.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -874,4 +879,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Nudge Selection, moving the selection earlier or later by a set step with the arrow keys
+1. Editor: Double and Halve Selection, changing the selection's length from its start

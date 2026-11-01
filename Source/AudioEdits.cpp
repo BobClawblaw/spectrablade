@@ -544,4 +544,13 @@ int fitRegionsToSound (const AudioSnapshot& s, Markers& markers, float threshold
     MarkerEdits::sort (markers);
     return changed;
 }
+
+juce::Range<juce::int64> stepSelection (juce::Range<juce::int64> range, juce::int64 total, bool later)
+{
+    if (range.isEmpty() || range.getLength() > total)
+        return range;
+
+    const auto start = juce::jlimit ((juce::int64) 0, total - range.getLength(), range.getStart() + (later ? range.getLength() : -range.getLength()));
+    return range.movedToStartAt (start);
+}
 }

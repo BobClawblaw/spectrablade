@@ -273,6 +273,12 @@ namespace
                    && ! AudioEdits::nextClipping (*clippedSnap, 140000, 0.999f, 3) && AudioEdits::nextClipping (*clippedSnap, 0, 0.999f, 2) == juce::Range<juce::int64> (1000, 1002),
                "find clipping: runs of the length or longer, on any channel, across a block edge and at the end; shorter ones skipped");
 
+        using R = juce::Range<juce::int64>;
+        check (AudioEdits::stepSelection ({ 100, 300 }, 1000, true) == R (300, 500) && AudioEdits::stepSelection ({ 100, 300 }, 1000, false) == R (0, 200)
+                   && AudioEdits::stepSelection ({ 700, 900 }, 1000, true) == R (800, 1000) && AudioEdits::stepSelection ({ 800, 1000 }, 1000, true) == R (800, 1000)
+                   && AudioEdits::stepSelection ({ 5, 5 }, 1000, true) == R (5, 5),
+               "step selection: by its own length, stopping at the ends with its length kept; an empty one stays");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);
