@@ -1264,6 +1264,36 @@ void runMultitrackViewTests (AudioEngine& engine)
                "selecting: all clips, a track's clips and the clips after the cursor, none of them on a hidden track");
     }
 
+    // Moving the selected clips to the cursor, keeping their spacing.
+    {
+        SessionState spaced;
+        spaced.sampleRate = rate;
+        spaced.addTrack();
+        spaced.addTrack();
+        const auto upper = SessionEdits::addClip (spaced, 0, juce::File ("/tmp/upper.wav"), silence (8000), 10000);
+        const auto lower = SessionEdits::addClip (spaced, 1, juce::File ("/tmp/lower.wav"), silence (8000), 30000);
+        engine.session.reset (spaced, {});
+        Mouse::settle();
+        const auto at = [&] (juce::uint32 id)
+        {
+            const auto where = engine.session.getState()->findClip (id);
+            return std::pair (where->first, engine.session.getState()->tracks[(size_t) where->first].clips[(size_t) where->second].position);
+        };
+
+        view.selectAllClips();
+        view.setCursor (50000);
+        const auto moved = view.moveSelectedClipsToCursor() && at (upper) == std::pair (0, (juce::int64) 50000)
+                           && at (lower) == std::pair (1, (juce::int64) 70000) && engine.session.getUndoDescription() == "Move Clips to Cursor";
+        const auto again = ! view.moveSelectedClipsToCursor();
+        Mouse::settle();
+        view.setSelectedClipsLocked (true);
+        Mouse::settle();
+        view.setCursor (0);
+        const auto refused = ! view.moveSelectedClipsToCursor() && at (upper).second == 50000;
+        check (moved && again && refused,
+               "move to cursor: the selected clips move together, the earliest to the cursor, as one undo step; not when there already or locked");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

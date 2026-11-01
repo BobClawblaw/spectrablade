@@ -113,6 +113,10 @@ public:
 
     void splitSelectedClip();      // at the cursor
 
+    /** Moves the selected clips together, each on its own track, so that the earliest starts at
+        the cursor, as one undo step. False when there are none, one is locked, or they are there. */
+    bool moveSelectedClipsToCursor();
+
     /** True when there are selected clips and every one is locked. */
     bool areSelectedClipsLocked() const;
 
@@ -268,6 +272,7 @@ private:
     void timerCallback() override;
 
     const SessionState& shown() const             { return preview.has_value() ? *preview : *state; }
+    bool moveSelectedClips (juce::int64 delta, const juce::String& description, bool merge);
     void selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted);
     void setSelectedClipsFlag (bool (*set) (SessionState&, juce::uint32, bool), bool on, const juce::String& verb);
     void rebuildHeaders();

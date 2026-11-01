@@ -2471,27 +2471,51 @@ void MultitrackView::nudge (bool later)
         return;
     }
 
-    auto next = *engine.session.getState();
+    const auto current = engine.session.getState();
+    const auto& s = *current;
+    const auto primary = s.findClip (isClipSelected (selectedClip) ? selectedClip : ids.front());
+    const auto start = s.tracks[(size_t) primary->first].clips[(size_t) primary->second].position;
+    moveSelectedClips (gridStepFrom (start, later) - start, ids.size() > 1 ? "Nudge Clips" : "Nudge Clip", true);
+}
 
-    // The clips move together or not at all.
-    for (auto id : ids)
-        if (const auto where = next.findClip (id); next.tracks[(size_t) where->first].clips[(size_t) where->second].locked)
-            return;
-
-    const auto primary = next.findClip (isClipSelected (selectedClip) ? selectedClip : ids.front());
-    const auto start = next.tracks[(size_t) primary->first].clips[(size_t) primary->second].position;
-    auto earliest = start;
+bool MultitrackView::moveSelectedClipsToCursor()
+{
+    const auto ids = getSelectedClips();
+    const auto current = engine.session.getState();
+    const auto& s = *current;
+    auto earliest = std::numeric_limits<juce::int64>::max();
 
     for (auto id : ids)
     {
-        const auto where = next.findClip (id);
-        earliest = juce::jmin (earliest, next.tracks[(size_t) where->first].clips[(size_t) where->second].position);
+        const auto where = s.findClip (id);
+        earliest = juce::jmin (earliest, s.tracks[(size_t) where->first].clips[(size_t) where->second].position);
     }
 
-    const auto delta = juce::jmax (gridStepFrom (start, later) - start, -earliest);
+    return ! ids.empty() && moveSelectedClips (cursor - earliest, ids.size() > 1 ? "Move Clips to Cursor" : "Move Clip to Cursor", false);
+}
 
-    if (delta == 0)
-        return;
+bool MultitrackView::moveSelectedClips (juce::int64 delta, const juce::String& description, bool merge)
+{
+    const auto ids = getSelectedClips();
+    auto next = *engine.session.getState();
+    auto earliest = std::numeric_limits<juce::int64>::max();
+
+    // The clips move together or not at all, and none before the session's start.
+    for (auto id : ids)
+    {
+        const auto where = next.findClip (id);
+        const auto& c = next.tracks[(size_t) where->first].clips[(size_t) where->second];
+
+        if (c.locked)
+            return false;
+
+        earliest = juce::jmin (earliest, c.position);
+    }
+
+    delta = juce::jmax (delta, -earliest);
+
+    if (ids.empty() || delta == 0)
+        return false;
 
     for (auto id : ids)
     {
@@ -2499,7 +2523,8 @@ void MultitrackView::nudge (bool later)
         SessionEdits::moveClip (next, id, where->first, next.tracks[(size_t) where->first].clips[(size_t) where->second].position + delta);
     }
 
-    engine.session.apply (std::move (next), ids.size() > 1 ? juce::String ("Nudge Clips") : juce::String ("Nudge Clip"), true);
+    engine.session.apply (std::move (next), description, merge);
+    return true;
 }
 
 void MultitrackView::setTrackColour (juce::uint32 trackId, int colour)

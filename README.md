@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 48: moving clips to the cursor**
+- Multitrack > Move Clips to Cursor moves the selected clips together, each staying on its own track, so that the earliest starts at the cursor, as one undo step ("Move Clips to Cursor"). Nothing moves when one of them is locked or they are already there. Nudging now shares the same code.
+- Measured by the tests, through the real view: two clips on two tracks moved to the cursor keeping their 20000-frame spacing, as one undo step; nothing when already there or when locked; and the existing nudge tests still passing. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 47: selecting clips by track and by time**
 - Edit > Select Clips on Track selects every clip on the selected track; Edit > Select Clips After Cursor selects every clip that starts at or after the cursor, on every track. Select All Clips, and both of these, now leave out clips on hidden tracks.
 - Measured by the tests, through the real view, on three tracks of three clips with one track hidden: all clips, a clicked track's clips and the clips after the cursor, none from the hidden track. The menu items were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -364,6 +368,7 @@ The tests run against the real machine:
 - Hiding tracks: the lanes closing up, the selection, showing them again, the mix, and session files.
 - Notes: on clips through Clip Properties, on tracks, and in session files.
 - Selecting clips on a track and after the cursor, leaving out hidden tracks.
+- Moving the selected clips to the cursor, together, and not when locked.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -417,4 +422,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: moving the selected clips to the cursor (Multitrack > Move Clips to Cursor), keeping their spacing
+1. Multitrack, continued: closing the gaps between the clips on a track (Multitrack > Close Gaps), as one undo step
