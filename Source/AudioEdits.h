@@ -47,6 +47,11 @@ namespace AudioEdits
     /** A gain that moves evenly in decibels from fromDecibels at the first frame of [start, end) to
         toDecibels at the last. */
     Snapshot gainRamp (const AudioSnapshot&, juce::int64 start, juce::int64 end, float fromDecibels, float toDecibels);
+
+    /** A tremolo: the gain falls from 1 to 1 - depth and back, as a raised cosine, `rateHz` times a
+        second from the first frame of [start, end). Nullptr for a rate that isn't positive, a depth
+        outside 0 to 1, or a sample rate that isn't positive. */
+    Snapshot tremolo (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, double rateHz, float depth);
     Snapshot silence (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
     /** Puts frames of silence in at a frame, moving what follows later. frames must fit in an int. */

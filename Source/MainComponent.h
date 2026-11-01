@@ -128,6 +128,9 @@ private:
     void repairSelection();
     void showFadeEdges();
     void showGainRamp();
+    void showTremolo();
+    double tremoloRateHz = 5.0;
+    int tremoloDepthPercent = 50;
     void showPanRamp();
     void showStereoWidth();
     int stereoWidthPercent = 50;

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 158: Tremolo**
+- Effects > Tremolo asks for a rate (5 Hz to start, 0.1 to 50 Hz) and a depth (50 % to start), both remembered while the app runs, and makes the level dip by the depth and come back that many times a second, as a raised cosine starting at full level at the start of the selection (or the file). It applies to every channel alike, and it is one undo step.
+- Measured by the tests: at 441 Hz and 44.1 kHz (a 100-frame cycle) with a depth of 50 % over frames 200 to 600 of a ramp, each frame is the ramp times the raised-cosine gain to within 1e-5, with half the level at frame 250 and full level at frame 300, and every frame outside is bit for bit; a rate of 0 or a depth over 100 % is refused. How it sounds was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 157: Select Next Sound**
 - Edit > Select Next Sound selects the next stretch of sound between silences, at the level and time Find Next Silence last used (-60 dB and half a second to start), without asking. It starts after the next silence from the cursor or the end of the selection, so choosing it again steps through the takes one by one; from the very start of a file that begins with sound, it selects that first sound. It says so when no sound follows.
 - Measured by the tests: on the file with sounds at 100–300, 350–500 and 520–800, stepping from 0 gives 100–300, then 350–500, then 520–800, then none; from inside the first sound it gives the second; a ramp with no silence gives the whole file from 0 and nothing from frame 5. The menu item was not tried by hand. The whole suite passed, the default-device test included.
@@ -946,6 +950,7 @@ The tests run against the real machine:
 - Stereo width: the side scaled and the mid kept, only in the range.
 - Sounds between silences: each stretch of sound, short gaps not splitting, silent ends left out.
 - Next sound: the sound after the next silence, stepping on from each one's end.
+- Tremolo: a raised-cosine dip by the depth once a cycle, the rest untouched.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -999,4 +1004,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Tremolo, a gain that rises and falls at a chosen rate and depth across the selection
+1. Effects: Echo, delayed copies of the selection fed back into it, each quieter than the last

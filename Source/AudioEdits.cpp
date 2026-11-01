@@ -207,6 +207,25 @@ Snapshot gainRamp (const AudioSnapshot& s, juce::int64 start, juce::int64 end, f
     });
 }
 
+Snapshot tremolo (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, double rateHz, float depth)
+{
+    if (sampleRate <= 0.0 || rateHz <= 0.0 || depth < 0.0f || depth > 1.0f)
+        return nullptr;
+
+    const auto step = juce::MathConstants<double>::twoPi * rateHz / sampleRate;
+
+    return processRange (s, start, end, [step, depth] (juce::AudioBuffer<float>& b)
+    {
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const auto factor = 1.0f - depth * (float) (0.5 * (1.0 - std::cos (step * i)));
+
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                b.getWritePointer (ch)[i] *= factor;
+        }
+    });
+}
+
 Snapshot silence (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (auto& b) { b.clear(); });

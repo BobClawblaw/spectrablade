@@ -495,6 +495,22 @@ namespace
         check (rampRight && std::abs (ramped.getSample (0, 30) - 0.1f) < 1.0e-6f && std::abs (ramped.getSample (1, 20) - std::pow (10.0f, -0.5f)) < 1.0e-6f,
                "gain ramp: from 0 dB at the first frame to -20 dB at the last, even in decibels, on every channel; the rest untouched");
 
+        // 441 Hz at 44.1 kHz: a 100-frame cycle from frame 200, full at its start, 1 - depth halfway.
+        const auto trembled = readAll (*AudioEdits::tremolo (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (rampUp)), 200, 600, 44100.0, 441.0, 0.5f));
+        auto tremoloRight = trembled.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && tremoloRight; ++i)
+        {
+            const auto expected = i < 200 || i >= 600 ? 1.0f : 1.0f - 0.5f * 0.5f * (1.0f - std::cos (juce::MathConstants<float>::twoPi * (float) (i - 200) / 100.0f));
+            tremoloRight = i < 200 || i >= 600 ? juce::exactlyEqual (trembled.getSample (0, i), rampUp.getSample (0, i))
+                                               : std::abs (trembled.getSample (0, i) - expected * rampUp.getSample (0, i)) < 1.0e-5f;
+        }
+
+        check (tremoloRight && std::abs (trembled.getSample (0, 250) - 0.5f * rampUp.getSample (0, 250)) < 1.0e-5f
+                   && juce::exactlyEqual (trembled.getSample (0, 300), rampUp.getSample (0, 300))
+                   && ! AudioEdits::tremolo (*rampSnap, 0, 1000, 44100.0, 0.0, 0.5f) && ! AudioEdits::tremolo (*rampSnap, 0, 1000, 44100.0, 5.0, 1.5f),
+               "tremolo: a raised-cosine dip by the depth once a cycle from the range's start, the rest untouched; no rate or too deep refused");
+
         const auto panned = readAll (*AudioEdits::balanceRamp (*twoSnap, 100, 121, -1.0f, 1.0f));
         const auto allLeft = readAll (*AudioEdits::balance (*twoSnap, 100, 121, -1.0f));
         const auto panMiddle = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 0.0f));
