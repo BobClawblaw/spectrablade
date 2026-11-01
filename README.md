@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 120: Find Next Clipping**
+- Edit > Find Next Clipping selects the next run of three or more frames where some channel is at or above 0.999 (within 0.009 dB of full scale), searching from the cursor, or from the end of the selection so that choosing it again moves on, and scrolls to it. When there is none it says so. Pairs well with Click and Pop Repair or Gain on the found run.
+- Measured by the tests: in 140,000 frames, two full-scale samples are passed over; three on the right channel straddling the 65,536-frame block edge are found as exactly 65,535 to 65,538; searching from there finds four samples of 0.9995 ending the file; past the end finds nothing; and with a run length of two the first pair is found. The command was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 119: channel levels in Loudness Statistics**
 - The editor's Loudness Statistics window now also lists, for each channel ("Left" and "Right" for stereo), its sample peak and RMS level in dB and its DC offset as a percentage of full scale, over the same selection or whole file. They are summed in double precision, a block of 65,536 frames at a time; they are worked out on the message thread once the loudness measurement finishes, so a very long file adds a moment before the window shows.
 - Measured by the tests: over 70,000 frames, a square wave of 0.5 reads exactly 0.5 peak, 0.5 RMS and no offset, and a constant 0.25 exactly 0.25 for all three. The window's layout was not looked at, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -757,6 +761,7 @@ The tests run against the real machine:
 - Sorting the clip list: by length backwards, name and track order, rows still mapping to their clips.
 - Normalizing each channel apart: both peaks to the level, a silent channel left silent.
 - Channel levels: peak, RMS and DC offset per channel, exact across blocks.
+- Find clipping: runs on any channel, across a block edge and at the end; short ones skipped.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -810,4 +815,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Find Clipping, selecting the next run of samples at full scale after the cursor
+1. Editor: Find Silence, selecting the next stretch quieter than a level for at least a chosen time

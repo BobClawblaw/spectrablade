@@ -253,6 +253,26 @@ namespace
                    && juce::exactlyEqual (levels[1].mean, 0.25),
                "channel levels: peak, RMS and DC offset per channel, exact across blocks");
 
+        // Clipping: two full-scale samples are too few; three on the right channel, crossing a block
+        // edge, are found; searching from past them finds the run at the very end.
+        juce::AudioBuffer<float> clipped (2, 140000);
+        clipped.clear();
+        clipped.setSample (0, 1000, 1.0f);
+        clipped.setSample (0, 1001, -1.0f);
+
+        for (auto i : { 65535, 65536, 65537 })
+            clipped.setSample (1, i, -1.0f);
+
+        for (auto i : { 139996, 139997, 139998, 139999 })
+            clipped.setSample (0, i, 0.9995f);
+
+        const auto clippedSnap = AudioEdits::fromBuffer (std::move (clipped));
+        const auto firstRun = AudioEdits::nextClipping (*clippedSnap, 0, 0.999f, 3);
+        const auto lastRun = firstRun ? AudioEdits::nextClipping (*clippedSnap, firstRun->getEnd(), 0.999f, 3) : std::nullopt;
+        check (firstRun == juce::Range<juce::int64> (65535, 65538) && lastRun == juce::Range<juce::int64> (139996, 140000)
+                   && ! AudioEdits::nextClipping (*clippedSnap, 140000, 0.999f, 3) && AudioEdits::nextClipping (*clippedSnap, 0, 0.999f, 2) == juce::Range<juce::int64> (1000, 1002),
+               "find clipping: runs of the length or longer, on any channel, across a block edge and at the end; shorter ones skipped");
+
         // Balance: half right lowers the left by 3 dB, the right untouched.
         const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
         const auto halfRight = SessionMixer::panGains (0.5f, 2);

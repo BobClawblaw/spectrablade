@@ -113,6 +113,11 @@ private:
     void insertSilence (juce::int64 frames);
     void trimSilence (float thresholdDb);
     void selectAudibleSpan();
+    void findNextClipping();
+
+    /** What Find Next Clipping counts: samples within about 0.01 dB of full scale, three in a row. */
+    static constexpr float clipLevel = 0.999f;
+    static constexpr int clipRun = 3;
     void applyFade (bool out);
     void showBalance();
     void showSetSelection();

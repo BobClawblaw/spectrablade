@@ -72,6 +72,11 @@ namespace AudioEdits
     /** The levels of each channel over [start, end), summed in double precision a block at a time. */
     std::vector<ChannelLevels> channelLevels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
+    /** The first run of at least minRun frames at or after `from` where some channel is at or
+        above level (absolute), as [first, last + 1); nothing when there is none. A frame counts
+        when any channel reaches the level. */
+    std::optional<juce::Range<juce::int64>> nextClipping (const AudioSnapshot&, juce::int64 from, float level, int minRun);
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

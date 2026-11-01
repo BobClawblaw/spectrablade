@@ -413,4 +413,41 @@ std::vector<ChannelLevels> channelLevels (const AudioSnapshot& s, juce::int64 st
 
     return levels;
 }
+
+std::optional<juce::Range<juce::int64>> nextClipping (const AudioSnapshot& s, juce::int64 from, float level, int minRun)
+{
+    constexpr juce::int64 blockSize = 65536;
+    const auto total = s.getNumFrames();
+    juce::int64 runStart = -1;
+
+    for (auto start = juce::jmax ((juce::int64) 0, from); start < total; start += blockSize)
+    {
+        const auto block = readRange (s, start, juce::jmin (total, start + blockSize));
+
+        for (int i = 0; i < block.getNumSamples(); ++i)
+        {
+            auto loud = false;
+
+            for (int ch = 0; ch < block.getNumChannels() && ! loud; ++ch)
+                loud = std::abs (block.getSample (ch, i)) >= level;
+
+            const auto frame = start + i;
+
+            if (loud && runStart < 0)
+                runStart = frame;
+            else if (! loud && runStart >= 0)
+            {
+                if (frame - runStart >= minRun)
+                    return juce::Range<juce::int64> (runStart, frame);
+
+                runStart = -1;
+            }
+        }
+    }
+
+    if (runStart >= 0 && total - runStart >= minRun)
+        return juce::Range<juce::int64> (runStart, total);
+
+    return std::nullopt;
+}
 }
