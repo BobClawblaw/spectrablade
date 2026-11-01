@@ -237,6 +237,11 @@ namespace SessionEdits
         are left alone. False when it overlaps nothing that way. */
     bool crossfade (SessionState&, juce::uint32 clipId);
 
+    /** Places a copy of a clip (sharing its audio and takes) on a track at position, over what
+        was there, which is cleared as clearRange does. Onto a bus or past the last track, it goes
+        onto a new track. Returns the copy's id. */
+    juce::uint32 placeClip (SessionState&, int track, const SessionClip&, juce::int64 position);
+
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
         (or split in two) and lose their fade on the cut side. False when nothing was there. */
     bool clearRange (SessionState&, int track, juce::int64 start, juce::int64 end);

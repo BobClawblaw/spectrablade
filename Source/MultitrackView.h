@@ -76,6 +76,20 @@ public:
     void chooseTake (juce::uint32 clipId, int index);
 
     void deleteSelectedClip();
+
+    /** The selected clip, copied for pasting (its audio is shared, not duplicated). */
+    bool copySelectedClip();
+    bool cutSelectedClip();
+    bool canPaste() const;
+
+    /** Pastes the copied clip onto the selected track (or a new one) at the cursor, over what is
+        there, selects it and moves the cursor to its end, so pastes follow each other. */
+    void pasteClip();
+
+    /** Places a copy of the selected clip right after it on its track, over what is there, and
+        selects the copy. */
+    void duplicateSelectedClip();
+
     void splitSelectedClip();      // at the cursor
     void deleteSelectedTrack();
 
@@ -228,6 +242,8 @@ private:
     int scrollY = 0;
     juce::int64 cursor = 0;
     juce::uint32 selectedClip = 0, selectedTrackId = 0;
+    std::optional<SessionClip> copiedClip;
+    double copiedRate = 0.0;               // the session rate the copied clip was at
     std::set<juce::uint32> armed;
     bool showBars = false;
     juce::Range<juce::int64> timeSelection, recording;

@@ -1844,6 +1844,64 @@ void MultitrackView::deleteSelectedClip()
     }
 }
 
+bool MultitrackView::copySelectedClip()
+{
+    const auto current = engine.session.getState();
+    const auto where = current->findClip (selectedClip);
+
+    if (! where.has_value())
+        return false;
+
+    copiedClip = current->tracks[(size_t) where->first].clips[(size_t) where->second];
+    copiedRate = current->sampleRate;
+    return true;
+}
+
+bool MultitrackView::cutSelectedClip()
+{
+    auto next = *engine.session.getState();
+
+    if (! copySelectedClip() || ! SessionEdits::removeClip (next, selectedClip))
+        return false;
+
+    selectedClip = 0;
+    engine.session.apply (std::move (next), "Cut Clip");
+    return true;
+}
+
+bool MultitrackView::canPaste() const
+{
+    return copiedClip.has_value() && juce::exactlyEqual (copiedRate, engine.session.getState()->sampleRate);
+}
+
+void MultitrackView::pasteClip()
+{
+    if (! canPaste())
+        return;
+
+    auto next = *engine.session.getState();
+    const auto id = SessionEdits::placeClip (next, getSelectedTrack(), *copiedClip, cursor);
+    const auto where = next.findClip (id);
+    const auto end = next.tracks[(size_t) where->first].clips[(size_t) where->second].getEnd();
+    selectedClip = id;
+    selectedTrackId = next.tracks[(size_t) where->first].id;
+    engine.session.apply (std::move (next), "Paste Clip");
+    setCursor (end);
+}
+
+void MultitrackView::duplicateSelectedClip()
+{
+    auto next = *engine.session.getState();
+    const auto where = next.findClip (selectedClip);
+
+    if (! where.has_value())
+        return;
+
+    const auto clip = next.tracks[(size_t) where->first].clips[(size_t) where->second];
+    selectedClip = SessionEdits::placeClip (next, where->first, clip, clip.getEnd());
+    engine.session.apply (std::move (next), "Duplicate Clip");
+}
+
 void MultitrackView::splitSelectedClip()
 {
     auto next = *engine.session.getState();

@@ -555,6 +555,77 @@ void runMultitrackViewTests (AudioEngine& engine)
                    + juce::String (up, 2) + ", " + juce::String (down.gainDb, 2) + ")");
     }
 
+    // Copying, pasting and duplicating clips: copies share the audio, keep gain and fades, and
+    // replace what was under them.
+    {
+        SessionState copying;
+        copying.sampleRate = rate;
+        copying.addTrack();
+        copying.addTrack();
+        const auto a = SessionEdits::addClip (copying, 0, juce::File ("/tmp/a.wav"), silence (96000), 48000);
+        SessionEdits::addClip (copying, 1, juce::File ("/tmp/long.wav"), silence (200000), 0);
+        SessionEdits::setClipGain (copying, a, 3.0f);
+        SessionEdits::setClipFades (copying, a, 1000, 2000);
+        engine.session.reset (copying, {});
+        view.setTimeSelection ({});
+        Mouse::settle();
+        const auto laneY = [] (int lane) { return (float) (MultitrackView::rulerHeight + lane * MultitrackView::trackHeight) + 60.0f; };
+        const auto same = [] (const SessionClip& c, const SessionClip& o)
+        {
+            return c.audio == o.audio && c.offset == o.offset && c.length == o.length && juce::exactlyEqual (c.gainDb, o.gainDb)
+                && c.fadeIn == o.fadeIn && c.fadeOut == o.fadeOut && c.name == o.name;
+        };
+
+        mouse.click ({ x (100000), laneY (0) });
+        const auto original = engine.session.getState()->tracks[0].clips[0];
+        view.duplicateSelectedClip();
+        Mouse::settle();
+        auto st = engine.session.getState();
+        check (view.getSelectedClip() != a && st->tracks[0].clips.size() == 2 && st->tracks[0].clips[1].position == 144000
+                   && st->tracks[0].clips[1].id == view.getSelectedClip() && same (st->tracks[0].clips[1], original)
+                   && engine.session.getUndoDescription() == "Duplicate Clip",
+               "clips: Duplicate places a copy right after the clip, sharing its audio, gain and fades, and selects it");
+
+        // Copy A, then paste it twice onto the second track from 50000: the long clip is cut
+        // around the first paste, and the second takes the rest.
+        mouse.click ({ x (100000), laneY (0) });
+        const auto copied = view.copySelectedClip();
+        mouse.click ({ x (20000), laneY (1) });
+        view.setCursor (50000);
+        view.pasteClip();
+        Mouse::settle();
+        st = engine.session.getState();
+        const auto firstCursor = view.getCursor();
+        const auto& t1 = st->tracks[1].clips;
+        const auto pastedOk = t1.size() == 3 && t1[0].position == 0 && t1[0].length == 50000 && t1[1].position == 146000
+                              && t1[1].getEnd() == 200000 && t1[2].position == 50000 && same (t1[2], original)
+                              && t1[2].id == view.getSelectedClip() && engine.session.getUndoDescription() == "Paste Clip";
+        view.pasteClip();
+        Mouse::settle();
+        st = engine.session.getState();
+        const auto& again = st->tracks[1].clips;
+        check (copied && pastedOk && firstCursor == 146000 && again.size() == 3 && again[0].getEnd() == 50000
+                   && again[1].position == 50000 && again[2].position == 146000 && view.getCursor() == 242000,
+               "clips: Paste puts the copy at the cursor on the selected track over what is there, and the next paste follows it");
+
+        view.cutSelectedClip();
+        Mouse::settle();
+        st = engine.session.getState();
+        const auto cutOk = st->tracks[1].clips.size() == 2 && engine.session.getUndoDescription() == "Cut Clip" && view.getSelectedClip() == 0
+                           && view.canPaste();
+        auto otherRate = copying;
+        otherRate.sampleRate = 44100.0;
+        engine.session.reset (otherRate, {});
+        Mouse::settle();
+        check (cutOk && ! view.canPaste(), "clips: Cut removes the clip and keeps it to paste, but not into a session at another rate");
+
+        auto withBus = copying;
+        withBus.addBus();
+        const auto onBus = SessionEdits::placeClip (withBus, 2, original, 0);
+        check (withBus.tracks.size() == 4 && withBus.tracks[3].clips.size() == 1 && withBus.tracks[3].clips[0].id == onBus && withBus.tracks[2].clips.empty(),
+               "clips: a clip placed on a bus goes onto a new track");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

@@ -443,6 +443,22 @@ bool setClipFades (SessionState& s, juce::uint32 clipId, juce::int64 fadeIn, juc
     return true;
 }
 
+juce::uint32 placeClip (SessionState& s, int track, const SessionClip& clip, juce::int64 position)
+{
+    if (track < 0 || track >= (int) s.tracks.size() || s.tracks[(size_t) track].isBus)
+    {
+        s.addTrack();
+        track = (int) s.tracks.size() - 1;
+    }
+
+    auto copy = clip;
+    copy.id = s.nextId++;
+    copy.position = juce::jmax ((juce::int64) 0, position);
+    clearRange (s, track, copy.position, copy.getEnd());
+    s.tracks[(size_t) track].clips.push_back (std::move (copy));
+    return s.tracks[(size_t) track].clips.back().id;
+}
+
 bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || end <= start)

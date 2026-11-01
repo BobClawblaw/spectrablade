@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 28: copying, pasting and duplicating clips**
+- While the session is showing, Edit > Cut, Copy and Paste (Cmd X, C, V) work on clips: copy the selected clip, click a track, place the cursor and paste. The copy goes over what is on the track there, which is cut around it as for a punch-in; it is selected and the cursor moves to its end, so pasting again lays copies end to end. Pasting onto a bus, or with no track selected, makes a new track.
+- Multitrack > Duplicate Clip (Cmd D) places a copy right after the selected clip on its track and selects it, so pressing it again makes a row.
+- Copies share the clip's audio (nothing is written to disk) and keep its trim, gain, fades and takes. Each paste, cut and duplicate is an undo step. A clip copied from a session can't be pasted into one at another sample rate.
+- Measured by the tests, through the real view: duplicating a clip with gain and fades, pasting twice onto a track holding one long clip (cut around the first copy, the rest taken by the second, the cursor following), cutting, the other-rate rule, and a clip placed on a bus going to a new track. The menu commands themselves were not run by the tests, and none of it was tried by hand.
+
 **Milestone 27: clip gain**
 - Command-drag a clip up or down to change its gain, 0.25 dB a pixel in steps of 0.1 dB, from -60 to +24 dB; the clip stays where it is. The waveform follows the gain, and a clip's title shows it when it isn't 0 dB ("+3.5 dB"). Each drag is one undo step ("Clip Gain").
 - While the session is showing, the Effects menu's first two items work on the selected clip: Clip Gain... types in its gain, and Normalize Clip... sets the gain so that the loudest sample of the part the clip plays reaches a peak level (-0.1 dBFS unless you change it). Neither touches the clip's file.
@@ -249,6 +255,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- Copying, pasting and duplicating clips through the view, over what was on the track.
 - Clip gain: normalizing against a brute-force peak, its limits, and Command-dragging a clip in the view.
 - Session markers: adding, going to, clicking and dragging them in the view, snapping to and with them, and session files.
 - The mixer window: track and bus peaks measured as the session mixes, and the strips editing the session (volume, pan, mute, solo, undo, automated tracks, meters).
@@ -294,4 +301,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: duplicating clips and copying and pasting them between tracks
+1. Multitrack, continued: selecting several clips at once, to move, copy and delete them together

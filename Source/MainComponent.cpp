@@ -41,7 +41,8 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, cmdMixer
+        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, cmdMixer,
+        cmdDuplicateClip
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -661,7 +662,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdMixer; ++id)
+    for (int id = cmdOpen; id <= cmdDuplicateClip; ++id)
         ids.add (id);
 }
 
@@ -763,6 +764,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
         case cmdMixer:      info.setInfo ("Mixer", "A window with a strip for each track and bus, and the master meter", "Multitrack", 0);
                             info.addDefaultKeypress ('m', cmd | shift); info.setTicked (mixerWindow != nullptr); break;
+        case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip right after it", "Multitrack", 0);
+                            info.addDefaultKeypress ('d', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
                             info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
         case cmdTempo:      info.setInfo ("Tempo...", "The session's tempo and beats in a bar", "Multitrack", 0);
@@ -825,6 +828,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
             case cmdRedo:   info.shortName = session.canRedo() ? "Redo " + session.getRedoDescription() : juce::String ("Redo");
                             info.setActive (session.canRedo()); break;
             case cmdDelete: info.shortName = "Delete Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdCut:    info.shortName = "Cut Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdCopy:   info.shortName = "Copy Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdPaste:  info.shortName = "Paste Clip"; info.setActive (multitrack.canPaste()); break;
             case cmdPlayPause: case cmdGoToStart: case cmdGoToEnd: case cmdZoomIn: case cmdZoomOut: case cmdZoomFit:
                             info.setActive (hasClips); break;
             case cmdShowWaveform: case cmdShowSpectrogram: case cmdShowBoth:
@@ -855,9 +861,10 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveAs:     if (multitrackMode) saveSessionAs(); else saveAs(); break;
         case cmdUndo:       if (multitrackMode) engine.session.undo(); else engine.document.undo(); break;
         case cmdRedo:       if (multitrackMode) engine.session.redo(); else engine.document.redo(); break;
-        case cmdCut:        cut(); break;
-        case cmdCopy:       copy(); break;
-        case cmdPaste:      paste(); break;
+        case cmdCut:        if (multitrackMode) multitrack.cutSelectedClip(); else cut(); break;
+        case cmdCopy:       if (multitrackMode) { multitrack.copySelectedClip(); commands.commandStatusChanged(); } else copy(); break;
+        case cmdPaste:      if (multitrackMode) multitrack.pasteClip(); else paste(); break;
+        case cmdDuplicateClip: multitrack.duplicateSelectedClip(); break;
         case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
         case cmdSelectAll:  waveform.selectAll(); break;
         case cmdCrop:       cropToSelection(); break;
@@ -1005,7 +1012,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdMixer, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdMixDown }); break;
+        case 4: add ({ cmdMixer, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, cmdDuplicateClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
