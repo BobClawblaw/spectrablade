@@ -4,10 +4,16 @@
 
 /** The multitrack session: a ruler, a header per track or bus (name, effects, mute, solo, gain,
     pan, and on tracks their sends) and the tracks' clips with their waveforms. Drag a clip to
-    move it (onto another track, or below the last for a new one); drag its edges to trim it;
-    double-click it to open its file in the editor. Click to place the cursor, drag across the
-    timeline to select a time range; drop audio files to add them as clips. A track's R button arms
-    it for recording. */
+    move it (onto another track, or below the last for a new one); drag its edges to trim it, and
+    the handles at its top corners to set its fades; double-click it to open its file in the
+    editor. Click to place the cursor, drag across the timeline to select a time range; drop audio
+    files to add them as clips. A track's R button arms it for recording.
+
+    A track's A button shows its volume or pan envelope over its lane: click the line to add a
+    point, drag points to move them, Option-click one to delete it.
+
+    With snapping on, whatever is dragged lines up with clip edges, the cursor, the time range
+    and the ruler's marks when it comes within a few pixels of one. */
 class MultitrackView final : public juce::Component,
                              public juce::FileDragAndDropTarget,
                              private juce::ChangeListener,
@@ -48,6 +54,13 @@ public:
     void splitSelectedClip();      // at the cursor
     void deleteSelectedTrack();
 
+    bool isSnapping() const noexcept              { return snapping; }
+    void setSnapping (bool on)                    { snapping = on; }
+
+    /** The envelope shown over a track's lane, if any. */
+    std::optional<AutomationParameter> getShownEnvelope (juce::uint32 trackId) const;
+    void showEnvelope (juce::uint32 trackId, std::optional<AutomationParameter>);
+
     void zoomIn();
     void zoomOut();
     void zoomToFit();
@@ -71,7 +84,15 @@ private:
     class TrackHeader;
     class SendsPanel;
 
-    enum class Drag { none, range, move, trimStart, trimEnd };
+    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint };
+
+    /** A point of a shown envelope, or a place on its line. */
+    struct EnvelopeHit
+    {
+        int track = -1;
+        AutomationParameter parameter = AutomationParameter::volume;
+        int point = -1;                    // -1: on the line between points
+    };
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void scrollBarMoved (juce::ScrollBar*, double newRangeStart) override;
@@ -92,11 +113,30 @@ private:
     juce::Rectangle<int> clipBounds (int track, const SessionClip&) const;
     std::optional<std::pair<int, int>> clipAt (juce::Point<int>) const;
 
+    /** The fade handle under p, on the clip it belongs to: Drag::fadeIn, Drag::fadeOut or Drag::none. */
+    Drag fadeHandleAt (juce::Point<int> p, int track, const SessionClip&) const;
+    juce::Rectangle<float> fadeHandle (int track, const SessionClip&, bool fadeOut) const;
+
+    std::optional<EnvelopeHit> envelopeAt (juce::Point<int>) const;
+    float yForValue (int track, AutomationParameter, float value) const;
+    float valueForY (int track, AutomationParameter, float y) const;
+    void drawEnvelope (juce::Graphics&, int track, AutomationParameter) const;
+
+    /** The ruler's mark spacing in seconds at the current zoom. */
+    double rulerTick() const;
+
+    /** A dragged frame, snapped when snapping is on. The cursor and time range count unless
+        they are what is being dragged. */
+    juce::int64 snapped (juce::int64 frame, juce::uint32 ignoreClip = 0, bool toCursorAndRange = true) const;
+    SessionSnap::Targets snapTargets (juce::uint32 ignoreClip, bool toCursorAndRange) const;
+    juce::int64 snapTolerance() const;
+
     void drawRuler (juce::Graphics&, juce::Rectangle<int>) const;
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;
     void selectTrack (int track);
     void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
     void showSends (juce::uint32 trackId, juce::Component& target);
+    void showAutomationMenu (juce::uint32 trackId, juce::Component& target);
     void editTrack (juce::uint32 trackId, const juce::String& description, bool merge,
                     const std::function<void (SessionTrack&)>& change);
 
@@ -114,6 +154,12 @@ private:
     juce::int64 dragFrame = 0;             // frame under the mouse when the drag began (or the range's anchor)
     SessionClip dragClip;                  // the clip as it was
     int dragTrack = 0;
+    EnvelopeHit dragEnvelope;              // the point being dragged
+    Envelope dragEnvelopeBase;             // its envelope, with the point, as the drag began
+    juce::String dragDescription;          // the undo step a drag makes
+
+    bool snapping = true;
+    std::map<juce::uint32, AutomationParameter> shownEnvelopes;
 
     juce::Component headerArea;
     std::vector<std::unique_ptr<TrackHeader>> headers;

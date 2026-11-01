@@ -27,7 +27,49 @@ struct SessionSend
     bool preFader = false;
 };
 
+/** A point on an envelope: the value at a session frame. */
+struct AutomationPoint
+{
+    juce::int64 frame = 0;
+    float value = 0.0f;
+
+    bool operator== (const AutomationPoint& o) const noexcept { return frame == o.frame && juce::exactlyEqual (value, o.value); }
+};
+
+/** How a track's volume or pan changes over time: points in time order, joined by straight
+    lines. Before the first point the value is the first point's, after the last the last's.
+    An envelope with no points leaves the track's own setting in charge. */
+struct Envelope
+{
+    std::vector<AutomationPoint> points;
+
+    bool isEmpty() const noexcept                 { return points.empty(); }
+    float valueAt (juce::int64 frame) const;
+
+    /** The values at frames start to start + n - 1; the same as valueAt at each, however the
+        frames are split into blocks. */
+    void fill (juce::int64 start, float* out, int n) const;
+
+    /** Adds a point (after any others at the same frame, not before 0); returns its index. */
+    int add (juce::int64 frame, float value);
+
+    /** Moves a point, keeping it between its neighbours in time and not before 0. Returns its index. */
+    int move (int index, juce::int64 frame, float value);
+
+    void remove (int index);
+
+    bool operator== (const Envelope& o) const noexcept { return points == o.points; }
+};
+
+/** What an envelope automates. */
+enum class AutomationParameter { volume, pan };
+
+/** The values an envelope's points can take: volume in dB (the track fader's range), pan from
+    -1 (left) to +1 (right). */
+juce::Range<float> automationRange (AutomationParameter);
+
 /** A track: clips (overlapping clips mix), a level, a pan, mute, solo and sends to buses.
+    Volume and pan can each follow an envelope instead of their setting.
 
     A bus is a track with no clips that plays what other tracks send it, through its own effects,
     volume and pan. Buses send nowhere themselves. */
@@ -41,8 +83,16 @@ struct SessionTrack
     bool mute = false, solo = false;
     std::vector<SessionClip> clips;
     std::vector<SessionSend> sends;
+    Envelope volumeEnvelope, panEnvelope;  // dB, and -1 to +1
 
     const SessionSend* findSend (juce::uint32 busId) const;
+
+    Envelope& envelope (AutomationParameter p)              { return p == AutomationParameter::volume ? volumeEnvelope : panEnvelope; }
+    const Envelope& envelope (AutomationParameter p) const  { return p == AutomationParameter::volume ? volumeEnvelope : panEnvelope; }
+
+    /** The volume (dB) or pan at a session frame: the envelope's value, or the setting when
+        there is no envelope. */
+    float valueAt (AutomationParameter, juce::int64 frame) const;
 };
 
 /** One state of a session. Copies share the clips' audio. */
@@ -89,6 +139,10 @@ namespace SessionEdits
         in, the second the fade out. */
     bool splitClip (SessionState&, juce::uint32 clipId, juce::int64 frame);
 
+    /** Sets a clip's fade lengths in frames. The fade in is limited to the clip's length and the
+        fade out to what the fade in leaves. */
+    bool setClipFades (SessionState&, juce::uint32 clipId, juce::int64 fadeIn, juce::int64 fadeOut);
+
     bool removeClip (SessionState&, juce::uint32 clipId);
 
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
@@ -104,6 +158,32 @@ namespace SessionEdits
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);
     bool removeSend (SessionState&, juce::uint32 trackId, juce::uint32 busId);
+
+    /** Replaces a track's volume or pan envelope; its points are kept in range and in time
+        order. An empty envelope hands the parameter back to the track's setting. */
+    bool setEnvelope (SessionState&, juce::uint32 trackId, AutomationParameter, Envelope);
+}
+
+//==============================================================================
+/** Snapping: edits that land near something line up with it exactly. */
+namespace SessionSnap
+{
+    /** What a dragged edge can snap to: the session start, the extra frames given (the cursor,
+        a time range's edges), every clip's start and end but the ignored clip's, and with a grid
+        step, every multiple of it. */
+    struct Targets
+    {
+        std::vector<juce::int64> extra;
+        juce::uint32 ignoreClip = 0;
+        juce::int64 gridStep = 0;
+    };
+
+    /** The target nearest frame, when one is within tolerance frames; otherwise frame. */
+    juce::int64 snap (const SessionState&, juce::int64 frame, juce::int64 tolerance, const Targets&);
+
+    /** For a span being moved: how far to shift it so that its start or its end (whichever is
+        nearer to a target) lands on one; 0 when neither is within tolerance. */
+    juce::int64 snapSpan (const SessionState&, juce::Range<juce::int64> span, juce::int64 tolerance, const Targets&);
 }
 
 //==============================================================================

@@ -99,6 +99,8 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SessionTests.cpp
     Tests/TrackEffectsTests.cpp
     Tests/BusTests.cpp
+    Tests/AutomationTests.cpp
+    Tests/MultitrackViewTests.cpp
     Tests/TrackRecordingTests.cpp
     Tests/PluginTests.cpp
     Source/AudioDocument.cpp
@@ -117,7 +119,8 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SessionMixer.cpp
     Source/TrackEffects.cpp
     Source/Recorder.cpp
-    Source/PluginScanner.cpp)
+    Source/PluginScanner.cpp
+    Source/MultitrackView.cpp)
 # Plug-in bundles that misbehave on purpose, for the scan tests (see Tests/TestBundle.cpp).
 foreach(bundle IntelOnlyBundle HangingBundle CrashingBundle)
     add_library(${bundle} MODULE Tests/TestBundle.cpp)

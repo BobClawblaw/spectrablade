@@ -11,6 +11,10 @@
     signal before the volume (pre-fader) or after it, to buses, which play it through their
     effects, volume and pan (balance) into the mix.
 
+    A volume or pan envelope takes over from the setting, sample by sample: a track's pan
+    envelope where its clips are panned, its volume envelope where its volume is applied (after
+    its effects, so pre-fader sends don't follow it), and a bus's at its output.
+
     Effects delay what passes through them. A track is read ahead by its effects' latency plus
     the most latency of the buses it sends to, and each of its outputs is held back by what that
     path lacks, so everything lines up without delaying the mix.
@@ -47,6 +51,7 @@ namespace SessionMixer
     struct Buffers
     {
         juce::AudioBuffer<float> clip, track, held, discard;
+        juce::AudioBuffer<float> automation;   // pan, volume: envelope values for the block
         std::map<juce::uint32, juce::AudioBuffer<float>> buses;
 
         struct Delay
@@ -59,7 +64,7 @@ namespace SessionMixer
 
         void reserve (int frames)
         {
-            for (auto* b : { &clip, &track, &held, &discard })
+            for (auto* b : { &clip, &track, &held, &discard, &automation })
                 b->setSize (2, frames);
         }
     };

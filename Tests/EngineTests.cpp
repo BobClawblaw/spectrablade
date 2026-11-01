@@ -17,6 +17,8 @@
 #include "SessionTests.h"
 #include "TrackEffectsTests.h"
 #include "BusTests.h"
+#include "AutomationTests.h"
+#include "MultitrackViewTests.h"
 #include "TrackRecordingTests.h"
 #include "PluginTests.h"
 #include "TestUtils.h"
@@ -331,6 +333,8 @@ int main (int argc, char* argv[])
         runSessionTests (engine.formatManager);
         runTrackEffectsTests();
         runBusTests();
+        runAutomationTests (engine.formatManager);
+        runMultitrackViewTests (engine);
         runTrackRecordingTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.

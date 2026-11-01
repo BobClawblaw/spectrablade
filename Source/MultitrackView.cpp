@@ -59,6 +59,10 @@ public:
         effectsButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
         effectsButton.onClick = [this] { view.showEffectsMenu (trackId, effectsButton); };
 
+        automationButton.setTooltip ("Volume and pan envelopes");
+        automationButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+        automationButton.onClick = [this] { view.showAutomationMenu (trackId, automationButton); };
+
         mute.setTooltip ("Mute");
         solo.setTooltip ("Solo: play only soloed tracks");
         mute.onClick = [this] { const auto on = mute.getToggleState(); view.editTrack (trackId, on ? "Mute" : "Unmute", false, [on] (SessionTrack& t) { t.mute = on; }); };
@@ -82,6 +86,7 @@ public:
         {
             return value == 0.0 ? juce::String ("C") : juce::String (std::abs ((int) value)) + (value < 0.0 ? " L" : " R");
         };
+        pan.updateText();
         pan.onValueChange = [this]
         {
             const auto p = (float) pan.getValue() / 100.0f;
@@ -94,7 +99,7 @@ public:
             s->setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
         }
 
-        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &arm, &mute, &solo, &gain, &pan, &sendsButton })
+        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &arm, &mute, &solo, &gain, &pan, &sendsButton, &automationButton })
             addAndMakeVisible (c);
     }
 
@@ -127,11 +132,19 @@ public:
 
         effectsButton.setToggleState (anyOn, juce::dontSendNotification);
 
+        // An automated volume or pan follows its envelope; the control shows its value at the cursor.
+        const auto volumeAutomated = ! t.volumeEnvelope.isEmpty(), panAutomated = ! t.panEnvelope.isEmpty();
+        automationButton.setToggleState (volumeAutomated || panAutomated, juce::dontSendNotification);
+        gain.setEnabled (! volumeAutomated);
+        pan.setEnabled (! panAutomated);
+        gain.setTooltip (volumeAutomated ? "Volume follows its envelope (shown at the cursor; A to edit it)" : "Track volume");
+        pan.setTooltip (panAutomated ? "Pan follows its envelope (shown at the cursor; A to edit it)" : "Pan");
+
         if (! gain.isMouseButtonDown())
-            gain.setValue (t.gainDb, juce::dontSendNotification);
+            gain.setValue (t.valueAt (AutomationParameter::volume, view.cursor), juce::dontSendNotification);
 
         if (! pan.isMouseButtonDown())
-            pan.setValue (t.pan * 100.0, juce::dontSendNotification);
+            pan.setValue (std::round (t.valueAt (AutomationParameter::pan, view.cursor) * 100.0f), juce::dontSendNotification);
 
         repaint();
     }
@@ -167,6 +180,9 @@ public:
         r.removeFromTop (6);
         auto bottom = r.removeFromTop (22);
 
+        automationButton.setBounds (bottom.removeFromRight (26));
+        bottom.removeFromRight (4);
+
         if (! isBus)
         {
             sendsButton.setBounds (bottom.removeFromRight (64));
@@ -189,7 +205,7 @@ public:
 private:
     MultitrackView& view;
     juce::Label name;
-    juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" };
+    juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, automationButton { "A" };
     juce::Slider gain, pan;
     juce::Colour colour;
     bool isSelected = false, isBus = false;
@@ -371,6 +387,68 @@ void MultitrackView::showSends (juce::uint32 trackId, juce::Component& target)
     juce::CallOutBox::launchAsynchronously (std::make_unique<SendsPanel> (engine, trackId), target.getScreenBounds(), nullptr);
 }
 
+void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& target)
+{
+    const auto* track = shown().findTrack (trackId);
+
+    if (track == nullptr)
+        return;
+
+    enum { showVolume = 1, showPan, hide, clearVolume, clearPan };
+    const auto showing = getShownEnvelope (trackId);
+    juce::PopupMenu menu;
+    menu.addItem (showVolume, "Show Volume Envelope", true, showing == AutomationParameter::volume);
+    menu.addItem (showPan, "Show Pan Envelope", true, showing == AutomationParameter::pan);
+    menu.addItem (hide, "Hide Envelope", showing.has_value());
+    menu.addSeparator();
+    menu.addItem (clearVolume, "Clear Volume Envelope", ! track->volumeEnvelope.isEmpty());
+    menu.addItem (clearPan, "Clear Pan Envelope", ! track->panEnvelope.isEmpty());
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
+        [this, trackId, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
+        {
+            if (safe == nullptr)
+                return;
+
+            switch (result)
+            {
+                case showVolume: showEnvelope (trackId, AutomationParameter::volume); break;
+                case showPan:    showEnvelope (trackId, AutomationParameter::pan); break;
+                case hide:       showEnvelope (trackId, std::nullopt); break;
+                case clearVolume:
+                case clearPan:
+                {
+                    const auto parameter = result == clearVolume ? AutomationParameter::volume : AutomationParameter::pan;
+                    auto next = *engine.session.getState();
+
+                    if (SessionEdits::setEnvelope (next, trackId, parameter, {}))
+                        engine.session.apply (std::move (next), result == clearVolume ? "Clear Volume Envelope" : "Clear Pan Envelope");
+
+                    break;
+                }
+                default: break;
+            }
+        });
+}
+
+std::optional<AutomationParameter> MultitrackView::getShownEnvelope (juce::uint32 trackId) const
+{
+    if (const auto found = shownEnvelopes.find (trackId); found != shownEnvelopes.end())
+        return found->second;
+
+    return std::nullopt;
+}
+
+void MultitrackView::showEnvelope (juce::uint32 trackId, std::optional<AutomationParameter> parameter)
+{
+    if (parameter.has_value())
+        shownEnvelopes[trackId] = *parameter;
+    else
+        shownEnvelopes.erase (trackId);
+
+    repaint();
+}
+
 void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& target)
 {
     auto& effects = engine.getTrackEffects();
@@ -468,6 +546,9 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 
     if (state->findTrack (armedTrackId) == nullptr)
         armedTrackId = 0;
+
+    for (auto it = shownEnvelopes.begin(); it != shownEnvelopes.end();)
+        it = state->findTrack (it->first) == nullptr ? shownEnvelopes.erase (it) : std::next (it);
 
     rebuildHeaders();
     updateScrollBars();
@@ -637,13 +718,158 @@ void MultitrackView::scrollBarMoved (juce::ScrollBar* bar, double newRangeStart)
 }
 
 //==============================================================================
-void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) const
+juce::Rectangle<float> MultitrackView::fadeHandle (int track, const SessionClip& c, bool fadeOut) const
 {
-    g.setColour (juce::Colour (0xff1b1e23));
-    g.fillRect (area);
+    const auto r = clipBounds (track, c).toFloat();
+    const auto x = fadeOut ? xForFrame (c.getEnd() - c.fadeOut) : xForFrame (c.position + c.fadeIn);
+    return juce::Rectangle<float> (8.0f, 8.0f).withCentre ({ juce::jlimit (r.getX() + 4.0f, r.getRight() - 4.0f, x), r.getY() + 8.0f });
+}
 
-    const auto rate = shown().sampleRate;
-    const auto secondsPerPixel = framesPerPixel / rate;
+MultitrackView::Drag MultitrackView::fadeHandleAt (juce::Point<int> p, int track, const SessionClip& c) const
+{
+    if (clipBounds (track, c).getWidth() <= 3 * edgeGrab)
+        return Drag::none;
+
+    const auto in = fadeHandle (track, c, false), out = fadeHandle (track, c, true);
+    const auto point = p.toFloat();
+    const auto onIn = in.expanded (3.0f).contains (point), onOut = out.expanded (3.0f).contains (point);
+
+    // Where the handles meet, the nearer one.
+    if (onIn && onOut)
+        return point.getDistanceFrom (in.getCentre()) <= point.getDistanceFrom (out.getCentre()) ? Drag::fadeIn : Drag::fadeOut;
+
+    return onIn ? Drag::fadeIn : onOut ? Drag::fadeOut : Drag::none;
+}
+
+namespace
+{
+    /** Volume is laid out like the track's fader, with -12 dB half way up. */
+    juce::NormalisableRange<float> envelopeScale (AutomationParameter p)
+    {
+        const auto range = automationRange (p);
+        juce::NormalisableRange<float> scale (range.getStart(), range.getEnd());
+
+        if (p == AutomationParameter::volume)
+            scale.setSkewForCentre (-12.0f);
+
+        return scale;
+    }
+
+    // Envelope lines stay this far inside their lane.
+    constexpr float envelopeMargin = 8.0f;
+}
+
+float MultitrackView::yForValue (int track, AutomationParameter p, float value) const
+{
+    const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + trackHeight) - envelopeMargin;
+    auto proportion = envelopeScale (p).convertTo0to1 (automationRange (p).clipValue (value));
+
+    // Pan: left at the top.
+    if (p == AutomationParameter::pan)
+        proportion = 1.0f - proportion;
+
+    return bottom - proportion * (bottom - top);
+}
+
+float MultitrackView::valueForY (int track, AutomationParameter p, float y) const
+{
+    const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + trackHeight) - envelopeMargin;
+    auto proportion = juce::jlimit (0.0f, 1.0f, (bottom - y) / (bottom - top));
+
+    if (p == AutomationParameter::pan)
+        proportion = 1.0f - proportion;
+
+    return envelopeScale (p).convertFrom0to1 (proportion);
+}
+
+std::optional<MultitrackView::EnvelopeHit> MultitrackView::envelopeAt (juce::Point<int> p) const
+{
+    const auto& tracks = shown().tracks;
+    const auto t = trackAt (p.y);
+
+    if (! juce::isPositiveAndBelow (t, (int) tracks.size()) || p.x < headerWidth)
+        return std::nullopt;
+
+    const auto& track = tracks[(size_t) t];
+    const auto parameter = getShownEnvelope (track.id);
+
+    if (! parameter.has_value())
+        return std::nullopt;
+
+    const auto& points = track.envelope (*parameter).points;
+    EnvelopeHit hit { t, *parameter, -1 };
+    auto nearest = 7.0f;
+
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        const auto distance = p.toFloat().getDistanceFrom ({ xForFrame (points[i].frame), yForValue (t, *parameter, points[i].value) });
+
+        if (distance < nearest)
+        {
+            nearest = distance;
+            hit.point = (int) i;
+        }
+    }
+
+    if (hit.point >= 0)
+        return hit;
+
+    const auto lineY = yForValue (t, *parameter, track.valueAt (*parameter, frameForX ((float) p.x)));
+    return std::abs ((float) p.y - lineY) <= 5.0f ? std::optional<EnvelopeHit> (hit) : std::nullopt;
+}
+
+void MultitrackView::drawEnvelope (juce::Graphics& g, int track, AutomationParameter p) const
+{
+    const auto& t = shown().tracks[(size_t) track];
+    const auto& points = t.envelope (p).points;
+    const auto area = timelineArea();
+    const auto colour = p == AutomationParameter::volume ? juce::Colour (0xff7ee0ff) : juce::Colour (0xffff9de0);
+    const auto left = (float) area.getX(), right = (float) area.getRight();
+
+    g.setColour (colour.withAlpha (0.8f));
+    g.setFont (11.0f);
+    g.drawText (juce::String (p == AutomationParameter::volume ? "Volume" : "Pan (left at the top)")
+                    + (points.empty() ? ": click the line to add a point" : ""),
+                juce::Rectangle<float> (left + 6.0f, (float) laneTop (track) + (float) trackHeight - 20.0f, 300.0f, 16.0f),
+                juce::Justification::centredLeft, false);
+
+    if (points.empty())
+    {
+        const auto y = yForValue (track, p, t.valueAt (p, 0));
+        const float dashes[] = { 4.0f, 4.0f };
+        g.drawDashedLine ({ left, y, right, y }, dashes, 2, 1.5f);
+        return;
+    }
+
+    juce::Path line;
+    line.startNewSubPath (left, yForValue (track, p, points.front().value));
+
+    for (auto& point : points)
+        line.lineTo (xForFrame (point.frame), yForValue (track, p, point.value));
+
+    line.lineTo (right, yForValue (track, p, points.back().value));
+    g.setColour (colour);
+    g.strokePath (line, juce::PathStrokeType (1.5f));
+
+    for (auto& point : points)
+    {
+        const auto x = xForFrame (point.frame);
+
+        if (x < left - 5.0f || x > right + 5.0f)
+            continue;
+
+        const auto dot = juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, yForValue (track, p, point.value) });
+        g.fillEllipse (dot);
+        g.setColour (juce::Colours::black);
+        g.drawEllipse (dot, 1.0f);
+        g.setColour (colour);
+    }
+}
+
+double MultitrackView::rulerTick() const
+{
+    // The finest spacing that leaves at least 100 pixels between marks.
+    const auto secondsPerPixel = framesPerPixel / shown().sampleRate;
     double tick = 0.001;
 
     for (auto candidate : { 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0 })
@@ -653,6 +879,52 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
         if (candidate / secondsPerPixel >= 100.0)
             break;
     }
+
+    return tick;
+}
+
+SessionSnap::Targets MultitrackView::snapTargets (juce::uint32 ignoreClip, bool toCursorAndRange) const
+{
+    SessionSnap::Targets targets;
+    targets.ignoreClip = ignoreClip;
+    targets.gridStep = (juce::int64) std::llround (rulerTick() * shown().sampleRate);
+
+    if (toCursorAndRange)
+    {
+        targets.extra.push_back (cursor);
+
+        if (! timeSelection.isEmpty())
+        {
+            targets.extra.push_back (timeSelection.getStart());
+            targets.extra.push_back (timeSelection.getEnd());
+        }
+    }
+
+    return targets;
+}
+
+juce::int64 MultitrackView::snapTolerance() const
+{
+    return (juce::int64) std::llround (8.0 * framesPerPixel);
+}
+
+juce::int64 MultitrackView::snapped (juce::int64 frame, juce::uint32 ignoreClip, bool toCursorAndRange) const
+{
+    if (! snapping)
+        return frame;
+
+    // Snap against the session as it was before the drag, so a dragged clip can't snap to itself.
+    return SessionSnap::snap (*state, frame, snapTolerance(), snapTargets (ignoreClip, toCursorAndRange));
+}
+
+void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) const
+{
+    g.setColour (juce::Colour (0xff1b1e23));
+    g.fillRect (area);
+
+    const auto rate = shown().sampleRate;
+    const auto secondsPerPixel = framesPerPixel / rate;
+    const auto tick = rulerTick();
 
     g.setFont (11.0f);
     const auto startSeconds = viewStart / rate;
@@ -684,7 +956,7 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
     g.fillRect (title);
     g.setColour (juce::Colours::white);
     g.setFont (12.0f);
-    g.drawText (c.name, title.withTrimmedLeft (4), juce::Justification::centredLeft, true);
+    g.drawText (c.name, title.withTrimmedLeft (12).withTrimmedRight (10), juce::Justification::centredLeft, true);   // clear of the fade handles
 
     // Waveform: one peak per pixel column, each channel in its own band.
     if (c.audio != nullptr && body.getHeight() > 4)
@@ -714,14 +986,48 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
         }
     }
 
-    // Fades as lines from silence to full level.
-    g.setColour (juce::Colours::white.withAlpha (0.6f));
+    // Fades as the raised-cosine curves they play, from silence up to full level.
+    const auto drawFade = [&] (float silentX, float fullX)
+    {
+        const auto top = (float) r.getY() + 16.0f, bottom = (float) r.getBottom();
+        juce::Path curve;
+        juce::Path shade;
+        shade.startNewSubPath (silentX, top);
+
+        for (int i = 0; i <= 32; ++i)
+        {
+            const auto t = (float) i / 32.0f;
+            const auto level = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t);
+            const auto point = juce::Point<float> (silentX + (fullX - silentX) * t, bottom - level * (bottom - top));
+
+            if (i == 0)
+                curve.startNewSubPath (point);
+            else
+                curve.lineTo (point);
+
+            shade.lineTo (point);
+        }
+
+        shade.closeSubPath();
+        g.setColour (juce::Colours::black.withAlpha (0.25f));
+        g.fillPath (shade);
+        g.setColour (juce::Colours::white.withAlpha (0.6f));
+        g.strokePath (curve, juce::PathStrokeType (1.0f));
+    };
 
     if (c.fadeIn > 0)
-        g.drawLine ((float) r.getX(), (float) r.getBottom(), xForFrame (c.position + c.fadeIn), (float) r.getY() + 16.0f, 1.0f);
+        drawFade ((float) r.getX(), xForFrame (c.position + c.fadeIn));
 
     if (c.fadeOut > 0)
-        g.drawLine (xForFrame (c.getEnd() - c.fadeOut), (float) r.getY() + 16.0f, (float) r.getRight(), (float) r.getBottom(), 1.0f);
+        drawFade ((float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut));
+
+    if (r.getWidth() > 3 * edgeGrab)
+    {
+        g.setColour (juce::Colours::white.withAlpha (selected ? 0.95f : 0.6f));
+
+        for (auto fadeOut : { false, true })
+            g.fillRect (fadeHandle (track, c, fadeOut));
+    }
 
     g.setColour (selected ? cursorColour : colour.withAlpha (0.7f));
     g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 3.0f, selected ? 2.0f : 1.0f);
@@ -766,6 +1072,9 @@ void MultitrackView::paint (juce::Graphics& g)
 
             for (auto& c : track.clips)
                 drawClip (g, t, c);
+
+            if (const auto parameter = getShownEnvelope (track.id))
+                drawEnvelope (g, t, *parameter);
         }
 
         if (s.tracks.empty())
@@ -833,6 +1142,15 @@ void MultitrackView::paint (juce::Graphics& g)
 void MultitrackView::setCursor (juce::int64 frame)
 {
     cursor = juce::jmax ((juce::int64) 0, frame);
+
+    // Automated controls show their envelope's value at the cursor.
+    if (std::any_of (headers.begin(), headers.end(), [this] (auto& h)
+                     {
+                         const auto* t = shown().findTrack (h->trackId);
+                         return t != nullptr && (! t->volumeEnvelope.isEmpty() || ! t->panEnvelope.isEmpty());
+                     }))
+        rebuildHeaders();
+
     repaint();
 }
 
@@ -931,6 +1249,7 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
 {
     const auto p = e.getPosition();
     drag = Drag::none;
+    preview.reset();
 
     if (p.x < headerWidth)
         return;
@@ -938,9 +1257,45 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
     if (p.y < rulerHeight)
     {
         drag = Drag::range;
-        dragFrame = frameForX ((float) p.x);
+        dragFrame = snapped (frameForX ((float) p.x), 0, false);
         setCursor (dragFrame);
         setTimeSelection ({});
+        return;
+    }
+
+    if (const auto hit = envelopeAt (p))
+    {
+        const auto& track = shown().tracks[(size_t) hit->track];
+        auto envelope = track.envelope (hit->parameter);
+        selectTrack (hit->track);
+
+        if (hit->point >= 0 && e.mods.isAltDown())
+        {
+            envelope.remove (hit->point);
+            auto next = *engine.session.getState();
+            SessionEdits::setEnvelope (next, track.id, hit->parameter, std::move (envelope));
+            engine.session.apply (std::move (next), "Delete Envelope Point");
+            return;
+        }
+
+        dragEnvelope = *hit;
+        dragDescription = "Move Envelope Point";
+
+        // A click on the line adds a point there, at the value the line has, and drags it.
+        if (hit->point < 0)
+        {
+            const auto frame = snapped (frameForX ((float) p.x));
+            dragEnvelope.point = envelope.add (frame, track.valueAt (hit->parameter, frame));
+            dragDescription = "Add Envelope Point";
+
+            auto next = *engine.session.getState();
+            SessionEdits::setEnvelope (next, track.id, hit->parameter, envelope);
+            preview = std::move (next);
+        }
+
+        dragEnvelopeBase = std::move (envelope);
+        drag = Drag::envelopePoint;
+        repaint();
         return;
     }
 
@@ -952,16 +1307,22 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         dragClip = clip;
         dragTrack = hit->first;
         dragFrame = frameForX ((float) p.x);
-        drag = p.x <= r.getX() + edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimStart
-             : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimEnd
-             : Drag::move;
+        drag = fadeHandleAt (p, hit->first, clip);
+
+        if (drag == Drag::none)
+            drag = p.x <= r.getX() + edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimStart
+                 : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimEnd
+                 : Drag::move;
+
+        dragDescription = drag == Drag::move ? "Move Clip" : drag == Drag::fadeIn ? "Clip Fade In"
+                        : drag == Drag::fadeOut ? "Clip Fade Out" : "Trim Clip";
         selectTrack (hit->first);
         return;
     }
 
     selectedClip = 0;
     drag = Drag::range;
-    dragFrame = frameForX ((float) p.x);
+    dragFrame = snapped (frameForX ((float) p.x), 0, false);
     setCursor (dragFrame);
     setTimeSelection ({});
     selectTrack (trackAt (p.y));
@@ -975,7 +1336,7 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
     {
         // Dragging selects the range between where the mouse went down and where it is now; the
         // cursor follows the range's start.
-        const auto frame = frameForX ((float) juce::jmax (headerWidth, p.x));
+        const auto frame = snapped (frameForX ((float) juce::jmax (headerWidth, p.x)), 0, false);
         const auto range = juce::Range<juce::int64>::between (dragFrame, frame);
         setCursor (range.getStart());
         setTimeSelection (range);
@@ -993,13 +1354,38 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         case Drag::move:
         {
             const auto target = juce::jlimit (0, (int) next.tracks.size(), trackAt (juce::jmax (rulerHeight, p.y)));
-            SessionEdits::moveClip (next, dragClip.id, target, dragClip.position + delta);
+            auto position = juce::jmax ((juce::int64) 0, dragClip.position + delta);
+
+            if (snapping)
+                position += SessionSnap::snapSpan (*state, { position, position + dragClip.length }, snapTolerance(),
+                                                   snapTargets (dragClip.id, true));
+
+            SessionEdits::moveClip (next, dragClip.id, target, position);
             break;
         }
-        case Drag::trimStart: SessionEdits::trimClip (next, dragClip.id, dragClip.position + delta, dragClip.getEnd()); break;
-        case Drag::trimEnd:   SessionEdits::trimClip (next, dragClip.id, dragClip.position, dragClip.getEnd() + delta); break;
+        case Drag::trimStart:
+            SessionEdits::trimClip (next, dragClip.id, snapped (dragClip.position + delta, dragClip.id), dragClip.getEnd());
+            break;
+        case Drag::trimEnd:
+            SessionEdits::trimClip (next, dragClip.id, dragClip.position, snapped (dragClip.getEnd() + delta, dragClip.id));
+            break;
+        case Drag::fadeIn:
+            SessionEdits::setClipFades (next, dragClip.id, snapped (frameForX ((float) p.x), dragClip.id) - dragClip.position, dragClip.fadeOut);
+            break;
+        case Drag::fadeOut:
+            SessionEdits::setClipFades (next, dragClip.id, dragClip.fadeIn, dragClip.getEnd() - snapped (frameForX ((float) p.x), dragClip.id));
+            break;
+        case Drag::envelopePoint:
+        {
+            auto envelope = dragEnvelopeBase;
+            envelope.move (dragEnvelope.point, snapped (frameForX ((float) p.x)),
+                           valueForY (dragEnvelope.track, dragEnvelope.parameter, (float) p.y));
+            SessionEdits::setEnvelope (next, next.tracks[(size_t) dragEnvelope.track].id, dragEnvelope.parameter, std::move (envelope));
+            break;
+        }
         case Drag::none:
-        case Drag::range:     break;
+        case Drag::range:
+            break;
     }
 
     preview = std::move (next);
@@ -1011,10 +1397,9 @@ void MultitrackView::mouseUp (const juce::MouseEvent&)
 {
     if (preview.has_value())
     {
-        const auto description = drag == Drag::move ? "Move Clip" : "Trim Clip";
         auto next = std::move (*preview);
         preview.reset();
-        engine.session.apply (std::move (next), description);
+        engine.session.apply (std::move (next), dragDescription);
     }
 
     drag = Drag::none;
@@ -1023,12 +1408,18 @@ void MultitrackView::mouseUp (const juce::MouseEvent&)
 void MultitrackView::mouseMove (const juce::MouseEvent& e)
 {
     auto cursorShape = juce::MouseCursor::NormalCursor;
+    const auto p = e.getPosition();
 
-    if (const auto hit = clipAt (e.getPosition()))
+    if (const auto envelope = envelopeAt (p))
     {
-        const auto r = clipBounds (hit->first, shown().tracks[(size_t) hit->first].clips[(size_t) hit->second]);
-        const auto x = e.getPosition().x;
-        cursorShape = r.getWidth() > 3 * edgeGrab && (x <= r.getX() + edgeGrab || x >= r.getRight() - edgeGrab)
+        cursorShape = envelope->point >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::CrosshairCursor;
+    }
+    else if (const auto hit = clipAt (p))
+    {
+        const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
+        const auto r = clipBounds (hit->first, clip);
+        cursorShape = fadeHandleAt (p, hit->first, clip) != Drag::none
+                          || (r.getWidth() > 3 * edgeGrab && (p.x <= r.getX() + edgeGrab || p.x >= r.getRight() - edgeGrab))
                           ? juce::MouseCursor::LeftRightResizeCursor
                           : juce::MouseCursor::DraggingHandCursor;
     }
@@ -1038,8 +1429,18 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
 
 void MultitrackView::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (const auto hit = clipAt (e.getPosition()); hit.has_value() && onOpenInEditor != nullptr)
-        onOpenInEditor (shown().tracks[(size_t) hit->first].clips[(size_t) hit->second].source);
+    const auto p = e.getPosition();
+
+    if (envelopeAt (p).has_value())
+        return;
+
+    if (const auto hit = clipAt (p); hit.has_value() && onOpenInEditor != nullptr)
+    {
+        const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
+
+        if (fadeHandleAt (p, hit->first, clip) == Drag::none)
+            onOpenInEditor (clip.source);
+    }
 }
 
 void MultitrackView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)

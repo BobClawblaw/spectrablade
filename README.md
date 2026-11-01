@@ -6,6 +6,16 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 14: automation, fade handles and snapping**
+- Each track and bus has an A button: show its volume or pan envelope over its lane, or clear one. Click the line to add a point, drag a point to move it (it stays between its neighbours), Option-click a point to delete it. Pan envelopes have left at the top. Every change is one undo step, and envelopes are saved in the session file.
+- While a track has an envelope, it governs that parameter and the fader or pan control is greyed out, showing the envelope's value at the cursor. Clearing the envelope hands control back to the fader.
+- The mixer follows envelopes sample by sample, with straight lines between points (in dB for volume). Two points at the same time make a step. A track's pan envelope applies where its clips are panned, and its volume envelope after its effects, so pre-fader sends ignore it as they ignore the fader. A bus's envelopes apply at its output. Effect latency is compensated, so an envelope acts on the audio it lines up with.
+- Clips have a fade handle at each top corner: drag it to set the fade in or out. Fades are drawn as the raised-cosine curves they play.
+- Multitrack > Snapping (S) is on by default and remembered. When something dragged comes within 8 pixels of a target, it lines up with it exactly: clip moves (by whichever edge is nearer a target), trims, fade handles, envelope points and time-range selection. The targets are clip edges, the cursor, the time range's edges, the session start and the ruler's marks.
+- Measured by the tests: constant pan envelopes (on tracks and a bus) and a constant bus volume envelope play bit for bit like their settings. Constant track volume envelopes match to float rounding (worst under 6e-8); the envelope is a separate multiply, where the fader's gain is fused into the add. A 0 to -40 dB ramp scales every frame by the envelope's gain there (worst under 7.5e-9). With envelopes on tracks and a bus, the mix is bit for bit the same in 1-, 37- and 512-frame blocks, with 300 and 500 frames of effect latency, and after a jump. A pan step moves a mono track from left to right at the step.
+- Also checked, through the real view with synthesised mouse events: dragging fade handles, a fade snapping to the cursor, a clip snapping to another's end (and not snapping with snapping off), and adding, moving and deleting envelope points. The envelope maths, fade limits, snap rules and the file round trip are tested on their own.
+- Not yet: automating effect parameters, recording automation while playing, and crossfades between overlapping clips.
+
 **Release 0.1.0: the first build to install**
 - `dist/SpectraBlade-0.1.0.dmg` holds a universal app (Apple silicon and Intel), built for macOS 13 or later and tested on macOS 27. See [Installing](#installing), and [Packaging](#packaging) to make it.
 - VST3 and Audio Unit plug-ins are checked when they are scanned. Plug-ins > Scan for Plug-ins loads each one in a worker copy of the app, plays 16 blocks of noise (or a note, for instruments) through it at 48 kHz, requires every output sample to be finite, and reads and restores its state. Four plug-ins are checked at once, each in its own worker.
@@ -155,6 +165,7 @@ The tests run against the real machine:
 - The default audio device: output-pair routing on a multi-output interface. With `--live-input`, also arming inputs 1/2, a one-second live take during (silent) playback, and turning the inputs off again.
 - Spectrogram level calibration and image, and spectral edits: identity, removal depth, neighbouring tones, untouched audio, attenuation.
 - Multitrack: the mixer (pan laws, gains, mute, solo, trims, fades, block-size independence), clip edits (split, trim, move, delete), undo with merged steps, session files (round trip after moving the folder, shared audio read once, rate conversion, missing files), and session playback through the player.
+- Automation and the multitrack view: volume and pan envelopes in the mixer (against the settings they replace, ramps, steps, block sizes, sends, latency) and in session files, fade limits, snapping rules, and the view driven by the mouse (fade handles, snapping, envelope points).
 - Track effects: delay compensation bit for bit across tracks with different latencies and block sizes, playing from a jump, bypass, reordering, removal, saving each chain in the session file, and a real Apple Audio Unit on a track.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session.
@@ -199,4 +210,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: automation, fade handles and snapping
+1. Multitrack, continued: effect-parameter automation, recording automation while playing, crossfades between overlapping clips, and mixing the session down to a file

@@ -14,6 +14,7 @@ namespace
     constexpr const char* inputFirstKey   = "inputFirstChannel";
     constexpr const char* inputCountKey   = "inputNumChannels";
     constexpr const char* displayKey      = "display";
+    constexpr const char* snappingKey     = "snapping";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -36,7 +37,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus
+        cmdAddBus, cmdSnapping
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -492,6 +493,7 @@ MainComponent::MainComponent()
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
     addChildComponent (multitrack);
+    multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.onOpenInEditor = [this] (const juce::File& f)
     {
         confirmDiscardChanges ([this, f]
@@ -629,7 +631,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdAddBus; ++id)
+    for (int id = cmdOpen; id <= cmdSnapping; ++id)
         ids.add (id);
 }
 
@@ -723,6 +725,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('t', cmd | shift); info.setActive (multitrackMode); break;
         case cmdAddBus:     info.setInfo ("Add Bus", "Add a bus for tracks to send to", "Multitrack", 0);
                             info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
+        case cmdSnapping:   info.setInfo ("Snapping", "Line dragged clips, edges, fades and points up with clip edges, the cursor and the ruler", "Multitrack", 0);
+                            info.addDefaultKeypress ('s', 0); info.setTicked (multitrack.isSnapping()); info.setActive (multitrackMode); break;
         case cmdDeleteTrack: info.setInfo ("Delete Track", "Delete the selected track or bus", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdSplitClip:  info.setInfo ("Split Clip", "Split the selected clip at the cursor", "Multitrack", 0);
@@ -841,6 +845,11 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         }
         case cmdDeleteTrack: multitrack.deleteSelectedTrack(); break;
+        case cmdSnapping:
+            multitrack.setSnapping (! multitrack.isSnapping());
+            appProperties.getUserSettings()->setValue (snappingKey, multitrack.isSnapping());
+            commands.commandStatusChanged();
+            break;
         case cmdSplitClip:  multitrack.splitSelectedClip(); break;
         case cmdSpectralAttenuate:
             askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
@@ -886,7 +895,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;

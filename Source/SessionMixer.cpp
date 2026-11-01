@@ -110,9 +110,10 @@ namespace
             dest.addFrom (ch, destStart, *from, ch, 0, n, gain);
     }
 
-    /** The track's clips, panned, before its effects and volume, into frames [0, numFrames) of out. */
+    /** The track's clips, panned, before its effects and volume, into frames [0, numFrames) of out.
+        pans, when the pan is automated, holds the pan for each of those frames. */
     void renderTrack (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
-                      juce::AudioBuffer<float>& scratch)
+                      juce::AudioBuffer<float>& scratch, const float* pans)
     {
         out.clear (0, 0, numFrames);
         out.clear (1, 0, numFrames);
@@ -146,10 +147,27 @@ namespace
             }
 
             const auto clipGain = juce::Decibels::decibelsToGain (clip.gainDb, -150.0f);
-            const auto [left, right] = panGains (track.pan, channels);
             const auto offset = (int) (from - start);
-            out.addFrom (0, offset, scratch, 0, 0, count, clipGain * left);
-            out.addFrom (1, offset, scratch, channels - 1, 0, count, clipGain * right);
+
+            if (pans == nullptr)
+            {
+                const auto [left, right] = panGains (track.pan, channels);
+                out.addFrom (0, offset, scratch, 0, 0, count, clipGain * left);
+                out.addFrom (1, offset, scratch, channels - 1, 0, count, clipGain * right);
+                continue;
+            }
+
+            const auto* inLeft = scratch.getReadPointer (0);
+            const auto* inRight = scratch.getReadPointer (channels - 1);
+            auto* outLeft = out.getWritePointer (0, offset);
+            auto* outRight = out.getWritePointer (1, offset);
+
+            for (int i = 0; i < count; ++i)
+            {
+                const auto [left, right] = panGains (pans[offset + i], channels);
+                outLeft[i] += inLeft[i] * (clipGain * left);
+                outRight[i] += inRight[i] * (clipGain * right);
+            }
         }
     }
 }
@@ -161,6 +179,9 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         dest.clear (ch, destStart, numFrames);
 
     grow (buffers.track, numFrames);
+    grow (buffers.automation, numFrames);
+    auto* pans = buffers.automation.getWritePointer (0);
+    auto* volumes = buffers.automation.getWritePointer (1);
 
     for (auto& bus : state.tracks)
     {
@@ -180,26 +201,56 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         const auto own = latencyOf (inserts, track.id);
         const auto ahead = sendLatency (state, track, inserts);
-        renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip);
+        const auto panAutomated = ! track.panEnvelope.isEmpty();
+
+        // The clips are read at start + own + ahead, so that is where their pan is taken from.
+        if (panAutomated)
+            track.panEnvelope.fill (start + own + ahead, pans, numFrames);
+
+        renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, panAutomated ? pans : nullptr);
 
         if (inserts != nullptr && inserts->isActive (track.id))
             inserts->process (track.id, buffers.track, numFrames);
 
         // The track's output is now the audio at start + ahead.
-        const auto volume = juce::Decibels::decibelsToGain (track.gainDb, -150.0f);
-        addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume);
-
-        for (auto& send : track.sends)
+        const auto send = [&] (const SessionSend& s, float volume)
         {
-            const auto* bus = state.findTrack (send.busId);
+            const auto* bus = state.findTrack (s.busId);
 
             if (bus == nullptr || ! bus->isBus || ! plays (state, *bus))
-                continue;
+                return;
 
-            const auto gain = juce::Decibels::decibelsToGain (send.gainDb, -150.0f) * (send.preFader ? 1.0f : volume);
+            const auto gain = juce::Decibels::decibelsToGain (s.gainDb, -150.0f) * (s.preFader ? 1.0f : volume);
             addHeld (buffers, { track.id, bus->id }, ahead - latencyOf (inserts, bus->id), buffers.track, numFrames,
                      buffers.buses[bus->id], 0, gain);
+        };
+
+        auto volume = juce::Decibels::decibelsToGain (track.gainDb, -150.0f);
+        const auto volumeAutomated = ! track.volumeEnvelope.isEmpty();
+
+        if (volumeAutomated)
+        {
+            // Pre-fader sends take the signal before the envelope; then it is applied in place.
+            for (auto& s : track.sends)
+                if (s.preFader)
+                    send (s, 1.0f);
+
+            track.volumeEnvelope.fill (start + ahead, volumes, numFrames);
+
+            for (int i = 0; i < numFrames; ++i)
+                volumes[i] = juce::Decibels::decibelsToGain (volumes[i], -150.0f);
+
+            for (int ch = 0; ch < 2; ++ch)
+                juce::FloatVectorOperations::multiply (buffers.track.getWritePointer (ch), volumes, numFrames);
+
+            volume = 1.0f;
         }
+
+        addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume);
+
+        for (auto& s : track.sends)
+            if (! (volumeAutomated && s.preFader))
+                send (s, volume);
     }
 
     // Buses: their input is the audio at start + their latency, so their effects bring it to start.
@@ -213,10 +264,35 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (inserts != nullptr && inserts->isActive (bus.id))
             inserts->process (bus.id, input, numFrames);
 
-        const auto volume = juce::Decibels::decibelsToGain (bus.gainDb, -150.0f);
-        const auto [left, right] = panGains (bus.pan, 2);
-        dest.addFrom (0, destStart, input, 0, 0, numFrames, volume * left);
-        dest.addFrom (1, destStart, input, 1, 0, numFrames, volume * right);
+        if (bus.volumeEnvelope.isEmpty() && bus.panEnvelope.isEmpty())
+        {
+            const auto volume = juce::Decibels::decibelsToGain (bus.gainDb, -150.0f);
+            const auto [left, right] = panGains (bus.pan, 2);
+            dest.addFrom (0, destStart, input, 0, 0, numFrames, volume * left);
+            dest.addFrom (1, destStart, input, 1, 0, numFrames, volume * right);
+            continue;
+        }
+
+        for (auto [parameter, values] : { std::pair { AutomationParameter::volume, volumes }, std::pair { AutomationParameter::pan, pans } })
+        {
+            if (const auto& envelope = bus.envelope (parameter); ! envelope.isEmpty())
+                envelope.fill (start, values, numFrames);
+            else
+                juce::FloatVectorOperations::fill (values, parameter == AutomationParameter::volume ? bus.gainDb : bus.pan, numFrames);
+        }
+
+        const auto* inLeft = input.getReadPointer (0);
+        const auto* inRight = input.getReadPointer (1);
+        auto* outLeft = dest.getWritePointer (0, destStart);
+        auto* outRight = dest.getWritePointer (1, destStart);
+
+        for (int i = 0; i < numFrames; ++i)
+        {
+            const auto volume = juce::Decibels::decibelsToGain (volumes[i], -150.0f);
+            const auto [left, right] = panGains (pans[i], 2);
+            outLeft[i] += inLeft[i] * (volume * left);
+            outRight[i] += inRight[i] * (volume * right);
+        }
     }
 }
 

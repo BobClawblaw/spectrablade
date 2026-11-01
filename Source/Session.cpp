@@ -84,6 +84,102 @@ std::optional<std::pair<int, int>> SessionState::findClip (juce::uint32 clipId) 
 }
 
 //==============================================================================
+namespace
+{
+    /** The value on the line from a to b at frame (a.frame <= frame < b.frame). */
+    float between (const AutomationPoint& a, const AutomationPoint& b, juce::int64 frame)
+    {
+        return a.value + (b.value - a.value) * (float) ((double) (frame - a.frame) / (double) (b.frame - a.frame));
+    }
+
+    /** The value at frame, given the index of the first point after it. */
+    float valueWith (const std::vector<AutomationPoint>& points, size_t next, juce::int64 frame)
+    {
+        if (next == 0)
+            return points.front().value;
+
+        if (next == points.size())
+            return points.back().value;
+
+        return between (points[next - 1], points[next], frame);
+    }
+
+    size_t firstAfter (const std::vector<AutomationPoint>& points, juce::int64 frame)
+    {
+        return (size_t) (std::upper_bound (points.begin(), points.end(), frame,
+                                           [] (juce::int64 f, const AutomationPoint& p) { return f < p.frame; })
+                         - points.begin());
+    }
+}
+
+float Envelope::valueAt (juce::int64 frame) const
+{
+    return points.empty() ? 0.0f : valueWith (points, firstAfter (points, frame), frame);
+}
+
+void Envelope::fill (juce::int64 start, float* out, int n) const
+{
+    if (points.empty())
+    {
+        std::fill (out, out + n, 0.0f);
+        return;
+    }
+
+    auto next = firstAfter (points, start);
+
+    for (int i = 0; i < n; ++i)
+    {
+        const auto frame = start + i;
+
+        while (next < points.size() && points[next].frame <= frame)
+            ++next;
+
+        out[i] = valueWith (points, next, frame);
+    }
+}
+
+int Envelope::add (juce::int64 frame, float value)
+{
+    frame = juce::jmax ((juce::int64) 0, frame);
+    const auto at = firstAfter (points, frame);
+    points.insert (points.begin() + (std::ptrdiff_t) at, { frame, value });
+    return (int) at;
+}
+
+int Envelope::move (int index, juce::int64 frame, float value)
+{
+    if (! juce::isPositiveAndBelow (index, (int) points.size()))
+        return index;
+
+    const auto i = (size_t) index;
+    const auto lowest = i > 0 ? points[i - 1].frame : (juce::int64) 0;
+    const auto highest = i + 1 < points.size() ? points[i + 1].frame : std::numeric_limits<juce::int64>::max();
+    points[i] = { juce::jlimit (lowest, highest, frame), value };
+    return index;
+}
+
+void Envelope::remove (int index)
+{
+    if (juce::isPositiveAndBelow (index, (int) points.size()))
+        points.erase (points.begin() + index);
+}
+
+juce::Range<float> automationRange (AutomationParameter p)
+{
+    return p == AutomationParameter::volume ? juce::Range<float> (-60.0f, 12.0f) : juce::Range<float> (-1.0f, 1.0f);
+}
+
+float SessionTrack::valueAt (AutomationParameter p, juce::int64 frame) const
+{
+    const auto& e = envelope (p);
+
+    if (! e.isEmpty())
+        return e.valueAt (frame);
+
+    return p == AutomationParameter::volume ? gainDb : pan;
+}
+
+//==============================================================================
 namespace SessionEdits
 {
 namespace
@@ -212,6 +308,19 @@ bool removeClip (SessionState& s, juce::uint32 clipId)
     return true;
 }
 
+bool setClipFades (SessionState& s, juce::uint32 clipId, juce::int64 fadeIn, juce::int64 fadeOut)
+{
+    auto* c = find (s, clipId);
+
+    if (c == nullptr)
+        return false;
+
+    c->fadeIn = fadeIn;
+    c->fadeOut = fadeOut;
+    limitFades (*c);
+    return true;
+}
+
 bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || end <= start)
@@ -315,6 +424,92 @@ bool removeSend (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
     }
 
     return false;
+}
+
+bool setEnvelope (SessionState& s, juce::uint32 trackId, AutomationParameter p, Envelope e)
+{
+    const auto range = automationRange (p);
+
+    for (auto& point : e.points)
+    {
+        point.frame = juce::jmax ((juce::int64) 0, point.frame);
+        point.value = range.clipValue (point.value);
+    }
+
+    std::stable_sort (e.points.begin(), e.points.end(), [] (auto& a, auto& b) { return a.frame < b.frame; });
+
+    for (auto& t : s.tracks)
+    {
+        if (t.id == trackId)
+        {
+            t.envelope (p) = std::move (e);
+            return true;
+        }
+    }
+
+    return false;
+}
+}
+
+//==============================================================================
+namespace SessionSnap
+{
+namespace
+{
+    std::optional<juce::int64> nearest (const SessionState& s, juce::int64 frame, juce::int64 tolerance, const Targets& targets)
+    {
+        std::optional<juce::int64> best;
+        auto bestDistance = tolerance;
+
+        const auto consider = [&] (juce::int64 target)
+        {
+            const auto distance = std::abs (target - frame);
+
+            if (distance <= bestDistance && (! best.has_value() || distance < std::abs (*best - frame)))
+            {
+                best = target;
+                bestDistance = distance;
+            }
+        };
+
+        consider (0);
+
+        for (auto f : targets.extra)
+            consider (f);
+
+        for (auto& t : s.tracks)
+        {
+            for (auto& c : t.clips)
+            {
+                if (c.id != targets.ignoreClip)
+                {
+                    consider (c.position);
+                    consider (c.getEnd());
+                }
+            }
+        }
+
+        if (targets.gridStep > 0)
+            consider (juce::jmax ((juce::int64) 0, (juce::int64) std::llround ((double) frame / (double) targets.gridStep) * targets.gridStep));
+
+        return best;
+    }
+}
+
+juce::int64 snap (const SessionState& s, juce::int64 frame, juce::int64 tolerance, const Targets& targets)
+{
+    return nearest (s, frame, tolerance, targets).value_or (frame);
+}
+
+juce::int64 snapSpan (const SessionState& s, juce::Range<juce::int64> span, juce::int64 tolerance, const Targets& targets)
+{
+    const auto start = nearest (s, span.getStart(), tolerance, targets);
+    const auto end = nearest (s, span.getEnd(), tolerance, targets);
+
+    if (start.has_value() && (! end.has_value() || std::abs (*start - span.getStart()) <= std::abs (*end - span.getEnd())))
+        return *start - span.getStart();
+
+    return end.has_value() ? *end - span.getEnd() : 0;
 }
 }
 
@@ -465,6 +660,22 @@ juce::String save (const SessionState& state, const juce::File& target,
         track->setAttribute ("mute", t.mute);
         track->setAttribute ("solo", t.solo);
 
+        for (auto parameter : { AutomationParameter::volume, AutomationParameter::pan })
+        {
+            if (const auto& envelope = t.envelope (parameter); ! envelope.isEmpty())
+            {
+                auto* envelopeXml = track->createNewChildElement ("ENVELOPE");
+                envelopeXml->setAttribute ("parameter", parameter == AutomationParameter::volume ? "volume" : "pan");
+
+                for (auto& point : envelope.points)
+                {
+                    auto* pointXml = envelopeXml->createNewChildElement ("POINT");
+                    pointXml->setAttribute ("frame", juce::String (point.frame));
+                    pointXml->setAttribute ("value", point.value);
+                }
+            }
+        }
+
         if (trackEffects != nullptr)
             if (auto effects = trackEffects (t.id))
                 track->addChildElement (effects.release());
@@ -527,6 +738,23 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.pan = (float) trackXml->getDoubleAttribute ("pan");
         track.mute = trackXml->getBoolAttribute ("mute");
         track.solo = trackXml->getBoolAttribute ("solo");
+
+        for (auto* envelopeXml : trackXml->getChildWithTagNameIterator ("ENVELOPE"))
+        {
+            const auto name = envelopeXml->getStringAttribute ("parameter");
+
+            if (name != "volume" && name != "pan")
+                continue;
+
+            Envelope envelope;
+
+            for (auto* pointXml : envelopeXml->getChildWithTagNameIterator ("POINT"))
+                envelope.points.push_back ({ pointXml->getStringAttribute ("frame").getLargeIntValue(),
+                                             (float) pointXml->getDoubleAttribute ("value") });
+
+            SessionEdits::setEnvelope (state, track.id, name == "volume" ? AutomationParameter::volume : AutomationParameter::pan,
+                                       std::move (envelope));
+        }
 
         if (auto* effects = trackXml->getChildByName ("EFFECTS"))
             result.effects[track.id] = std::make_shared<juce::XmlElement> (*effects);
