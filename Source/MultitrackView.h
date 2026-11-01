@@ -288,6 +288,11 @@ public:
         step. Right-click a header for its Group menu. */
     void setTrackGroup (juce::uint32 trackId, int group);
     void setTrackSoloSafe (juce::uint32 trackId, bool safe);
+
+    /** Clears the solo (or mute) of every track, bus and folder, as one undo step ("Unsolo All",
+        "Unmute All"). False when none was set. */
+    bool clearAllSolos();
+    bool clearAllMutes();
     void setTrackPolarityInverted (juce::uint32 trackId, bool inverted);
 
     /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */

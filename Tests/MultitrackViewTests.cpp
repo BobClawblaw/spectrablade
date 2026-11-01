@@ -1506,6 +1506,30 @@ void runMultitrackViewTests (AudioEngine& engine)
                "duplicate time: the range's clips and markers repeated right after it, what follows moved on, the copy selected for the next; the copied time untouched");
     }
 
+    // Clearing every solo or mute at once.
+    {
+        SessionState loud;
+        loud.sampleRate = rate;
+        loud.addTrack().solo = true;
+        loud.addTrack().mute = true;
+        loud.addBus().solo = true;
+        auto& folder = loud.addFolder();
+        folder.mute = true;
+        folder.solo = true;
+        engine.session.reset (loud, {});
+        const auto tracks = [&] () -> const std::vector<SessionTrack>& { return engine.session.getState()->tracks; };
+
+        const auto unsoloed = view.clearAllSolos() && ! engine.session.getState()->anySolo() && tracks()[1].mute && tracks()[3].mute
+                              && engine.session.getUndoDescription() == "Unsolo All";
+        const auto unmuted = view.clearAllMutes() && ! tracks()[1].mute && ! tracks()[3].mute && engine.session.getUndoDescription() == "Unmute All";
+        const auto nothingLeft = ! view.clearAllSolos() && ! view.clearAllMutes() && engine.session.getUndoDescription() == "Unmute All";
+        engine.session.undo();
+        engine.session.undo();
+        const auto back = tracks()[0].solo && tracks()[1].mute && tracks()[2].solo && tracks()[3].mute && tracks()[3].solo;
+        check (unsoloed && unmuted && nothingLeft && back,
+               "unsolo and unmute all: every track's, bus's and folder's solo or mute cleared as one undo step each; nothing when none is set");
+    }
+
     // A region from the selected clips.
     {
         SessionState spread;

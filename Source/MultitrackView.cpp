@@ -3416,6 +3416,34 @@ void MultitrackView::setTrackPolarityInverted (juce::uint32 trackId, bool invert
     editTrack (trackId, inverted ? "Invert Polarity" : "Restore Polarity", false, [inverted] (SessionTrack& t) { t.invertPolarity = inverted; });
 }
 
+bool MultitrackView::clearAllSolos()
+{
+    auto next = *engine.session.getState();
+    auto changed = false;
+
+    for (auto& t : next.tracks)
+        changed = std::exchange (t.solo, false) || changed;
+
+    if (changed)
+        engine.session.apply (std::move (next), "Unsolo All");
+
+    return changed;
+}
+
+bool MultitrackView::clearAllMutes()
+{
+    auto next = *engine.session.getState();
+    auto changed = false;
+
+    for (auto& t : next.tracks)
+        changed = std::exchange (t.mute, false) || changed;
+
+    if (changed)
+        engine.session.apply (std::move (next), "Unmute All");
+
+    return changed;
+}
+
 void MultitrackView::setTrackSoloSafe (juce::uint32 trackId, bool safe)
 {
     editTrack (trackId, safe ? "Solo Safe" : "Not Solo Safe", false, [safe] (SessionTrack& t) { t.soloSafe = safe; });

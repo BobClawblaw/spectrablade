@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 97: unsolo all and unmute all**
+- Multitrack > Unsolo All and Unmute All clear the solo or mute of every track, bus and folder at once, each as one undo step. Each is offered only when something is soloed or muted.
+- Measured by the tests: a session with a soloed track, a muted track, a soloed bus and a muted, soloed folder; Unsolo All clearing every solo and leaving the mutes; Unmute All clearing the mutes; neither doing anything a second time; and two undos bringing every solo and mute back. The menu items were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 96: a region from clips**
 - Markers > Add Region from Clips adds a region running from the start of the earliest selected clip to the end of the latest, whatever tracks they are on, as an undo step. With one clip selected the region takes the clip's name; with several it is named like other new regions ("Region 01", ...).
 - Measured by the tests, through the real view: two clips on two tracks giving one region from the first's start to the later end, as an undo step; one clip giving a region of its own length named after it; and nothing with no clip selected. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -640,6 +644,7 @@ The tests run against the real machine:
 - The clip list as CSV: order, times, flags and quoting.
 - Duplicate time: clips and markers repeated, later clips moved on, and repeating it.
 - Region from clips: spans, names and no selection.
+- Unsolo and unmute all: tracks, buses and folders, and undo.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -693,4 +698,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: Unsolo All and Unmute All, clearing every track's solo or mute in one step
+1. Multitrack, continued: a Select Track submenu and Up and Down keys for moving the selection between tracks
