@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 91: open recent**
+- File > Open Recent lists the last ten audio files and sessions opened, newest first, and is kept between launches. Opening one that is already listed moves it to the top. Files that have since gone are left off the menu, and Clear Menu empties it. Choosing a session asks about unsaved session changes first, and choosing an audio file asks about unsaved changes to the open file, as Open Session and Open do. Recovered copies of sessions are not listed. The menu is unavailable while recording.
+- Measured by the tests: twelve files noted giving the newest ten, newest first; one noted again moving to the top; a fresh list reading the same ten back from the settings; a deleted file left off the menu while the others keep the ids of their places in the list, with Clear Menu last; and clearing emptying the list and the settings. Choosing items from the real menu bar and opening through it were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 90: go to time**
 - Transport > Go to Time... (Cmd J) asks for a time, starting from the cursor's, and moves the cursor there, scrolling it a tenth of the way into view when it is out of view, at the same zoom. It reads seconds ("83.5" or "83.5 s"), minutes and seconds ("1:23.5"), or hours, minutes and seconds ("1:01:23.5"); in a session also bar and beat ("5|3", or "5|3.5" for halfway through the beat), counted from 1 and following tempo and time-signature changes. A time it can't read, a beat past the end of its bar, or bar and beat in the single-file editor gives a message instead. In the editor the cursor stops at the end of the file.
 - The multitrack view now scrolls as far as a screen past the cursor, so a cursor put past the end of the session can be seen.
@@ -610,6 +614,7 @@ The tests run against the real machine:
 - Polarity: inverted tracks and buses through the mixer, freezing, the strip switch and the session file.
 - Tap tempo: averaging, rounding, the window of taps, restarts, limits and undo steps.
 - Go to time: the time forms, bars and beats across tempo changes, refusals, and scrolling there.
+- Open recent: order, the limit of ten, settings, missing files and clearing.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -663,4 +668,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. File > Open Recent: the last ten files and sessions opened, kept between launches
+1. Multitrack, continued: Trim Start to Cursor and Trim End to Cursor for the selected clips

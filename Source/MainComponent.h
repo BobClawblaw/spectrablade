@@ -7,6 +7,7 @@
 #include "LoadReadout.h"
 #include "TapTempo.h"
 #include "TimeEntry.h"
+#include "RecentFiles.h"
 #include "Loudness.h"
 #include "MultitrackView.h"
 #include "NoiseReduction.h"
@@ -45,7 +46,7 @@ public:
     // MenuBarModel
     juce::StringArray getMenuBarNames() override;
     juce::PopupMenu getMenuForIndex (int index, const juce::String& name) override;
-    void menuItemSelected (int, int) override {}
+    void menuItemSelected (int menuItemId, int) override;
 
 private:
     class PluginEditorWindow;
@@ -215,6 +216,9 @@ private:
     LevelMeter inputMeter;
     juce::Label fileLabel, deviceLabel, timeLabel, selectionLabel;
     TapTempo tapper;
+    juce::RecentlyOpenedFilesList recentFiles;
+    static constexpr int recentBaseId = 0x7000;   // menu ids for File > Open Recent, clear of the command ids
+    void noteRecent (const juce::File&);
     LoadReadout loadReadout { [this] { return LoadReadout::Reading { engine.deviceManager.getCpuUsage(), engine.deviceManager.getXRunCount() }; } };
 
     WaveformView waveform { engine };

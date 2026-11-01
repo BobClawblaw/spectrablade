@@ -10,6 +10,7 @@
 #include "../Source/LoadReadout.h"
 #include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
+#include "../Source/RecentFiles.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/SessionCollect.h"
 #include "../Source/SessionNotes.h"
@@ -1214,6 +1215,57 @@ namespace
                "polarity: the strip's switch and the header's command invert a track or bus as undo steps, shown on the strip, and kept in session files");
     }
 
+    void testRecentFiles()
+    {
+        const auto folder = juce::File::createTempFile ("recent");
+        folder.createDirectory();
+        juce::PropertiesFile settings (folder.getChildFile ("settings.xml"), {});
+        juce::RecentlyOpenedFilesList list;
+        RecentFiles::restore (list, settings);
+        std::vector<juce::File> files;
+
+        for (int i = 0; i < 12; ++i)
+        {
+            files.push_back (folder.getChildFile ("take " + juce::String (i) + (i == 3 ? ".sbsession" : ".wav")));
+            files.back().replaceWithText ("x");
+            RecentFiles::note (list, files.back(), settings);
+        }
+
+        // The newest first, ten kept; opening one again moves it to the top.
+        const auto capped = list.getNumFiles() == 10 && list.getFile (0) == files[11] && list.getFile (9) == files[2];
+        RecentFiles::note (list, files[5], settings);
+        const auto moved = list.getNumFiles() == 10 && list.getFile (0) == files[5] && list.getFile (1) == files[11];
+
+        // Kept in the settings: a fresh list reads the same back.
+        juce::RecentlyOpenedFilesList again;
+        RecentFiles::restore (again, settings);
+        auto same = again.getNumFiles() == list.getNumFiles();
+
+        for (int i = 0; same && i < list.getNumFiles(); ++i)
+            same = again.getFile (i) == list.getFile (i);
+
+        // The menu leaves out files that have gone, keeping each item's id at its place in the list.
+        files[11].deleteFile();
+        const auto menu = RecentFiles::createMenu (list, 100);
+        std::vector<std::pair<int, juce::String>> items;
+
+        for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+            if (! it.getItem().isSeparator)
+                items.emplace_back (it.getItem().itemID, it.getItem().text);
+
+        const auto listed = items.size() == 10 && items[0] == std::pair<int, juce::String> (100, "take 5.wav")
+                            && items[1].first == 102 && items.back() == std::pair<int, juce::String> (110, "Clear Menu");
+        const auto kinds = RecentFiles::isSession (files[3]) && ! RecentFiles::isSession (files[4]);
+
+        RecentFiles::clear (list, settings);
+        juce::RecentlyOpenedFilesList cleared;
+        RecentFiles::restore (cleared, settings);
+        const auto emptied = list.getNumFiles() == 0 && cleared.getNumFiles() == 0 && RecentFiles::createMenu (list, 100).getNumItems() == 0;
+        folder.deleteRecursively();
+        check (capped && moved && same && listed && kinds && emptied,
+               "open recent: newest first, ten kept, reopening moves to the top, kept in the settings, gone files left off the menu, and cleared");
+    }
+
     void testLoadReadout (AudioEngine& engine)
     {
         LoadReadout::Reading now { 0.123, 0 };
@@ -1277,4 +1329,5 @@ void runMixerTests (AudioEngine& engine)
     testLoadReadout (engine);
     testSoloSafe (engine);
     testStripMenu (engine);
+    testRecentFiles();
 }

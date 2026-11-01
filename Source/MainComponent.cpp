@@ -723,6 +723,8 @@ MainComponent::MainComponent()
     juce::MenuBarModel::setMacMainMenu (this);
    #endif
 
+    RecentFiles::restore (recentFiles, *settings);
+
     // Reopening the last file is quiet: one that can no longer be read is logged and forgotten.
     if (const juce::File last (settings->getValue (lastFileKey)); last.existsAsFile())
     {
@@ -1463,7 +1465,10 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
     switch (index)
     {
-        case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers }); break;
+        case 0:
+            add ({ cmdOpen });
+            menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
+            add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
@@ -1823,6 +1828,10 @@ void MainComponent::openSession (const juce::File& file, std::optional<juce::Fil
     setMultitrack (true);
     multitrack.zoomToFit();
     refreshTitle();
+
+    // A recovered copy isn't a file the user opened.
+    if (! as.has_value())
+        noteRecent (file);
 
     if (! loaded.missing.isEmpty())
         showError ("Missing audio", "These files could not be read, so their clips were left out:\n\n"
@@ -2881,9 +2890,41 @@ void MainComponent::openFile (const juce::File& file)
     const auto error = engine.openFile (file);
 
     if (error.isNotEmpty())
+    {
         showError ("Can't open file", file.getFullPathName() + "\n\n" + error);
+        return;
+    }
+
+    setMultitrack (false);
+    noteRecent (file);
+}
+
+void MainComponent::noteRecent (const juce::File& file)
+{
+    RecentFiles::note (recentFiles, file, *appProperties.getUserSettings());
+    menuItemsChanged();
+}
+
+void MainComponent::menuItemSelected (int menuItemId, int)
+{
+    if (menuItemId == recentBaseId + RecentFiles::maxFiles)
+    {
+        RecentFiles::clear (recentFiles, *appProperties.getUserSettings());
+        menuItemsChanged();
+        return;
+    }
+
+    if (! juce::isPositiveAndBelow (menuItemId - recentBaseId, recentFiles.getNumFiles()))
+        return;
+
+    const auto file = recentFiles.getFile (menuItemId - recentBaseId);
+
+    if (! file.existsAsFile())
+        showError ("Can't open", file.getFullPathName() + " is no longer there.");
+    else if (RecentFiles::isSession (file))
+        confirmDiscardSession ([this, file] { openSession (file); });
     else
-        setMultitrack (false);
+        confirmDiscardChanges ([this, file] { openFile (file); });
 }
 
 void MainComponent::chooseFile()
