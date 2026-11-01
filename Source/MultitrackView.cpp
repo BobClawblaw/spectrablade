@@ -17,14 +17,14 @@ namespace
 
     /** A raised-cosine fade's curve, from silence at silentX (on the bottom) to full level at
         fullX (on the top). */
-    juce::Path fadeCurve (float silentX, float fullX, float top, float bottom)
+    juce::Path fadeCurve (FadeShape shape, float silentX, float fullX, float top, float bottom)
     {
         juce::Path curve;
 
         for (int i = 0; i <= 32; ++i)
         {
             const auto t = (float) i / 32.0f;
-            const auto level = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t);
+            const auto level = FadeShapes::level (shape, i, 32);
             const auto point = juce::Point<float> (silentX + (fullX - silentX) * t, bottom - level * (bottom - top));
 
             if (i == 0)
@@ -665,6 +665,19 @@ void MultitrackView::showClipMenu (juce::uint32 clipId)
     }
 
     menu.addSubMenu ("Colour", colours);
+
+    for (auto fadeOut : { false, true })
+    {
+        juce::PopupMenu shapes;
+        const auto current = fadeOut ? clip.fadeOutShape : clip.fadeInShape;
+
+        for (auto shape : FadeShapes::all)
+            shapes.addItem (FadeShapes::displayName (shape), ! clip.locked, shape == current,
+                            [safe, fadeOut, shape] { if (safe != nullptr) safe->setSelectedClipsFadeShape (fadeOut, shape); });
+
+        menu.addSubMenu (fadeOut ? "Fade Out Shape" : "Fade In Shape", shapes);
+    }
+
     menu.addItem ("Lock", true, areSelectedClipsLocked(), [safe] { if (safe != nullptr) safe->setSelectedClipsLocked (! safe->areSelectedClipsLocked()); });
     menu.addItem ("Mute", true, areSelectedClipsMuted(), [safe] { if (safe != nullptr) safe->setSelectedClipsMuted (! safe->areSelectedClipsMuted()); });
     menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
@@ -1553,11 +1566,11 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
         }
     }
 
-    // Fades as the raised-cosine curves they play, from silence up to full level.
-    const auto drawFade = [&] (float silentX, float fullX)
+    // Fades as the curves they play, from silence up to full level.
+    const auto drawFade = [&] (FadeShape shape, float silentX, float fullX)
     {
         const auto top = (float) r.getY() + 16.0f, bottom = (float) r.getBottom();
-        const auto curve = fadeCurve (silentX, fullX, top, bottom);
+        const auto curve = fadeCurve (shape, silentX, fullX, top, bottom);
         auto shade = curve;
         shade.lineTo (silentX, top);
         shade.closeSubPath();
@@ -1575,10 +1588,10 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
     }
 
     if (c.fadeIn > 0)
-        drawFade ((float) r.getX(), xForFrame (c.position + c.fadeIn));
+        drawFade (c.fadeInShape, (float) r.getX(), xForFrame (c.position + c.fadeIn));
 
     if (c.fadeOut > 0)
-        drawFade ((float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut));
+        drawFade (c.fadeOutShape, (float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut));
 
     if (r.getWidth() > 3 * edgeGrab && ! c.locked)
     {
@@ -1644,7 +1657,7 @@ void MultitrackView::paint (juce::Graphics& g)
 
                 const auto r = clipBounds (t, c);
                 g.setColour (juce::Colours::white.withAlpha (0.6f));
-                g.strokePath (fadeCurve ((float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut), (float) r.getY() + 16.0f, (float) r.getBottom()),
+                g.strokePath (fadeCurve (c.fadeOutShape, (float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut), (float) r.getY() + 16.0f, (float) r.getBottom()),
                               juce::PathStrokeType (1.0f));
             }
 
@@ -2446,6 +2459,18 @@ void MultitrackView::setSelectedClipsColour (int colour)
 
     if (changed)
         engine.session.apply (std::move (next), "Clip Colour");
+}
+
+void MultitrackView::setSelectedClipsFadeShape (bool fadeOut, FadeShape shape)
+{
+    auto next = *engine.session.getState();
+    auto changed = false;
+
+    for (auto id : getSelectedClips())
+        changed = SessionEdits::setClipFadeShape (next, id, fadeOut, shape) || changed;
+
+    if (changed)
+        engine.session.apply (std::move (next), fadeOut ? "Fade Out Shape" : "Fade In Shape");
 }
 
 void MultitrackView::setSelectedClipsFlag (bool (*set) (SessionState&, juce::uint32, bool), bool on, const juce::String& verb)

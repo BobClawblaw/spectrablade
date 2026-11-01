@@ -136,6 +136,10 @@ public:
         one undo step ("Clip Colour"). Right-click a clip for its Colour menu. */
     void setSelectedClipsColour (int colour);
 
+    /** Gives every selected clip's fade in (or out) a shape, as one undo step ("Fade In Shape",
+        "Fade Out Shape"); locked clips keep theirs. Right-click a clip for its fade shape menus. */
+    void setSelectedClipsFadeShape (bool fadeOut, FadeShape);
+
     /** Selects a clip alone (and its track), puts the cursor at its start and scrolls it into
         view, keeping the zoom. False when there is no such clip. */
     bool showClip (juce::uint32 clipId);

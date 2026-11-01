@@ -48,11 +48,6 @@ namespace
         return juce::jmax (-range.getStart(), range.getEnd());
     }
 
-    float fadeGain (juce::int64 frame, juce::int64 fade)
-    {
-        return frame >= fade ? 1.0f : 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * (float) frame / (float) fade);
-    }
-
     bool plays (const SessionState& state, const SessionTrack& track)
     {
         if (track.mute)
@@ -197,7 +192,8 @@ namespace
                     for (int i = 0; i < count; ++i)
                     {
                         const auto inClip = from - clip.position + i;
-                        s[i] *= fadeGain (inClip, clip.fadeIn) * fadeGain (clip.length - 1 - inClip, clip.fadeOut);
+                        s[i] *= FadeShapes::level (clip.fadeInShape, inClip, clip.fadeIn)
+                                * FadeShapes::level (clip.fadeOutShape, clip.length - 1 - inClip, clip.fadeOut);
                     }
                 }
             }

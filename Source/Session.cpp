@@ -119,6 +119,62 @@ namespace
     }
 }
 
+namespace FadeShapes
+{
+float level (FadeShape shape, juce::int64 frame, juce::int64 length)
+{
+    if (frame >= length)
+        return 1.0f;
+
+    const auto t = (float) frame / (float) length;
+
+    switch (shape)
+    {
+        case FadeShape::linear:     return t;
+        case FadeShape::equalPower: return std::sin (juce::MathConstants<float>::halfPi * t);
+        case FadeShape::slow:       return t * t;
+        case FadeShape::fast:       return 1.0f - (1.0f - t) * (1.0f - t);
+        case FadeShape::sCurve:
+        default:                    return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * (float) frame / (float) length);
+    }
+}
+
+juce::String displayName (FadeShape shape)
+{
+    switch (shape)
+    {
+        case FadeShape::linear:     return "Linear";
+        case FadeShape::equalPower: return "Equal Power";
+        case FadeShape::slow:       return "Slow Start";
+        case FadeShape::fast:       return "Fast Start";
+        case FadeShape::sCurve:
+        default:                    return "S-Curve";
+    }
+}
+
+juce::String id (FadeShape shape)
+{
+    switch (shape)
+    {
+        case FadeShape::linear:     return "linear";
+        case FadeShape::equalPower: return "equalPower";
+        case FadeShape::slow:       return "slow";
+        case FadeShape::fast:       return "fast";
+        case FadeShape::sCurve:
+        default:                    return "sCurve";
+    }
+}
+
+FadeShape fromId (const juce::String& name)
+{
+    for (auto shape : all)
+        if (id (shape) == name)
+            return shape;
+
+    return FadeShape::sCurve;
+}
+}
+
 float Envelope::valueAt (juce::int64 frame) const
 {
     return points.empty() ? 0.0f : valueWith (points, firstAfter (points, frame), frame);
@@ -638,6 +694,17 @@ bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     c->takes.clear();
     c->activeTake = 0;
     limitFades (*c);
+    return true;
+}
+
+bool setClipFadeShape (SessionState& s, juce::uint32 clipId, bool fadeOut, FadeShape shape)
+{
+    auto* c = findUnlocked (s, clipId);
+
+    if (c == nullptr || (fadeOut ? c->fadeOutShape : c->fadeInShape) == shape)
+        return false;
+
+    (fadeOut ? c->fadeOutShape : c->fadeInShape) = shape;
     return true;
 }
 
@@ -1608,6 +1675,12 @@ juce::String save (const SessionState& state, const juce::File& target,
             clip->setAttribute ("fadeIn", juce::String (c.fadeIn));
             clip->setAttribute ("fadeOut", juce::String (c.fadeOut));
 
+            if (c.fadeInShape != FadeShape::sCurve)
+                clip->setAttribute ("fadeInShape", FadeShapes::id (c.fadeInShape));
+
+            if (c.fadeOutShape != FadeShape::sCurve)
+                clip->setAttribute ("fadeOutShape", FadeShapes::id (c.fadeOutShape));
+
             if (c.locked)
                 clip->setAttribute ("locked", true);
 
@@ -1777,6 +1850,8 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.gainDb = (float) clipXml->getDoubleAttribute ("gainDb");
             clip.fadeIn = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeIn").getLargeIntValue());
             clip.fadeOut = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeOut").getLargeIntValue());
+            clip.fadeInShape = FadeShapes::fromId (clipXml->getStringAttribute ("fadeInShape"));
+            clip.fadeOutShape = FadeShapes::fromId (clipXml->getStringAttribute ("fadeOutShape"));
             clip.locked = clipXml->getBoolAttribute ("locked");
             clip.muted = clipXml->getBoolAttribute ("muted");
             clip.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, clipXml->getIntAttribute ("colour", -1));

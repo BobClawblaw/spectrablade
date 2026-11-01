@@ -658,6 +658,42 @@ namespace
     }
 }
 
+namespace
+{
+    void testFadeShapeFile (AudioEngine& engine)
+    {
+        const auto folder = juce::File::createTempFile ("shapes");
+        folder.createDirectory();
+        juce::AudioBuffer<float> b (1, 4800);
+        b.clear();
+        const auto audioFile = folder.getChildFile ("tone.wav");
+        const auto written = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (b)), rate, audioFile, 24, engine.formatManager).isEmpty();
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        const auto loadedAudio = AudioFileIO::load (audioFile, engine.formatManager);
+        const auto a = SessionEdits::addClip (s, 0, audioFile, loadedAudio.snapshot, 0);
+        const auto b2 = SessionEdits::addClip (s, 0, audioFile, loadedAudio.snapshot, 9600);
+        SessionEdits::setClipFades (s, a, 480, 960);
+        SessionEdits::setClipFadeShape (s, a, false, FadeShape::equalPower);
+        SessionEdits::setClipFadeShape (s, a, true, FadeShape::fast);
+        const auto sessionFile = folder.getChildFile ("Shapes.sbsession");
+        const auto error = SessionFile::save (s, sessionFile);
+        const auto text = sessionFile.loadFileAsString();
+        const auto loaded = SessionFile::load (sessionFile, engine.formatManager);
+        folder.deleteRecursively();
+        const auto clipOf = [&loaded] (juce::uint32 index) -> const SessionClip& { return loaded.state.tracks[0].clips[index]; };
+
+        check (written && error.isEmpty() && loaded.error.isEmpty() && loaded.state.tracks.size() == 1 && loaded.state.tracks[0].clips.size() == 2
+                   && clipOf (0).fadeInShape == FadeShape::equalPower && clipOf (0).fadeOutShape == FadeShape::fast
+                   && clipOf (1).fadeInShape == FadeShape::sCurve && clipOf (1).fadeOutShape == FadeShape::sCurve
+                   && text.contains ("fadeInShape=\"equalPower\"") && text.contains ("fadeOutShape=\"fast\"") && b2 != 0
+                   && text.indexOf ("fadeInShape") == text.lastIndexOf ("fadeInShape"),
+               "fade shapes: kept in a session file, and left out of it for the S-curve");
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
     testClipProperties (engine);
@@ -671,4 +707,5 @@ void runMixerTests (AudioEngine& engine)
     testCollect (engine);
     testMarkerList (engine);
     testRecovery (engine);
+    testFadeShapeFile (engine);
 }

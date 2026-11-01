@@ -5,6 +5,29 @@
 
 //==============================================================================
 /** A clip: a stretch of an audio file placed on a track. The audio is shared, never copied. */
+/** The curve a fade follows from silence to full level. */
+enum class FadeShape
+{
+    sCurve,        // raised cosine: gentle at both ends
+    linear,
+    equalPower,    // a quarter sine: two of these crossfading keep uncorrelated sound's power steady
+    slow,          // squared: starts slowly
+    fast           // rises quickly, then levels off
+};
+
+namespace FadeShapes
+{
+    constexpr std::array<FadeShape, 5> all { FadeShape::sCurve, FadeShape::linear, FadeShape::equalPower, FadeShape::slow, FadeShape::fast };
+
+    /** The level `frame` frames into a fade `length` frames long (1 from its end on). */
+    float level (FadeShape, juce::int64 frame, juce::int64 length);
+
+    /** "S-Curve", "Linear", ... as menus show them, and the names session files use. */
+    juce::String displayName (FadeShape);
+    juce::String id (FadeShape);
+    FadeShape fromId (const juce::String&);   // S-curve for one it doesn't know
+}
+
 struct SessionClip
 {
     juce::uint32 id = 0;
@@ -15,7 +38,8 @@ struct SessionClip
     juce::int64 offset = 0;                // first frame of the audio it plays
     juce::int64 length = 0;                // frames it plays
     float gainDb = 0.0f;                   // from minGainDb to maxGainDb
-    juce::int64 fadeIn = 0, fadeOut = 0;   // frames, raised-cosine
+    juce::int64 fadeIn = 0, fadeOut = 0;   // frames
+    FadeShape fadeInShape = FadeShape::sCurve, fadeOutShape = FadeShape::sCurve;
     bool locked = false;                   // the edits below leave it where it is, as it is
     bool muted = false;                    // stays in place but isn't heard (in playback, mixdowns, bounces and stems)
     int colour = -1;                       // a place in TrackColours::palette, or -1 for its track's colour
@@ -258,6 +282,9 @@ namespace SessionEdits
     /** Sets a clip's fade lengths in frames. The fade in is limited to the clip's length and the
         fade out to what the fade in leaves. */
     bool setClipFades (SessionState&, juce::uint32 clipId, juce::int64 fadeIn, juce::int64 fadeOut);
+
+    /** Sets the shape of a clip's fade in (or out). False for a locked clip or when it is so. */
+    bool setClipFadeShape (SessionState&, juce::uint32 clipId, bool fadeOut, FadeShape);
 
     bool removeClip (SessionState&, juce::uint32 clipId);
 

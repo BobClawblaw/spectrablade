@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 65: fade shapes**
+- A clip's fade in and fade out each have a shape, chosen from the clip's right-click menu (Fade In Shape, Fade Out Shape) for every selected clip: S-Curve (the raised cosine every fade used before, still the default), Linear, Equal Power (a quarter sine: two crossfading keep the power of unrelated sounds steady), Slow Start (squared) and Fast Start. Each change is an undo step; locked clips keep theirs. The lanes draw each fade in its shape, and playback, mixdowns, bounces, stems and regions all use it. Shapes other than the S-curve are saved with the session.
+- Measured by the tests: each shape from 0 to 1, and half way at 0.5, 0.5, 0.7071, 0.25 and 0.75; two equal-power fades summing to a power of 1 (within 0.000001) every 10 frames across a crossfade; the mix of a steady clip following each shape in and out, every 7th frame, within 0.000001; the S-curve computed with the same expression as before, and every earlier fade and crossfade test passing unchanged; locked clips refused; the undo step from the view; and shapes through a session file, with the default left out. How the curves look, and the menu, were not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
+
 **Milestone 64: recovering a session after a crash**
 - While the session has unsaved changes, a copy of it (with its track effects) is written every two minutes, when it has changed since the last copy, to a Recovery folder beside the app's settings, with a note of the session's own file and the time. Not while recording, since the takes aren't in the session until they stop. Saving the session, undoing back to where it was saved, or quitting normally removes the copy.
 - When SpectraBlade starts and finds a copy, it says which session it was and when the copy was made, and offers to open it. Opened, it takes the session's own file (or none, if it had never been saved) and starts with changes to save; Discard removes it. The audio the copy uses is the session's own files; changes made in the last two minutes before a crash can be lost.
@@ -463,6 +467,7 @@ The tests run against the real machine:
 - Export Regions: which regions, and their files.
 - Quantizing clips to seconds and to beats, and snapping dropped files.
 - Recovery copies: writing, finding, clearing, and a recovered session needing saving.
+- Fade shapes: their levels, the mix, the menu step and the session file.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -516,4 +521,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: track freeze, rendering a track through its effects to a file it then plays instead (and unfreezing back), to free the CPU
+1. Multitrack, continued: track freeze, rendering a track's clips through its effects to a file it then plays instead (and unfreezing back), to free the CPU

@@ -1518,9 +1518,15 @@ void runMultitrackViewTests (AudioEngine& engine)
         Mouse::settle();
         const auto onBeats = startOf (early) == 24000 && startOf (middle) == 144000 && startOf (fixed) == 250000;
         const auto again = view.quantizeSelectedClips();
+        view.setSelectedClipsFadeShape (true, FadeShape::linear);
+        Mouse::settle();
+        const auto shaped = engine.session.getUndoDescription() == "Fade Out Shape" && clip (early).fadeOutShape == FadeShape::linear
+                            && clip (middle).fadeOutShape == FadeShape::linear && clip (fixed).fadeOutShape == FadeShape::sCurve
+                            && clip (early).fadeInShape == FadeShape::sCurve;
         view.setShowBars (false);
         check (toSeconds == 2 && secondsStep == "Quantize 2 Clips" && onSeconds && toBeats == 2 && onBeats && again == 0,
                "quantize: selected clips start on the nearest mark, of seconds or of beats; a locked clip stays; nothing left to move the second time");
+        check (shaped, "fade shapes: set on the selected clips as one undo step, not on a locked one");
 
         // Dropped files land on the grid when snapping is on.
         juce::int64 droppedAt = -1;

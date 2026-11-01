@@ -512,6 +512,60 @@ void runBounceTests()
                "export regions: a file for each region in time order, numbered and named as stems are; point markers left out");
     }
 
+    {
+        // Fade shapes: their levels half way, and the mix following each one.
+        const auto half = [] (FadeShape shape) { return FadeShapes::level (shape, 500, 1000); };
+        auto ends = true;
+
+        for (auto shape : FadeShapes::all)
+            ends = ends && juce::exactlyEqual (FadeShapes::level (shape, 0, 1000), 0.0f) && juce::exactlyEqual (FadeShapes::level (shape, 1000, 1000), 1.0f)
+                   && FadeShapes::fromId (FadeShapes::id (shape)) == shape;
+
+        auto power = true;
+
+        for (juce::int64 f = 0; f <= 1000; f += 10)
+            power = power && std::abs (std::pow (FadeShapes::level (FadeShape::equalPower, f, 1000), 2.0f)
+                                       + std::pow (FadeShapes::level (FadeShape::equalPower, 1000 - f, 1000), 2.0f) - 1.0f) < 1.0e-6f;
+
+        check (ends && power && std::abs (half (FadeShape::sCurve) - 0.5f) < 1.0e-6f && std::abs (half (FadeShape::linear) - 0.5f) < 1.0e-6f
+                   && std::abs (half (FadeShape::equalPower) - std::sqrt (0.5f)) < 1.0e-6f && std::abs (half (FadeShape::slow) - 0.25f) < 1.0e-6f
+                   && std::abs (half (FadeShape::fast) - 0.75f) < 1.0e-6f && FadeShapes::fromId ("unknown") == FadeShape::sCurve,
+               "fade shapes: from 0 to 1, half way at 0.5, 0.5, 0.707, 0.25 and 0.75; equal-power fades keep the power at 1 across a crossfade");
+
+        juce::AudioBuffer<float> steady (1, 4000);
+
+        for (int i = 0; i < steady.getNumSamples(); ++i)
+            steady.setSample (0, i, 0.5f);
+
+        auto followed = true;
+
+        for (auto shape : FadeShapes::all)
+        {
+            SessionState faded;
+            faded.sampleRate = rate;
+            faded.addTrack();
+            const auto id = SessionEdits::addClip (faded, 0, juce::File ("/takes/steady.wav"), AudioEdits::fromBuffer (juce::AudioBuffer<float> (steady)), 0);
+            SessionEdits::setClipFades (faded, id, 1000, 1000);
+            SessionEdits::setClipFadeShape (faded, id, false, shape);
+            SessionEdits::setClipFadeShape (faded, id, true, shape);
+            const auto out = mix (faded, { 0, 4000 });
+            const auto full = out.getSample (0, 2000);
+
+            for (int i = 0; i < 1000; i += 7)
+                followed = followed && std::abs (out.getSample (0, i) - full * FadeShapes::level (shape, i, 1000)) < 1.0e-6f
+                           && std::abs (out.getSample (0, 3999 - i) - full * FadeShapes::level (shape, i, 1000)) < 1.0e-6f;
+        }
+
+        SessionState fixedClip;
+        fixedClip.sampleRate = rate;
+        fixedClip.addTrack();
+        const auto fixedId = SessionEdits::addClip (fixedClip, 0, juce::File ("/takes/steady.wav"), AudioEdits::fromBuffer (juce::AudioBuffer<float> (steady)), 0);
+        const auto same = ! SessionEdits::setClipFadeShape (fixedClip, fixedId, false, FadeShape::sCurve);
+        SessionEdits::setClipLocked (fixedClip, fixedId, true);
+        check (followed && same && ! SessionEdits::setClipFadeShape (fixedClip, fixedId, true, FadeShape::linear),
+               "fade shapes: the mix follows each shape in and out; none set on a locked clip or where it is already so");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");
