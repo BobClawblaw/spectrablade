@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 116: sorting the marker list**
+- Clicking a column header of the marker list sorts it by that column, and clicking it again reverses it: names ignoring case with numbers in order ("Take 2" before "Take 10"), or start, end or length, with points counting as ending where they start. Rows that tie keep time order. The search and the row-to-marker mapping work the same while sorted, and edits keep the sort.
+- Measured by the tests, through a real marker list: "take 10", "Take 2", "intro" and "Take 1" sort by name as intro, Take 1, Take 2, take 10; by length, longest first, as Take 2, intro, then the two points in time order; the first row then maps to the right marker; and the list goes back to time order. Clicking the headers with the mouse was not done by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 115: Import Markers from CSV**
 - File > Import Markers from CSV reads a list written by Export Markers as CSV and adds its markers and regions to the open file or the session, as one undo step, leaving out any already there with the same place, length and name. Markers are placed by their times in seconds, so a list moves between files at different sample rates; in the editor, markers starting past the end of the file are left out and regions are cut to it. Names with commas, quotes or line breaks come back as written. Colours are not in the CSV, so imported markers take the default ones. A file that isn't such a list, or has a line that can't be read, is refused with a message and nothing is added.
 - Measured by the tests: four markers and regions, two with a comma, quotes and a line break in their names, written and read back at the same rate are identical; at half the rate they land at half the frames; cut to 480,000 frames the last region ends there, and cut to 100,000 only the two starting before remain; another CSV, a bad time and an unclosed quote are refused, and a header alone is an empty list; merging adds only new markers, and merging again adds none. The menu item and file dialog were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -737,6 +741,7 @@ The tests run against the real machine:
 - Regions from markers: each point to the next or the end, names and colours kept, in the session view too.
 - Renaming markers in sequence: time order, two or three digits, one undo step in the session.
 - Markers from CSV: round trip, other rates, cut to the file, bad files refused, merged without repeats.
+- Sorting the marker list: by name, naturally and ignoring case; by length backwards; back to time order.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -790,4 +795,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Marker list: a Colour column, and sorting by name or time by clicking the column headers
+1. Clip list: sorting by clicking the column headers, as the marker list does

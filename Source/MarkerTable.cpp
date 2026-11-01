@@ -38,12 +38,47 @@ void MarkerTable::refilter()
         if (wanted.isEmpty() || markers[i].name.containsIgnoreCase (wanted))
             shownMarkers.push_back ((int) i);
 
+    if (sortColumn != 0)
+    {
+        // Ties keep time order, whichever way the column runs.
+        const auto key = [this, &markers] (int i) -> juce::int64
+        {
+            const auto& m = markers[(size_t) i];
+            return sortColumn == start ? m.start : sortColumn == end ? m.getEnd() : m.length;
+        };
+
+        std::stable_sort (shownMarkers.begin(), shownMarkers.end(), [this, &markers, &key] (int a, int b)
+        {
+            if (sortColumn == name)
+            {
+                const auto order = markers[(size_t) a].name.compareNatural (markers[(size_t) b].name);
+                return sortForwards ? order < 0 : order > 0;
+            }
+
+            return sortForwards ? key (a) < key (b) : key (a) > key (b);
+        });
+    }
+
     table.updateContent();
 
     if (table.getSelectedRow() >= getNumRows())
         table.deselectAllRows();
 
     repaint();
+}
+
+void MarkerTable::setSort (int column, bool forwards)
+{
+    // The header tells the table later; sorting now keeps this in step with what the caller sees.
+    table.getHeader().setSortColumnId (column, forwards);
+    sortOrderChanged (column, forwards);
+}
+
+void MarkerTable::sortOrderChanged (int column, bool forwards)
+{
+    sortColumn = column;
+    sortForwards = forwards;
+    refilter();
 }
 
 void MarkerTable::setSearch (const juce::String& text)

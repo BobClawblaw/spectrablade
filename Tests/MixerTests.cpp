@@ -661,6 +661,32 @@ namespace
         table.setSearch ({});
         check (found && mapped && refiltered && none && table.getNumRows() == 2,
                "marker list: the search shows markers whose name holds the text, ignoring case; a row chooses the marker it shows; edits re-filter");
+
+        // Sorting: by name ignoring case with numbers in order, by length backwards, then back to time.
+        auto sortable = *engine.session.getState();
+        sortable.markers = { { 0, 0, "take 10" }, { 100, 50, "Take 2" }, { 200, 10, "intro" }, { 300, 0, "Take 1" } };
+        engine.session.apply (std::move (sortable), "Markers");
+        settle();
+        const auto names = [&table]
+        {
+            juce::StringArray shown;
+
+            for (int row = 0; row < table.getNumRows(); ++row)
+                shown.add (table.getText (row, MarkerTable::name));
+
+            return shown.joinIntoString ("|");
+        };
+
+        table.setSort (MarkerTable::name, true);
+        const auto byName = names();
+        table.setSort (MarkerTable::length, false);
+        const auto byLength = names();
+        const auto lengthMapped = table.getMarkerIndex (0) == 1;
+        table.setSort (0, true);
+        const auto byTime = names();
+        check (byName == "intro|Take 1|Take 2|take 10" && byLength == "Take 2|intro|take 10|Take 1" && lengthMapped
+                   && byTime == "take 10|Take 2|intro|Take 1",
+               "marker list: sorted by name ignoring case with numbers in order, by length backwards, and back to time order (" + byName + "; " + byLength + ")");
         engine.session.reset ({}, {});
         settle();
     }

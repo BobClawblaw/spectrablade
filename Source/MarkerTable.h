@@ -6,7 +6,8 @@
     Clicking a row asks for that marker to be shown; double-clicking it or pressing Return asks
     to rename it, and Delete or Backspace to delete it. Follows the session, so edits and undo
     show here at once. The search box above it shows only the markers whose name contains what
-    is typed, ignoring case. */
+    is typed, ignoring case. Clicking a column header sorts by that column, and again reverses it;
+    names sort ignoring case with numbers in order, and points count as ending where they start. */
 class MarkerTable final : public juce::Component,
                          private juce::TableListBoxModel,
                          private juce::ChangeListener
@@ -35,6 +36,9 @@ public:
     /** Types into the search box, as the keyboard does. */
     void setSearch (const juce::String&);
 
+    /** Sorts by a column, as clicking its header does; 0 goes back to time order. */
+    void setSort (int column, bool forwards);
+
     void resized() override;
 
 private:
@@ -45,11 +49,14 @@ private:
     void deleteKeyPressed (int lastRowSelected) override;
     void returnKeyPressed (int lastRowSelected) override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void sortOrderChanged (int column, bool forwards) override;
     void refilter();
 
     Session& session;
     Actions actions;
     std::vector<int> shownMarkers;   // indices in the session's markers, one per row
+    int sortColumn = 0;              // 0: the session's order, which is time order
+    bool sortForwards = true;
     juce::TextEditor search;
     juce::TableListBox table { {}, this };
 
