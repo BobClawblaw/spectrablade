@@ -11,6 +11,7 @@
 #include "SampleRateConverter.h"
 #include "SessionCollect.h"
 #include "SessionRecovery.h"
+#include "KeyShortcuts.h"
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
@@ -58,7 +59,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -135,6 +136,29 @@ public:
         setResizable (true, false);
         setResizeLimits (300, 150, 3000, 2000);
         centreWithSize (710, 320);
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
+/** Every command and its keys, to change; the changes are saved as they are made. */
+class MainComponent::KeyShortcutsWindow final : public juce::DocumentWindow
+{
+public:
+    KeyShortcutsWindow (juce::KeyPressMappingSet& mappings, std::function<void()> onClose)
+        : DocumentWindow ("Keyboard Shortcuts", juce::Colours::darkgrey, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new juce::KeyMappingEditorComponent (mappings, true), false);
+        setResizable (true, false);
+        setResizeLimits (400, 300, 3000, 3000);
+        centreWithSize (560, 640);
         setVisible (true);
     }
 
@@ -665,6 +689,8 @@ MainComponent::MainComponent()
 
     commands.registerAllCommandsForTarget (this);
     commands.setFirstCommandTarget (this);
+    KeyShortcuts::restore (*commands.getKeyMappings(), *settings);
+    commands.getKeyMappings()->addChangeListener (this);
     addKeyListener (commands.getKeyMappings());
     setApplicationCommandManagerToWatch (&commands);   // menus refresh when command state changes
    #if JUCE_MAC
@@ -778,6 +804,8 @@ MainComponent::~MainComponent()
     engine.session.removeChangeListener (this);
     engine.removeChangeListener (this);
     engine.knownPlugins.removeChangeListener (this);
+    commands.getKeyMappings()->removeChangeListener (this);
+    keyShortcutsWindow = nullptr;
     editorWindows.clear();
     pluginListWindow = nullptr;
     mixerWindow = nullptr;
@@ -855,7 +883,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdLoopPlayback; ++id)
+    for (int id = cmdOpen; id <= cmdKeyShortcuts; ++id)
         ids.add (id);
 }
 
@@ -1098,6 +1126,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('e', cmd); info.setActive (hasSelection); break;
 
         case cmdPlugins:    info.setInfo ("Plug-ins...", "Scan and manage plug-ins", "Window", 0); break;
+        case cmdKeyShortcuts: info.setInfo ("Keyboard Shortcuts...", "See and change the keys for every command", "Window", 0); break;
         case cmdAudioSettings: info.setInfo ("Audio Settings...", "Choose the audio interface", "Window", 0); info.addDefaultKeypress (',', cmd); break;
         case cmdSaveRack:   info.setInfo ("Save Rack...", "Save the effects rack", "Window", 0); break;
         case cmdLoadRack:   info.setInfo ("Load Rack...", "Load an effects rack", "Window", 0); break;
@@ -1206,6 +1235,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMoveTrackDown: multitrack.moveTrack (multitrack.getSelectedTrack(), multitrack.getSelectedTrack() + 1); break;
         case cmdPlugins:    showPluginList(); break;
         case cmdAudioSettings: showAudioSettings(); break;
+        case cmdKeyShortcuts: showKeyShortcuts(); break;
         case cmdSaveRack:   saveRack(); break;
         case cmdLoadRack:   loadRack(); break;
         case cmdRecord:     toggleRecord(); break;
@@ -1368,7 +1398,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
-        case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
+        case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
         default: break;
     }
 
@@ -1378,6 +1408,12 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 //==============================================================================
 void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
+    if (source == commands.getKeyMappings())
+    {
+        KeyShortcuts::store (*commands.getKeyMappings(), *appProperties.getUserSettings());
+        return;
+    }
+
     if (source == &engine.knownPlugins)
     {
         if (auto xml = engine.knownPlugins.createXml())
@@ -3774,6 +3810,22 @@ void MainComponent::showAudioSettings()
     o.useNativeTitleBar = true;
     o.resizable = true;
     o.launchAsync();
+}
+
+void MainComponent::showKeyShortcuts()
+{
+    // Deleted later, not inside its own close button's callback.
+    if (keyShortcutsWindow == nullptr)
+        keyShortcutsWindow = std::make_unique<KeyShortcutsWindow> (*commands.getKeyMappings(), [this]
+        {
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+            {
+                if (safe != nullptr)
+                    safe->keyShortcutsWindow = nullptr;
+            });
+        });
+    else
+        keyShortcutsWindow->toFront (true);
 }
 
 void MainComponent::showPluginList()

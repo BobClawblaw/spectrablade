@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 67: keyboard shortcuts**
+- Window > Keyboard Shortcuts... lists every command by menu with its keys: click a key to change or remove it, + to add one, and Reset to Defaults to go back. Changes take effect at once and are saved as they are made, as the differences from the defaults, so a later version's new shortcuts still arrive.
+- Measured by the tests, with a real settings file: nothing stored while the keys are the defaults; a changed key stored, then read back by a fresh command set over its defaults (the changed command with only its new key, the other unchanged); and resetting storing nothing again. Launching the app with no changes added nothing to its settings. The window itself was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 66: loop playback**
 - Transport > Loop Playback (Cmd L) makes a selection in the editor, or the time range in a session, play over and over instead of stopping at its end, through the effects rack or the tracks' effects as usual; the metronome follows. Changing the selection or range while it plays moves the loop (within a twentieth of a second), and turning the option off lets it play on to the end of the range and stop. With nothing selected, playback runs from the cursor as before. The option is remembered.
 - Loop recording keeps its own loop: starting a take drops the playback loop, and an ordinary take never loops.
@@ -474,6 +478,7 @@ The tests run against the real machine:
 - Recovery copies: writing, finding, clearing, and a recovered session needing saving.
 - Fade shapes: their levels, the mix, the menu step and the session file.
 - Loop playback in the file player, sample for sample.
+- Keyboard shortcuts: storing changes and restoring them over the defaults.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.

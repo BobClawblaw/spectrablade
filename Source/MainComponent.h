@@ -50,6 +50,7 @@ private:
     class ClipPropertiesWindow;
     class ClipListWindow;
     class MarkerListWindow;
+    class KeyShortcutsWindow;
     class UndoHistoryWindow;
     class PluginListWindow;
     class RackRenderJob;
@@ -166,6 +167,7 @@ private:
     void toggleClipProperties();
     void toggleClipList();
     void toggleMarkerList();
+    void showKeyShortcuts();
 
     /** Asks for a folder, then mixes each region of the session to a file of its own there. */
     void chooseRegionsFolder();
@@ -218,6 +220,7 @@ private:
     std::unique_ptr<ClipPropertiesWindow> clipPropertiesWindow;
     std::unique_ptr<ClipListWindow> clipListWindow;
     std::unique_ptr<MarkerListWindow> markerListWindow;
+    std::unique_ptr<KeyShortcutsWindow> keyShortcutsWindow;
     std::unique_ptr<UndoHistoryWindow> undoHistoryWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;

@@ -5,6 +5,7 @@
 #include "../Source/AudioFileIO.h"
 #include "../Source/ClipList.h"
 #include "../Source/ClipProperties.h"
+#include "../Source/KeyShortcuts.h"
 #include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
@@ -694,6 +695,57 @@ namespace
     }
 }
 
+namespace
+{
+    /** Two commands with default keys, as the main window has many. */
+    struct TwoCommands final : public juce::ApplicationCommandTarget
+    {
+        juce::ApplicationCommandTarget* getNextCommandTarget() override     { return nullptr; }
+        void getAllCommands (juce::Array<juce::CommandID>& ids) override   { ids.addArray ({ 1, 2 }); }
+        bool perform (const InvocationInfo&) override                       { return true; }
+
+        void getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& info) override
+        {
+            info.setInfo (id == 1 ? "Play" : "Loop", {}, "Transport", 0);
+            info.addDefaultKeypress (id == 1 ? juce::KeyPress::spaceKey : 'l', id == 1 ? 0 : juce::ModifierKeys::commandModifier);
+        }
+    };
+
+    void testKeyShortcuts()
+    {
+        const auto file = juce::File::createTempFile (".settings");
+        juce::PropertiesFile::Options options;
+        juce::PropertiesFile settings (file, options);
+        TwoCommands target;
+
+        juce::ApplicationCommandManager first;
+        first.registerAllCommandsForTarget (&target);
+        KeyShortcuts::store (*first.getKeyMappings(), settings);
+        const auto nothingStored = ! settings.containsKey (KeyShortcuts::settingsKey);
+        const juce::KeyPress newLoop ('k', juce::ModifierKeys::commandModifier, 0);
+        first.getKeyMappings()->removeKeyPress (2, 0);
+        first.getKeyMappings()->addKeyPress (2, newLoop);
+        KeyShortcuts::store (*first.getKeyMappings(), settings);
+
+        // Read back from the file by a fresh set, as the next launch does.
+        juce::PropertiesFile reread (file, options);
+        juce::ApplicationCommandManager second;
+        second.registerAllCommandsForTarget (&target);
+        const auto restored = KeyShortcuts::restore (*second.getKeyMappings(), reread);
+        const auto loopKeys = second.getKeyMappings()->getKeyPressesAssignedToCommand (2);
+        const auto playKeys = second.getKeyMappings()->getKeyPressesAssignedToCommand (1);
+
+        second.getKeyMappings()->resetToDefaultMappings();
+        KeyShortcuts::store (*second.getKeyMappings(), reread);
+        const auto backToNone = ! reread.containsKey (KeyShortcuts::settingsKey);
+        file.deleteFile();
+
+        check (nothingStored && restored && loopKeys.size() == 1 && loopKeys[0] == newLoop && playKeys.size() == 1
+                   && playKeys[0] == juce::KeyPress (juce::KeyPress::spaceKey) && backToNone,
+               "keyboard shortcuts: only changes are stored, they come back over the defaults in a fresh start, and resetting stores nothing");
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
     testClipProperties (engine);
@@ -708,4 +760,5 @@ void runMixerTests (AudioEngine& engine)
     testMarkerList (engine);
     testRecovery (engine);
     testFadeShapeFile (engine);
+    testKeyShortcuts();
 }
