@@ -715,6 +715,21 @@ void runBounceTests()
         const auto fitCount = SessionEdits::fitRegionsToClips (fitting);
         check (fitCount == 1 && fitting.markers == Markers { { 0, 12000, "Fits" }, { 300, 0, "Point" }, { 500, 11500, "Loose" }, { 15000, 1000, "Empty" } },
                "fit regions to clips: a region cut to the clips inside it; one with no clips, one already fitting and a point left alone");
+
+        // Regions over clips: two overlapping clips and one touching them make one group, a
+        // clip after a gap another; doing it again adds none.
+        SessionState grouped;
+        grouped.sampleRate = rate;
+        grouped.addTrack();
+        grouped.addTrack();
+        SessionEdits::addClip (grouped, 0, juce::File ("/takes/a.wav"), ramp (1, 1000, 0.5f), 0);
+        SessionEdits::addClip (grouped, 1, juce::File ("/takes/b.wav"), ramp (1, 1000, 0.5f), 500);
+        SessionEdits::addClip (grouped, 0, juce::File ("/takes/c.wav"), ramp (1, 500, 0.5f), 1500);
+        SessionEdits::addClip (grouped, 1, juce::File ("/takes/d.wav"), ramp (1, 1000, 0.5f), 5000);
+        const auto groupCount = SessionEdits::regionsOverClips (grouped);
+        check (groupCount == 2 && grouped.markers == Markers { { 0, 2000, "Region 01" }, { 5000, 1000, "Region 02" } }
+                   && SessionEdits::regionsOverClips (grouped) == 0,
+               "regions over clips: overlapping and touching clips on any track make one region, a gap starts another; none twice");
     }
 
     {

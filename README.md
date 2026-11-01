@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 126: Add Regions over Clips**
+- Markers > Add Regions over Clips (in the session) adds a region over each stretch where clips run without a gap: clips that overlap or touch, on any track, count as one stretch, and a gap starts the next. New regions are named in turn ("Region 01", ...), a stretch that already has a region exactly over it is skipped, and it is one undo step. Together with Export Regions, each song or take laid out with gaps between becomes a file of its own.
+- Measured by the tests: two overlapping clips on two tracks and a third touching them make one region from 0 to 2,000 frames, a clip after a gap makes a second from 5,000 to 6,000, and doing it again adds none. The command in the session view was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 125: Fit Regions to Clips**
 - In the session, the same Markers menu command reads Fit Regions to Clips: it shrinks every region to the span of the clips overlapping it, on any track and muted ones included, within the region, so Export Regions leaves out the empty time around them. Regions over no clip, and point markers, are left alone. It is one undo step, and says so when nothing would change.
 - Measured by the tests: with clips from 0 to 12,000 frames on two tracks, a region from 500 to 20,000 becomes 500 to 12,000, while a region past every clip, one already from 0 to 12,000 and a point marker are unchanged. The command in the session view was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -787,6 +791,7 @@ The tests run against the real machine:
 - Shorten pauses: cut from the middle down to the time, both ends kept, bit for bit.
 - Fit regions to sound: a loose region trimmed to its sound; silent, point and tight ones left.
 - Fit regions to clips: a region cut to the clips in it; empty, fitting and point ones left.
+- Regions over clips: overlapping and touching clips joined, a gap starting another, none twice.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -840,4 +845,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Session: Regions from Clips, adding a region for each group of overlapping clips
+1. Session: Select Clips in Region, selecting every clip overlapping the region at the cursor

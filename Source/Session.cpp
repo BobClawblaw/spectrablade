@@ -896,6 +896,42 @@ int fitRegionsToClips (SessionState& s)
     return changed;
 }
 
+int regionsOverClips (SessionState& s)
+{
+    std::vector<juce::Range<juce::int64>> spans;
+
+    for (auto& t : s.tracks)
+        for (auto& c : t.clips)
+            if (c.length > 0)
+                spans.emplace_back (c.position, c.getEnd());
+
+    std::sort (spans.begin(), spans.end(), [] (auto a, auto b) { return a.getStart() < b.getStart(); });
+    std::vector<juce::Range<juce::int64>> groups;
+
+    for (auto span : spans)
+    {
+        if (! groups.empty() && span.getStart() <= groups.back().getEnd())
+            groups.back() = groups.back().getUnionWith (span);
+        else
+            groups.push_back (span);
+    }
+
+    auto added = 0;
+
+    for (auto group : groups)
+    {
+        if (std::any_of (s.markers.begin(), s.markers.end(), [group] (const Marker& m)
+                         { return m.isRegion() && m.start == group.getStart() && m.getEnd() == group.getEnd(); }))
+            continue;
+
+        s.markers.push_back ({ group.getStart(), group.getLength(), MarkerEdits::nextName (s.markers, true) });
+        ++added;
+    }
+
+    MarkerEdits::sort (s.markers);
+    return added;
+}
+
 bool setClipFadeShape (SessionState& s, juce::uint32 clipId, bool fadeOut, FadeShape shape)
 {
     auto* c = findUnlocked (s, clipId);

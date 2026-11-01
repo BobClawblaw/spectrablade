@@ -310,6 +310,11 @@ namespace SessionEdits
         within the region; regions overlapping no clip are left alone. Returns how many changed. */
     int fitRegionsToClips (SessionState&);
 
+    /** Adds a region over each stretch of the session where clips run without a gap (clips that
+        overlap or touch, on any track, join into one), named as new regions are; stretches that
+        already have a region exactly over them are skipped. Returns how many were added. */
+    int regionsOverClips (SessionState&);
+
     bool removeClip (SessionState&, juce::uint32 clipId);
 
     /** Locks or unlocks a clip. Moving, trimming, splitting, fading, changing the gain, take or
