@@ -29,6 +29,7 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
     const auto index = (int) std::distance (s.tracks.begin(), source);
     const auto name = source->name + " Bounce";
     const auto sends = source->sends;
+    const auto folderId = source->folderId;
     source->mute = true;
 
     auto& added = s.addTrack();
@@ -38,6 +39,9 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
 
     for (auto& send : sends)
         SessionEdits::setSend (s, id, send);
+
+    // In the source's folder, so the folder's mute, solo and volume act on it as they did.
+    SessionEdits::setTrackFolder (s, id, folderId);
 
     // From the end, where addTrack put it, to just after the source.
     std::rotate (s.tracks.begin() + index + 1, s.tracks.end() - 1, s.tracks.end());

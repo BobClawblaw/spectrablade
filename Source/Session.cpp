@@ -39,6 +39,12 @@ bool SessionState::isSoloed (const SessionTrack& t) const
     return t.solo || (folder != nullptr && folder->solo);
 }
 
+float SessionState::folderGain (const SessionTrack& t) const
+{
+    const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;
+    return folder != nullptr && ! juce::exactlyEqual (folder->gainDb, 0.0f) ? juce::Decibels::decibelsToGain (folder->gainDb, -150.0f) : 1.0f;
+}
+
 bool SessionState::isShown (const SessionTrack& t) const
 {
     const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;

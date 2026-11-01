@@ -183,8 +183,9 @@ struct SessionTrack
     int colour = -1;                       // a place in TrackColours::palette, or -1 for one by its place in the list
     bool hidden = false;                   // left out of the lanes (it still plays and shows in the mixer)
 
-    /** A folder gathers tracks and buses: no audio of its own, but its mute and solo act on
-        them all, and collapsed it leaves them out of the lanes (they still play). */
+    /** A folder gathers tracks and buses: no audio of its own, but its mute, solo and volume
+        (gainDb, added to each one's own) act on them all, and collapsed it leaves them out of
+        the lanes (they still play). */
     bool isFolder = false;
     bool collapsed = false;                // a folder's members out of the lanes
     juce::uint32 folderId = 0;             // the folder this track or bus is in, or 0
@@ -247,6 +248,10 @@ struct SessionState
     /** Muted or soloed itself or through its folder. */
     bool isMuted (const SessionTrack&) const;
     bool isSoloed (const SessionTrack&) const;
+
+    /** Its folder's volume as a gain, by which its output and post-fader sends are scaled; 1
+        out of any folder. */
+    float folderGain (const SessionTrack&) const;
 
     /** In the lanes: not hidden, nor in a collapsed folder. */
     bool isShown (const SessionTrack&) const;

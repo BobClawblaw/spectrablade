@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 72: folder volume**
+- A folder's header has a volume control, which acts as if added to the volume of every track and bus in it: it scales what each sends to the mix and its sends after the volume (before-volume sends are left alone), on top of its own volume and volume envelope. Changing it is an undo step, as a track's volume is. It isn't automated, and writing automation leaves it alone.
+- Freezing, bouncing and exporting stems render a track on its own, as before, so without its folder's volume (or mute); a frozen track in a folder still has the folder's volume applied as it plays. Bounce Track now puts the new track in the source's folder (in Milestone 71 it went in none), so the folder's mute, solo and volume still act on what is heard. Folder volumes are saved with the session.
+- Measured by the tests: a folder at -6 dB, holding a track and the bus it sends to after its volume, mixing within 0.000000001 of the two at -6 dB by their own volumes (the largest difference measured was 0); a folder at 0 dB mixing bit for bit as with no folder; a bounce of the track landing in its folder, the mix staying within float rounding (the largest difference measured was 0); and the volume through a session file. The control in the header was not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
+
 **Milestone 71: track folders**
 - Multitrack > Add Folder adds a folder just above the selected track or bus, with it inside (or at the end, empty, when a folder or nothing is selected). Right-click any track's or bus's header to put it in a folder, or take it out, with the Folder submenu. Folders don't nest. Each is an undo step.
 - A folder has no audio of its own, only a name, mute and solo: muting it mutes everything in it, and soloing it solos everything in it, exactly as their own buttons would (a soloed track still brings the buses it sends to). Its lane shows where its tracks have clips, one thin bar per track. Click the triangle on its header (or choose Collapse in its menu) to fold its tracks out of the lanes: they keep playing and stay in the mixer, their clips leave the selection, and going to one of their clips (from the clip list, say) opens the folder again. Tracks in a folder are drawn inset, with a rule down their left.
@@ -505,7 +510,7 @@ The tests run against the real machine:
 - Freezing a track: the mix bit for bit, refused edits, the session file, collecting, and the lane.
 - Clip groups: the edits, the session file, and selecting and dragging a group in the view.
 - Clip gain lines: the mix, the line following edits, the session file, and editing points in the view.
-- Folders: mute and solo through them, the edits, the session file, and adding and collapsing them in the view.
+- Folders: mute, solo and volume through them, the edits, the session file, and adding and collapsing them in the view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -559,4 +564,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a folder's volume, so a folder's tracks can be turned up or down together through one fader
+1. Multitrack, continued: exporting each folder's tracks mixed together as one stem

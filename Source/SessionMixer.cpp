@@ -352,6 +352,10 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             volume = 1.0f;
         }
 
+        // Its folder's volume scales what it sends on after its own.
+        if (const auto folder = state.folderGain (track); ! juce::exactlyEqual (folder, 1.0f))
+            volume *= folder;
+
         if (buffers.levels != nullptr)
             buffers.levels->raise ((int) (&track - state.tracks.data()), peakOf (buffers.track, 0, numFrames) * volume,
                                    peakOf (buffers.track, 1, numFrames) * volume);
@@ -375,10 +379,11 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             inserts->process (bus, start + latencyOf (inserts, bus.id), input, numFrames);
 
         const auto index = (int) (&bus - state.tracks.data());
+        const auto folder = state.folderGain (bus);
 
         if (bus.volumeEnvelope.isEmpty() && bus.panEnvelope.isEmpty())
         {
-            const auto volume = juce::Decibels::decibelsToGain (bus.gainDb, -150.0f);
+            const auto volume = juce::Decibels::decibelsToGain (bus.gainDb, -150.0f) * folder;
             const auto [left, right] = panGains (bus.pan, 2);
             dest.addFrom (0, destStart, input, 0, 0, numFrames, volume * left);
             dest.addFrom (1, destStart, input, 1, 0, numFrames, volume * right);
@@ -406,7 +411,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         for (int i = 0; i < numFrames; ++i)
         {
-            const auto volume = juce::Decibels::decibelsToGain (volumes[i], -150.0f);
+            const auto volume = juce::Decibels::decibelsToGain (volumes[i], -150.0f) * folder;
             const auto [left, right] = panGains (pans[i], 2);
             outLeft[i] += inLeft[i] * (volume * left);
             outRight[i] += inRight[i] * (volume * right);

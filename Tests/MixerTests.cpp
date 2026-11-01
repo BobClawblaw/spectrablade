@@ -3,6 +3,7 @@
 
 #include <JuceHeader.h>
 #include "../Source/AudioFileIO.h"
+#include "../Source/Bounce.h"
 #include "../Source/ClipList.h"
 #include "../Source/ClipProperties.h"
 #include "../Source/KeyShortcuts.h"
@@ -872,6 +873,37 @@ namespace
         const auto collapsedPlays = same (render (collapsedState), render (s)) && ! collapsedState.isShown (collapsedState.tracks[0])
                                     && collapsedState.isShown (collapsedState.tracks[1]) && collapsedState.isShown (collapsedState.tracks[3]);
 
+        // Its volume: as if added to each member's own, sends after the volume too; at 0 dB,
+        // bit for bit as with no folder.
+        auto louder = s;
+        louder.tracks[3].gainDb = -6.0f;
+        auto byOwn = s;
+        byOwn.tracks[0].gainDb = -6.0f;
+        byOwn.tracks[2].gainDb = -6.0f;
+        const auto withFolderVolume = render (louder), withOwnVolumes = render (byOwn);
+        auto volumeWorst = 0.0f;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 2048; ++i)
+                volumeWorst = juce::jmax (volumeWorst, std::abs (withFolderVolume.getSample (ch, i) - withOwnVolumes.getSample (ch, i)));
+
+        // Bounced, a track in a folder lands in it too, so the mix stays the same.
+        auto bounced = louder;
+        const auto bounceId = Bounce::land (bounced, a, juce::File ("/takes/A Bounce.wav"), AudioEdits::fromBuffer (render (Bounce::isolate (louder, a))), 0);
+        const auto afterBounce = render (bounced);
+        auto bounceWorst = 0.0f;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 2048; ++i)
+                bounceWorst = juce::jmax (bounceWorst, std::abs (afterBounce.getSample (ch, i) - withFolderVolume.getSample (ch, i)));
+
+        const auto bounceStays = bounced.findTrack (bounceId) != nullptr && bounced.findTrack (bounceId)->folderId == folderId && bounceWorst < 1.0e-6f;
+
+        auto noFolder = s;
+        SessionEdits::removeTrack (noFolder, 3);
+        const auto volumes = volumeWorst < 1.0e-6f && withFolderVolume.getMagnitude (0, 2048) > 0.1f && same (render (s), render (noFolder))
+                             && juce::exactlyEqual (s.folderGain (s.tracks[0]), 1.0f) && std::abs (louder.folderGain (louder.tracks[2]) - 0.501187f) < 1.0e-5f;
+
         // No clips on a folder, and removing it leaves its members out of any.
         auto edits = s;
         const auto clipOnFolder = SessionEdits::addClip (edits, 3, juce::File ("/takes/c.wav"), constant (1, 100, 0.1f), 0);
@@ -882,6 +914,7 @@ namespace
 
         // Saved and loaded: the folder, collapsed, and who is in it.
         collapsedState.addFolder();
+        collapsedState.tracks[3].gainDb = -4.5f;
         const auto file = juce::File::createTempFile (".sbsession");
         const auto error = SessionFile::save (collapsedState, file);
         const auto loaded = SessionFile::load (file, engine.formatManager);
@@ -889,11 +922,15 @@ namespace
         const auto& lt = loaded.state.tracks;
         const auto kept = lt.size() == 5 && lt[3].isFolder && lt[3].collapsed && lt[3].name == "Folder 1" && lt[0].folderId == lt[3].id
                           && lt[2].folderId == lt[3].id && lt[1].folderId == 0 && lt[4].isFolder && ! lt[4].collapsed && lt[4].name == "Folder 2"
-                          && lt[0].sends.size() == 1;
+                          && lt[0].sends.size() == 1 && juce::exactlyEqual (lt[3].gainDb, -4.5f);
 
         check (inFolder && refused, "folders: tracks and buses go in a folder; not a folder, nor into a track, a missing folder or where it is");
         check (mutes && solos && collapsedPlays,
                "folders: a folder's mute and solo act on its tracks and buses, bit for bit as their own would, and collapsed they still play");
+        check (volumes, "folders: a folder's volume acts as if added to each track's and bus's own, sends after the volume too (within "
+                            + juce::String (volumeWorst, 9) + "), and at 0 dB the mix is bit for bit as with no folder");
+        check (bounceStays, "folders: a bounce of a track in a folder lands in the folder, the mix staying within float rounding ("
+                                + juce::String (bounceWorst, 9) + ")");
         check (newTrack && released, "folders: a clip for a folder goes on a new track, and removing a folder frees its tracks");
         check (error.isEmpty() && loaded.error.isEmpty() && kept, "folders: kept in a session file, collapsed or not, with their tracks");
     }

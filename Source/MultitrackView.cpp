@@ -140,6 +140,10 @@ public:
         into the envelope; an automated control does nothing otherwise. False to edit the setting. */
     bool controlChanged (AutomationParameter p, float value)
     {
+        // A folder's volume isn't automated: it is always the setting.
+        if (isFolder)
+            return false;
+
         auto& player = view.engine.getPlayer();
         const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session;
 
@@ -171,8 +175,8 @@ public:
         inFolder = t.folderId != 0;
         members = (int) std::count_if (view.shown().tracks.begin(), view.shown().tracks.end(), [&t] (auto& m) { return m.folderId == t.id; });
 
-        // A folder has only its name, mute and solo.
-        for (auto* c : std::initializer_list<juce::Component*> { &effectsButton, &gain, &pan, &automationButton })
+        // A folder has only its name, mute, solo and volume.
+        for (auto* c : std::initializer_list<juce::Component*> { &effectsButton, &pan, &automationButton })
             c->setVisible (! isFolder);
 
         sendsButton.setVisible (! isBus && ! isFolder);
@@ -210,7 +214,8 @@ public:
         gain.setEnabled (! volumeAutomated || writing);
         pan.setEnabled (! panAutomated || writing);
         const juce::String automatedTip = writing ? " follows its envelope; drag while playing to write it" : " follows its envelope (A to edit it)";
-        gain.setTooltip (volumeAutomated ? "Volume" + automatedTip : writing ? "Track volume; drag while playing to write automation" : "Track volume");
+        gain.setTooltip (isFolder ? "Folder volume: added to the volume of each track and bus in it"
+                         : volumeAutomated ? "Volume" + automatedTip : writing ? "Track volume; drag while playing to write automation" : "Track volume");
         pan.setTooltip (panAutomated ? "Pan" + automatedTip : writing ? "Pan; drag while playing to write automation" : "Pan");
 
         const auto frame = view.controlFrame();
@@ -252,7 +257,7 @@ public:
             g.setFont (12.0f);
             g.setColour (juce::Colours::grey);
             g.drawText (juce::String (members) + (members == 1 ? " track" : " tracks") + (collapsed ? ", collapsed" : ""),
-                        getLocalBounds().withTrimmedLeft (34).withTrimmedTop (36).withHeight (16), juce::Justification::centredLeft);
+                        getLocalBounds().withTrimmedLeft (32).withTrimmedTop (32).withHeight (20), juce::Justification::centredLeft);
         }
 
         if (group != 0)
@@ -278,6 +283,12 @@ public:
         if (isFolder)
         {
             name.setBounds (top);
+            r.removeFromTop (26);   // the count of its tracks
+            gain.setBounds (r.removeFromTop (22));
+
+            if (gain.getBottom() > getHeight() - 2)
+                gain.setBounds ({});
+
             return;
         }
 
