@@ -1,5 +1,4 @@
 #include "MainComponent.h"
-#include "Equalizer.h"
 #include "AudioFileIO.h"
 #include "Bounce.h"
 #include "ClipList.h"
@@ -62,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -71,7 +70,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdEqBand);
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdParametricEq);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -241,6 +240,78 @@ public:
     void closeButtonPressed() override              { closeCallback(); }
 
 private:
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
+/** The parametric EQ: its bands and curve, with Apply to filter the selection (or the whole file)
+    and Flat to set every band back to 0 dB. It stays open, so it can be applied again. */
+class MainComponent::EqWindow final : public juce::DocumentWindow
+{
+public:
+    EqWindow (const ParametricEq::Settings& settings, double sampleRate, std::function<void (const ParametricEq&)> onApply,
+              std::function<void (const ParametricEq::Settings&)> onSettings, std::function<void()> onClose)
+        : DocumentWindow ("Parametric EQ", juce::Colours::darkgrey, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new Content (settings, sampleRate, std::move (onApply), std::move (onSettings)), true);
+        setResizable (true, false);
+        setResizeLimits (520, 320, 3000, 2000);
+        centreWithSize (getWidth(), getHeight());
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    struct Content final : public juce::Component
+    {
+        Content (const ParametricEq::Settings& settings, double sampleRate, std::function<void (const ParametricEq&)> onApply,
+                 std::function<void (const ParametricEq::Settings&)> onSettings)
+            : rate (sampleRate), remember (std::move (onSettings))
+        {
+            makePanel (settings);
+            apply.onClick = [this, applyBands = std::move (onApply)] { applyBands (*panel); };
+            flat.onClick = [this]
+            {
+                auto s = panel->getSettings();
+
+                for (auto& b : s)
+                    b.band.gainDb = 0.0;
+
+                makePanel (s);
+                remember (s);
+                resized();
+            };
+            addAndMakeVisible (apply);
+            addAndMakeVisible (flat);
+            setSize (panel->getWidth(), panel->getHeight() + 40);
+        }
+
+        void makePanel (const ParametricEq::Settings& settings)
+        {
+            panel = std::make_unique<ParametricEq> (settings, rate);
+            panel->onChange = [this] { remember (panel->getSettings()); };
+            addAndMakeVisible (*panel);
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds();
+            auto buttons = r.removeFromBottom (40).reduced (8, 6);
+            apply.setBounds (buttons.removeFromRight (90));
+            buttons.removeFromRight (8);
+            flat.setBounds (buttons.removeFromRight (90));
+            panel->setBounds (r);
+        }
+
+        double rate;
+        std::function<void (const ParametricEq::Settings&)> remember;
+        std::unique_ptr<ParametricEq> panel;
+        juce::TextButton apply { "Apply" }, flat { "Flat" };
+    };
+
     std::function<void()> closeCallback;
 };
 
@@ -846,6 +917,7 @@ MainComponent::~MainComponent()
     clipListWindow = nullptr;
     undoHistoryWindow = nullptr;
     notesWindow = nullptr;
+    eqWindow = nullptr;
 }
 
 void MainComponent::saveSettings()
@@ -919,7 +991,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdEqBand; ++id)
+    for (int id = cmdOpen; id <= cmdParametricEq; ++id)
         ids.add (id);
 }
 
@@ -988,6 +1060,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio); break;
         case cmdEqBand:     info.setInfo ("EQ Band...", "Boost or cut a band of frequencies, or filter above or below one, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
+        case cmdParametricEq: info.setInfo ("Parametric EQ", "A window of five EQ bands over their response curve, applied to the selection or the whole file", "Effects", 0);
+                            info.setActive (hasAudio || eqWindow != nullptr); info.setTicked (eqWindow != nullptr); break;
         case cmdTremolo:    info.setInfo ("Tremolo...", "Make the level rise and fall at a chosen rate and depth, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdGainRamp:   info.setInfo ("Gain Ramp...", "Change the gain evenly from one level to another across the selection", "Effects", 0);
@@ -1453,6 +1527,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdTremolo:    showTremolo(); break;
         case cmdEcho:       showEcho(); break;
         case cmdEqBand:     showEqBand(); break;
+        case cmdParametricEq: toggleParametricEq(); break;
         case cmdFadeRegions: showFadeEdges (true); break;
         case cmdNormalizeRegions:
             askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, [this] (float db)
@@ -1796,7 +1871,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -4297,6 +4372,55 @@ void MainComponent::showEqBand()
         if (auto next = Equalizer::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), { band }))
             applyEdit (std::move (next), "EQ Band", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::toggleParametricEq()
+{
+    // Deleted later, not inside its own close button's callback.
+    if (eqWindow != nullptr)
+    {
+        eqWindow = nullptr;
+        return;
+    }
+
+    const auto rate = engine.document.hasAudio() ? engine.document.getSampleRate() : 48000.0;
+    eqWindow = std::make_unique<EqWindow> (eqSettings, rate, [this] (const ParametricEq& eq) { applyParametricEq (eq.getActiveBands()); },
+                                           [this] (const ParametricEq::Settings& s) { eqSettings = s; },
+                                           [this]
+    {
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+        {
+            if (safe != nullptr)
+                safe->toggleParametricEq();
+        });
+    });
+}
+
+void MainComponent::applyParametricEq (const std::vector<Equalizer::Band>& bands)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio() || multitrackMode)
+        return;
+
+    if (bands.empty())
+    {
+        showError ("Parametric EQ", "Every band is off or at 0 dB, so there is nothing to apply.");
+        return;
+    }
+
+    for (auto& band : bands)
+        if (! Equalizer::isValid (band, doc.getSampleRate()))
+        {
+            showError ("Parametric EQ", "A band at " + juce::String (band.frequency, 0) + " Hz is at or past half this file's sample rate. "
+                                        "Close and reopen the window to fit the bands to this file.");
+            return;
+        }
+
+    const auto r = selectionOrAll();
+
+    if (auto next = Equalizer::apply (*doc.getSnapshot(), r.getStart(), r.getEnd(), doc.getSampleRate(), bands))
+        applyEdit (std::move (next), "Parametric EQ", waveform.getSelection());
 }
 
 void MainComponent::showTremolo()

@@ -54,6 +54,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
     Source/Equalizer.cpp
+    Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/ClickRepair.cpp
     Source/Session.cpp
@@ -141,6 +142,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
     Source/Equalizer.cpp
+    Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/ClickRepair.cpp
     Source/Session.cpp

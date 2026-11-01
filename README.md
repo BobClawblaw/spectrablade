@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 165: Parametric EQ**
+- Effects > Parametric EQ opens a window of five EQ bands over the response they make together, drawn from 20 Hz to 20 kHz on a log scale and from -24 to +24 dB, with each band's number on the curve at its frequency. Each band has an on switch, a type (bell, low shelf, high shelf, high-pass or low-pass), a frequency, a gain and a Q; a pass's gain is greyed out, since it has none. It starts as a low shelf at 100 Hz, bells at 400 Hz, 1 kHz and 3 kHz and a high shelf at 8 kHz, all at 0 dB, and keeps its settings while the app runs. Apply filters the selection, or the whole file, with the bands that change anything, in order, as one undo step, with the EQ Band filters (Milestone 164), and the window stays open; Flat sets every gain back to 0 dB. Frequencies stop below 45 % of the file's rate, so a band never reaches Nyquist.
+- Measured by the tests, driving the panel's own controls: it starts flat with no bands to apply; a bell's gain and Q, a band changed to a high-pass and moved to 80 Hz, and a band switched off are each read back, the curve's response is the sum of the active bands' (to 1e-6 dB), and every change is reported once; a Q of 0.7071 stays 0.7071 when its row changes. The drawing's scales put 20 Hz and 20 kHz at the edges and map back to within 0.01 Hz, with 0 dB in the middle and anything past +24 dB held at the top; at 22.05 kHz no band can be set at or past Nyquist; a band that opens as a pass has its gain greyed out. The panel was rendered to an image and looked at, which found the curve not drawn at first (fixed). The window was not opened in the running app, and how it sounds was not listened to. The whole suite passed, the default-device test included.
+
 **Milestone 164: EQ Band**
 - Effects > EQ Band asks for a type (bell, low shelf, high shelf, high-pass or low-pass), a frequency, a gain and a Q (a 6 dB bell at 1 kHz with a Q of 1 to start, all remembered while the app runs) and filters the selection, or the whole file, on every channel. A bell boosts or cuts around the frequency, a shelf boosts or cuts everything below or above it with half the gain at the frequency, and a pass is 3 dB down at the frequency with a Q of 0.71. It is SpectraBlade's first built-in equalizer: each band is a second-order filter made from its analogue prototype by the bilinear transform and run in double precision. Before the range the filter runs over up to a second of the audio before it, so a selection starts as it would inside a longer pass; nothing rings past the range's end. Bands stack by applying it again, and each is one undo step.
 - Measured by the tests at 48 kHz: the designed responses are exactly 6 dB at a 6 dB bell's frequency, 3 and -4.5 dB at the frequencies of 6 and -9 dB shelves, -3.0103 dB at a pass's corner, within 0.03 dB of the analogue -12.30 dB an octave below a high-pass's corner, and within 0.1 dB of flat far from each band. On sines, each level changes by the band's response at its frequency to within 0.01 dB (0.05 dB for a 100 Hz sine 40 dB down through a high-pass), and two bands by the sum. On a range of a stereo file every frame outside it is bit for bit, and the range matches a pass over the whole file (bit for bit, as measured); a 0 dB bell gives the audio back within 1e-6. A frequency of 0 or at Nyquist, a Q of 0, a 60 dB gain, no bands or an empty range is refused. How it sounds was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -981,6 +985,7 @@ The tests run against the real machine:
 - Fade each region: each region faded as Fade Selection Edges fades it.
 - Previous sound: the sound before the previous silence, stepping back from each one's start, and none before the first.
 - EQ band: each band's designed response, sines changed by it, a range filtered as in a whole-file pass with the rest bit for bit.
+- Parametric EQ: bands read from the panel's controls, the curve the sum of the active bands, its scales, no band at Nyquist.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1034,7 +1039,7 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: a parametric EQ with several bands at once, drawn as its response curve, built on the EQ Band filters
+1. Effects: dragging a band's point on the parametric EQ's curve to set its frequency and gain
 2. Effects: a compressor and limiter, so Match Loudness can raise quiet audio past its peak ceiling
 3. Effects: the built-in effects in the rack and on tracks, played live, with a preview before applying
 4. Effects: algorithmic and convolution reverb, chorus, flanger and phaser

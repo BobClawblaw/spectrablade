@@ -11,6 +11,7 @@
 #include "Loudness.h"
 #include "MultitrackView.h"
 #include "NoiseReduction.h"
+#include "ParametricEq.h"
 #include "RackView.h"
 #include "SessionOverview.h"
 #include "SessionRecording.h"
@@ -57,6 +58,7 @@ private:
     class KeyShortcutsWindow;
     class UndoHistoryWindow;
     class NotesWindow;
+    class EqWindow;
     class PluginListWindow;
     class RackRenderJob;
     class BackgroundJob;
@@ -131,6 +133,9 @@ private:
     void showTremolo();
     void showEcho();
     void showEqBand();
+    void toggleParametricEq();
+    void applyParametricEq (const std::vector<Equalizer::Band>&);
+    ParametricEq::Settings eqSettings = ParametricEq::defaultSettings();
     int eqBandType = 0;
     double eqBandHz = 1000.0, eqBandGainDb = 6.0, eqBandQ = 1.0;
     int echoDelayMs = 250, echoFeedbackPercent = 40;
@@ -310,6 +315,7 @@ private:
     std::unique_ptr<KeyShortcutsWindow> keyShortcutsWindow;
     std::unique_ptr<UndoHistoryWindow> undoHistoryWindow;
     std::unique_ptr<NotesWindow> notesWindow;
+    std::unique_ptr<EqWindow> eqWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
     std::optional<NoiseReduction::Print> noisePrint;
