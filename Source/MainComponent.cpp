@@ -16,6 +16,7 @@
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
 #include "TrackTemplate.h"
+#include "SessionNotes.h"
 #include "UndoHistory.h"
 
 namespace
@@ -59,7 +60,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -207,6 +208,29 @@ public:
         setResizable (true, false);
         setResizeLimits (200, 150, 2000, 3000);
         centreWithSize (280, 400);
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
+/** The session's notes, in a window beside the main one. */
+class MainComponent::NotesWindow final : public juce::DocumentWindow
+{
+public:
+    NotesWindow (Session& session, std::function<void()> onClose)
+        : DocumentWindow ("Session Notes", juce::Colours::darkgrey, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new SessionNotes (session), false);
+        setResizable (true, false);
+        setResizeLimits (240, 150, 3000, 3000);
+        centreWithSize (420, 480);
         setVisible (true);
     }
 
@@ -812,6 +836,7 @@ MainComponent::~MainComponent()
     clipPropertiesWindow = nullptr;
     clipListWindow = nullptr;
     undoHistoryWindow = nullptr;
+    notesWindow = nullptr;
 }
 
 void MainComponent::saveSettings()
@@ -883,7 +908,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdExportFolderStems; ++id)
+    for (int id = cmdOpen; id <= cmdSessionNotes; ++id)
         ids.add (id);
 }
 
@@ -1095,6 +1120,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                                             && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].isFolder); break;
         case cmdAddFromTemplate: info.setInfo ("Add Track from Template...", "Add a track or bus made from a saved template", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
+        case cmdSessionNotes: info.setInfo ("Session Notes", "A window of free text kept with the session: lyrics, takes, things to do", "Multitrack", 0);
+                            info.setTicked (notesWindow != nullptr); break;
         case cmdUndoHistory: info.setInfo ("Undo History", "A window listing the session's undo steps; click one to go back or forward to it", "Edit", 0);
                             info.setTicked (undoHistoryWindow != nullptr); break;
         case cmdShiftPitch: info.setInfo ("Shift Clip Pitch...", "Raise or lower the selected clip's pitch without changing its length", "Multitrack", 0);
@@ -1314,6 +1341,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdStretchClip: askToStretchSelectedClip(); break;
         case cmdShiftPitch: askToShiftSelectedClip(); break;
         case cmdUndoHistory: toggleUndoHistory(); break;
+        case cmdSessionNotes: toggleNotes(); break;
         case cmdSaveTrackTemplate: chooseTrackTemplateToSave(); break;
         case cmdSaveCopyWithAudio: saveSessionCopyWithAudio(); break;
         case cmdAddFromTemplate: chooseTrackTemplateToAdd(); break;
@@ -1424,7 +1452,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -2006,6 +2034,24 @@ void MainComponent::toggleUndoHistory()
             {
                 if (safe != nullptr)
                     safe->toggleUndoHistory();
+            });
+        });
+
+    commands.commandStatusChanged();
+}
+
+void MainComponent::toggleNotes()
+{
+    // Deleted later, not inside its own close button's callback.
+    if (notesWindow != nullptr)
+        notesWindow = nullptr;
+    else
+        notesWindow = std::make_unique<NotesWindow> (engine.session, [this]
+        {
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+            {
+                if (safe != nullptr)
+                    safe->toggleNotes();
             });
         });
 

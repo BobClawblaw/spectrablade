@@ -52,6 +52,7 @@ private:
     class MarkerListWindow;
     class KeyShortcutsWindow;
     class UndoHistoryWindow;
+    class NotesWindow;
     class PluginListWindow;
     class RackRenderJob;
     class BackgroundJob;
@@ -177,6 +178,7 @@ private:
     /** Writes the markers of the session (in multitrack mode) or the open file as CSV. */
     void chooseMarkersCsv();
     void toggleUndoHistory();
+    void toggleNotes();
     void showPluginList();
     void showEditor (int slotIndex);
     void showEditor (juce::AudioProcessor&);
@@ -223,6 +225,7 @@ private:
     std::unique_ptr<MarkerListWindow> markerListWindow;
     std::unique_ptr<KeyShortcutsWindow> keyShortcutsWindow;
     std::unique_ptr<UndoHistoryWindow> undoHistoryWindow;
+    std::unique_ptr<NotesWindow> notesWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
     std::optional<NoiseReduction::Print> noisePrint;

@@ -233,6 +233,7 @@ struct SessionState
     double tempo = 120.0;                  // beats a minute, for the metronome, from the start
     int beatsPerBar = 4;
     std::vector<Metronome::TempoChange> tempoChanges;   // at later bars, sorted by bar, one a bar
+    juce::String notes;                                 // free text kept with the session
     std::vector<SessionTrack> tracks;
     Markers markers;                       // points and regions on the session's time, kept sorted
     juce::uint32 nextId = 1;

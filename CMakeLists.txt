@@ -60,6 +60,7 @@ target_sources(SpectraBlade PRIVATE
     Source/TrackEffects.cpp
     Source/Recorder.cpp
     Source/SessionCollect.cpp
+    Source/SessionNotes.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
     Source/SessionOverview.cpp
@@ -143,6 +144,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/TrackEffects.cpp
     Source/Recorder.cpp
     Source/SessionCollect.cpp
+    Source/SessionNotes.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
     Source/SessionOverview.cpp

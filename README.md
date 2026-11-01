@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 76: session notes**
+- Multitrack > Session Notes opens a window with a page of free text kept with the session: lyrics, which take is which, things to do. Typing changes the notes as an undo step ("Session Notes"); further typing joins that step until something else is done. Undo and redo show in the window as they happen, and the notes are saved with the session exactly as written (nothing is written when there are none).
+- Measured by the tests: the window showing the session's notes; two rounds of typing making one undo step, and undoing it showing the notes as they were; and notes with blank lines, a tab, trailing spaces, accented letters and the characters XML treats specially, through a session file unchanged. The window itself (opening, closing, the menu tick) was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 75: dropping tracks into folders**
 - Dragging a track's or bus's header onto a folder's header puts it in that folder, just below the folder, as one undo step ("Move to Folder"); while dragging over a folder, the folder's lane is outlined instead of the usual line. Dropped anywhere else, a header moves its track as before, and the track stays in whatever folder it was in; to take one out, use Folder > None on its header. A folder's header dropped on another folder just moves (folders don't nest).
 - Measured by the tests, through the view: a track dropped on a folder from below and one from above each going in, right below the folder, the moved track staying selected; and a drop on a track in a folder just moving it. The outline and the drag itself were not checked by the tests (they call the drop directly), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -527,6 +531,7 @@ The tests run against the real machine:
 - Folder stems: what each one renders, and which folders get one.
 - Folder strips in the mixer: in place, showing and setting the folder, the strips after it showing their own tracks.
 - Dropping a header on a folder: going in from below and above, and plain moves.
+- Session notes: typing and undo in the window, and the session file.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -580,4 +585,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a session's notes, a free-text page kept with the session for lyrics, takes and to-dos
+1. Multitrack, continued: a level meter in each track's header, showing its input while armed and its output while playing

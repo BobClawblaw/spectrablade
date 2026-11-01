@@ -1950,6 +1950,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         change->setAttribute ("beatsPerBar", c.beatsPerBar);
     }
 
+    if (state.notes.isNotEmpty())
+        root.createNewChildElement ("NOTES")->addTextElement (state.notes);
+
     for (auto& m : state.markers)
     {
         auto* marker = root.createNewChildElement ("MARKER");
@@ -2141,6 +2144,9 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             track.clips.push_back (std::move (clip));
         }
     }
+
+    if (auto* notesXml = root->getChildByName ("NOTES"))
+        state.notes = notesXml->getAllSubText();
 
     for (auto* markerXml : root->getChildWithTagNameIterator ("MARKER"))
     {

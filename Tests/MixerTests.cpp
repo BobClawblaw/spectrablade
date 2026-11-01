@@ -11,6 +11,7 @@
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/SessionCollect.h"
+#include "../Source/SessionNotes.h"
 #include "../Source/SessionRecovery.h"
 #include "../Source/TrackColours.h"
 #include "../Source/UndoHistory.h"
@@ -820,6 +821,41 @@ namespace
                "clip gain line: kept in a session file, and left out for a clip without one");
     }
 
+    void testSessionNotes (AudioEngine& engine)
+    {
+        SessionState s;
+        s.notes = "Verse 1: take 3";
+        engine.session.reset (s, {});
+        SessionNotes notes (engine.session);
+        auto& editor = notes.getEditor();
+        const auto shown = editor.getText() == "Verse 1: take 3";
+
+        // Typing is one undo step, however much is typed; undo shows the notes as they were.
+        editor.setText ("Verse 1: take 3\nChorus", true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        editor.setText ("Verse 1: take 3\nChorus: double it", true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        const auto typed = engine.session.getState()->notes == "Verse 1: take 3\nChorus: double it" && engine.session.getUndoDescription() == "Session Notes";
+        engine.session.undo();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        const auto undone = editor.getText() == "Verse 1: take 3" && engine.session.getState()->notes == "Verse 1: take 3" && ! engine.session.canUndo();
+
+        // Kept in a session file as written, lines and characters XML treats specially too.
+        SessionState withNotes;
+        withNotes.notes = juce::String::fromUTF8 ("Bridge <slow> & quiet\n\n\"Caf\xc3\xa9\" take\t2  ");
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (withNotes, file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        SessionFile::save (SessionState(), file);
+        const auto none = ! file.loadFileAsString().contains ("NOTES");
+        file.deleteFile();
+
+        check (shown && typed && undone, "session notes: the window shows the session's notes, typing changes them as one undo step, and undo shows them as they were");
+        check (error.isEmpty() && loaded.error.isEmpty() && loaded.state.notes == withNotes.notes && none,
+               "session notes: kept in a session file exactly, and left out when there are none");
+        engine.session.reset ({}, {});
+    }
+
     void testFolderStrips (AudioEngine& engine)
     {
         // A, then a folder at -6 dB holding B at -3 dB: strip i is track i, a folder's showing its volume.
@@ -1042,4 +1078,5 @@ void runMixerTests (AudioEngine& engine)
     testClipGainFile (engine);
     testFolders (engine);
     testFolderStrips (engine);
+    testSessionNotes (engine);
 }
