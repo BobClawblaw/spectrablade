@@ -169,6 +169,8 @@ struct SessionTrack
 struct SessionState
 {
     double sampleRate = 48000.0;
+    double tempo = 120.0;                  // beats a minute, for the metronome
+    int beatsPerBar = 4;
     std::vector<SessionTrack> tracks;
     juce::uint32 nextId = 1;
 

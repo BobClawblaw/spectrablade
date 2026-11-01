@@ -128,6 +128,7 @@ private:
     void finishSessionRecording (const std::map<Recorder*, Recorder::Take>&);
     juce::File recordingsFolder() const;
     void showAudioSettings();
+    void showTempoDialog();
     void showPluginList();
     void showEditor (int slotIndex);
     void showEditor (juce::AudioProcessor&);
@@ -176,7 +177,8 @@ private:
     // Takes going onto session tracks (the armed ones, or a new one) rather than into the document.
     bool recordingSession = false, recordChangedRate = false;
     bool loopRecording = false, recordingLoop = false;   // the option, and a take under way that loops
-    bool inputMonitoring = false;                        // the armed track plays its input
+    bool inputMonitoring = false;                        // the armed tracks play their inputs
+    bool countIn = false;                                // record after a bar of clicks
     std::vector<std::pair<juce::uint32, Recorder*>> recordTracks;   // the tracks recording (0: a new one), and from what
     juce::String lastInputError;
 

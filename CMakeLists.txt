@@ -41,6 +41,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Main.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
+    Source/Metronome.cpp
     Source/AudioEdits.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
@@ -105,9 +106,11 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/MixDownTests.cpp
     Tests/EffectAutomationTests.cpp
     Tests/TrackRecordingTests.cpp
+    Tests/MetronomeTests.cpp
     Tests/PluginTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
+    Source/Metronome.cpp
     Source/AudioEdits.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp

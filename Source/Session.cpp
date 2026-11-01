@@ -794,6 +794,8 @@ juce::String save (const SessionState& state, const juce::File& target,
     juce::XmlElement root ("SPECTRABLADE_SESSION");
     root.setAttribute ("version", 1);
     root.setAttribute ("sampleRate", state.sampleRate);
+    root.setAttribute ("tempo", state.tempo);
+    root.setAttribute ("beatsPerBar", state.beatsPerBar);
 
     // Sends name their bus by its place in the file, since ids are given out afresh on loading.
     std::map<juce::uint32, int> indexOf;
@@ -916,6 +918,8 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
     auto& state = result.state;
     state.sampleRate = root->getDoubleAttribute ("sampleRate", 48000.0);
+    state.tempo = juce::jlimit (20.0, 400.0, root->getDoubleAttribute ("tempo", 120.0));
+    state.beatsPerBar = juce::jlimit (1, 16, root->getIntAttribute ("beatsPerBar", 4));
     std::map<juce::String, AudioDocument::Snapshot> audio;   // by full path: each file read once
 
     for (auto* trackXml : root->getChildWithTagNameIterator ("TRACK"))

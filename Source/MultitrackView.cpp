@@ -1,4 +1,5 @@
 #include "MultitrackView.h"
+#include "Metronome.h"
 
 namespace
 {
@@ -1388,6 +1389,26 @@ void MultitrackView::paint (juce::Graphics& g)
             g.setColour (juce::Colours::grey);
             g.setFont (15.0f);
             g.drawText ("Drop audio files here, or choose Multitrack > Import Audio", area, juce::Justification::centred);
+        }
+
+        // With the metronome on, the bars (and beats, when there is room) of the session's tempo.
+        if (showBars && ! s.tracks.empty() && 60.0 * s.sampleRate / s.tempo * s.beatsPerBar / framesPerPixel >= 4.0)
+        {
+            const auto bottom = (float) juce::jmin (area.getBottom(), laneTop ((int) s.tracks.size()));
+            const auto beatPixels = 60.0 * s.sampleRate / s.tempo / framesPerPixel;
+            const auto first = Metronome::beatAt (frameForX ((float) area.getX()), s.tempo, s.sampleRate);
+            const auto last = Metronome::beatAt (frameForX ((float) area.getRight()), s.tempo, s.sampleRate);
+
+            for (auto beat = juce::jmax ((juce::int64) 0, first); beat <= last; ++beat)
+            {
+                const auto bar = beat % juce::jmax (1, s.beatsPerBar) == 0;
+
+                if (! bar && beatPixels < 12.0)
+                    continue;
+
+                g.setColour (juce::Colours::white.withAlpha (bar ? 0.12f : 0.05f));
+                g.drawVerticalLine ((int) xForFrame (Metronome::beatFrame (beat, s.tempo, s.sampleRate)), (float) area.getY(), bottom);
+            }
         }
 
         if (! timeSelection.isEmpty())

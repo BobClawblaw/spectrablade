@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "AudioFileIO.h"
+#include "Metronome.h"
 #include "OfflineRender.h"
 #include "PluginScanner.h"
 #include "SampleRateConverter.h"
@@ -39,7 +40,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring
+        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -634,7 +635,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdInputMonitoring; ++id)
+    for (int id = cmdOpen; id <= cmdTempo; ++id)
         ids.add (id);
 }
 
@@ -730,6 +731,12 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
         case cmdSnapping:   info.setInfo ("Snapping", "Line dragged clips, edges, fades and points up with clip edges, the cursor and the ruler", "Multitrack", 0);
                             info.addDefaultKeypress ('s', 0); info.setTicked (multitrack.isSnapping()); info.setActive (multitrackMode); break;
+        case cmdMetronome:  info.setInfo ("Metronome", "Click on each beat of the session's tempo while it plays", "Multitrack", 0);
+                            info.addDefaultKeypress ('c', 0); info.setTicked (engine.getPlayer().isMetronomeOn()); info.setActive (multitrackMode); break;
+        case cmdCountIn:    info.setInfo ("Count-In", "Record after one bar of clicks instead of the preroll", "Multitrack", 0);
+                            info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
+        case cmdTempo:      info.setInfo ("Tempo...", "The session's tempo and beats in a bar", "Multitrack", 0);
+                            info.setActive (multitrackMode && ! isRecording()); break;
         case cmdInputMonitoring: info.setInfo ("Input Monitoring", "Hear each armed track's input through its effects, volume and pan", "Multitrack", 0);
                             info.addDefaultKeypress ('i', 0); info.setTicked (inputMonitoring); info.setActive (multitrackMode); break;
         case cmdLoopRecording: info.setInfo ("Loop Recording", "Record over the time range again and again, keeping each pass as a take", "Multitrack", 0);
@@ -869,6 +876,18 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdSplitClip:  multitrack.splitSelectedClip(); break;
         case cmdMixDown:    chooseMixDownFile(); break;
+        case cmdMetronome:
+            engine.getPlayer().setMetronome (! engine.getPlayer().isMetronomeOn());
+            multitrack.setShowBars (engine.getPlayer().isMetronomeOn());
+            commands.commandStatusChanged();
+            break;
+        case cmdCountIn:
+            countIn = ! countIn;
+            commands.commandStatusChanged();
+            break;
+        case cmdTempo:
+            showTempoDialog();
+            break;
         case cmdInputMonitoring:
             inputMonitoring = ! inputMonitoring;
             updateInputs();
@@ -931,7 +950,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMixDown }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1376,6 +1395,40 @@ void MainComponent::askForMixDownFormat (const juce::File& file)
             const auto depth = depths[box->getComboBoxComponent ("depth")->getSelectedItemIndex()];
             const auto tail = (juce::int64) std::llround (tails[(size_t) box->getComboBoxComponent ("tail")->getSelectedItemIndex()] * rate);
             mixDown (file, depth, range.withEnd (range.getEnd() + tail));
+        }), true);
+}
+
+void MainComponent::showTempoDialog()
+{
+    const auto state = engine.session.getState();
+    auto* box = new juce::AlertWindow ("Tempo", "The metronome clicks on this tempo, from the start of the session.",
+                                       juce::MessageBoxIconType::NoIcon);
+    box->addTextEditor ("tempo", juce::String (state->tempo, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."), "Beats a minute (20 to 400)");
+    box->addTextEditor ("beats", juce::String (state->beatsPerBar), "Beats in a bar (1 to 16)");
+    box->getTextEditor ("tempo")->setInputRestrictions (7, ".0123456789");
+    box->getTextEditor ("beats")->setInputRestrictions (2, "0123456789");
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create (
+        [this, box] (int result)
+        {
+            if (result != 1)
+                return;
+
+            const auto tempo = box->getTextEditorContents ("tempo").getDoubleValue();
+            const auto beats = box->getTextEditorContents ("beats").getIntValue();
+
+            if (tempo < 20.0 || tempo > 400.0 || beats < 1 || beats > 16)
+            {
+                showError ("Tempo", "The tempo must be 20 to 400 beats a minute, with 1 to 16 beats in a bar.");
+                return;
+            }
+
+            auto next = *engine.session.getState();
+            next.tempo = tempo;
+            next.beatsPerBar = beats;
+            engine.session.apply (std::move (next), "Tempo");
         }), true);
 }
 
@@ -2353,6 +2406,7 @@ void MainComponent::stopRecording()
 
     engine.getPlayer().pause();
     engine.getPlayer().clearLoop();
+    engine.getPlayer().setCountIn (-1);
     refreshInputChoices();
     commands.commandStatusChanged();
     juce::int64 dropped = 0;
@@ -2460,6 +2514,11 @@ void MainComponent::startSessionRecording()
     recordLatency = engine.getRoundTripLatency();
     recordingLoop = loopRecording && ! range.isEmpty();
 
+    // A count-in starts one bar before the punch-in, with clicks up to it; otherwise the preroll.
+    const auto& now = *session.getState();
+    const auto lead = countIn ? Metronome::barFrames (now.tempo, now.beatsPerBar, now.sampleRate) : (juce::int64) (deviceRate * prerollSeconds);
+    player.setCountIn (countIn ? punchIn : -1);
+
     player.pause();
     std::set<Recorder*> started;
 
@@ -2483,8 +2542,7 @@ void MainComponent::startSessionRecording()
     // Always play, from the preroll: the performer hears the session, and the player's frame
     // counter lines the take up. Past the end of the session it plays silence until stopped.
     recordingSession = true;
-    player.play (juce::jmax ((juce::int64) 0, punchIn - (juce::int64) (deviceRate * prerollSeconds)),
-                 std::numeric_limits<juce::int64>::max() / 4);
+    player.play (juce::jmax ((juce::int64) 0, punchIn - lead), std::numeric_limits<juce::int64>::max() / 4);
 
     if (recordingLoop)
         player.setLoop (punchIn, punchOut);

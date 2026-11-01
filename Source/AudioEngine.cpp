@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 
 #include "AudioFileIO.h"
+#include "Metronome.h"
 #include "SessionMixer.h"
 
 //==============================================================================
@@ -193,7 +194,8 @@ void SessionSource::renderRun (juce::int64 start, const juce::AudioSourceChannel
 
 //==============================================================================
 DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s, SessionMixer::Inserts& inserts)
-    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
+    : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                                       .withOutput ("Click", juce::AudioChannelSet::stereo(), true)),
       document (doc), session (s), sessionSource (s, inserts)
 {
     resetSource();
@@ -325,8 +327,49 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
         sessionSource.renderLive (info);
 
+    if (buffer.getNumChannels() >= 4)
+    {
+        buffer.clear (2, 0, numFrames);
+        buffer.clear (3, 0, numFrames);
+
+        if (playing && mode == Mode::session && juce::exactlyEqual (sourceRate, deviceRate))
+            addClicks (buffer, playedFrame.load(), numFrames);
+    }
+
     if (playing)
         playedFrame += numFrames;
+}
+
+void DocumentPlayerProcessor::addClicks (juce::AudioBuffer<float>& buffer, juce::int64 firstFrame, int numFrames)
+{
+    if (const auto v = session.getVersion(); clickState == nullptr || v != clickVersion)
+    {
+        clickState = session.getState();
+        clickVersion = v;
+    }
+
+    const auto on = metronome.load();
+    const auto until = countInEnd.load();
+    const auto [loopFrom, loopTo] = sessionSource.getLoop();
+    const auto tempo = clickState->tempo;
+    const auto perBar = juce::jmax (1, clickState->beatsPerBar);
+    auto* left = buffer.getWritePointer (2);
+    auto* right = buffer.getWritePointer (3);
+
+    for (int i = 0; i < numFrames; ++i)
+    {
+        // The played frame counts on through a loop; the click follows the session frame.
+        auto frame = firstFrame + i;
+
+        if (loopTo > loopFrom && frame >= loopTo)
+            frame = loopFrom + (frame - loopFrom) % (loopTo - loopFrom);
+
+        if (frame < 0 || ! (on || frame < until))
+            continue;
+
+        const auto beat = Metronome::beatAt (frame, tempo, sourceRate);
+        left[i] = right[i] = Metronome::sample (frame - Metronome::beatFrame (beat, tempo, sourceRate), beat % perBar == 0, sourceRate);
+    }
 }
 
 //==============================================================================
@@ -727,10 +770,20 @@ void AudioEngine::rebuildConnections()
 
             connectStereo (source, outputNode.get(), graphChannel);
 
+            // The metronome's click goes to the same pair past the rack; the graph delays it by the
+            // rack's latency, so it stays in time with the music.
+            for (int ch = 0; ch < 2; ++ch)
+                graph.addConnection ({ { playerNode->nodeID, 2 + ch }, { outputNode->nodeID, graphChannel + ch } },
+                                     juce::AudioProcessorGraph::UpdateKind::none);
+
             // A pair whose second channel is inactive (or a mono device) still gets the left side.
             if (! active[outputPairFirstChannel + 1])
+            {
                 graph.removeConnection ({ { source->nodeID, 1 }, { outputNode->nodeID, graphChannel + 1 } },
                                         juce::AudioProcessorGraph::UpdateKind::none);
+                graph.removeConnection ({ { playerNode->nodeID, 3 }, { outputNode->nodeID, graphChannel + 1 } },
+                                        juce::AudioProcessorGraph::UpdateKind::none);
+            }
         }
     }
 

@@ -70,6 +70,10 @@ public:
     bool isSnapping() const noexcept              { return snapping; }
     void setSnapping (bool on)                    { snapping = on; }
     bool isCrossfading() const noexcept           { return crossfading; }
+
+    /** Draws the bars and beats of the session's tempo (while the metronome is on). */
+    void setShowBars (bool show)                  { showBars = show; repaint(); }
+    bool isShowingBars() const noexcept           { return showBars; }
     void setCrossfading (bool on)                 { crossfading = on; }
 
     /** With automation writing on, a track's volume or pan control stays live while playing,
@@ -196,6 +200,7 @@ private:
     juce::int64 cursor = 0;
     juce::uint32 selectedClip = 0, selectedTrackId = 0;
     std::set<juce::uint32> armed;
+    bool showBars = false;
     juce::Range<juce::int64> timeSelection, recording;
 
     Drag drag = Drag::none;
