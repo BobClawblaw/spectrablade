@@ -166,17 +166,43 @@ void Envelope::remove (int index)
 
 juce::Range<float> automationRange (AutomationParameter p)
 {
-    return p == AutomationParameter::volume ? juce::Range<float> (-60.0f, 12.0f) : juce::Range<float> (-1.0f, 1.0f);
+    switch (p)
+    {
+        case AutomationParameter::volume: return { -60.0f, 12.0f };
+        case AutomationParameter::pan:    return { -1.0f, 1.0f };
+        case AutomationParameter::effect: return { 0.0f, 1.0f };
+    }
+
+    return {};
 }
 
-float SessionTrack::valueAt (AutomationParameter p, juce::int64 frame) const
+const Envelope& SessionTrack::envelope (const AutomationTarget& t) const
 {
-    const auto& e = envelope (p);
+    static const Envelope none;
+
+    switch (t.parameter)
+    {
+        case AutomationParameter::volume: return volumeEnvelope;
+        case AutomationParameter::pan:    return panEnvelope;
+        case AutomationParameter::effect:
+            for (auto& e : effectEnvelopes)
+                if (e.slotId == t.slotId && e.parameterId == t.parameterId)
+                    return e.envelope;
+
+            return none;
+    }
+
+    return none;
+}
+
+float SessionTrack::valueAt (const AutomationTarget& t, juce::int64 frame) const
+{
+    const auto& e = envelope (t);
 
     if (! e.isEmpty())
         return e.valueAt (frame);
 
-    return p == AutomationParameter::volume ? gainDb : pan;
+    return t.parameter == AutomationParameter::volume ? gainDb : t.parameter == AutomationParameter::pan ? pan : 0.0f;
 }
 
 //==============================================================================
@@ -460,9 +486,9 @@ bool removeSend (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
     return false;
 }
 
-bool setEnvelope (SessionState& s, juce::uint32 trackId, AutomationParameter p, Envelope e)
+bool setEnvelope (SessionState& s, juce::uint32 trackId, const AutomationTarget& target, Envelope e)
 {
-    const auto range = automationRange (p);
+    const auto range = automationRange (target.parameter);
 
     for (auto& point : e.points)
     {
@@ -476,7 +502,24 @@ bool setEnvelope (SessionState& s, juce::uint32 trackId, AutomationParameter p, 
     {
         if (t.id == trackId)
         {
-            t.envelope (p) = std::move (e);
+            if (target.parameter == AutomationParameter::volume)
+            {
+                t.volumeEnvelope = std::move (e);
+            }
+            else if (target.parameter == AutomationParameter::pan)
+            {
+                t.panEnvelope = std::move (e);
+            }
+            else
+            {
+                auto& all = t.effectEnvelopes;
+                const auto same = [&target] (const EffectEnvelope& x) { return x.slotId == target.slotId && x.parameterId == target.parameterId; };
+                all.erase (std::remove_if (all.begin(), all.end(), same), all.end());
+
+                if (! e.isEmpty())
+                    all.push_back ({ target.slotId, target.parameterId, std::move (e) });
+            }
+
             return true;
         }
     }
@@ -484,7 +527,7 @@ bool setEnvelope (SessionState& s, juce::uint32 trackId, AutomationParameter p, 
     return false;
 }
 
-bool writeAutomation (SessionState& s, juce::uint32 trackId, AutomationParameter p,
+bool writeAutomation (SessionState& s, juce::uint32 trackId, const AutomationTarget& p,
                       const std::vector<AutomationPoint>& pass, juce::int64 returnFrames)
 {
     const auto* found = s.findTrack (trackId);
@@ -721,19 +764,36 @@ juce::String save (const SessionState& state, const juce::File& target,
         track->setAttribute ("mute", t.mute);
         track->setAttribute ("solo", t.solo);
 
-        for (auto parameter : { AutomationParameter::volume, AutomationParameter::pan })
+        const auto writeEnvelope = [track] (const Envelope& envelope) -> juce::XmlElement*
         {
-            if (const auto& envelope = t.envelope (parameter); ! envelope.isEmpty())
-            {
-                auto* envelopeXml = track->createNewChildElement ("ENVELOPE");
-                envelopeXml->setAttribute ("parameter", parameter == AutomationParameter::volume ? "volume" : "pan");
+            if (envelope.isEmpty())
+                return nullptr;
 
-                for (auto& point : envelope.points)
-                {
-                    auto* pointXml = envelopeXml->createNewChildElement ("POINT");
-                    pointXml->setAttribute ("frame", juce::String (point.frame));
-                    pointXml->setAttribute ("value", point.value);
-                }
+            auto* envelopeXml = track->createNewChildElement ("ENVELOPE");
+
+            for (auto& point : envelope.points)
+            {
+                auto* pointXml = envelopeXml->createNewChildElement ("POINT");
+                pointXml->setAttribute ("frame", juce::String (point.frame));
+                pointXml->setAttribute ("value", point.value);
+            }
+
+            return envelopeXml;
+        };
+
+        if (auto* xml = writeEnvelope (t.volumeEnvelope))
+            xml->setAttribute ("parameter", "volume");
+
+        if (auto* xml = writeEnvelope (t.panEnvelope))
+            xml->setAttribute ("parameter", "pan");
+
+        for (auto& e : t.effectEnvelopes)
+        {
+            if (auto* xml = writeEnvelope (e.envelope))
+            {
+                xml->setAttribute ("parameter", "effect");
+                xml->setAttribute ("slot", (int) e.slotId);
+                xml->setAttribute ("id", e.parameterId);
             }
         }
 
@@ -803,8 +863,15 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         for (auto* envelopeXml : trackXml->getChildWithTagNameIterator ("ENVELOPE"))
         {
             const auto name = envelopeXml->getStringAttribute ("parameter");
+            AutomationTarget target;
 
-            if (name != "volume" && name != "pan")
+            if (name == "volume")
+                target = AutomationParameter::volume;
+            else if (name == "pan")
+                target = AutomationParameter::pan;
+            else if (name == "effect")
+                target = AutomationTarget::effect ((juce::uint32) envelopeXml->getIntAttribute ("slot"), envelopeXml->getStringAttribute ("id"));
+            else
                 continue;
 
             Envelope envelope;
@@ -813,8 +880,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
                 envelope.points.push_back ({ pointXml->getStringAttribute ("frame").getLargeIntValue(),
                                              (float) pointXml->getDoubleAttribute ("value") });
 
-            SessionEdits::setEnvelope (state, track.id, name == "volume" ? AutomationParameter::volume : AutomationParameter::pan,
-                                       std::move (envelope));
+            SessionEdits::setEnvelope (state, track.id, target, std::move (envelope));
         }
 
         if (auto* effects = trackXml->getChildByName ("EFFECTS"))

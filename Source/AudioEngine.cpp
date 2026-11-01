@@ -722,7 +722,7 @@ void AudioEngine::loadTrackEffects (std::map<juce::uint32, std::shared_ptr<juce:
                     {
                         // State after preparing, as the rack does it.
                         auto* plugin = instance.get();
-                        engine.trackEffects.add (trackId, std::move (instance));
+                        engine.trackEffects.add (trackId, std::move (instance), (juce::uint32) slot->getIntAttribute ("id"));
                         const auto added = engine.trackEffects.getNumSlots (trackId) - 1;
                         engine.trackEffects.setBypassed (trackId, added, slot->getBoolAttribute ("bypassed"));
 

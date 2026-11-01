@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../Source/MultitrackView.h"
+#include "../Source/TrackEffects.h"
 #include "TestUtils.h"
 #include "MultitrackViewTests.h"
 
@@ -221,6 +222,70 @@ void runMultitrackViewTests (AudioEngine& engine)
                 ++envelopePixels;
 
     check (envelopePixels > 50, "view: draws the pan envelope over the lane (" + juce::String (envelopePixels) + " pixels of its colour)");
+
+    // An effect's parameter: Apple's AUDelay on the track, its first parameter's envelope shown.
+    // A click on the line adds a point at the parameter's current value.
+    juce::AudioPluginFormat* au = nullptr;
+
+    for (auto* f : engine.pluginFormatManager.getFormats())
+        if (f->getName() == "AudioUnit")
+            au = f;
+
+    juce::OwnedArray<juce::PluginDescription> types;
+
+    if (au != nullptr)
+        au->findAllTypesForFile (types, "AudioUnit:Effects/aufx,dely,appl");
+
+    if (types.size() == 1)
+    {
+        auto added = false;
+        engine.addTrackPlugin (trackId, *types[0], [&] (const juce::String&) { added = true; });
+        TestUtils::runUntil ([&] { return added; }, 30000);
+        const auto slotId = engine.getTrackEffects().getSlotId (trackId, 0);
+        auto* plugin = engine.getTrackEffects().getPlugin (trackId, 0);
+        const auto parameters = plugin != nullptr ? TrackEffects::parametersById (*plugin) : decltype (TrackEffects::parametersById (*plugin)) {};
+
+        if (! parameters.empty())
+        {
+            const auto& [parameterId, parameter] = *parameters.begin();
+            const auto target = AutomationTarget::effect (slotId, parameterId);
+            view.showEnvelope (trackId, target);
+            auto effectLineY = -1.0f;
+
+            for (auto y = (float) MultitrackView::rulerHeight; y < (float) (MultitrackView::rulerHeight + MultitrackView::trackHeight); y += 1.0f)
+            {
+                if (mouse.cursorAt ({ pointX, y }) == juce::MouseCursor (juce::MouseCursor::CrosshairCursor))
+                {
+                    effectLineY = y + 5.0f;
+                    break;
+                }
+            }
+
+            mouse.click ({ pointX, effectLineY });
+            const auto& effectPoints = engine.session.getState()->tracks[0].envelope (target).points;
+            check (effectLineY > 0.0f && effectPoints.size() == 1 && std::abs (effectPoints[0].value - parameter->getValue()) < 1.0e-6f
+                       && engine.session.getUndoDescription() == "Add Envelope Point",
+                   "view: a click on an effect parameter's line adds a point at its current value (" + parameter->getName (40) + ")");
+
+            const auto effectImage = view.createComponentSnapshot (view.getLocalBounds(), true, 1.0f);
+            auto effectPixels = 0;
+            // A level line is antialiased across two rows, blending it with the lane, so count
+            // pixels of its yellow-green hue (green over red over blue; the clips are teal).
+            const auto yellowGreen = [] (juce::Colour c)
+            {
+                return (int) c.getGreen() > (int) c.getRed() + 20 && (int) c.getRed() > (int) c.getBlue() + 20;
+            };
+
+            for (int py = MultitrackView::rulerHeight; py < MultitrackView::rulerHeight + MultitrackView::trackHeight; ++py)
+                for (int px = MultitrackView::headerWidth; px < effectImage.getWidth(); ++px)
+                    if (yellowGreen (effectImage.getPixelAt (px, py)))
+                        ++effectPixels;
+
+            check (effectPixels > 50, "view: draws the effect parameter's envelope (" + juce::String (effectPixels) + " pixels of its hue)");
+        }
+
+        engine.removeTrackPlugin (trackId, 0);
+    }
 
     engine.session.reset ({}, {});
     Mouse::settle();

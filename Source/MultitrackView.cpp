@@ -187,7 +187,7 @@ public:
 
         // An automated volume or pan follows its envelope; the control shows its value at the cursor.
         const auto volumeAutomated = ! t.volumeEnvelope.isEmpty(), panAutomated = ! t.panEnvelope.isEmpty();
-        automationButton.setToggleState (volumeAutomated || panAutomated, juce::dontSendNotification);
+        automationButton.setToggleState (t.isAutomated(), juce::dontSendNotification);
         const auto writing = view.isWritingAutomation();
         gain.setEnabled (! volumeAutomated || writing);
         pan.setEnabled (! panAutomated || writing);
@@ -451,27 +451,74 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
     if (track == nullptr)
         return;
 
-    enum { showVolume = 1, showPan, hide, clearVolume, clearPan };
+    enum { showVolume = 1, showPan, hide, clearVolume, clearPan, clearEffect, firstEffect = 1000 };
     const auto showing = getShownEnvelope (trackId);
+    const auto showingEffect = showing.has_value() && showing->parameter == AutomationParameter::effect;
     juce::PopupMenu menu;
     menu.addItem (showVolume, "Show Volume Envelope", true, showing == AutomationParameter::volume);
     menu.addItem (showPan, "Show Pan Envelope", true, showing == AutomationParameter::pan);
+
+    // Each effect's parameters, in the plug-in's order; automated ones say so.
+    std::vector<AutomationTarget> effectTargets;
+    const auto& effects = engine.getTrackEffects();
+
+    for (int slot = 0; slot < effects.getNumSlots (trackId); ++slot)
+    {
+        auto* plugin = effects.getPlugin (trackId, slot);
+        const auto slotId = effects.getSlotId (trackId, slot);
+        std::vector<std::pair<int, juce::String>> byIndex;
+
+        for (auto& [id, parameter] : TrackEffects::parametersById (*plugin))
+            byIndex.emplace_back (parameter->getParameterIndex(), id);
+
+        std::sort (byIndex.begin(), byIndex.end());
+        juce::PopupMenu parameters;
+
+        for (auto& [index, id] : byIndex)
+        {
+            const auto effectTarget = AutomationTarget::effect (slotId, id);
+            const auto* parameter = plugin->getParameters()[index];
+            parameters.addItem (firstEffect + (int) effectTargets.size(),
+                                parameter->getName (60) + (track->envelope (effectTarget).isEmpty() ? "" : " (automated)"),
+                                true, showing == effectTarget);
+            effectTargets.push_back (effectTarget);
+        }
+
+        menu.addSubMenu ("Show " + juce::String (slot + 1) + ". " + plugin->getName() + " Envelope", parameters, ! byIndex.empty());
+    }
+
     menu.addItem (hide, "Hide Envelope", showing.has_value());
     menu.addSeparator();
     menu.addItem (clearVolume, "Clear Volume Envelope", ! track->volumeEnvelope.isEmpty());
     menu.addItem (clearPan, "Clear Pan Envelope", ! track->panEnvelope.isEmpty());
+    menu.addItem (clearEffect, "Clear Shown Effect Envelope", showingEffect && ! track->envelope (*showing).isEmpty());
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
-        [this, trackId, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
+        [this, trackId, showing, effectTargets, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
         {
             if (safe == nullptr)
                 return;
+
+            if (result >= firstEffect && result - firstEffect < (int) effectTargets.size())
+            {
+                showEnvelope (trackId, effectTargets[(size_t) (result - firstEffect)]);
+                return;
+            }
 
             switch (result)
             {
                 case showVolume: showEnvelope (trackId, AutomationParameter::volume); break;
                 case showPan:    showEnvelope (trackId, AutomationParameter::pan); break;
                 case hide:       showEnvelope (trackId, std::nullopt); break;
+                case clearEffect:
+                {
+                    auto next = *engine.session.getState();
+
+                    if (showing.has_value() && SessionEdits::setEnvelope (next, trackId, *showing, {}))
+                        engine.session.apply (std::move (next), "Clear Effect Envelope");
+
+                    break;
+                }
                 case clearVolume:
                 case clearPan:
                 {
@@ -488,7 +535,7 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
         });
 }
 
-std::optional<AutomationParameter> MultitrackView::getShownEnvelope (juce::uint32 trackId) const
+std::optional<AutomationTarget> MultitrackView::getShownEnvelope (juce::uint32 trackId) const
 {
     if (const auto found = shownEnvelopes.find (trackId); found != shownEnvelopes.end())
         return found->second;
@@ -496,7 +543,7 @@ std::optional<AutomationParameter> MultitrackView::getShownEnvelope (juce::uint3
     return std::nullopt;
 }
 
-void MultitrackView::showEnvelope (juce::uint32 trackId, std::optional<AutomationParameter> parameter)
+void MultitrackView::showEnvelope (juce::uint32 trackId, std::optional<AutomationTarget> parameter)
 {
     if (parameter.has_value())
         shownEnvelopes[trackId] = *parameter;
@@ -910,27 +957,27 @@ namespace
     constexpr float envelopeMargin = 8.0f;
 }
 
-float MultitrackView::yForValue (int track, AutomationParameter p, float value) const
+float MultitrackView::yForValue (int track, const AutomationTarget& p, float value) const
 {
     const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + trackHeight) - envelopeMargin;
-    auto proportion = envelopeScale (p).convertTo0to1 (automationRange (p).clipValue (value));
+    auto proportion = envelopeScale (p.parameter).convertTo0to1 (automationRange (p.parameter).clipValue (value));
 
     // Pan: left at the top.
-    if (p == AutomationParameter::pan)
+    if (p.parameter == AutomationParameter::pan)
         proportion = 1.0f - proportion;
 
     return bottom - proportion * (bottom - top);
 }
 
-float MultitrackView::valueForY (int track, AutomationParameter p, float y) const
+float MultitrackView::valueForY (int track, const AutomationTarget& p, float y) const
 {
     const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + trackHeight) - envelopeMargin;
     auto proportion = juce::jlimit (0.0f, 1.0f, (bottom - y) / (bottom - top));
 
-    if (p == AutomationParameter::pan)
+    if (p.parameter == AutomationParameter::pan)
         proportion = 1.0f - proportion;
 
-    return envelopeScale (p).convertFrom0to1 (proportion);
+    return envelopeScale (p.parameter).convertFrom0to1 (proportion);
 }
 
 std::optional<MultitrackView::EnvelopeHit> MultitrackView::envelopeAt (juce::Point<int> p) const
@@ -965,28 +1012,64 @@ std::optional<MultitrackView::EnvelopeHit> MultitrackView::envelopeAt (juce::Poi
     if (hit.point >= 0)
         return hit;
 
-    const auto lineY = yForValue (t, *parameter, track.valueAt (*parameter, frameForX ((float) p.x)));
+    const auto lineY = yForValue (t, *parameter, lineValueAt (track, *parameter, frameForX ((float) p.x)));
     return std::abs ((float) p.y - lineY) <= 5.0f ? std::optional<EnvelopeHit> (hit) : std::nullopt;
 }
 
-void MultitrackView::drawEnvelope (juce::Graphics& g, int track, AutomationParameter p) const
+juce::AudioProcessorParameter* MultitrackView::findEffectParameter (juce::uint32 trackId, const AutomationTarget& target) const
+{
+    if (target.parameter != AutomationParameter::effect)
+        return nullptr;
+
+    auto* plugin = engine.getTrackEffects().findSlot (trackId, target.slotId);
+
+    if (plugin == nullptr)
+        return nullptr;
+
+    const auto parameters = TrackEffects::parametersById (*plugin);
+    const auto found = parameters.find (target.parameterId);
+    return found != parameters.end() ? found->second : nullptr;
+}
+
+float MultitrackView::lineValueAt (const SessionTrack& track, const AutomationTarget& target, juce::int64 frame) const
+{
+    if (target.parameter == AutomationParameter::effect && track.envelope (target).isEmpty())
+    {
+        const auto* parameter = findEffectParameter (track.id, target);
+        return parameter != nullptr ? parameter->getValue() : 0.0f;
+    }
+
+    return track.valueAt (target, frame);
+}
+
+void MultitrackView::drawEnvelope (juce::Graphics& g, int track, const AutomationTarget& p) const
 {
     const auto& t = shown().tracks[(size_t) track];
     const auto& points = t.envelope (p).points;
     const auto area = timelineArea();
-    const auto colour = p == AutomationParameter::volume ? juce::Colour (0xff7ee0ff) : juce::Colour (0xffff9de0);
+    const auto colour = p.parameter == AutomationParameter::volume ? juce::Colour (0xff7ee0ff)
+                      : p.parameter == AutomationParameter::pan ? juce::Colour (0xffff9de0) : juce::Colour (0xffb8f07a);
     const auto left = (float) area.getX(), right = (float) area.getRight();
+    juce::String label = p.parameter == AutomationParameter::volume ? "Volume" : "Pan (left at the top)";
+
+    if (p.parameter == AutomationParameter::effect)
+    {
+        const auto* plugin = engine.getTrackEffects().findSlot (t.id, p.slotId);
+        const auto* parameter = findEffectParameter (t.id, p);
+        label = plugin == nullptr || parameter == nullptr ? juce::String ("An effect no longer on this track")
+              : plugin->getName() + ": " + parameter->getName (40) + " "
+                    + parameter->getText (lineValueAt (t, p, controlFrame()), 40) + parameter->getLabel();
+    }
 
     g.setColour (colour.withAlpha (0.8f));
     g.setFont (11.0f);
-    g.drawText (juce::String (p == AutomationParameter::volume ? "Volume" : "Pan (left at the top)")
-                    + (points.empty() ? ": click the line to add a point" : ""),
-                juce::Rectangle<float> (left + 6.0f, (float) laneTop (track) + (float) trackHeight - 20.0f, 300.0f, 16.0f),
+    g.drawText (label + (points.empty() ? ": click the line to add a point" : ""),
+                juce::Rectangle<float> (left + 6.0f, (float) laneTop (track) + (float) trackHeight - 20.0f, 400.0f, 16.0f),
                 juce::Justification::centredLeft, false);
 
     if (points.empty())
     {
-        const auto y = yForValue (track, p, t.valueAt (p, 0));
+        const auto y = yForValue (track, p, lineValueAt (t, p, 0));
         const float dashes[] = { 4.0f, 4.0f };
         g.drawDashedLine ({ left, y, right, y }, dashes, 2, 1.5f);
         return;
@@ -1434,7 +1517,7 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         if (hit->point < 0)
         {
             const auto frame = snapped (frameForX ((float) p.x));
-            dragEnvelope.point = envelope.add (frame, track.valueAt (hit->parameter, frame));
+            dragEnvelope.point = envelope.add (frame, lineValueAt (track, hit->parameter, frame));
             dragDescription = "Add Envelope Point";
 
             auto next = *engine.session.getState();

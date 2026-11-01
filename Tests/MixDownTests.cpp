@@ -162,6 +162,7 @@ void runMixDownTests (AudioEngine& engine)
             {
                 auto* slot = xml->createNewChildElement ("SLOT");
                 slot->setAttribute ("bypassed", bypassed);
+                slot->setAttribute ("id", bypassed ? 12 : 11);
                 slot->addChildElement (types[0]->createXml().release());
             }
 
@@ -188,6 +189,22 @@ void runMixDownTests (AudioEngine& engine)
             check (errors.contains ("Missing Effect") && ! errors.containsChar ('\n'),
                    "mixdown: an effect that can't load is named and left out (" + errors + ")");
             check (! same (mix, play (s, 0, (int) length, 512, nullptr)), "mixdown: the loaded delay is heard in the mix");
+
+            // The saved slot ids are kept, so envelopes on the effects' parameters find them: one
+            // on each of AUDelay's parameters, from its lowest value to its highest, changes the mix.
+            check (effects->getSlotId (first, 0) == 11 && effects->getSlotId (first, 1) == 12,
+                   "mixdown: fresh effects keep their saved slot ids");
+
+            auto automated = s;
+            const auto parameters = TrackEffects::parametersById (*plugin);
+
+            for (auto& [id, parameter] : parameters)
+                SessionEdits::setEnvelope (automated, first, AutomationTarget::effect (11, id), { { { 0, 0.0f }, { length, 1.0f } } });
+
+            juce::AudioBuffer<float> automatedMix;
+            inBackground ([&] { OfflineRender::mixSession (automated, { 0, length }, automatedMix, effects.get(), {}); });
+            check (! parameters.empty() && ! same (automatedMix, mix),
+                   "mixdown: envelopes on AUDelay's " + juce::String ((int) parameters.size()) + " parameters change the mix");
         }
     }
 

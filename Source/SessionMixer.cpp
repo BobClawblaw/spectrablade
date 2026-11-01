@@ -210,7 +210,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, panAutomated ? pans : nullptr);
 
         if (inserts != nullptr && inserts->isActive (track.id))
-            inserts->process (track.id, buffers.track, numFrames);
+            inserts->process (track, start + own + ahead, buffers.track, numFrames);
 
         // The track's output is now the audio at start + ahead.
         const auto send = [&] (const SessionSend& s, float volume)
@@ -262,7 +262,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         auto& input = buffers.buses[bus.id];
 
         if (inserts != nullptr && inserts->isActive (bus.id))
-            inserts->process (bus.id, input, numFrames);
+            inserts->process (bus, start + latencyOf (inserts, bus.id), input, numFrames);
 
         if (bus.volumeEnvelope.isEmpty() && bus.panEnvelope.isEmpty())
         {

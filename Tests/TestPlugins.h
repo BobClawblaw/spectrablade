@@ -88,4 +88,67 @@ private:
     juce::AudioBuffer<float> line;
     int write = 0;
 };
+
+/** Scales its input by twice its one parameter ("gain", 0 to 1), read at the start of each block. */
+class GainPlugin final : public juce::AudioPluginInstance
+{
+public:
+    struct Gain final : public juce::HostedAudioProcessorParameter
+    {
+        float value = 0.5f;
+        float getValue() const override                         { return value; }
+        void setValue (float v) override                        { value = v; ++changes; }
+        float getDefaultValue() const override                  { return 0.5f; }
+        juce::String getName (int) const override               { return "Gain"; }
+        juce::String getLabel() const override                  { return {}; }
+        float getValueForText (const juce::String& t) const override { return t.getFloatValue(); }
+        juce::String getParameterID() const override            { return "gain"; }
+        int changes = 0;
+    };
+
+    GainPlugin()
+        : AudioPluginInstance (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
+                                                .withOutput ("Out", juce::AudioChannelSet::stereo(), true))
+    {
+        auto p = std::make_unique<Gain>();
+        gain = p.get();
+        addHostedParameter (std::move (p));
+    }
+
+    void fillInPluginDescription (juce::PluginDescription& d) const override
+    {
+        d.name = "Test Gain";
+        d.pluginFormatName = "Test";
+        d.fileOrIdentifier = "test-gain";
+        d.numInputChannels = d.numOutputChannels = 2;
+    }
+
+    const juce::String getName() const override  { return "Test Gain"; }
+    void prepareToPlay (double, int) override    {}
+    void releaseResources() override             {}
+
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        const auto g = 2.0f * gain->value;
+
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                b.setSample (ch, i, b.getSample (ch, i) * g);
+    }
+
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override            { return false; }
+    bool producesMidi() const override           { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override              { return false; }
+    int getNumPrograms() override                { return 1; }
+    int getCurrentProgram() override             { return 0; }
+    void setCurrentProgram (int) override        {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+
+    Gain* gain = nullptr;
+};
 }

@@ -179,7 +179,7 @@ juce::String loadTrackEffects (const std::map<juce::uint32, std::unique_ptr<juce
             // State after preparing, as the live chains are restored.
             auto* instance = plugin.get();
             instance->setNonRealtime (true);
-            into.add (trackId, std::move (plugin));
+            into.add (trackId, std::move (plugin), (juce::uint32) slotXml->getIntAttribute ("id"));
             into.setBypassed (trackId, into.getNumSlots (trackId) - 1, slotXml->getBoolAttribute ("bypassed"));
 
             if (auto* stateXml = slotXml->getChildByName ("STATE"))

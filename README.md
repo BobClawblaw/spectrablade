@@ -6,6 +6,13 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 18: automating effect parameters**
+- A track's or bus's A menu lists each of its effects, with that effect's parameters in its own order (automated ones say so). Pick one to show its envelope over the lane, labelled with the effect, the parameter and its value, and edit it like a volume envelope: click the line to add a point (at the parameter's current value, the first time), drag, Option-click to delete. Clear Shown Effect Envelope removes it. Envelopes are saved in the session file.
+- While an envelope has points, it sets its parameter as the session plays, in steps of 64 frames (1.3 ms at 48 kHz) that line up with session time, so the result doesn't depend on the audio interface's block size. An effect after others in its chain works on audio their latency has delayed, and its parameters follow their envelopes from that earlier time, so automation stays lined up with the audio. Without points, the parameter is left where the effect's window has it.
+- An envelope belongs to its effect, not its place in the chain: each effect slot has an id, saved with the chain, so reordering the chain keeps every envelope on its effect. If the effect is removed, its envelopes are kept unused, and the lane says the effect is no longer on the track. A bypassed effect ignores its envelopes. Mix Down follows effect envelopes too.
+- Measured by the tests, with a test plug-in whose gain is its parameter: on a ramp, the mix is bit for bit the gain the envelope gives at each 64-frame step, in 1-, 37-, 512- and 3000-frame blocks and from part way in; after a 300-frame delay in the chain, and moved ahead of it, it still lines up bit for bit. Also checked: no envelope leaves the parameter untouched, an envelope for a removed effect plays nothing, slot ids are kept and never repeated, session files round trip, fresh copies of Apple's AUDelay in a mixdown keep their slot ids and envelopes on its 4 parameters change the mix, and, through the real view, a click on the line of an AUDelay parameter adds a point at its current value and the envelope is drawn.
+- Not yet: writing effect parameters while playing (from the effect's own window). Automation steps are not sample-accurate: a parameter changes at most once every 64 frames.
+
 **Milestone 17: writing automation while playing**
 - Multitrack > Write Automation (W) turns writing on. While the session plays, dragging a track's or bus's volume or pan control writes what you do into its envelope, and you hear it as it is written. Held still, the control keeps writing its value as playback moves on. When you let go, the envelope goes back to what it had over 0.1 s, so the rest of it is untouched. On a track with no envelope yet, its setting holds before and after the pass.
 - With writing on, automated controls stay live, and while the session plays every automated control shows its envelope's value at the play position. Each pass is one undo step. A pass ends when you let go, when playback stops, or when it jumps back in time.
@@ -30,7 +37,7 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - Multitrack > Snapping (S) is on by default and remembered. When something dragged comes within 8 pixels of a target, it lines up with it exactly: clip moves (by whichever edge is nearer a target), trims, fade handles, envelope points and time-range selection. The targets are clip edges, the cursor, the time range's edges, the session start and the ruler's marks.
 - Measured by the tests: constant pan envelopes (on tracks and a bus) and a constant bus volume envelope play bit for bit like their settings. Constant track volume envelopes match to float rounding (worst under 6e-8); the envelope is a separate multiply, where the fader's gain is fused into the add. A 0 to -40 dB ramp scales every frame by the envelope's gain there (worst under 7.5e-9). With envelopes on tracks and a bus, the mix is bit for bit the same in 1-, 37- and 512-frame blocks, with 300 and 500 frames of effect latency, and after a jump. A pan step moves a mono track from left to right at the step.
 - Also checked, through the real view with synthesised mouse events: dragging fade handles, a fade snapping to the cursor, a clip snapping to another's end (and not snapping with snapping off), and adding, moving and deleting envelope points. The envelope maths, fade limits, snap rules and the file round trip are tested on their own.
-- Not yet: automating effect parameters.
+- Not yet: automating effect parameters (since added in Milestone 18).
 
 **Release 0.1.0: the first build to install**
 - `dist/SpectraBlade-0.1.0.dmg` holds a universal app (Apple silicon and Intel), built for macOS 13 or later and tested on macOS 27. See [Installing](#installing), and [Packaging](#packaging) to make it.
@@ -183,6 +190,7 @@ The tests run against the real machine:
 - Multitrack: the mixer (pan laws, gains, mute, solo, trims, fades, block-size independence), clip edits (split, trim, move, delete), undo with merged steps, session files (round trip after moving the folder, shared audio read once, rate conversion, missing files), and session playback through the player.
 - Automation and the multitrack view: volume and pan envelopes in the mixer (against the settings they replace, ramps, steps, block sizes, sends, latency) and in session files, fade limits, snapping rules, crossfades (the fades set and the level through them), writing automation passes, and the view driven by the mouse (fade handles, snapping, envelope points, crossfading) and by automation passes.
 - Track effects: delay compensation bit for bit across tracks with different latencies and block sizes, playing from a jump, bypass, reordering, removal, saving each chain in the session file, and a real Apple Audio Unit on a track.
+- Effect automation: a test plug-in's parameter following its envelope bit for bit across block sizes, after a jump, behind chain latency and after reordering; bypass, removed effects, slot ids and session files.
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session.
@@ -227,4 +235,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: automating effect parameters
+1. Multitrack, continued: writing effect parameters while playing, from the effect's own window

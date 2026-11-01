@@ -61,15 +61,52 @@ struct Envelope
     bool operator== (const Envelope& o) const noexcept { return points == o.points; }
 };
 
-/** What an envelope automates. */
-enum class AutomationParameter { volume, pan };
+/** What an envelope automates: a track's volume or pan, or a parameter of one of its effects. */
+enum class AutomationParameter { volume, pan, effect };
+
+/** An envelope's target. For an effect parameter: the effect's slot (its TrackEffects slot id,
+    which stays with the effect when the chain is reordered) and the parameter's ID. */
+struct AutomationTarget
+{
+    AutomationParameter parameter = AutomationParameter::volume;
+    juce::uint32 slotId = 0;
+    juce::String parameterId;
+
+    AutomationTarget (AutomationParameter p = AutomationParameter::volume) : parameter (p) {}   // implicit, so volume and pan convert
+    static AutomationTarget effect (juce::uint32 slot, const juce::String& id)
+    {
+        AutomationTarget t (AutomationParameter::effect);
+        t.slotId = slot;
+        t.parameterId = id;
+        return t;
+    }
+
+    bool operator== (const AutomationTarget& o) const noexcept
+    {
+        return parameter == o.parameter && slotId == o.slotId && parameterId == o.parameterId;
+    }
+};
 
 /** The values an envelope's points can take: volume in dB (the track fader's range), pan from
-    -1 (left) to +1 (right). */
+    -1 (left) to +1 (right), an effect parameter from 0 to 1 (its normalised range). */
 juce::Range<float> automationRange (AutomationParameter);
 
+/** An envelope on a parameter of one of a track's effects. */
+struct EffectEnvelope
+{
+    juce::uint32 slotId = 0;
+    juce::String parameterId;
+    Envelope envelope;                     // 0 to 1
+
+    bool operator== (const EffectEnvelope& o) const noexcept
+    {
+        return slotId == o.slotId && parameterId == o.parameterId && envelope == o.envelope;
+    }
+};
+
 /** A track: clips (overlapping clips mix), a level, a pan, mute, solo and sends to buses.
-    Volume and pan can each follow an envelope instead of their setting.
+    Volume and pan can each follow an envelope instead of their setting, and so can its
+    effects' parameters. An envelope for an effect that has left the chain is kept but unused.
 
     A bus is a track with no clips that plays what other tracks send it, through its own effects,
     volume and pan. Buses send nowhere themselves. */
@@ -84,15 +121,23 @@ struct SessionTrack
     std::vector<SessionClip> clips;
     std::vector<SessionSend> sends;
     Envelope volumeEnvelope, panEnvelope;  // dB, and -1 to +1
+    std::vector<EffectEnvelope> effectEnvelopes;   // only ones with points
 
     const SessionSend* findSend (juce::uint32 busId) const;
 
-    Envelope& envelope (AutomationParameter p)              { return p == AutomationParameter::volume ? volumeEnvelope : panEnvelope; }
-    const Envelope& envelope (AutomationParameter p) const  { return p == AutomationParameter::volume ? volumeEnvelope : panEnvelope; }
+    /** The target's envelope; empty for an effect parameter with none. */
+    const Envelope& envelope (const AutomationTarget&) const;
 
     /** The volume (dB) or pan at a session frame: the envelope's value, or the setting when
-        there is no envelope. */
-    float valueAt (AutomationParameter, juce::int64 frame) const;
+        there is no envelope. An effect parameter with no envelope has no setting here (its
+        effect holds it) and gives 0. */
+    float valueAt (const AutomationTarget&, juce::int64 frame) const;
+
+    /** True when anything on the track is automated. */
+    bool isAutomated() const noexcept
+    {
+        return ! volumeEnvelope.isEmpty() || ! panEnvelope.isEmpty() || ! effectEnvelopes.empty();
+    }
 };
 
 /** One state of a session. Copies share the clips' audio. */
@@ -167,14 +212,14 @@ namespace SessionEdits
 
     /** Replaces a track's volume or pan envelope; its points are kept in range and in time
         order. An empty envelope hands the parameter back to the track's setting. */
-    bool setEnvelope (SessionState&, juce::uint32 trackId, AutomationParameter, Envelope);
+    bool setEnvelope (SessionState&, juce::uint32 trackId, const AutomationTarget&, Envelope);
 
     /** Writes a pass of automation recorded while playing: points in time order. From the pass's
         first frame to returnFrames after its last, the envelope's old points give way to the
         pass, which starts from the old value there and ends by going back, over returnFrames,
         to the old value. Outside that, the envelope (or, with none, the track's setting) stays
         as it was. */
-    bool writeAutomation (SessionState&, juce::uint32 trackId, AutomationParameter,
+    bool writeAutomation (SessionState&, juce::uint32 trackId, const AutomationTarget&,
                           const std::vector<AutomationPoint>& pass, juce::int64 returnFrames);
 }
 

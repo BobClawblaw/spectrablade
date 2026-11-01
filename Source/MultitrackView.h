@@ -9,8 +9,9 @@
     editor. Click to place the cursor, drag across the timeline to select a time range; drop audio
     files to add them as clips. A track's R button arms it for recording.
 
-    A track's A button shows its volume or pan envelope over its lane: click the line to add a
-    point, drag points to move them, Option-click one to delete it.
+    A track's A button shows its volume or pan envelope, or one for a parameter of its effects,
+    over its lane: click the line to add a point, drag points to move them, Option-click one to
+    delete it.
 
     With snapping on, whatever is dragged lines up with clip edges, the cursor, the time range
     and the ruler's marks when it comes within a few pixels of one. With crossfading on, a clip
@@ -78,9 +79,9 @@ public:
         return pass.has_value() && pass->trackId == trackId && pass->parameter == p;
     }
 
-    /** The envelope shown over a track's lane, if any. */
-    std::optional<AutomationParameter> getShownEnvelope (juce::uint32 trackId) const;
-    void showEnvelope (juce::uint32 trackId, std::optional<AutomationParameter>);
+    /** The envelope shown over a track's lane, if any: volume, pan or an effect parameter. */
+    std::optional<AutomationTarget> getShownEnvelope (juce::uint32 trackId) const;
+    void showEnvelope (juce::uint32 trackId, std::optional<AutomationTarget>);
 
     void zoomIn();
     void zoomOut();
@@ -111,7 +112,7 @@ private:
     struct EnvelopeHit
     {
         int track = -1;
-        AutomationParameter parameter = AutomationParameter::volume;
+        AutomationTarget parameter;
         int point = -1;                    // -1: on the line between points
     };
 
@@ -139,9 +140,16 @@ private:
     juce::Rectangle<float> fadeHandle (int track, const SessionClip&, bool fadeOut) const;
 
     std::optional<EnvelopeHit> envelopeAt (juce::Point<int>) const;
-    float yForValue (int track, AutomationParameter, float value) const;
-    float valueForY (int track, AutomationParameter, float y) const;
-    void drawEnvelope (juce::Graphics&, int track, AutomationParameter) const;
+    float yForValue (int track, const AutomationTarget&, float value) const;
+    float valueForY (int track, const AutomationTarget&, float y) const;
+    void drawEnvelope (juce::Graphics&, int track, const AutomationTarget&) const;
+
+    /** The effect parameter an envelope targets, or null when its effect has left the chain. */
+    juce::AudioProcessorParameter* findEffectParameter (juce::uint32 trackId, const AutomationTarget&) const;
+
+    /** Where an envelope's line is at a frame: its value, or with no points, the value now in
+        charge (the track's setting, or the effect parameter's current value). */
+    float lineValueAt (const SessionTrack&, const AutomationTarget&, juce::int64 frame) const;
 
     /** The ruler's mark spacing in seconds at the current zoom. */
     double rulerTick() const;
@@ -196,7 +204,7 @@ private:
     /** Where automated controls show their envelope's value: the play position while the session
         plays, otherwise the cursor. */
     juce::int64 controlFrame() const;
-    std::map<juce::uint32, AutomationParameter> shownEnvelopes;
+    std::map<juce::uint32, AutomationTarget> shownEnvelopes;
 
     juce::Component headerArea;
     std::vector<std::unique_ptr<TrackHeader>> headers;

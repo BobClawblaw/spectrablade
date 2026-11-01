@@ -14,6 +14,8 @@
     A volume or pan envelope takes over from the setting, sample by sample: a track's pan
     envelope where its clips are panned, its volume envelope where its volume is applied (after
     its effects, so pre-fader sends don't follow it), and a bus's at its output.
+    Envelopes on effect parameters are followed by the effects themselves (Inserts), given the
+    session frame of the audio they process.
 
     Effects delay what passes through them. A track is read ahead by its effects' latency plus
     the most latency of the buses it sends to, and each of its outputs is held back by what that
@@ -41,8 +43,9 @@ namespace SessionMixer
         /** Clears the processing's memory (after a jump in time). */
         virtual void reset (juce::uint32 trackId) = 0;
 
-        /** Processes the first numFrames of a two-channel buffer in place. */
-        virtual void process (juce::uint32 trackId, juce::AudioBuffer<float>&, int numFrames) = 0;
+        /** Processes the first numFrames of a two-channel buffer in place: the track's audio from
+            session frame `frame` on (what its effects' automation follows). */
+        virtual void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames) = 0;
     };
 
     /** Working buffers and the delay lines that line paths up, kept between blocks. Grown as

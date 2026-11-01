@@ -94,17 +94,54 @@ std::vector<juce::AudioPluginInstance*> TrackEffects::getAllPlugins() const
     return all;
 }
 
-void TrackEffects::add (juce::uint32 trackId, std::unique_ptr<juce::AudioPluginInstance> plugin)
+std::map<juce::String, juce::AudioProcessorParameter*> TrackEffects::parametersById (juce::AudioPluginInstance& plugin)
+{
+    std::map<juce::String, juce::AudioProcessorParameter*> byId;
+
+    for (auto* p : plugin.getParameters())
+    {
+        const auto* hosted = dynamic_cast<juce::HostedAudioProcessorParameter*> (p);
+        const auto id = hosted != nullptr ? hosted->getParameterID() : juce::String();
+        byId[id.isNotEmpty() ? id : juce::String (p->getParameterIndex())] = p;
+    }
+
+    return byId;
+}
+
+juce::uint32 TrackEffects::add (juce::uint32 trackId, std::unique_ptr<juce::AudioPluginInstance> plugin, juce::uint32 slotId)
 {
     auto slot = std::make_unique<Slot>();
     slot->plugin = std::move (plugin);
+    slot->parameters = parametersById (*slot->plugin);
 
     // Prepared before it joins the chain, so the audio thread waits only for the insertion.
     // The rate changes only on this thread, so it needs no lock here.
     prepareSlot (*slot);
 
     const juce::ScopedLock sl (lock);
+    slot->id = slotId != 0 ? slotId : nextSlotId;
+    nextSlotId = juce::jmax (nextSlotId, slot->id + 1);
     chains[trackId].push_back (std::move (slot));
+    return chains[trackId].back()->id;
+}
+
+juce::uint32 TrackEffects::getSlotId (juce::uint32 trackId, int slot) const
+{
+    const juce::ScopedLock sl (lock);
+    const auto* chain = find (trackId);
+    return chain != nullptr && juce::isPositiveAndBelow (slot, (int) chain->size()) ? (*chain)[(size_t) slot]->id : 0;
+}
+
+juce::AudioPluginInstance* TrackEffects::findSlot (juce::uint32 trackId, juce::uint32 slotId) const
+{
+    const juce::ScopedLock sl (lock);
+
+    if (const auto* chain = find (trackId))
+        for (auto& s : *chain)
+            if (s->id == slotId)
+                return s->plugin.get();
+
+    return nullptr;
 }
 
 std::unique_ptr<juce::AudioPluginInstance> TrackEffects::remove (juce::uint32 trackId, int index)
@@ -190,6 +227,7 @@ std::unique_ptr<juce::XmlElement> TrackEffects::createXml (juce::uint32 trackId)
     {
         auto* slot = xml->createNewChildElement ("SLOT");
         slot->setAttribute ("bypassed", s->bypassed);
+        slot->setAttribute ("id", (int) s->id);
         slot->addChildElement (s->plugin->getPluginDescription().createXml().release());
 
         juce::MemoryBlock state;
@@ -230,10 +268,10 @@ void TrackEffects::reset (juce::uint32 trackId)
             slot->plugin->reset();
 }
 
-void TrackEffects::process (juce::uint32 trackId, juce::AudioBuffer<float>& buffer, int numFrames)
+void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::AudioBuffer<float>& buffer, int numFrames)
 {
     const juce::ScopedTryLock sl (lock);
-    auto* chain = sl.isLocked() ? find (trackId) : nullptr;
+    auto* chain = sl.isLocked() ? find (track.id) : nullptr;
 
     if (chain == nullptr)
     {
@@ -241,15 +279,40 @@ void TrackEffects::process (juce::uint32 trackId, juce::AudioBuffer<float>& buff
         return;
     }
 
+    // Steps line up with session time, so the result doesn't depend on how the mix is split into blocks.
+    const auto automated = std::any_of (track.effectEnvelopes.begin(), track.effectEnvelopes.end(), [chain] (const EffectEnvelope& e)
+    {
+        return std::any_of (chain->begin(), chain->end(), [&e] (auto& s) { return s->id == e.slotId && ! s->bypassed; });
+    });
+
     for (int done = 0; done < numFrames;)
     {
-        const auto n = juce::jmin (maxBlock, numFrames - done);
+        auto n = juce::jmin (maxBlock, numFrames - done);
+        auto stepStart = frame + done;
+
+        if (automated)
+        {
+            const auto into = (int) (((stepStart % automationStep) + automationStep) % automationStep);
+            stepStart -= into;
+            n = juce::jmin (n, automationStep - into);
+        }
+
+        // Effects earlier in the chain delay the audio, so each one is working on audio from
+        // that much earlier, and its parameters follow their envelopes from there.
+        juce::int64 delayed = 0;
 
         for (auto& s : *chain)
         {
             if (s->bypassed)
                 continue;
 
+            if (automated)
+                for (auto& e : track.effectEnvelopes)
+                    if (e.slotId == s->id)
+                        if (const auto found = s->parameters.find (e.parameterId); found != s->parameters.end())
+                            found->second->setValue (e.envelope.valueAt (stepStart - delayed));
+
+            delayed += juce::jmax (0, s->plugin->getLatencySamples());
             auto& p = *s->plugin;
             juce::AudioBuffer<float> work (s->work.getArrayOfWritePointers(), s->work.getNumChannels(), n);
             work.clear();
