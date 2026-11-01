@@ -59,6 +59,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SessionMixer.cpp
     Source/TrackEffects.cpp
     Source/Recorder.cpp
+    Source/SessionCollect.cpp
     Source/SessionRecording.cpp
     Source/Bounce.cpp
     Source/ClipList.cpp
@@ -137,6 +138,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SessionMixer.cpp
     Source/TrackEffects.cpp
     Source/Recorder.cpp
+    Source/SessionCollect.cpp
     Source/SessionRecording.cpp
     Source/Bounce.cpp
     Source/ClipList.cpp

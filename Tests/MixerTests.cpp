@@ -7,6 +7,7 @@
 #include "../Source/ClipProperties.h"
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
+#include "../Source/SessionCollect.h"
 #include "../Source/TrackColours.h"
 #include "../Source/UndoHistory.h"
 #include "TestUtils.h"
@@ -400,6 +401,64 @@ namespace
 
 namespace
 {
+    void testCollect (AudioEngine& engine)
+    {
+        const auto root = juce::File::createTempFile ("collect");
+        root.createDirectory();
+        const auto a = root.getChildFile ("one/take.wav"), b = root.getChildFile ("two/Take.wav"), c = root.getChildFile ("two/pass.wav");
+        auto wrote = true;
+
+        for (auto& [f, level] : { std::pair (a, 0.25f), std::pair (b, 0.5f), std::pair (c, 0.75f) })
+        {
+            f.getParentDirectory().createDirectory();
+            wrote = wrote && AudioFileIO::save (*constant (1, 4800, level), rate, f, 24, engine.formatManager).isEmpty();
+        }
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addTrack();
+        SessionEdits::addClip (s, 0, a, constant (1, 4800, 0.25f), 0);
+        SessionEdits::addClip (s, 0, a, constant (1, 4800, 0.25f), 9600);   // the same file twice
+        SessionEdits::addClip (s, 1, b, constant (1, 4800, 0.5f), 0);
+        SessionEdits::addClip (s, 1, root.getChildFile ("gone.wav"), constant (1, 4800, 0.1f), 9600);
+        auto& withTakes = s.tracks[1].clips[0];
+        withTakes.takes = { { b, withTakes.audio, 0 }, { c, constant (1, 4800, 0.75f), 0 } };
+
+        const auto copyFile = root.getChildFile ("Copy/Copy.sbsession");
+        copyFile.getParentDirectory().createDirectory();
+        juce::StringArray missing;
+        const auto error = SessionCollect::save (s, copyFile, {}, missing);
+        const auto audio = copyFile.getParentDirectory().getChildFile ("Audio");
+        const auto names = [&]
+        {
+            juce::StringArray found;
+
+            for (auto& f : audio.findChildFiles (juce::File::findFiles, false))
+                found.add (f.getFileName());
+
+            found.sort (true);
+            return found;
+        }();
+
+        // Moved away from the originals, the copy still opens with all its audio.
+        const auto moved = root.getChildFile ("Moved");
+        copyFile.getParentDirectory().moveFileTo (moved);
+        const auto loaded = SessionFile::load (moved.getChildFile ("Copy.sbsession"), engine.formatManager);
+        const auto& lt = loaded.state.tracks;
+        const auto sameBytes = moved.getChildFile ("Audio/Take 2.wav").hasIdenticalContentTo (b) && moved.getChildFile ("Audio/take.wav").hasIdenticalContentTo (a);
+        check (wrote && error.isEmpty() && names == juce::StringArray { "pass.wav", "Take 2.wav", "take.wav" } && missing == juce::StringArray { root.getChildFile ("gone.wav").getFullPathName() }
+                   && sameBytes && lt.size() == 2 && lt[0].clips.size() == 2 && lt[0].clips[0].source == moved.getChildFile ("Audio/take.wav")
+                   && lt[1].clips.size() >= 1 && lt[1].clips[0].takes.size() == 2 && lt[1].clips[0].takes[1].source == moved.getChildFile ("Audio/pass.wav")
+                   && a.existsAsFile() && b.existsAsFile(),
+               "save with audio: each file used copied once beside the copy (a second of the same name numbered), takes too, a missing one named, "
+               "and the copy opening with all its audio after being moved");
+        root.deleteRecursively();
+    }
+}
+
+namespace
+{
     void testClipList (AudioEngine& engine)
     {
         SessionState s;
@@ -523,4 +582,5 @@ void runMixerTests (AudioEngine& engine)
     testClipList (engine);
     testNotes (engine);
     testUndoHistory (engine);
+    testCollect (engine);
 }

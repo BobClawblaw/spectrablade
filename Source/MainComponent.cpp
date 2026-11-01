@@ -8,6 +8,7 @@
 #include "OfflineRender.h"
 #include "PluginScanner.h"
 #include "SampleRateConverter.h"
+#include "SessionCollect.h"
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
@@ -53,7 +54,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -749,7 +750,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdAddFromTemplate; ++id)
+    for (int id = cmdOpen; id <= cmdSaveCopyWithAudio; ++id)
         ids.add (id);
 }
 
@@ -923,6 +924,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setTicked (multitrack.isFindingZeroCrossings()); info.setActive (multitrackMode); break;
         case cmdStretchClip: info.setInfo ("Stretch Clip...", "Make the selected clip longer or shorter without changing its pitch", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
+        case cmdSaveCopyWithAudio: info.setInfo ("Save a Copy with Audio...", "Save a copy of the session with every audio file it uses in a folder beside it", "File", 0);
+                            info.setActive (multitrackMode); break;
         case cmdSaveTrackTemplate: info.setInfo ("Save Track as Template...", "Save the selected track's settings, sends and effects to start new tracks from", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdAddFromTemplate: info.setInfo ("Add Track from Template...", "Add a track or bus made from a saved template", "Multitrack", 0);
@@ -1104,6 +1107,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShiftPitch: askToShiftSelectedClip(); break;
         case cmdUndoHistory: toggleUndoHistory(); break;
         case cmdSaveTrackTemplate: chooseTrackTemplateToSave(); break;
+        case cmdSaveCopyWithAudio: saveSessionCopyWithAudio(); break;
         case cmdAddFromTemplate: chooseTrackTemplateToAdd(); break;
         case cmdZeroCrossings:
             multitrack.setFindingZeroCrossings (! multitrack.isFindingZeroCrossings());
@@ -1203,7 +1207,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
     switch (index)
     {
-        case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession }); break;
+        case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
@@ -2224,6 +2228,40 @@ void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
+}
+
+void MainComponent::saveSessionCopyWithAudio()
+{
+    const auto current = engine.session.getFile();
+    const auto name = current != juce::File() ? current.getFileNameWithoutExtension() : juce::String ("Untitled");
+    chooser = std::make_unique<juce::FileChooser> ("Save a copy with audio, in a new folder",
+                                                   juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile (name + " Copy"));
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              const auto folder = fc.getResult();
+
+                              if (folder == juce::File())
+                                  return;
+
+                              // A folder of its own: the session file and its Audio folder inside.
+                              if (folder.exists() || ! folder.createDirectory())
+                              {
+                                  showError ("Save a Copy with Audio", folder.getFullPathName() + " already exists or can't be made; choose a new name.");
+                                  return;
+                              }
+
+                              juce::StringArray missing;
+                              const auto file = folder.getChildFile (folder.getFileName() + ".sbsession");
+                              const auto error = SessionCollect::save (*engine.session.getState(), file,
+                                                                       [this] (juce::uint32 id) { return engine.getTrackEffects().createXml (id); }, missing);
+
+                              if (error.isNotEmpty())
+                                  showError ("Save a Copy with Audio", error);
+                              else if (! missing.isEmpty())
+                                  showError ("Save a Copy with Audio", "The copy was saved, but these files were missing and could not go with it:\n\n"
+                                                                           + missing.joinIntoString ("\n"));
+                          });
 }
 
 void MainComponent::saveSessionAs (std::function<void (bool)> done)

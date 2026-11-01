@@ -118,6 +118,7 @@ private:
     void openSession (const juce::File&);
     void saveSession (std::function<void (bool saved)> done = {});
     void saveSessionAs (std::function<void (bool saved)> done = {});
+    void saveSessionCopyWithAudio();
     void chooseFilesForSession();
     void addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame);
     void chooseMixDownFile();

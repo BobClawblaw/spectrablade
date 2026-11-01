@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 56: saving a copy with its audio**
+- File > Save a Copy with Audio... asks for a new folder's name and saves a copy of the session there, with every audio file it uses (each clip's, and each take's) copied into an Audio folder beside it, so the folder can be moved or sent as a whole. A file used several times is copied once; a second file with the same name (ignoring case) is numbered ("Take 2.wav"). The open session stays as it was, pointing at its own files.
+- Files the session uses that aren't there are named afterwards; their clips still point where they were.
+- Measured by the tests, with real files: three files (two named take.wav and Take.wav in different folders, one used twice, one only as a take) copied byte for byte as "take.wav", "Take 2.wav" and "pass.wav", a missing file named, the originals left in place, and the copy's folder, moved elsewhere, opening with every clip and take pointing at its own Audio folder. The folder dialog was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 55: track templates**
 - Multitrack > Save Track as Template... writes the selected track's or bus's settings to a .sbtrack file: its name, volume, pan, colour, input, note, sends (by the bus's name) and its effects chain, each plug-in's state, bypass and slot included. Its clips, envelopes, group, mute and solo are not kept.
 - Multitrack > Add Track from Template... adds a track or bus made from one at the end of the session, as an undo step ("Add Track from Template"), and loads its effects onto it. Its sends go to the session's first bus with the same name; when there is none, the message names the bus and the track doesn't send there. A plug-in that can't be loaded is named, as when a session opens.
@@ -406,6 +411,7 @@ The tests run against the real machine:
 - Pitch shift: four shifts of a tone landing on their pitches at the same length and level, cancelling, and the clip edit.
 - The undo history: listing steps, going back and forward by clicking, and new steps.
 - Track templates: what they keep, sends by bus name, and a file round trip.
+- Saving a copy with audio: copies, numbering, missing files, and the moved copy opening.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
