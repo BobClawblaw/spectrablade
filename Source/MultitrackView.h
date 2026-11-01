@@ -123,6 +123,10 @@ public:
         when there is no time range. */
     bool selectClipsInRange();
 
+    /** Selects the region at the cursor as the time range and every clip playing part of it;
+        false, changing nothing, when the cursor is in no region. */
+    bool selectClipsInRegion();
+
     void deleteSelectedClip();     // every selected clip
 
     /** The selected clips, copied for pasting (their audio is shared, not duplicated), with

@@ -1418,6 +1418,17 @@ void runMultitrackViewTests (AudioEngine& engine)
         const auto noRange = ! view.selectClipsInRange() && view.getSelectedClips().size() == 6;
         check (inRange && between && noRange,
                "selecting: the clips that play part of the time range, not those only touching it, none on a hidden track; nothing without a range");
+
+        // Clips in the region at the cursor: the same clips as the range test, through a region.
+        auto withRegion = *engine.session.getState();
+        withRegion.markers = { { 20000, 30000, "Bridge" } };
+        engine.session.apply (std::move (withRegion), "Region");
+        view.setCursor (30000);
+        const auto inRegion = view.selectClipsInRegion() && view.getTimeSelection() == juce::Range<juce::int64> (20000, 50000)
+                              && selection() == sorted ({ ids[0][0], ids[0][1], ids[1][0], ids[1][1] });
+        view.setCursor (60000);
+        const auto outside = ! view.selectClipsInRegion() && view.getTimeSelection() == juce::Range<juce::int64> (20000, 50000);
+        check (inRegion && outside, "selecting: the region at the cursor and the clips that play part of it; nothing outside a region");
     }
 
     // Moving the selected clips to the cursor, keeping their spacing.

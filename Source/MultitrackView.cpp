@@ -2748,6 +2748,17 @@ bool MultitrackView::selectClipsInRange()
     return true;
 }
 
+bool MultitrackView::selectClipsInRegion()
+{
+    const auto region = MarkerEdits::regionAt (engine.session.getState()->markers, cursor);
+
+    if (! region)
+        return false;
+
+    setTimeSelection (*region);
+    return selectClipsInRange();
+}
+
 void MultitrackView::selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted)
 {
     // Never clips on hidden or folded-away tracks, which can't be seen.
