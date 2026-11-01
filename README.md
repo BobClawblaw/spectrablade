@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 106: Balance**
+- Effects > Balance asks for a position from -100 (all left) to 100 (all right) and moves the balance of the selection, or the whole file, by lowering the side moved away from, with the same law a session track's pan applies to a stereo clip (half right: the left down 3 dB). It is offered for two-channel files only; a mono file can be made stereo first. Zero changes nothing and adds no undo step.
+- Measured by the tests: half right leaves the right channel bit-identical and multiplies the left by exactly the mixer's gain for that position (within float rounding of the square root of a half) inside the range, and nothing outside it. The dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 105: fade shapes in the editor**
 - Effects > Fade Shape picks the curve the editor's Fade In and Fade Out follow: S-Curve (as before), Linear, Equal Power, Slow Start or Fast Start, the same shapes session clips use. The choice is ticked in the menu and kept between runs. The first frame of a fade in is silent and its last at full level, and a fade out the other way round.
 - The S-curve now goes through the shared shape function, which orders its float arithmetic differently from the old one; the two were not compared bit for bit, and the existing fade test still passed.
@@ -686,6 +690,7 @@ The tests run against the real machine:
 - Trim Silence: the audible span found exactly across blocks and channels, none in silence.
 - Mix to Mono and Make Stereo: exact averages and copies across blocks, and undo.
 - Editor fade shapes: linear in and slow-start out, exact at every frame.
+- Balance: the mixer's stereo pan law, inside the range only.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -739,4 +744,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Pan, moving a stereo file's balance or placing a mono one, over the selection or the whole file
+1. Editor: Set Selection, typing the start and length of the selection

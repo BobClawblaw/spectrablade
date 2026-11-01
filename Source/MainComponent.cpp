@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdSelectAudible);
+            || (id >= cmdRemoveDc && id <= cmdBalance);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSelectAudible; ++id)
+    for (int id = cmdOpen; id <= cmdBalance; ++id)
         ids.add (id);
 }
 
@@ -961,6 +961,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdReverse:    info.setInfo ("Reverse", "Play backwards", "Effects", 0); info.setActive (hasAudio); break;
         case cmdRemoveDc:   info.setInfo ("Remove DC Offset", "Take each channel's average level out of the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
+        case cmdBalance:    info.setInfo ("Balance...", "Move the stereo balance of the selection, or the whole file, left or right", "Effects", 0);
+                            info.setActive (hasAudio && doc.getNumChannels() == 2); break;
         case cmdSwapChannels: info.setInfo ("Swap Channels", "Exchange left and right in the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
         case cmdSelectAudible: info.setInfo ("Select Audible Span", "Select from the first sound to the last, at the level Trim Silence last used", "Edit", 0);
@@ -1301,6 +1303,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdInvert:     applySimpleEffect ("Invert", &AudioEdits::invert, false); break;
         case cmdReverse:    applySimpleEffect ("Reverse", &AudioEdits::reverse, false); break;
         case cmdRemoveDc:   applySimpleEffect ("Remove DC Offset", &AudioEdits::removeDcOffset, false); break;
+        case cmdBalance:    showBalance(); break;
         case cmdSwapChannels: applySimpleEffect ("Swap Channels", &AudioEdits::swapChannels, false); break;
         case cmdInsertSilence: showInsertSilence(); break;
         case cmdSelectAudible: selectAudibleSpan(); break;
@@ -1538,7 +1541,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, cmdMixToMono, cmdMakeStereo, 0,
+            add ({ 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdBalance, cmdSwapChannels, cmdMixToMono, cmdMakeStereo, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack });
             break;
         }
@@ -3314,6 +3317,26 @@ void MainComponent::selectAudibleSpan()
         waveform.setSelection (*audible);
     else
         showError ("Select Audible Span", "The whole file is at or below " + juce::String (silenceThresholdDb, 1) + " dB.");
+}
+
+void MainComponent::showBalance()
+{
+    auto* box = new juce::AlertWindow ("Balance", "From -100 (all left) to 100 (all right). The side moved away from is lowered.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("pan", "0");
+    box->getTextEditor ("pan")->setInputRestrictions (4, "-0123456789");
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        const auto pan = juce::jlimit (-100, 100, box->getTextEditorContents ("pan").getIntValue());
+        const auto r = selectionOrAll();
+
+        if (result == 1 && pan != 0 && ! r.isEmpty())
+            applyEdit (AudioEdits::balance (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), (float) pan / 100.0f),
+                       "Balance", waveform.getSelection());
+    }), true);
 }
 
 void MainComponent::applyFade (bool out)

@@ -8,6 +8,7 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/AudioFileIO.h"
 #include "../Source/OfflineRender.h"
+#include "../Source/SessionMixer.h"
 #include "TestUtils.h"
 #include "DocumentTests.h"
 
@@ -212,6 +213,20 @@ namespace
         }
 
         check (swapExact, "swap channels: left and right exchanged inside the range, unchanged outside it");
+
+        // Balance: half right lowers the left by 3 dB, the right untouched.
+        const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
+        const auto halfRight = SessionMixer::panGains (0.5f, 2);
+        auto balanceExact = juce::approximatelyEqual (halfRight.first, std::sqrt (0.5f)) && juce::exactlyEqual (halfRight.second, 1.0f);
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            const auto inside = i >= 100 && i < 900;
+            balanceExact = balanceExact && juce::exactlyEqual (balanced.getSample (0, i), offset.getSample (0, i) * (inside ? halfRight.first : 1.0f))
+                           && juce::exactlyEqual (balanced.getSample (1, i), offset.getSample (1, i));
+        }
+
+        check (balanceExact, "balance: half right lowers the left by 3 dB inside the range, as the mixer pans a stereo clip");
 
         juce::AudioBuffer<float> monoIn (1, 1000);
         monoIn.copyFrom (0, 0, offset, 0, 0, 1000);

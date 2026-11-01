@@ -1,5 +1,7 @@
 #include "AudioEdits.h"
 
+#include "SessionMixer.h"
+
 using Segment = AudioSnapshot::Segment;
 
 juce::int64 AudioClip::getNumFrames() const
@@ -189,6 +191,19 @@ Snapshot removeDcOffset (const AudioSnapshot& s, juce::int64 start, juce::int64 
             if (n > 0)
                 juce::FloatVectorOperations::add (samples, (float) (-sum / n), n);
         }
+    });
+}
+
+Snapshot balance (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float pan)
+{
+    return processRange (s, start, end, [pan] (juce::AudioBuffer<float>& b)
+    {
+        if (b.getNumChannels() != 2)
+            return;
+
+        const auto [left, right] = SessionMixer::panGains (pan, 2);
+        b.applyGain (0, 0, b.getNumSamples(), left);
+        b.applyGain (1, 0, b.getNumSamples(), right);
     });
 }
 

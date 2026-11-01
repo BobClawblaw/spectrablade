@@ -103,6 +103,7 @@ private:
     void trimSilence (float thresholdDb);
     void selectAudibleSpan();
     void applyFade (bool out);
+    void showBalance();
     void convertChannels (int numChannels);
     void askForDecibels (const juce::String& title, const juce::String& label, float initial,
                          std::function<void (float)> onOk);

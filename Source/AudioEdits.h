@@ -45,6 +45,10 @@ namespace AudioEdits
     /** Takes each channel's average level over [start, end) out of it, so it sits centred on 0. */
     Snapshot removeDcOffset (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
+    /** Moves a two-channel range's balance, as a session track's pan does a stereo clip: pan is
+        -1 (left) to +1 (right), and the side moved away from is lowered. Other files are unchanged. */
+    Snapshot balance (const AudioSnapshot&, juce::int64 start, juce::int64 end, float pan);
+
     /** Exchanges the first two channels over [start, end); with fewer than two it changes nothing. */
     Snapshot swapChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
