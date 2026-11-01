@@ -15,4 +15,11 @@ namespace Bounce
         which now carry the bounced audio; the source is muted.
         Returns the new track's id, or 0 when the source track is no longer there. */
     juce::uint32 land (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot, juce::int64 position);
+
+    /** The tracks (not buses) that have clips, in the session's order: what Export Stems writes. */
+    std::vector<juce::uint32> stemTracks (const SessionState&);
+
+    /** A stem's file name: "Song - 01 Guitar.wav", numbered by the track's place among the stems
+        so names stay apart and sort in order, with characters files can't hold left out. */
+    juce::String stemFileName (const juce::String& sessionName, int number, const juce::String& trackName);
 }

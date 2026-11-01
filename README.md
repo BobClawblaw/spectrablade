@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 34: exporting stems**
+- Multitrack > Export Stems... asks for a folder and writes every track that has clips to a 32-bit float WAV of its own, as it goes to the mix: its clips through fresh copies of its effects, its volume, pan and automation. They cover the time range, or the whole session from its start, so they line up when imported together. Files are named "Song - 01 Drums.wav" after the session and the track, numbered in order; a file of the same name in the folder is replaced. It runs in the background and can be cancelled.
+- A muted track's stem is written as it would play unmuted, and solo is ignored. Buses get no stems, and a track's sends are not in its stem, so with buses the stems don't add up to the mix.
+- Measured by the tests: stems for the tracks with clips only (an empty track and a bus left out), their file names (a "/" in a track name left out), and three stems, one from a muted track, adding up to the mix of the same tracks playing, bit for bit. The command itself (the folder chooser, the background job, the files written) was not run by the tests, and none of it was tried by hand.
+
 **Milestone 33: nudging by the grid**
 - Multitrack > Nudge Earlier and Nudge Later (comma and period) move the selected clips together so that the one clicked last starts on the grid point before or after where it is: the ruler's marks in seconds, or the beats in bars and beats, at the current zoom. With no clip selected they move the cursor the same way. Nothing goes before the start of the session.
 - A run of nudges is one undo step ("Nudge Clip" or "Nudge Clips").
@@ -287,6 +292,7 @@ The tests run against the real machine:
 - Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
+- Exporting stems: which tracks, their file names, and the stems adding up to the mix bit for bit.
 - Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
 - Copying, pasting and duplicating clips through the view, over what was on the track, and several clips selected, moved, pasted, duplicated and deleted together.
 - Clip gain: normalizing against a brute-force peak, its limits, and Command-dragging a clip in the view.

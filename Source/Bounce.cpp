@@ -43,4 +43,20 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
     std::rotate (s.tracks.begin() + index + 1, s.tracks.end() - 1, s.tracks.end());
     return id;
 }
+
+std::vector<juce::uint32> stemTracks (const SessionState& s)
+{
+    std::vector<juce::uint32> ids;
+
+    for (auto& t : s.tracks)
+        if (! t.isBus && ! t.clips.empty())
+            ids.push_back (t.id);
+
+    return ids;
+}
+
+juce::String stemFileName (const juce::String& sessionName, int number, const juce::String& trackName)
+{
+    return juce::File::createLegalFileName (sessionName + " - " + juce::String (number).paddedLeft ('0', 2) + " " + trackName) + ".wav";
+}
 }

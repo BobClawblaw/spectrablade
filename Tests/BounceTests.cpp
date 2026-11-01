@@ -116,6 +116,47 @@ void runBounceTests()
                && Bounce::isolate (muted, 9999).tracks.empty(),
            "bounce: a muted track bounces as it would play unmuted, alone and without its sends");
 
+    // Stems: the tracks with clips, each alone; without buses they add up to the mix bit for bit.
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().name = "Drums";
+        s.addTrack().name = "Empty";
+        s.addBus();
+        s.addTrack().name = "Bass/DI";
+        s.addTrack().name = "Pad";
+        s.tracks[0].gainDb = -4.0f;
+        s.tracks[3].pan = 0.7f;
+        s.tracks[4].mute = true;
+        SessionEdits::addClip (s, 0, juce::File ("/takes/drums.wav"), ramp (2, 12000, 0.3f), 0);
+        SessionEdits::addClip (s, 3, juce::File ("/takes/bass.wav"), ramp (1, 8000, 0.6f), 2000);
+        SessionEdits::addClip (s, 4, juce::File ("/takes/pad.wav"), ramp (2, 6000, 0.1f), 500);
+
+        const auto ids = Bounce::stemTracks (s);
+        check (ids == std::vector<juce::uint32> { s.tracks[0].id, s.tracks[3].id, s.tracks[4].id },
+               "stems: one for each track with clips, buses and empty tracks left out");
+        check (Bounce::stemFileName ("Song", 2, "Bass/DI") == juce::File::createLegalFileName ("Song - 02 Bass/DI") + ".wav"
+                   && Bounce::stemFileName ("Song", 2, "Bass/DI").startsWith ("Song - 02 Bass") && ! Bounce::stemFileName ("Song", 2, "Bass/DI").containsChar ('/')
+                   && Bounce::stemFileName ("Song", 12, "Pad") == "Song - 12 Pad.wav",
+               "stems: files are named after the session and the track, numbered in order (" + Bounce::stemFileName ("Song", 2, "Bass/DI") + ")");
+
+        auto playing = s;
+        playing.tracks[4].mute = false;   // stems are of every track as it would play
+        const auto full = mix (playing, range);
+        juce::AudioBuffer<float> sum (2, (int) range.getLength());
+        sum.clear();
+
+        for (auto id : ids)
+        {
+            const auto stem = mix (Bounce::isolate (s, id), range);
+
+            for (int ch = 0; ch < 2; ++ch)
+                sum.addFrom (ch, 0, stem, ch, 0, stem.getNumSamples());
+        }
+
+        check (identical (full, sum), "stems: without buses, the stems add up to the mix bit for bit, a muted track's as it would play");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");
