@@ -1120,6 +1120,25 @@ void Session::redo()
         setCurrent (history[(size_t) ++position].state);
 }
 
+juce::StringArray Session::getHistory() const
+{
+    juce::StringArray steps;
+
+    for (auto& entry : history)
+        steps.add (entry.description);
+
+    return steps;
+}
+
+void Session::goTo (int step)
+{
+    if (juce::isPositiveAndBelow (step, (int) history.size()) && step != position)
+    {
+        position = step;
+        setCurrent (history[(size_t) position].state);
+    }
+}
+
 void Session::markEffectsChanged()
 {
     effectsChanged = true;

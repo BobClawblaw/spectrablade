@@ -48,6 +48,7 @@ private:
     class MixerWindow;
     class ClipPropertiesWindow;
     class ClipListWindow;
+    class UndoHistoryWindow;
     class PluginListWindow;
     class RackRenderJob;
     class BackgroundJob;
@@ -146,6 +147,7 @@ private:
     void toggleMixer();
     void toggleClipProperties();
     void toggleClipList();
+    void toggleUndoHistory();
     void showPluginList();
     void showEditor (int slotIndex);
     void showEditor (juce::AudioProcessor&);
@@ -185,6 +187,7 @@ private:
     std::unique_ptr<MixerWindow> mixerWindow;
     std::unique_ptr<ClipPropertiesWindow> clipPropertiesWindow;
     std::unique_ptr<ClipListWindow> clipListWindow;
+    std::unique_ptr<UndoHistoryWindow> undoHistoryWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
     std::optional<NoiseReduction::Print> noisePrint;

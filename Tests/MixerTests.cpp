@@ -8,6 +8,7 @@
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/TrackColours.h"
+#include "../Source/UndoHistory.h"
 #include "TestUtils.h"
 #include "MixerTests.h"
 
@@ -344,6 +345,61 @@ namespace
 
 namespace
 {
+    void testUndoHistory (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        engine.session.reset (s, {});
+        engine.session.markSaved ({});
+        UndoHistory history (engine.session);
+        history.setSize (280, 400);
+        const auto settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+
+        for (auto stepName : { "Add Track", "Rename Track", "Add Bus" })
+        {
+            auto next = *engine.session.getState();
+
+            if (juce::String (stepName) == "Rename Track")
+                next.tracks[0].name = "Drums";
+            else if (juce::String (stepName) == "Add Track")
+                next.addTrack();
+            else
+                next.addBus();
+
+            engine.session.apply (std::move (next), stepName);
+        }
+
+        settle();
+        const auto listed = history.getNumRows() == 4 && history.getText (0) == "Start" && history.getText (1) == "Add Track"
+                            && history.getText (3) == "Add Bus" && history.getHighlightedRow() == 3;
+
+        history.chooseRow (1);
+        settle();
+        const auto back = engine.session.getState()->tracks.size() == 1 && engine.session.getState()->tracks[0].name != "Drums"
+                          && history.getHighlightedRow() == 1 && engine.session.getRedoDescription() == "Rename Track" && history.getNumRows() == 4;
+        history.chooseRow (3);
+        settle();
+        const auto forward = engine.session.getState()->tracks.size() == 2 && engine.session.getState()->tracks[0].name == "Drums";
+        history.chooseRow (0);
+        settle();
+        const auto clean = engine.session.getState()->tracks.empty() && ! engine.session.isDirty();
+        history.chooseRow (9);
+
+        auto branch = *engine.session.getState();
+        branch.addTrack();
+        engine.session.apply (std::move (branch), "Add Track");
+        settle();
+        check (listed && back && forward && clean && history.getNumRows() == 2 && history.getHighlightedRow() == 1,
+               "undo history: every step listed from the start, clicking one goes back or forward to it (back to the saved one is clean), "
+               "and a new step drops the ones that could be redone");
+
+        engine.session.reset ({}, {});
+        settle();
+    }
+}
+
+namespace
+{
     void testClipList (AudioEngine& engine)
     {
         SessionState s;
@@ -466,4 +522,5 @@ void runMixerTests (AudioEngine& engine)
     testColours (engine);
     testClipList (engine);
     testNotes (engine);
+    testUndoHistory (engine);
 }

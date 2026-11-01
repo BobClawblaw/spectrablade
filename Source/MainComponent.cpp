@@ -11,6 +11,7 @@
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
+#include "UndoHistory.h"
 
 namespace
 {
@@ -51,7 +52,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -128,6 +129,29 @@ public:
         setResizable (true, false);
         setResizeLimits (300, 150, 3000, 2000);
         centreWithSize (710, 320);
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
+/** The session's undo steps, in a window beside the main one. */
+class MainComponent::UndoHistoryWindow final : public juce::DocumentWindow
+{
+public:
+    UndoHistoryWindow (Session& session, std::function<void()> onClose)
+        : DocumentWindow ("Undo History", juce::Colours::darkgrey, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new UndoHistory (session), false);
+        setResizable (true, false);
+        setResizeLimits (200, 150, 2000, 3000);
+        centreWithSize (280, 400);
         setVisible (true);
     }
 
@@ -654,6 +678,7 @@ MainComponent::~MainComponent()
     mixerWindow = nullptr;
     clipPropertiesWindow = nullptr;
     clipListWindow = nullptr;
+    undoHistoryWindow = nullptr;
 }
 
 void MainComponent::saveSettings()
@@ -723,7 +748,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdShiftPitch; ++id)
+    for (int id = cmdOpen; id <= cmdUndoHistory; ++id)
         ids.add (id);
 }
 
@@ -897,6 +922,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setTicked (multitrack.isFindingZeroCrossings()); info.setActive (multitrackMode); break;
         case cmdStretchClip: info.setInfo ("Stretch Clip...", "Make the selected clip longer or shorter without changing its pitch", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
+        case cmdUndoHistory: info.setInfo ("Undo History", "A window listing the session's undo steps; click one to go back or forward to it", "Edit", 0);
+                            info.setTicked (undoHistoryWindow != nullptr); break;
         case cmdShiftPitch: info.setInfo ("Shift Clip Pitch...", "Raise or lower the selected clip's pitch without changing its length", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
         case cmdCloseGaps:  info.setInfo ("Close Gaps", "Move the selected track's clips back so each starts where the one before ends", "Multitrack", 0);
@@ -1070,6 +1097,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCloseGaps:  multitrack.closeGapsOnSelectedTrack(); break;
         case cmdStretchClip: askToStretchSelectedClip(); break;
         case cmdShiftPitch: askToShiftSelectedClip(); break;
+        case cmdUndoHistory: toggleUndoHistory(); break;
         case cmdZeroCrossings:
             multitrack.setFindingZeroCrossings (! multitrack.isFindingZeroCrossings());
             appProperties.getUserSettings()->setValue (zeroCrossingsKey, multitrack.isFindingZeroCrossings());
@@ -1169,7 +1197,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     switch (index)
     {
         case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdCrop, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
@@ -1658,6 +1686,24 @@ void MainComponent::duplicateTrack()
         if (errors.isNotEmpty())
             showError ("Track effects", "Some of the track's effects could not be copied:\n\n" + errors);
     });
+}
+
+void MainComponent::toggleUndoHistory()
+{
+    // Deleted later, not inside its own close button's callback.
+    if (undoHistoryWindow != nullptr)
+        undoHistoryWindow = nullptr;
+    else
+        undoHistoryWindow = std::make_unique<UndoHistoryWindow> (engine.session, [this]
+        {
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+            {
+                if (safe != nullptr)
+                    safe->toggleUndoHistory();
+            });
+        });
+
+    commands.commandStatusChanged();
 }
 
 void MainComponent::toggleClipList()

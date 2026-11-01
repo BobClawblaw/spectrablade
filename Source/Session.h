@@ -407,6 +407,14 @@ public:
     void undo();
     void redo();
 
+    /** Every step's description, oldest first: the first is where the session started (no
+        description), and getPosition() is the one it is at. Steps after it can be redone. */
+    juce::StringArray getHistory() const;
+    int getPosition() const noexcept              { return position; }
+
+    /** Goes back or forward to a step in getHistory(), as that many undos or redos would. */
+    void goTo (int step);
+
     bool isDirty() const noexcept                 { return position != savedPosition || effectsChanged; }
     void markSaved (const juce::File& savedAs);
 

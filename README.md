@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 54: the undo history**
+- Edit > Undo History opens a window listing the session's undo steps, oldest first, from "Start". The step the session is at is highlighted and the ones that can be redone are grey; clicking a step goes back or forward to it, as that many undos or redos would. A new step drops the grey ones, as it always has. The history is the session's: the single-file editor's own undo isn't listed.
+- Measured by the tests, through the real list: three steps listed after Start with the last highlighted; clicking the first going back to it with the rest redoable, the last going forward again, and Start (where the session was saved) leaving it clean; a click past the end doing nothing; and a new step dropping the redoable ones. The window was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 53: shifting a clip's pitch**
 - Multitrack > Shift Clip Pitch... asks for a shift from -12 to +12 semitones (fractions allowed) and moves the selected clip's pitch by it without changing its length: the part that plays is stretched by the pitch ratio with the Milestone 51 stretching, then resampled back to its length with the app's sample-rate converter. Like Stretch Clip, it runs in the background with Cancel, writes "Vocal Shifted.wav" to the recordings folder, is an undo step ("Shift Clip Pitch"), keeps the clip's place, length and fades, and is refused on a locked clip.
 - Measured by the tests: a 440 Hz tone at -9.03 dBFS shifted by -12, -5, +7 and +12 semitones coming out at 220.00, 329.63, 659.26 and 880.00 Hz (each as worked out) at -9.03 dBFS, the same length, with the channels in step; cancelling part way giving nothing; and on a clip, its place, length and fades kept. Formants move with the pitch (nothing keeps them in place); music and speech were not tested or listened to; the dialog was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -395,6 +399,7 @@ The tests run against the real machine:
 - Zero crossings: finding them, and splits landing on them.
 - Time stretch: lengths, pitch and level kept on a tone, channels in step, progress and cancelling, and the clip edit.
 - Pitch shift: four shifts of a tone landing on their pitches at the same length and level, cancelling, and the clip edit.
+- The undo history: listing steps, going back and forward by clicking, and new steps.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -448,4 +453,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: Edit > Undo History, a window listing the session's undo steps, clicking one to go back or forward to it
+1. Multitrack, continued: saving and loading track templates (a track's effects, volume, pan, sends and colour) for new sessions
