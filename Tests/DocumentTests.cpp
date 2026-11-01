@@ -178,6 +178,28 @@ namespace
         auto reversedTwice = AudioEdits::reverse (*AudioEdits::reverse (*original, 100, 5000), 100, 5000);
         check (identical (readAll (*reversedTwice), signal), "reverse twice is the identity");
 
+        // DC offset: +0.25 on a square wave of +-0.5, and a constant -0.1, each centred on 0 exactly;
+        // outside the range nothing changes.
+        juce::AudioBuffer<float> offset (2, 1000);
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            offset.setSample (0, i, (i % 2 == 0 ? 0.5f : -0.5f) + 0.25f);
+            offset.setSample (1, i, -0.1f);
+        }
+
+        const auto centred = readAll (*AudioEdits::removeDcOffset (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900));
+        auto dcExact = true;
+
+        for (int i = 0; i < 1000; ++i)
+        {
+            const auto inside = i >= 100 && i < 900;
+            dcExact = dcExact && juce::exactlyEqual (centred.getSample (0, i), inside ? (i % 2 == 0 ? 0.5f : -0.5f) : offset.getSample (0, i))
+                      && juce::exactlyEqual (centred.getSample (1, i), inside ? 0.0f : -0.1f);
+        }
+
+        check (dcExact, "remove DC offset: each channel's average over the range taken out, exactly; nothing outside it");
+
         auto faded = readAll (*AudioEdits::fadeIn (*original, 1000, 2000));
         check (faded.getSample (0, 1000) == 0.0f && faded.getSample (0, 1999) == signal.getSample (0, 1999)
                    && faded.getSample (0, 999) == signal.getSample (0, 999),

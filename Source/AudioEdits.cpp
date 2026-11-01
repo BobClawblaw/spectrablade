@@ -155,6 +155,26 @@ Snapshot reverse (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
     return processRange (s, start, end, [] (auto& b) { b.reverse (0, b.getNumSamples()); });
 }
 
+Snapshot removeDcOffset (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+{
+    return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)
+    {
+        const auto n = b.getNumSamples();
+
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        {
+            auto* samples = b.getWritePointer (ch);
+            double sum = 0.0;
+
+            for (int i = 0; i < n; ++i)
+                sum += samples[i];
+
+            if (n > 0)
+                juce::FloatVectorOperations::add (samples, (float) (-sum / n), n);
+        }
+    });
+}
+
 Snapshot fadeIn (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
 {
     return processRange (s, start, end, [] (juce::AudioBuffer<float>& b)
