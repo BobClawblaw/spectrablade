@@ -525,6 +525,37 @@ std::vector<juce::Range<juce::int64>> pauses (const AudioSnapshot& s, float leve
     return found;
 }
 
+Snapshot gateQuiet (const AudioSnapshot& s, juce::int64 start, juce::int64 end, float level, juce::int64 minFrames, juce::int64 fadeFrames)
+{
+    const auto r = clampRange (s, start, end);
+    Snapshot gated;
+
+    for (auto from = r.getStart(); from < r.getEnd();)
+    {
+        const auto run = nextQuiet (gated != nullptr ? *gated : s, from, level, minFrames);
+
+        if (! run || run->getStart() >= r.getEnd())
+            break;
+
+        const auto quiet = run->getIntersectionWith (r);
+        from = run->getEnd();
+
+        if (quiet.getLength() < minFrames)
+            continue;
+
+        const auto fade = (int) juce::jlimit ((juce::int64) 0, quiet.getLength() / 2, fadeFrames);
+        gated = processRange (gated != nullptr ? *gated : s, quiet.getStart(), quiet.getEnd(), [fade] (juce::AudioBuffer<float>& b)
+        {
+            const auto n = b.getNumSamples();
+            b.applyGainRamp (0, fade, 1.0f, 0.0f);
+            b.clear (fade, n - 2 * fade);
+            b.applyGainRamp (n - fade, fade, 0.0f, 1.0f);
+        });
+    }
+
+    return gated;
+}
+
 std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
 {
     std::vector<juce::int64> middles;

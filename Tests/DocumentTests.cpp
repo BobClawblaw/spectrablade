@@ -381,6 +381,32 @@ namespace
                    && ! AudioEdits::copyChannel (*rampSnap, 0, 1000, 0, 1),
                "copy one channel to the other: the target replaced in the range, the source untouched; same or missing channels refused");
 
+        // Loud 0..300, a quiet hiss 300..700, loud again: gating with 50-frame fades leaves the loud
+        // parts alone, fades the hiss out and in at its edges, and zeroes 350..650.
+        juce::AudioBuffer<float> hissy (1, 1000);
+
+        for (int i = 0; i < 1000; ++i)
+            hissy.setSample (0, i, i >= 300 && i < 700 ? 0.001f : 0.5f);
+
+        const auto hissySnap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (hissy));
+        const auto gatedAll = readAll (*AudioEdits::gateQuiet (*hissySnap, 0, 1000, 0.01f, 100, 50));
+        const auto gatedPart = readAll (*AudioEdits::gateQuiet (*hissySnap, 0, 500, 0.01f, 100, 50));
+        auto gateRight = gatedAll.getNumSamples() == 1000 && gatedPart.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && gateRight; ++i)
+        {
+            const auto in = hissy.getSample (0, i);
+            const auto all = gatedAll.getSample (0, i), part = gatedPart.getSample (0, i);
+            const auto keptAll = i < 300 || i >= 700, zeroAll = i >= 350 && i < 650;
+            const auto keptPart = i < 300 || i >= 500, zeroPart = i >= 350 && i < 450;
+            gateRight = (keptAll ? juce::exactlyEqual (all, in) : zeroAll ? juce::exactlyEqual (all, 0.0f) : (all >= 0.0f && all <= in))
+                        && (keptPart ? juce::exactlyEqual (part, in) : zeroPart ? juce::exactlyEqual (part, 0.0f) : (part >= 0.0f && part <= in));
+        }
+
+        check (gateRight && ! juce::exactlyEqual (gatedAll.getSample (0, 320), 0.0f) && ! AudioEdits::gateQuiet (*hissySnap, 0, 1000, 0.0001f, 100, 50)
+                   && ! AudioEdits::gateQuiet (*hissySnap, 0, 1000, 0.01f, 500, 50),
+               "noise gate: the quiet stretch faded out and in and zeroed between, the sound around it bit for bit, the range kept to; nothing quiet enough refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

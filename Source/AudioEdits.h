@@ -94,6 +94,11 @@ namespace AudioEdits
         the file is left out), in order; at most maxCount of them. */
     std::vector<juce::Range<juce::int64>> pauses (const AudioSnapshot&, float level, juce::int64 minFrames, size_t maxCount);
 
+    /** A noise gate: every quiet stretch (as nextQuiet finds them) inside [start, end) is silenced,
+        with a linear fade of fadeFrames at each edge inside the stretch, so the sound around it is
+        left bit for bit. Nothing (nullptr) when the range holds no such stretch. */
+    Snapshot gateQuiet (const AudioSnapshot&, juce::int64 start, juce::int64 end, float level, juce::int64 minFrames, juce::int64 fadeFrames);
+
     /** The middle frame of each of those pauses. */
     std::vector<juce::int64> quietMiddles (const AudioSnapshot&, float level, juce::int64 minFrames, size_t maxCount);
 

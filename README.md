@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 142: Noise Gate**
+- Effects > Noise Gate asks for a level and a time (the same settings as Find Silence) and silences every stretch, in the selection or the whole file, where every channel stays at or below the level for at least that time. Each stretch fades out over its first 10 ms and back in over its last 10 ms (less when the stretch is shorter than 20 ms), so the sound on either side is not touched. It says so when nothing is quiet enough, and it is one undo step.
+- Measured by the tests: on a file loud, then a quiet hiss from frame 300 to 700, then loud, gating with 50-frame fades leaves the loud parts bit for bit, zeroes frames 350 to 650, and only lowers the hiss in the fades; gating only frames 0 to 500 stops at frame 500, fading back in before it; a level below the hiss, or a time longer than the hiss, is refused. How it sounds on real recordings was not listened to, and the dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 141: Copy One Channel to the Other**
 - Effects > Copy Left to Right and Copy Right to Left replace one channel of a stereo file with the other, in the selection or the whole file: for a recording where one side is good and the other is dead or noisy. The file stays stereo. They are offered only for stereo files, and each is one undo step.
 - Measured by the tests: copying the right channel onto the left over frames 100 to 900 makes those left samples exactly the right ones and leaves every other sample bit for bit; copying a channel onto itself, to a channel the audio lacks, or in a mono file is refused. The menu items were not tried by hand. The whole suite passed, the default-device test included.
@@ -866,6 +870,7 @@ The tests run against the real machine:
 - Invert one channel: only that channel flipped, only in the range.
 - Silence one channel: only that channel zeroed, only in the range.
 - Copy one channel to the other: the target replaced in the range, the source untouched.
+- Noise gate: quiet stretches faded and zeroed, the sound around them bit for bit.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -919,4 +924,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Noise Gate, silencing stretches quieter than a threshold with short fades at their edges
+1. Editor: Selection Statistics for the selection only, peak and RMS of just the selected frames

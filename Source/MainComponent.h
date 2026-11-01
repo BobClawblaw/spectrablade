@@ -124,6 +124,8 @@ private:
     void askForSilence (const juce::String& title, std::function<void (juce::int64)> found);
     void addMarkersAtSilences (juce::int64 minFrames);
     void shortenPauses (juce::int64 keepFrames);
+    void noiseGate (juce::int64 minFrames);
+    static constexpr double gateFadeSeconds = 0.01;
     void fitRegionsToSound();
     void findNextSilence (juce::int64 minFrames);
 
