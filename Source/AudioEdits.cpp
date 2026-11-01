@@ -107,6 +107,20 @@ juce::AudioBuffer<float> matchChannels (const juce::AudioBuffer<float>& source, 
     return out;
 }
 
+Snapshot convertChannels (const AudioSnapshot& s, int numChannels)
+{
+    constexpr juce::int64 blockSize = 65536;
+    std::vector<AudioSnapshot::Segment> segments;
+
+    for (juce::int64 start = 0; start < s.getNumFrames(); start += blockSize)
+    {
+        const auto block = fromBuffer (matchChannels (readRange (s, start, juce::jmin (s.getNumFrames(), start + blockSize)), numChannels));
+        segments.insert (segments.end(), block->getSegments().begin(), block->getSegments().end());
+    }
+
+    return std::make_shared<const AudioSnapshot> (numChannels, std::move (segments));
+}
+
 Snapshot replaceWithClip (const AudioSnapshot& s, juce::int64 start, juce::int64 end, const AudioClip& clip)
 {
     const auto r = clampRange (s, start, end);

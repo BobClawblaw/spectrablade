@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 103: Mix to Mono and Make Stereo**
+- Effects > Mix to Mono averages the channels of the whole file into one; Effects > Make Stereo copies a mono file's channel to left and right. Each is offered only when it would change the channel count, is one undo step, and keeps the selection and markers where they were. The file is converted 65,536 frames at a time, so a long file never needs one buffer for all of it.
+- Measured by the tests: 70,000 frames of 0.5 on the left and 0.25 on the right mix to exactly 0.375 on every frame, across the block boundary; that mono result made stereo is exactly 0.375 on both channels; and in a document the conversion leaves one channel, with undo bringing the two back bit-identically. The menu items, and how the waveform and playback look and sound after a conversion, were not checked by the tests or by hand. The whole suite passed, the default-device test included.
+
 **Milestone 102: Trim Silence**
 - Effects > Trim Silence asks for a threshold (-60 dB to start with) and crops the file to the span from the first frame to the last whose level on any channel is above it, keeping the markers inside that span. A file that is all below the threshold, or has nothing below it at either end, is left as it is with a message saying why. It is one undo step.
 - Measured by the tests: in 300,000 frames of quiet hiss at about -66 dB, with one loud sample at frame 100,000 on the left channel and one at frame 200,000 on the right, the span found is exactly 100,000 to 200,001, across the 65,536-frame blocks the search reads; pure silence gives no span. The dialog, the crop itself and the markers were not exercised by the tests (the crop and its marker handling are the ones Crop already uses), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -670,6 +674,7 @@ The tests run against the real machine:
 - Swap Channels: exchanged exactly inside the range, mono unchanged.
 - Insert Silence: zeros at the frame, the rest moved on exactly.
 - Trim Silence: the audible span found exactly across blocks and channels, none in silence.
+- Mix to Mono and Make Stereo: exact averages and copies across blocks, and undo.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -723,4 +728,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Mono to Stereo and Stereo to Mono, converting the file's channel count
+1. Editor: Select All Between Silences, selecting the audible span Trim Silence would keep

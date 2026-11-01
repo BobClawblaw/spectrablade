@@ -60,6 +60,9 @@ namespace AudioEdits
     /** Scales [start, end) so its peak sits at targetDecibels. Returns nullptr for silence. */
     Snapshot normalize (const AudioSnapshot&, juce::int64 start, juce::int64 end, float targetDecibels);
 
+    /** The whole file with numChannels channels, fitted as matchChannels does. */
+    Snapshot convertChannels (const AudioSnapshot&, int numChannels);
+
     /** Fits a buffer to a channel count: mono is copied to every channel, more channels
         than needed are averaged into mono or truncated. */
     juce::AudioBuffer<float> matchChannels (const juce::AudioBuffer<float>&, int numChannels);

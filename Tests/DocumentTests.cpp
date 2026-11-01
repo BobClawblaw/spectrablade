@@ -250,6 +250,41 @@ namespace
         check (! AudioEdits::audibleRange (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (hush)), threshold),
                "audible range: nothing in pure silence");
 
+        // Channel conversion over more than one block: left 0.5 and right 0.25 average to 0.375,
+        // and mono copied to two channels is the same on both.
+        juce::AudioBuffer<float> pair (2, 70000);
+
+        for (int i = 0; i < 70000; ++i)
+        {
+            pair.setSample (0, i, 0.5f);
+            pair.setSample (1, i, 0.25f);
+        }
+
+        const auto mixed = AudioEdits::convertChannels (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (pair)), 1);
+        const auto mixedOut = readAll (*mixed);
+        auto mixExact = mixed->getNumChannels() == 1 && mixed->getNumFrames() == 70000;
+
+        for (int i = 0; mixExact && i < 70000; ++i)
+            mixExact = juce::exactlyEqual (mixedOut.getSample (0, i), 0.375f);
+
+        check (mixExact, "mix to mono: every frame the channels' average, over more than one block");
+
+        const auto spread = readAll (*AudioEdits::convertChannels (*mixed, 2));
+        auto spreadExact = spread.getNumChannels() == 2 && spread.getNumSamples() == 70000;
+
+        for (int i = 0; spreadExact && i < 70000; ++i)
+            spreadExact = juce::exactlyEqual (spread.getSample (0, i), 0.375f) && juce::exactlyEqual (spread.getSample (1, i), 0.375f);
+
+        check (spreadExact, "make stereo: the one channel on both");
+
+        AudioDocument converted;
+        converted.reset (AudioEdits::fromBuffer (juce::AudioBuffer<float> (pair)), rate, {}, 24);
+        converted.apply (AudioEdits::convertChannels (*converted.getSnapshot(), 1), "Mix to Mono");
+        const auto monoAfter = converted.getNumChannels() == 1;
+        converted.undo();
+        check (monoAfter && converted.getNumChannels() == 2 && identical (readAll (*converted.getSnapshot()), pair),
+               "mix to mono in a document: one channel, and undo brings both back bit-identically");
+
         auto faded = readAll (*AudioEdits::fadeIn (*original, 1000, 2000));
         check (faded.getSample (0, 1000) == 0.0f && faded.getSample (0, 1999) == signal.getSample (0, 1999)
                    && faded.getSample (0, 999) == signal.getSample (0, 999),

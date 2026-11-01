@@ -60,7 +60,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -913,7 +913,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdTrimSilence; ++id)
+    for (int id = cmdOpen; id <= cmdMakeStereo; ++id)
         ids.add (id);
 }
 
@@ -959,6 +959,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio); break;
         case cmdSwapChannels: info.setInfo ("Swap Channels", "Exchange left and right in the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
+        case cmdMixToMono:  info.setInfo ("Mix to Mono", "Average the channels into one", "Effects", 0);
+                            info.setActive (hasAudio && doc.getNumChannels() > 1); break;
+        case cmdMakeStereo: info.setInfo ("Make Stereo", "Copy the one channel to left and right", "Effects", 0);
+                            info.setActive (hasAudio && doc.getNumChannels() == 1); break;
         case cmdTrimSilence: info.setInfo ("Trim Silence...", "Remove what is below a level from the start and end of the file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdInsertSilence: info.setInfo ("Insert Silence...", "Put a chosen length of silence in at the cursor, or the start of the selection", "Effects", 0);
@@ -1293,6 +1297,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRemoveDc:   applySimpleEffect ("Remove DC Offset", &AudioEdits::removeDcOffset, false); break;
         case cmdSwapChannels: applySimpleEffect ("Swap Channels", &AudioEdits::swapChannels, false); break;
         case cmdInsertSilence: showInsertSilence(); break;
+        case cmdMixToMono:  convertChannels (1); break;
+        case cmdMakeStereo: convertChannels (2); break;
         case cmdTrimSilence: askForDecibels ("Trim Silence", "Threshold (dB)", -60.0f, [this] (float db) { trimSilence (db); }); break;
         case cmdApplyRack:  applyRackToSelection(); break;
         case cmdPlayPause:  togglePlay(); break;
@@ -1516,7 +1522,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
-        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, 0,
+        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, cmdMixToMono, cmdMakeStereo, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
@@ -3268,6 +3274,15 @@ void MainComponent::trimSilence (float thresholdDb)
     else
         applyEdit (AudioEdits::crop (*snapshot, audible->getStart(), audible->getEnd()), "Trim Silence", {},
                    MarkerEdits::afterCrop (doc.getMarkers(), audible->getStart(), audible->getEnd()));
+}
+
+void MainComponent::convertChannels (int numChannels)
+{
+    auto& doc = engine.document;
+
+    if (doc.hasAudio() && doc.getNumChannels() != numChannels)
+        applyEdit (AudioEdits::convertChannels (*doc.getSnapshot(), numChannels), numChannels == 1 ? "Mix to Mono" : "Make Stereo",
+                   waveform.getSelection());
 }
 
 void MainComponent::selectBetweenMarkers()
