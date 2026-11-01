@@ -593,6 +593,10 @@ namespace
                    && AudioEdits::audibleRange (*paddingSnap, 50000, 250000, threshold) == span
                    && ! AudioEdits::audibleRange (*paddingSnap, 100001, 200000, threshold) && ! AudioEdits::audibleRange (*paddingSnap, 5, 5, threshold),
                "audible range in a range: only the sound inside it, in document frames; none in a quiet or empty range");
+        check (AudioEdits::withMargins ({ 1000, 2000 }, 500, 10000) == juce::Range<juce::int64> (500, 2500)
+                   && AudioEdits::withMargins ({ 200, 9900 }, 500, 10000) == juce::Range<juce::int64> (0, 10000)
+                   && AudioEdits::withMargins ({ 1000, 2000 }, -5, 10000) == juce::Range<juce::int64> (1000, 2000),
+               "crop margins: the range widened either side, kept inside the file; a negative margin adds nothing");
 
         juce::AudioBuffer<float> hush (2, 70000);
         hush.clear();

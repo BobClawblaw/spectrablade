@@ -127,6 +127,8 @@ private:
     void noiseGate (juce::int64 minFrames);
     void repairSelection();
     void showFadeEdges();
+    void showCropMargins();
+    double cropMarginSeconds = 0.5;
     double edgeFadeMs = 10.0;
     void addMarkersAtClipping();
     void addMarkersAt (const std::vector<juce::int64>& frames, const juce::String& title, const juce::String& noneFound);

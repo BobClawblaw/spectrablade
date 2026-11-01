@@ -791,4 +791,10 @@ Snapshot fadeEdges (const AudioSnapshot& s, juce::int64 start, juce::int64 end, 
     const auto faded = fadeIn (s, r.getStart(), r.getStart() + fade, shape);
     return fadeOut (*faded, r.getEnd() - fade, r.getEnd(), shape);
 }
+
+juce::Range<juce::int64> withMargins (juce::Range<juce::int64> r, juce::int64 margin, juce::int64 total)
+{
+    margin = juce::jmax ((juce::int64) 0, margin);
+    return { juce::jmax ((juce::int64) 0, r.getStart() - margin), juce::jmin (total, r.getEnd() + margin) };
+}
 }

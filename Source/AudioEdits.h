@@ -26,6 +26,9 @@ namespace AudioEdits
     Snapshot remove (const AudioSnapshot&, juce::int64 start, juce::int64 end);
     Snapshot crop (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
+    /** The range widened by margin frames on each side, kept inside [0, total). */
+    juce::Range<juce::int64> withMargins (juce::Range<juce::int64>, juce::int64 margin, juce::int64 total);
+
     /** Replaces [start, end) with the clip (an insert when start == end).
         A clip with a different channel count is mixed down or spread to fit. */
     Snapshot replaceWithClip (const AudioSnapshot&, juce::int64 start, juce::int64 end, const AudioClip&);
