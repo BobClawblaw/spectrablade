@@ -117,6 +117,7 @@ private:
     /** Asks for a silence level and shortest time (kept for next time), then calls found with the time in frames. */
     void askForSilence (const juce::String& title, std::function<void (juce::int64)> found);
     void addMarkersAtSilences (juce::int64 minFrames);
+    void shortenPauses (juce::int64 keepFrames);
     void findNextSilence (juce::int64 minFrames);
 
     /** What Find Next Clipping counts: samples within about 0.01 dB of full scale, three in a row. */

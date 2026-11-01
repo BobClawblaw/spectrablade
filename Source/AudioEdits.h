@@ -81,9 +81,16 @@ namespace AudioEdits
         below level (absolute); nothing when there is none. */
     std::optional<juce::Range<juce::int64>> nextQuiet (const AudioSnapshot&, juce::int64 from, float level, juce::int64 minFrames);
 
-    /** The middle frame of every such quiet stretch with sound on both sides of it (so silence at
-        the start or end of the file is left out), in order; at most maxCount of them. */
+    /** Every such quiet stretch with sound on both sides of it (so silence at the start or end of
+        the file is left out), in order; at most maxCount of them. */
+    std::vector<juce::Range<juce::int64>> pauses (const AudioSnapshot&, float level, juce::int64 minFrames, size_t maxCount);
+
+    /** The middle frame of each of those pauses. */
     std::vector<juce::int64> quietMiddles (const AudioSnapshot&, float level, juce::int64 minFrames, size_t maxCount);
+
+    /** The parts to cut so that each pause longer than keepFrames is keepFrames long, keeping
+        its two ends (half of keepFrames each side, the odd frame after); in order. */
+    std::vector<juce::Range<juce::int64>> pauseCuts (const std::vector<juce::Range<juce::int64>>& pauses, juce::int64 keepFrames);
 
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);

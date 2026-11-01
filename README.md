@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 123: Shorten Pauses**
+- Effects > Shorten Pauses asks for a level and a time (the same dialog as Find Next Silence) and cuts every pause between sounds that is longer than the time down to it, taking the cut from the pause's middle so its two ends, half the time each, stay as they were. Silence at the very start or end of the file is left alone. Markers after each cut move back with the audio, as they do for Delete. It is one undo step, and says so when there is nothing to shorten.
+- Measured by the tests: shortened to 60 frames, a 100-frame pause and a 70,000-frame one are each cut from frame 30 of the pause to 30 frames before its end, and the result is bit-identical to the audio with exactly those frames taken out; a time longer than every pause cuts nothing. The command, the dialog and the marker moves were not exercised by the tests (the marker moves are Delete's, which are), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 122: Add Markers at Silences**
 - Markers > Add Markers at Silences (in the editor) asks for the same level and time as Find Next Silence and puts a point marker in the middle of every pause between sounds: silence at the very start or end of the file is not a pause and gets none. Frames already holding a point marker are skipped, at most 1,000 are added, and it is one undo step. With Regions from Markers and Save Each Region As, a recording of several takes can be split into a file per take.
 - Measured by the tests: in the Find Next Silence test signal, pauses of at least 100 frames get markers at exactly their middles, 1,050 and 95,000; the same audio followed by 100,000 frames of silence gives the same two; asking for at most one gives the first. Naming, skipping taken frames and the undo step were not exercised by the tests (they work as Add Markers at Intervals' do, which was), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -772,6 +776,7 @@ The tests run against the real machine:
 - Find clipping: runs on any channel, across a block edge and at the end; short ones skipped.
 - Find silence: quiet on every channel for the time, across a block edge; short or one-sided gaps skipped.
 - Markers at silences: the middles of pauses between sounds, none for silence at the ends, capped.
+- Shorten pauses: cut from the middle down to the time, both ends kept, bit for bit.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -825,4 +830,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Delete Silences, removing every pause longer than a chosen time down to a chosen length
+1. Editor: Auto-Trim each region, running Trim Silence inside every region at once

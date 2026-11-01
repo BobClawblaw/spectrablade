@@ -478,12 +478,12 @@ std::optional<juce::Range<juce::int64>> nextQuiet (const AudioSnapshot& s, juce:
     });
 }
 
-std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
+std::vector<juce::Range<juce::int64>> pauses (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
 {
-    std::vector<juce::int64> middles;
+    std::vector<juce::Range<juce::int64>> found;
     juce::int64 from = 0;
 
-    while (middles.size() < maxCount)
+    while (found.size() < maxCount)
     {
         const auto run = nextQuiet (s, from, level, minFrames);
 
@@ -491,11 +491,33 @@ std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce
             break;
 
         if (run->getStart() > 0 && run->getEnd() < s.getNumFrames())
-            middles.push_back (run->getStart() + run->getLength() / 2);
+            found.push_back (*run);
 
         from = run->getEnd();
     }
 
+    return found;
+}
+
+std::vector<juce::int64> quietMiddles (const AudioSnapshot& s, float level, juce::int64 minFrames, size_t maxCount)
+{
+    std::vector<juce::int64> middles;
+
+    for (auto run : pauses (s, level, minFrames, maxCount))
+        middles.push_back (run.getStart() + run.getLength() / 2);
+
     return middles;
+}
+
+std::vector<juce::Range<juce::int64>> pauseCuts (const std::vector<juce::Range<juce::int64>>& found, juce::int64 keepFrames)
+{
+    std::vector<juce::Range<juce::int64>> cuts;
+    keepFrames = juce::jmax ((juce::int64) 0, keepFrames);
+
+    for (auto run : found)
+        if (run.getLength() > keepFrames)
+            cuts.emplace_back (run.getStart() + keepFrames / 2, run.getEnd() - (keepFrames - keepFrames / 2));
+
+    return cuts;
 }
 }

@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdMarkersAtSilences);
+            || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdMarkersAtSilences; ++id)
+    for (int id = cmdOpen; id <= cmdShortenPauses; ++id)
         ids.add (id);
 }
 
@@ -973,6 +973,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdSwapChannels: info.setInfo ("Swap Channels", "Exchange left and right in the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
         case cmdSetSelection: info.setInfo ("Set Selection...", "Type the start and length of the selection", "Edit", 0);
+                            info.setActive (hasAudio); break;
+        case cmdShortenPauses: info.setInfo ("Shorten Pauses...", "Cut every pause between sounds that is longer than a time down to that time", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdMarkersAtSilences: info.setInfo ("Add Markers at Silences...", "Put a marker in the middle of every pause between sounds, to split takes", "Markers", 0);
                             info.setActive (hasAudio); break;
@@ -1343,6 +1345,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSelectAudible: selectAudibleSpan(); break;
         case cmdFindClipping: findNextClipping(); break;
         case cmdFindSilence: askForSilence ("Find Next Silence", [this] (juce::int64 frames) { findNextSilence (frames); }); break;
+        case cmdShortenPauses: askForSilence ("Shorten Pauses", [this] (juce::int64 frames) { shortenPauses (frames); }); break;
         case cmdMarkersAtSilences: askForSilence ("Add Markers at Silences", [this] (juce::int64 frames) { addMarkersAtSilences (frames); }); break;
         case cmdSetSelection: showSetSelection(); break;
         case cmdMixToMono:  convertChannels (1); break;
@@ -1584,7 +1587,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdBalance, cmdSwapChannels, cmdMixToMono, cmdMakeStereo, 0,
+            add ({ 0, cmdSilence, cmdInsertSilence, cmdTrimSilence, cmdShortenPauses, cmdInvert, cmdReverse, cmdRemoveDc, cmdBalance, cmdSwapChannels, cmdMixToMono, cmdMakeStereo, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack });
             break;
         }
@@ -3507,6 +3510,37 @@ void MainComponent::askForSilence (const juce::String& title, std::function<void
         silenceMinSeconds = (double) *frames / rate;
         found (*frames);
     }), true);
+}
+
+void MainComponent::shortenPauses (juce::int64 keepFrames)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio())
+        return;
+
+    // Pauses longer than the time are found, then each cut down to it, last first so earlier
+    // frames keep their places while the later cuts are made.
+    auto snapshot = doc.getSnapshot();
+    const auto cuts = AudioEdits::pauseCuts (AudioEdits::pauses (*snapshot, juce::Decibels::decibelsToGain (silenceThresholdDb, -200.0f),
+                                                                 keepFrames + 1, std::numeric_limits<size_t>::max()),
+                                             keepFrames);
+
+    if (cuts.empty())
+    {
+        showError ("Shorten Pauses", "No pause between sounds stays at or below " + juce::String (silenceThresholdDb, 1) + " dB for longer than that.");
+        return;
+    }
+
+    auto markers = doc.getMarkers();
+
+    for (auto cut = cuts.rbegin(); cut != cuts.rend(); ++cut)
+    {
+        snapshot = AudioEdits::remove (*snapshot, cut->getStart(), cut->getEnd());
+        markers = MarkerEdits::afterReplace (markers, cut->getStart(), cut->getEnd(), 0);
+    }
+
+    applyEdit (std::move (snapshot), "Shorten Pauses", {}, std::move (markers));
 }
 
 void MainComponent::addMarkersAtSilences (juce::int64 minFrames)

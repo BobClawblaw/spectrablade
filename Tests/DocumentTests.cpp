@@ -301,6 +301,22 @@ namespace
                    && AudioEdits::quietMiddles (*gapSnap, quietLevel, 100, 1) == std::vector<juce::int64> { 1050 },
                "markers at silences: the middle of each pause between sounds, none for silence ending the file, at most the count asked for");
 
+        // Shortening pauses to 60 frames: the 100-frame gap keeps 30 frames each side of the cut,
+        // the long one likewise; nothing else is cut, and the file is that much shorter.
+        const auto found = AudioEdits::pauses (*gapSnap, quietLevel, 61, 100);
+        const auto cuts = AudioEdits::pauseCuts (found, 60);
+        auto shortened = gapSnap;
+
+        for (auto cut = cuts.rbegin(); cut != cuts.rend(); ++cut)
+            shortened = AudioEdits::remove (*shortened, cut->getStart(), cut->getEnd());
+
+        const auto before = readAll (*gapSnap);
+        const auto after = readAll (*shortened);
+        const auto expected = concat ({ range (before, 0, 1030), range (before, 1070, 60030), range (before, 129970, 200000) });
+        check (cuts == std::vector<juce::Range<juce::int64>> { { 1030, 1070 }, { 60030, 129970 } } && identical (after, expected)
+                   && AudioEdits::pauseCuts (found, 1000000).empty() && AudioEdits::pauseCuts (found, 0).front() == juce::Range<juce::int64> (1000, 1100),
+               "shorten pauses: each pause longer than the time cut to it from its middle, keeping both ends; the rest untouched");
+
         // Balance: half right lowers the left by 3 dB, the right untouched.
         const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
         const auto halfRight = SessionMixer::panGains (0.5f, 2);
