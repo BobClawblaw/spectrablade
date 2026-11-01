@@ -88,6 +88,10 @@ public:
     bool selectBetweenMarkers();
     bool selectRegionAtCursor();
 
+    /** Selects the region after (or before) the one the time range starts at, or the cursor, and
+        scrolls to it; false when there is none. */
+    bool selectAdjacentRegion (bool forwards);
+
     /** Adds a marker every step frames through the time selection, or the whole session, as one
         undo step; returns how many were added (see MarkerEdits::addAtIntervals). */
     int addMarkersAtIntervals (juce::int64 step);

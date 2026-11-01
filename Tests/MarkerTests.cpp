@@ -79,6 +79,13 @@ namespace
         const auto outside = ! MarkerEdits::regionAt (spans, 20) && ! MarkerEdits::regionAt (spans, 450) && ! MarkerEdits::regionAt ({ { 5, 0, "p" } }, 5);
         check (innermost && outside, "markers: the region at a frame is the shortest holding it; none at a region's end, outside them or at a point");
 
+        // Moving between regions ([50, 450), [150, 250), [220, 240) and a point between them).
+        const auto stepping = MarkerEdits::adjacentRegion (spans, 0, true) == Span ({ 50, 450 }) && MarkerEdits::adjacentRegion (spans, 50, true) == Span ({ 150, 250 })
+                              && MarkerEdits::adjacentRegion (spans, 150, true) == Span ({ 220, 240 }) && ! MarkerEdits::adjacentRegion (spans, 220, true)
+                              && MarkerEdits::adjacentRegion (spans, 220, false) == Span ({ 150, 250 }) && ! MarkerEdits::adjacentRegion (spans, 50, false)
+                              && MarkerEdits::adjacentRegion ({ { 10, 20, "long" }, { 10, 5, "short" } }, 0, true) == Span ({ 10, 15 });
+        check (stepping, "markers: the next and previous region by start, points passed over, the shortest of those starting together");
+
         // Markers at intervals: every 100 frames through [50, 400), skipping the existing one at 150.
         auto spaced = Markers { { 150, 0, "Marker 01" }, { 0, 1000, "Region 01" } };
         const auto added = MarkerEdits::addAtIntervals (spaced, { 50, 400 }, 100);

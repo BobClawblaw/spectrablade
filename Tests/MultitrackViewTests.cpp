@@ -1429,6 +1429,17 @@ void runMultitrackViewTests (AudioEngine& engine)
         view.setCursor (60000);
         const auto outside = ! view.selectClipsInRegion() && view.getTimeSelection() == juce::Range<juce::int64> (20000, 50000);
         check (inRegion && outside, "selecting: the region at the cursor and the clips that play part of it; nothing outside a region");
+
+        auto twoRegions = *engine.session.getState();
+        twoRegions.markers = { { 20000, 30000, "Bridge" }, { 90000, 10000, "Outro" } };
+        engine.session.apply (std::move (twoRegions), "Regions");
+        view.setTimeSelection ({});
+        view.setCursor (0);
+        const auto first = view.selectAdjacentRegion (true) && view.getTimeSelection() == juce::Range<juce::int64> (20000, 50000);
+        const auto second = view.selectAdjacentRegion (true) && view.getTimeSelection() == juce::Range<juce::int64> (90000, 100000);
+        const auto noThird = ! view.selectAdjacentRegion (true) && view.getTimeSelection() == juce::Range<juce::int64> (90000, 100000);
+        const auto back = view.selectAdjacentRegion (false) && view.getTimeSelection() == juce::Range<juce::int64> (20000, 50000);
+        check (first && second && noThird && back, "selecting: next and previous region from the cursor, then from the selected region");
     }
 
     // Moving the selected clips to the cursor, keeping their spacing.

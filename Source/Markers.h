@@ -49,6 +49,10 @@ namespace MarkerEdits
         regions overlap and the earliest of those of equal length; nothing when it is in none. */
     std::optional<juce::Range<juce::int64>> regionAt (const Markers&, juce::int64 frame);
 
+    /** The region starting next after `from` (or the last one starting before it, going
+        backwards); among regions starting together, the shortest. Nothing when there is none. */
+    std::optional<juce::Range<juce::int64>> adjacentRegion (const Markers&, juce::int64 from, bool forwards);
+
     /** Turns each point marker before end into a region running to the next point marker, or to
         end after the last, keeping its name and colour; regions are left as they are. Returns how
         many were turned. */

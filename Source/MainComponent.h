@@ -104,6 +104,7 @@ private:
     void selectBetweenMarkers();
     void selectRegionAtCursor();
     void loopRegion();
+    void selectAdjacentRegion (bool forwards);
 
     /** The open file's markers, or the session's while it shows. */
     Markers markersShown() const;

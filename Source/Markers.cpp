@@ -156,6 +156,25 @@ int addAtIntervals (Markers& markers, juce::Range<juce::int64> range, juce::int6
     return added;
 }
 
+std::optional<juce::Range<juce::int64>> adjacentRegion (const Markers& markers, juce::int64 from, bool forwards)
+{
+    std::optional<juce::Range<juce::int64>> found;
+
+    for (auto& m : markers)
+    {
+        if (! m.isRegion() || (forwards ? m.start <= from : m.start >= from))
+            continue;
+
+        const auto better = ! found || (forwards ? m.start < found->getStart() : m.start > found->getStart())
+                            || (m.start == found->getStart() && m.length < found->getLength());
+
+        if (better)
+            found = juce::Range<juce::int64> (m.start, m.getEnd());
+    }
+
+    return found;
+}
+
 std::optional<juce::Range<juce::int64>> regionAt (const Markers& markers, juce::int64 frame)
 {
     std::optional<juce::Range<juce::int64>> found;

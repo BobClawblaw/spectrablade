@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 129: Next and Previous Region**
+- Markers > Next Region (Cmd Shift ]) and Previous Region (Cmd Shift [) select the region starting next after the selection (or the cursor), or the last one starting before it, and scroll to it, in the editor or the session. Point markers are passed over; of regions starting together the shortest comes first. At the first or last region nothing changes.
+- Measured by the tests: among regions at [50, 450), [150, 250) and [220, 240) with point markers between them, stepping forwards from 0 visits them in that order and stops, and backwards from the last returns to [150, 250); of two regions starting together the shorter is chosen. Through a real session view, Next from the cursor selects the first region, then the second, then stays; Previous returns to the first. The keys and the editor's command were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 128: Loop Region**
 - Transport > Loop Region selects the region the cursor is in (the innermost, as Select Region at Cursor picks it), turns Loop Playback on and plays the region over and over from its start, in the editor or the session; if something was playing it starts again from the region. With the cursor in no region it says so. It is off while recording.
 - Not measured: the command lives in the app's command table, which is not in the test build, so only the region it picks is covered (by milestone 111's tests); playing, looping and the setting were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -801,6 +805,7 @@ The tests run against the real machine:
 - Fit regions to clips: a region cut to the clips in it; empty, fitting and point ones left.
 - Regions over clips: overlapping and touching clips joined, a gap starting another, none twice.
 - Select clips in region: the region as the range and its clips; nothing outside a region.
+- Next and previous region: by start, points passed over, in the session view too.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -854,4 +859,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Next and Previous Region, moving the selection from region to region
+1. Marker list: Add and Delete buttons, and a count of markers and regions

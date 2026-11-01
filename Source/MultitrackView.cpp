@@ -2372,6 +2372,19 @@ int MultitrackView::regionsFromMarkers()
     return turned;
 }
 
+bool MultitrackView::selectAdjacentRegion (bool forwards)
+{
+    const auto from = timeSelection.isEmpty() ? cursor : timeSelection.getStart();
+    const auto region = MarkerEdits::adjacentRegion (engine.session.getState()->markers, from, forwards);
+
+    if (! region)
+        return false;
+
+    setTimeSelection (*region);
+    showFrame (region->getStart());
+    return true;
+}
+
 bool MultitrackView::selectRegionAtCursor()
 {
     const auto region = MarkerEdits::regionAt (engine.session.getState()->markers, cursor);
