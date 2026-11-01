@@ -1232,6 +1232,38 @@ void runMultitrackViewTests (AudioEngine& engine)
                "hiding: session files keep which tracks are hidden");
     }
 
+    // Selecting a track's clips, or those after the cursor, never on hidden tracks.
+    {
+        SessionState grid;
+        grid.sampleRate = rate;
+        std::vector<std::vector<juce::uint32>> ids (3);
+
+        for (int t = 0; t < 3; ++t)
+        {
+            grid.addTrack();
+
+            for (juce::int64 at : { 0, 48000, 96000 })
+                ids[(size_t) t].push_back (SessionEdits::addClip (grid, t, juce::File ("/tmp/grid.wav"), silence (24000), at));
+        }
+
+        grid.tracks[2].hidden = true;
+        engine.session.reset (grid, {});
+        view.zoomToRange ({ 0, 144000 });
+        Mouse::settle();
+        const auto selection = [&] { auto v = view.getSelectedClips(); std::sort (v.begin(), v.end()); return v; };
+        const auto sorted = [] (std::vector<juce::uint32> v) { std::sort (v.begin(), v.end()); return v; };
+
+        view.selectAllClips();
+        const auto all = selection() == sorted ({ ids[0][0], ids[0][1], ids[0][2], ids[1][0], ids[1][1], ids[1][2] });
+        mouse.click ({ (float) MultitrackView::headerWidth + 5.0f, (float) (MultitrackView::rulerHeight + MultitrackView::trackHeight + 60) });
+        const auto onTrack = view.selectClipsOnTrack() && selection() == sorted ({ ids[1][0], ids[1][1], ids[1][2] });
+        view.setCursor (40000);
+        view.selectClipsAfterCursor();
+        const auto after = selection() == sorted ({ ids[0][1], ids[0][2], ids[1][1], ids[1][2] });
+        check (all && onTrack && after,
+               "selecting: all clips, a track's clips and the clips after the cursor, none of them on a hidden track");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

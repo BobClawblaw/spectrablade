@@ -49,7 +49,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -720,7 +720,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdShowAllTracks; ++id)
+    for (int id = cmdOpen; id <= cmdSelectClipsAfter; ++id)
         ids.add (id);
 }
 
@@ -884,6 +884,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             break;
         case cmdDeleteTrack: info.setInfo ("Delete Track", "Delete the selected track or bus", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
+        case cmdSelectTrackClips: info.setInfo ("Select Clips on Track", "Select every clip on the selected track", "Edit", 0);
+                            info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
+        case cmdSelectClipsAfter: info.setInfo ("Select Clips After Cursor", "Select every clip that starts at or after the cursor", "Edit", 0);
+                            info.setActive (multitrackMode); break;
         case cmdHideTrack:  info.setInfo ("Hide Track", "Leave the selected track or bus out of the lanes; it still plays", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdShowAllTracks: info.setInfo ("Show All Tracks", "Show the hidden tracks in the lanes again", "View", 0);
@@ -1047,6 +1051,8 @@ bool MainComponent::perform (const InvocationInfo& info)
                 multitrack.setTrackHidden (engine.session.getState()->tracks[(size_t) index].id, true);
             break;
         case cmdShowAllTracks: multitrack.showAllTracks(); break;
+        case cmdSelectTrackClips: multitrack.selectClipsOnTrack(); break;
+        case cmdSelectClipsAfter: multitrack.selectClipsAfterCursor(); break;
         case cmdSnapping:
             multitrack.setSnapping (! multitrack.isSnapping());
             appProperties.getUserSettings()->setValue (snappingKey, multitrack.isSnapping());
@@ -1141,7 +1147,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     switch (index)
     {
         case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession }); break;
-        case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdCrop, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,

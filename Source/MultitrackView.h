@@ -82,7 +82,13 @@ public:
         which commands for a single clip (split, gain, takes) work on. */
     std::vector<juce::uint32> getSelectedClips() const;
     bool isClipSelected (juce::uint32 clipId) const  { return selectedClips.count (clipId) > 0; }
-    void selectAllClips();
+    void selectAllClips();         // on the shown tracks
+
+    /** Selects every clip on the selected track; false with none selected. */
+    bool selectClipsOnTrack();
+
+    /** Selects every clip, on the shown tracks, that starts at or after the cursor. */
+    void selectClipsAfterCursor();
 
     void deleteSelectedClip();     // every selected clip
 
@@ -262,6 +268,7 @@ private:
     void timerCallback() override;
 
     const SessionState& shown() const             { return preview.has_value() ? *preview : *state; }
+    void selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted);
     void setSelectedClipsFlag (bool (*set) (SessionState&, juce::uint32, bool), bool on, const juce::String& verb);
     void rebuildHeaders();
     void layoutHeaders();

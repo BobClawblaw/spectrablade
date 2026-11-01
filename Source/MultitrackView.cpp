@@ -2100,11 +2100,34 @@ void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
 
 void MultitrackView::selectAllClips()
 {
+    selectClipsWhere ([] (const SessionTrack&, const SessionClip&) { return true; });
+}
+
+bool MultitrackView::selectClipsOnTrack()
+{
+    const auto* track = engine.session.getState()->findTrack (selectedTrackId);
+
+    if (track == nullptr)
+        return false;
+
+    selectClipsWhere ([id = track->id] (const SessionTrack& t, const SessionClip&) { return t.id == id; });
+    return true;
+}
+
+void MultitrackView::selectClipsAfterCursor()
+{
+    selectClipsWhere ([from = cursor] (const SessionTrack&, const SessionClip& c) { return c.position >= from; });
+}
+
+void MultitrackView::selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted)
+{
+    // Never clips on hidden tracks, which can't be seen.
     selectedClips.clear();
 
     for (auto& t : engine.session.getState()->tracks)
         for (auto& c : t.clips)
-            selectedClips.insert (c.id);
+            if (! t.hidden && wanted (t, c))
+                selectedClips.insert (c.id);
 
     if (! isClipSelected (selectedClip))
         selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
