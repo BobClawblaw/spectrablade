@@ -26,4 +26,19 @@ namespace SessionRecording
 
     /** The undo step's name: "Record", "Loop Record (3 takes)", "Record 2 Tracks" or "Loop Record 2 Tracks". */
     juce::String describe (const Result&, bool looped);
+
+    /** Pre-roll and post-roll: how long playback runs before the punch-in and after the punch-out. */
+    struct Rolls
+    {
+        double preroll = 2.0, postroll = 0.25;   // seconds
+
+        static constexpr double longest = 10.0;
+
+        /** Where playback starts for a punch-in: the pre-roll before it, not before the start. */
+        juce::int64 startFrame (juce::int64 punchIn, double rate) const;
+
+        /** Whether recording should stop: the frame that has come back through the input is the
+            post-roll past the punch-out. Never without a punch-out (punchOut < 0). */
+        bool isDone (juce::int64 frameBack, juce::int64 punchOut, double rate) const;
+    };
 }

@@ -79,6 +79,16 @@ Result land (SessionState& state, const std::vector<std::pair<juce::uint32, Reco
     return result;
 }
 
+juce::int64 Rolls::startFrame (juce::int64 punchIn, double rate) const
+{
+    return juce::jmax ((juce::int64) 0, punchIn - (juce::int64) std::llround (juce::jlimit (0.0, longest, preroll) * rate));
+}
+
+bool Rolls::isDone (juce::int64 frameBack, juce::int64 punchOut, double rate) const
+{
+    return punchOut >= 0 && frameBack >= punchOut + (juce::int64) std::llround (juce::jlimit (0.0, longest, postroll) * rate);
+}
+
 juce::String describe (const Result& result, bool looped)
 {
     const auto asTakes = looped && result.mostPasses > 1;

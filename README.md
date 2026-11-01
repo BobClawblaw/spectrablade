@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 37: pre-roll and post-roll**
+- Transport > Recording Options... sets the pre-roll (how long playback runs before a punch-in) and the post-roll (how long recording goes on after a punch-out before it stops by itself), each from 0 to 10 seconds. They are kept in the app's settings and apply to punch recording in the editor and in the session. The defaults are what the app did before: 2 s of pre-roll and a quarter of a second of post-roll.
+- A count-in still replaces the pre-roll with a bar of clicks, and a loop recording still runs until you stop it.
+- Measured by the tests: the frame playback starts from at the defaults and after a change, never before the session's start; when a punch-out recording stops, to the frame, never without a punch-out; and values past 0 to 10 s held within it. The dialog was not run by the tests, and recording with other pre- and post-rolls was not tried by hand.
+
 **Milestone 36: repeating and reversing clips**
 - Multitrack > Repeat Clip to Range End lays copies of the selected clip end to end after it, up to the end of the time range, over whatever was on the track there; the last copy is cut short at the range's end. All the copies are one undo step ("Repeat Clip (3 copies)"). Copies share the clip's audio.
 - Multitrack > Reverse Clip writes the part of the selected clip that plays, back to front, to a 32-bit float WAV ("Vocal Reversed.wav") in the session's recordings folder, and the clip plays that instead, in the same place; its fade in and fade out change ends. Other takes of the clip are dropped. It is one undo step; undo goes back to the original file, which is untouched. The file is written on the main thread, so a long clip holds the window for the moment it takes.
@@ -301,6 +306,7 @@ The tests run against the real machine:
 - Nudging: grid points in seconds and beats, and the cursor and selected clips nudged as one undo step.
 - Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
+- Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
 - Repeating clips to a range's end and reversing them bit for bit.
 - Clip properties: typing each of a clip's settings, refused values, and following undo.
 - Exporting stems: which tracks, their file names, and the stems adding up to the mix bit for bit.
@@ -351,4 +357,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: punch recording with pre-roll and post-roll set in seconds
+1. Multitrack, continued: a track's own height, and showing tracks taller or shorter to see more of them

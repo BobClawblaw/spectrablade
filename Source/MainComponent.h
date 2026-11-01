@@ -8,6 +8,7 @@
 #include "MultitrackView.h"
 #include "NoiseReduction.h"
 #include "RackView.h"
+#include "SessionRecording.h"
 #include "WaveformView.h"
 
 class MainComponent final : public juce::Component,
@@ -135,6 +136,7 @@ private:
     juce::File recordingsFolder() const;
     void showAudioSettings();
     void showTempoDialog();
+    void showRecordingOptions();
     void toggleMixer();
     void toggleClipProperties();
     void showPluginList();
@@ -189,6 +191,7 @@ private:
     bool loopRecording = false, recordingLoop = false;   // the option, and a take under way that loops
     bool inputMonitoring = false;                        // the armed tracks play their inputs
     bool countIn = false;                                // record after a bar of clicks
+    SessionRecording::Rolls rolls;                       // pre-roll and post-roll, kept in the settings
     std::vector<std::pair<juce::uint32, Recorder*>> recordTracks;   // the tracks recording (0: a new one), and from what
     juce::String lastInputError;
 

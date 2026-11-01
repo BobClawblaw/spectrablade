@@ -792,6 +792,27 @@ namespace
     }
 }
 
+namespace
+{
+    void testRolls()
+    {
+        SessionRecording::Rolls rolls;
+        const auto defaults = rolls.startFrame (200000, 48000.0) == 104000 && rolls.startFrame (50000, 48000.0) == 0
+                              && ! rolls.isDone (100000 + 11999, 100000, 48000.0) && rolls.isDone (100000 + 12000, 100000, 48000.0)
+                              && ! rolls.isDone (1 << 30, -1, 48000.0);
+        rolls.preroll = 0.5;
+        rolls.postroll = 0.0;
+        const auto set = rolls.startFrame (200000, 44100.0) == 200000 - 22050 && rolls.isDone (100000, 100000, 44100.0)
+                         && ! rolls.isDone (99999, 100000, 44100.0);
+        rolls.preroll = 60.0;
+        rolls.postroll = -1.0;
+        const auto limited = rolls.startFrame (1000000, 48000.0) == 1000000 - 480000 && rolls.isDone (100000, 100000, 48000.0);
+        check (defaults && set && limited,
+               "rolls: playback starts the pre-roll before the punch-in (not before 0), recording stops the post-roll after the "
+               "punch-out has come back, never without one, and both stay within 0 to 10 s");
+    }
+}
+
 void runTrackRecordingTests (juce::AudioFormatManager& formats)
 {
     testClearRange();
@@ -804,4 +825,5 @@ void runTrackRecordingTests (juce::AudioFormatManager& formats)
     testMonitoring();
     testSeveralTracks();
     testTrackInputFile (formats);
+    testRolls();
 }
