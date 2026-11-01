@@ -3903,6 +3903,20 @@ void MainComponent::showLoudness()
             "Sample peak:           " + Loudness::format (r.samplePeak, "dBFS"),
         };
 
+        auto all = rows;
+        const auto levels = AudioEdits::channelLevels (*engine.document.getSnapshot(), range.getStart(), range.getEnd());
+        const auto db = [] (double gain) { return gain > 0.0 ? juce::String (juce::Decibels::gainToDecibels (gain), 2) + " dB" : juce::String ("-inf dB"); };
+
+        for (size_t ch = 0; ch < levels.size(); ++ch)
+        {
+            const auto label = levels.size() == 2 ? juce::String (ch == 0 ? "Left" : "Right") : "Channel " + juce::String ((int) ch + 1);
+            all.add ({});
+            all.add (label + " peak:" + juce::String::repeatedString (" ", juce::jmax (1, 17 - label.length())) + db (levels[ch].peak));
+            all.add (label + " RMS:" + juce::String::repeatedString (" ", juce::jmax (1, 18 - label.length())) + db (levels[ch].rms));
+            all.add (label + " DC offset:" + juce::String::repeatedString (" ", juce::jmax (1, 12 - label.length()))
+                     + juce::String (levels[ch].mean * 100.0, 4) + " %");
+        }
+
         auto* box = new juce::AlertWindow ("Loudness Statistics",
                                            (whole ? juce::String ("Whole file") : juce::String ("Selection")) + ", "
                                                + formatTime (range.getLength(), engine.document.getSampleRate())
@@ -3912,8 +3926,8 @@ void MainComponent::showLoudness()
         text->setMultiLine (true);
         text->setReadOnly (true);
         text->setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::plain));
-        text->setText (rows.joinIntoString ("\n"));
-        text->setSize (360, 120);
+        text->setText (all.joinIntoString ("\n"));
+        text->setSize (360, 120 + 72 * (int) levels.size());
         box->addCustomComponent (text);
         box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
         box->enterModalState (true, juce::ModalCallbackFunction::create ([text] (int) { delete text; }), true);

@@ -237,6 +237,22 @@ namespace
                    && AudioEdits::normalizeChannels (*AudioEdits::fromBuffer (std::move (hushed)), 0, 100, target) == nullptr,
                "normalize channels: each channel's peak brought to the level on its own; a silent one left silent; all silence refused");
 
+        // Levels per channel: a square wave of 0.5 has peak and RMS 0.5 and no offset; 0.25 constant
+        // has offset 0.25; over 70,000 frames, across a block.
+        juce::AudioBuffer<float> measured (2, 70000);
+
+        for (int i = 0; i < 70000; ++i)
+        {
+            measured.setSample (0, i, i % 2 == 0 ? 0.5f : -0.5f);
+            measured.setSample (1, i, 0.25f);
+        }
+
+        const auto levels = AudioEdits::channelLevels (*AudioEdits::fromBuffer (std::move (measured)), 0, 70000);
+        check (levels.size() == 2 && juce::exactlyEqual (levels[0].peak, 0.5f) && juce::exactlyEqual (levels[0].rms, 0.5)
+                   && juce::exactlyEqual (levels[0].mean, 0.0) && juce::exactlyEqual (levels[1].peak, 0.25f) && juce::exactlyEqual (levels[1].rms, 0.25)
+                   && juce::exactlyEqual (levels[1].mean, 0.25),
+               "channel levels: peak, RMS and DC offset per channel, exact across blocks");
+
         // Balance: half right lowers the left by 3 dB, the right untouched.
         const auto balanced = readAll (*AudioEdits::balance (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 100, 900, 0.5f));
         const auto halfRight = SessionMixer::panGains (0.5f, 2);

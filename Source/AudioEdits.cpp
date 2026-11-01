@@ -378,4 +378,39 @@ Snapshot normalizeChannels (const AudioSnapshot& s, juce::int64 start, juce::int
             b.applyGain (ch, 0, b.getNumSamples(), factors[(size_t) ch]);
     });
 }
+
+std::vector<ChannelLevels> channelLevels (const AudioSnapshot& s, juce::int64 start, juce::int64 end)
+{
+    constexpr juce::int64 blockSize = 65536;
+    const auto r = clampRange (s, start, end);
+    std::vector<ChannelLevels> levels ((size_t) s.getNumChannels());
+    std::vector<double> sums (levels.size()), squares (levels.size());
+
+    for (auto from = r.getStart(); from < r.getEnd(); from += blockSize)
+    {
+        const auto block = readRange (s, from, juce::jmin (r.getEnd(), from + blockSize));
+
+        for (int ch = 0; ch < block.getNumChannels(); ++ch)
+        {
+            const auto* samples = block.getReadPointer (ch);
+            auto& level = levels[(size_t) ch];
+
+            for (int i = 0; i < block.getNumSamples(); ++i)
+            {
+                level.peak = juce::jmax (level.peak, std::abs (samples[i]));
+                sums[(size_t) ch] += samples[i];
+                squares[(size_t) ch] += (double) samples[i] * samples[i];
+            }
+        }
+    }
+
+    if (const auto n = (double) r.getLength(); n > 0.0)
+        for (size_t ch = 0; ch < levels.size(); ++ch)
+        {
+            levels[ch].mean = sums[ch] / n;
+            levels[ch].rms = std::sqrt (squares[ch] / n);
+        }
+
+    return levels;
+}
 }

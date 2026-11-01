@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 119: channel levels in Loudness Statistics**
+- The editor's Loudness Statistics window now also lists, for each channel ("Left" and "Right" for stereo), its sample peak and RMS level in dB and its DC offset as a percentage of full scale, over the same selection or whole file. They are summed in double precision, a block of 65,536 frames at a time; they are worked out on the message thread once the loudness measurement finishes, so a very long file adds a moment before the window shows.
+- Measured by the tests: over 70,000 frames, a square wave of 0.5 reads exactly 0.5 peak, 0.5 RMS and no offset, and a constant 0.25 exactly 0.25 for all three. The window's layout was not looked at, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 118: normalizing each channel on its own**
 - The editor's Normalize dialog has an "Each channel on its own" switch (for files with more than one channel): with it on, each channel's peak is brought to the level separately, so a quiet side comes up to match; a silent channel is left silent. The switch is remembered while the app runs. With it off, Normalize works as before, by the loudest channel.
 - Measured by the tests: a left channel peaking at 0.5 and a right at 0.25 both end at a peak of 0.5 (within 1e-6) when normalized to that level; a silent right channel stays exactly silent while the left is brought up; all silence is refused. The dialog and its switch were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -752,6 +756,7 @@ The tests run against the real machine:
 - Sorting the marker list: by name, naturally and ignoring case; by length backwards; back to time order.
 - Sorting the clip list: by length backwards, name and track order, rows still mapping to their clips.
 - Normalizing each channel apart: both peaks to the level, a silent channel left silent.
+- Channel levels: peak, RMS and DC offset per channel, exact across blocks.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -805,4 +810,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Peak and RMS readouts for the selection, per channel, in the Loudness Statistics window
+1. Editor: Find Clipping, selecting the next run of samples at full scale after the cursor

@@ -62,6 +62,16 @@ namespace AudioEdits
     Snapshot fadeIn (const AudioSnapshot&, juce::int64 start, juce::int64 end, FadeShape = FadeShape::sCurve);
     Snapshot fadeOut (const AudioSnapshot&, juce::int64 start, juce::int64 end, FadeShape = FadeShape::sCurve);
 
+    /** One channel's levels over a range: largest absolute sample, RMS, and average (DC offset). */
+    struct ChannelLevels
+    {
+        float peak = 0.0f;
+        double rms = 0.0, mean = 0.0;
+    };
+
+    /** The levels of each channel over [start, end), summed in double precision a block at a time. */
+    std::vector<ChannelLevels> channelLevels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
