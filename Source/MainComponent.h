@@ -87,8 +87,9 @@ private:
                     Markers);
     void cut();
     void copy();
-    void paste (bool mix);
-    void pasteClip (const AudioClip&, bool mix);
+    enum class PasteMode { insert, mix, fill };
+    void paste (PasteMode);
+    void pasteClip (const AudioClip&, PasteMode);
     void chooseSampleRate();
     void convertSampleRate (double newRate);
     void deleteSelection();

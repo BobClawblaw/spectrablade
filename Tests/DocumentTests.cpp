@@ -323,6 +323,24 @@ namespace
                    && ! AudioEdits::repeatRange (*rampSnap, 100, 100, 3) && ! AudioEdits::repeatRange (*rampSnap, 100, 300, 0),
                "repeat selection: copies right after the range, bit for bit, the rest moved on; an empty range or no copies refused");
 
+        const auto loopClip = AudioEdits::copy (*rampSnap, 10, 40, 44100.0);
+        const auto filledRamp = readAll (*AudioEdits::fillWithClip (*rampSnap, 500, 600, loopClip));
+        auto expectFill = concat ({ range (rampUp, 0, 500) });
+
+        for (int i = 0; i < 3; ++i)
+            expectFill = concat ({ expectFill, range (rampUp, 10, 40) });
+
+        expectFill = concat ({ expectFill, range (rampUp, 10, 20), range (rampUp, 600, 1000) });
+        const auto tiny = AudioEdits::copy (*rampSnap, 0, 1, 44100.0);
+        juce::AudioBuffer<float> longSilence (1, (int) AudioEdits::maxFillCopies + 1);
+        longSilence.clear();
+        const auto longSnap = AudioEdits::fromBuffer (std::move (longSilence));
+        check (identical (filledRamp, expectFill) && filledRamp.getNumSamples() == rampUp.getNumSamples()
+                   && ! AudioEdits::fillWithClip (*rampSnap, 500, 500, loopClip)
+                   && AudioEdits::fillWithClip (*longSnap, 0, AudioEdits::maxFillCopies, tiny) != nullptr
+                   && ! AudioEdits::fillWithClip (*longSnap, 0, AudioEdits::maxFillCopies + 1, tiny),
+               "paste to fill: the clipboard repeated over the range, the last copy cut short, the length kept; empty or too many copies refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

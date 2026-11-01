@@ -614,4 +614,33 @@ Snapshot repeatRange (const AudioSnapshot& s, juce::int64 start, juce::int64 end
 
     return replaceWithClip (s, r.getEnd(), r.getEnd(), copies);
 }
+
+Snapshot fillWithClip (const AudioSnapshot& s, juce::int64 start, juce::int64 end, const AudioClip& clip)
+{
+    const auto r = clampRange (s, start, end);
+    const auto once = clip.getNumFrames();
+
+    if (r.isEmpty() || once == 0 || (r.getLength() + once - 1) / once > maxFillCopies)
+        return nullptr;
+
+    AudioClip filled { clip.numChannels, clip.sampleRate, {} };
+
+    for (auto left = r.getLength(); left > 0;)
+    {
+        for (const auto& seg : clip.segments)
+        {
+            if (left == 0)
+                break;
+
+            auto piece = seg;
+            piece.length = std::min (seg.length, left);
+            left -= piece.length;
+
+            if (piece.length > 0)
+                filled.segments.push_back (piece);
+        }
+    }
+
+    return replaceWithClip (s, r.getStart(), r.getEnd(), filled);
+}
 }

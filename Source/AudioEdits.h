@@ -115,6 +115,12 @@ namespace AudioEdits
         copies share the audio, so this takes no memory for samples. */
     Snapshot repeatRange (const AudioSnapshot&, juce::int64 start, juce::int64 end, int times);
 
+    /** Replaces [start, end) with the clip played over and over, the last copy cut short, so the
+        length stays the same. Refused (nullptr) for an empty range or clip, or when that would take
+        more than maxFillCopies copies. */
+    Snapshot fillWithClip (const AudioSnapshot&, juce::int64 start, juce::int64 end, const AudioClip&);
+    constexpr juce::int64 maxFillCopies = 10000;
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

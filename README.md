@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 138: Paste to Fill Selection**
+- Edit > Paste to Fill Selection replaces the selection with the clipboard played over and over, the last copy cut short, so the file keeps its length and the markers stay where they are. A clipboard at another sample rate is converted first, as for Paste. It refuses a selection that would take more than 10,000 copies of the clipboard. It is one undo step, and the selection is kept.
+- Measured by the tests: filling frames 500 to 600 of a ramp with a 30-frame clip gives three whole copies and the first 10 frames of a fourth, bit for bit, with the rest of the file unchanged and the length kept; an empty range is refused, and a one-frame clip fills 10,000 frames but not 10,001. The menu item and the rate conversion were not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 137: Repeat Selection**
 - Edit > Repeat Selection asks how many copies (1 to 100) and puts them right after the selection, moving the rest of the file and its markers later. The copies share the selection's audio rather than duplicating samples. It is one undo step, and the copies are selected afterwards.
 - Measured by the tests: three copies of frames 100 to 300 of a ramp give the first 300 frames, the copies bit for bit, then the rest of the ramp; an empty range or zero copies is refused. The dialog and the marker move were not tried by hand. The whole suite passed, the default-device test included.
@@ -846,6 +850,7 @@ The tests run against the real machine:
 - Selection to zero crossings: each end to the nearest crossing in reach, others left.
 - Crossfade loop: the end blended into the audio before the start, bad lengths refused.
 - Repeat selection: copies right after the range, bit for bit, empty requests refused.
+- Paste to fill: the clipboard repeated over the range, the last copy cut short.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -899,4 +904,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Fill Selection with Clipboard, repeating the clipboard to fill the selected span
+1. Editor: Reverse Channels' Polarity separately, inverting only the left or the right channel
