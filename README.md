@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 79: peak hold and clip lights on the header meters**
+- Each bar of a header meter now marks its highest recent peak with a short line, which holds for 1.5 s (45 screen refreshes) and then falls back as the bar does. A new peak above it takes over at once. Switching the meter between a track's input and its level into the mix starts the holds afresh.
+- A light on top of the meter turns red once either bar reaches 0 dB, and stays on after the bars fall, until the meter is clicked. A held peak at 0 dB or over is drawn red too.
+- Measured by the tests: both holds staying at their peaks for 45 refreshes after the bars have fallen to nothing, then falling, and a new peak taking over; a peak of exactly 0 dB lighting the light on that track only, the light still on 200 refreshes later, and a click on the meter putting it out. How it looks was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 78: marker colours**
 - A marker's or region's right-click menu has a Colour submenu with the eight track colours and Default. Choosing one is an undo step ("Colour <name>"). The flag or bar and the line through the tracks are drawn in it, and the marker list shows it as a strip before the name. Default keeps markers orange and regions blue, as before.
 - The colour is saved with the session (nothing is written for Default; a number past the palette reads as the last colour), and moves with the marker through deleting or inserting time, cropping and pasting.
@@ -545,6 +550,7 @@ The tests run against the real machine:
 - Session notes: typing and undo in the window, and the session file.
 - Header meters: separate peak readers in the recorder and mixer, a track's level and fall, and an armed track's input.
 - Marker colours: choosing one, drawing it, edits and crops, and the session file.
+- Header meters' peak hold and clip light: holding, falling, lighting and clicking out.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -598,4 +604,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a peak-hold mark on the header meters, and a clip light that stays on until clicked
+1. Multitrack, continued: Select Between Markers, making the time range run from the marker before the cursor to the one after it

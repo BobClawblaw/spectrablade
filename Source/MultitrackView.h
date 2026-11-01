@@ -256,9 +256,13 @@ public:
 
     /** Moves each header's meter on: an armed track shows its input, any other track or bus
         its level into the mix (after its volume and pan); a folder has none. Called 30 times a
-        second; the level shown falls back over half a second. */
+        second; the level shown falls back over half a second. Each bar's highest peak holds for
+        1.5 s, then falls back too; a light on top stays on once a peak reaches 0 dB, until the
+        meter is clicked. */
     void updateHeaderMeters();
     float getHeaderLevel (juce::uint32 trackId, int channel) const;
+    float getHeaderHold (juce::uint32 trackId, int channel) const;
+    bool hasHeaderClipped (juce::uint32 trackId) const;
     bool isHeaderShowingInput (juce::uint32 trackId) const;
 
     /** Where a header dragged from `from` lands on the track at `to`: onto a folder, a track or

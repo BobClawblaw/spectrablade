@@ -230,16 +230,47 @@ public:
     /** Moves the meter on to these peaks (input: from the track's input while armed). */
     void pushLevels (float left, float right, bool input)
     {
-        // Falls by about 4 dB a tick at 30 a second, as the mixer's meters do.
+        // Falls by about 4 dB a tick at 30 a second, as the mixer's meters do. The highest peak
+        // holds for 1.5 s, then falls the same way.
         constexpr float fall = 0.63f;
-        const auto before = std::pair (levels[0], levels[1]);
-        levels[0] = juce::jmax (left, levels[0] * fall);
-        levels[1] = juce::jmax (right, levels[1] * fall);
+        constexpr int holdTicks = 45;
+        const auto before = std::tuple (levels[0], levels[1], holds[0], holds[1], clipped);
+
+        // Switching between the input and the mix starts the holds afresh; a clip stays lit.
+        if (showingInput != input)
+            holds[0] = holds[1] = 0.0f;
+
+        const float peaks[2] { left, right };
+
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            levels[ch] = juce::jmax (peaks[ch], levels[ch] * fall);
+
+            if (peaks[ch] >= holds[ch])
+            {
+                holds[ch] = peaks[ch];
+                holdLeft[ch] = holdTicks;
+            }
+            else if (holdLeft[ch] > 0)
+            {
+                --holdLeft[ch];
+            }
+            else
+            {
+                holds[ch] = juce::jmax (levels[ch], holds[ch] * fall);
+            }
+
+            clipped = clipped || peaks[ch] >= 1.0f;
+        }
 
         if (levels[0] < 0.001f && levels[1] < 0.001f)
             levels[0] = levels[1] = 0.0f;
 
-        if (before != std::pair (levels[0], levels[1]) || showingInput != input)
+        for (auto& h : holds)
+            if (h < 0.001f)
+                h = 0.0f;
+
+        if (before != std::tuple (levels[0], levels[1], holds[0], holds[1], clipped) || showingInput != input)
         {
             showingInput = input;
             repaint (meterArea());
@@ -247,7 +278,15 @@ public:
     }
 
     float getLevel (int channel) const noexcept     { return levels[juce::jlimit (0, 1, channel)]; }
+    float getHold (int channel) const noexcept      { return holds[juce::jlimit (0, 1, channel)]; }
     bool isShowingInput() const noexcept            { return showingInput; }
+    bool hasClipped() const noexcept                { return clipped; }
+
+    void clearClip()
+    {
+        if (std::exchange (clipped, false))
+            repaint (meterArea());
+    }
 
     juce::Rectangle<int> meterArea() const          { return { getWidth() - 9, 6, 6, getHeight() - 13 }; }
 
@@ -256,19 +295,36 @@ public:
         g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (isBus ? 0xff16191d : isFolder ? 0xff1e2229 : 0xff1b1e23));
 
         // Two bars, left and right, -60 dB at the bottom to +6 dB at the top: red-tinted while
-        // they show the input.
+        // they show the input, each with a line at its held peak. A red light on top once
+        // either has reached 0 dB, until clicked.
         if (! isFolder)
         {
-            const auto area = meterArea().toFloat();
+            auto area = meterArea().toFloat();
+            g.setColour (clipped ? juce::Colour (0xffff4040) : juce::Colour (0xff2a2f36));
+            g.fillRect (area.removeFromTop (3.0f).withTrimmedRight (1.0f));
+            area.removeFromTop (1.0f);
             g.setColour (juce::Colour (0xff0e1013));
             g.fillRect (area);
 
+            const auto heightOf = [&area] (float level)
+            {
+                return juce::jlimit (0.0f, 1.0f, (juce::Decibels::gainToDecibels (level, -60.0f) + 60.0f) / 66.0f) * area.getHeight();
+            };
+
+            const auto barColour = showingInput ? juce::Colour (0xffe0705a) : juce::Colour (0xff4fc3a1);
+
             for (int ch = 0; ch < 2; ++ch)
             {
-                const auto proportion = juce::jlimit (0.0f, 1.0f, (juce::Decibels::gainToDecibels (levels[ch], -60.0f) + 60.0f) / 66.0f);
-                const auto bar = juce::Rectangle<float> (area.getX() + (float) ch * 3.0f, area.getBottom() - proportion * area.getHeight(), 3.0f, proportion * area.getHeight());
-                g.setColour (showingInput ? juce::Colour (0xffe0705a) : juce::Colour (0xff4fc3a1));
-                g.fillRect (bar.withTrimmedRight (1.0f));
+                const auto x = area.getX() + (float) ch * 3.0f;
+                const auto height = heightOf (levels[ch]);
+                g.setColour (barColour);
+                g.fillRect (juce::Rectangle<float> (x, area.getBottom() - height, 2.0f, height));
+
+                if (holds[ch] > 0.0f)
+                {
+                    g.setColour (holds[ch] >= 1.0f ? juce::Colour (0xffff4040) : barColour.brighter (0.5f));
+                    g.fillRect (juce::Rectangle<float> (x, area.getBottom() - juce::jmax (1.0f, heightOf (holds[ch])), 2.0f, 1.0f));
+                }
             }
         }
         g.setColour (colour);
@@ -367,7 +423,9 @@ public:
     {
         view.selectTrack (index());
 
-        if (e.mods.isPopupMenu())
+        if (! isFolder && ! e.mods.isPopupMenu() && meterArea().expanded (2).contains (e.getPosition()))
+            clearClip();
+        else if (e.mods.isPopupMenu())
             showGroupMenu();
         else if (isFolder && triangleArea().contains (e.getPosition()))
             view.setFolderCollapsed (trackId, ! collapsed);
@@ -470,8 +528,9 @@ private:
     juce::Colour colour;
     bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false;
     int members = 0;
-    float levels[2] {};
-    bool showingInput = false;
+    float levels[2] {}, holds[2] {};
+    int holdLeft[2] {};
+    bool showingInput = false, clipped = false;
     static constexpr int folderIndent = 8;
 };
 
@@ -3221,6 +3280,24 @@ float MultitrackView::getHeaderLevel (juce::uint32 trackId, int channel) const
             return h->getLevel (channel);
 
     return 0.0f;
+}
+
+float MultitrackView::getHeaderHold (juce::uint32 trackId, int channel) const
+{
+    for (auto& h : headers)
+        if (h->trackId == trackId)
+            return h->getHold (channel);
+
+    return 0.0f;
+}
+
+bool MultitrackView::hasHeaderClipped (juce::uint32 trackId) const
+{
+    for (auto& h : headers)
+        if (h->trackId == trackId)
+            return h->hasClipped();
+
+    return false;
 }
 
 bool MultitrackView::isHeaderShowingInput (juce::uint32 trackId) const

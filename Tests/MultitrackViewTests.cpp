@@ -1832,6 +1832,77 @@ void runMultitrackViewTests (AudioEngine& engine)
     }
 
     {
+        // Header meters' peak hold (1.5 s at 30 ticks a second, then falling) and clip light (on
+        // at 0 dB until the meter is clicked).
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addTrack();
+        engine.session.reset (s, {});
+        MultitrackView holdView (engine);
+        holdView.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 3 * MultitrackView::trackHeight + 12);
+        holdView.setVisible (true);
+        Mouse::settle();
+        const auto first = engine.session.getState()->tracks[0].id, second = engine.session.getState()->tracks[1].id;
+        auto& levels = engine.getPlayer().getLevels();
+
+        for (int i = 0; i < 2; ++i)
+            levels.take (i, 1);
+
+        const auto tick = [&] (float left, float right)
+        {
+            levels.raise (0, left, right);
+            holdView.updateHeaderMeters();
+        };
+
+        tick (0.5f, 0.25f);
+        auto held = true;
+
+        for (int i = 0; i < 45; ++i)
+        {
+            tick (0.0f, 0.0f);
+            held = held && juce::exactlyEqual (holdView.getHeaderHold (first, 0), 0.5f) && juce::exactlyEqual (holdView.getHeaderHold (first, 1), 0.25f);
+        }
+
+        const auto levelThen = holdView.getHeaderLevel (first, 0);
+        tick (0.0f, 0.0f);
+        const auto released = holdView.getHeaderHold (first, 0) < 0.5f && holdView.getHeaderHold (first, 0) >= holdView.getHeaderLevel (first, 0)
+                              && levelThen < 1.0e-3f;
+        tick (0.4f, 0.0f);
+        const auto higher = juce::exactlyEqual (holdView.getHeaderHold (first, 0), 0.4f);
+        check (held && released && higher && ! holdView.hasHeaderClipped (first),
+               "header meters: a peak holds for 45 ticks after the bar has fallen, then falls; a new peak above the falling hold takes over");
+
+        tick (0.99f, 1.0f);
+        const auto clipped = holdView.hasHeaderClipped (first) && ! holdView.hasHeaderClipped (second);
+
+        for (int i = 0; i < 200; ++i)
+            tick (0.0f, 0.0f);
+
+        const auto stays = holdView.hasHeaderClipped (first) && holdView.getHeaderHold (first, 1) < 1.0e-3f;
+
+        // Clicking the meter at the header's right edge puts the light out.
+        const auto meterPoint = juce::Point<int> (MultitrackView::headerWidth - 6, MultitrackView::rulerHeight + 20);
+        auto* header = holdView.getComponentAt (meterPoint);
+        const auto local = header != nullptr ? header->getLocalPoint (&holdView, meterPoint).toFloat() : juce::Point<float>();
+
+        if (header != nullptr)
+        {
+            const auto now = juce::Time::getCurrentTime();
+            const juce::MouseEvent press { juce::Desktop::getInstance().getMainMouseSource(), local, juce::ModifierKeys (juce::ModifierKeys::leftButtonModifier),
+                                           juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                           juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                                           juce::MouseInputSource::defaultTiltY, header, header, now, local, now, 1, false };
+            header->mouseDown (press);
+        }
+
+        const auto clickedOut = header != nullptr && ! holdView.hasHeaderClipped (first);
+        check (clipped && stays && clickedOut,
+               "header meters: a peak at 0 dB lights the clip light on that track only, which stays lit after the bars fall, until the meter is clicked");
+        levels.take (0, 0);
+    }
+
+    {
         // A frozen track: an icy wash over the lane where its frozen audio plays, past its clips.
         SessionState s;
         s.sampleRate = rate;
