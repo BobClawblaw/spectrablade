@@ -245,6 +245,25 @@ namespace
 
         check (padExact, "insert silence: the length of zeros at the frame, what was after it moved on exactly");
 
+        // Paste Mix: a mono clip of 0.125s added into stereo from frame 900 of 1000, the last
+        // 100 frames running past the end and lengthening the file; nothing before 900 moves.
+        juce::AudioBuffer<float> eighths (1, 200);
+
+        for (int i = 0; i < 200; ++i)
+            eighths.setSample (0, i, 0.125f);
+
+        const auto eighthClip = AudioEdits::copy (*AudioEdits::fromBuffer (std::move (eighths)), 0, 200, rate);
+        const auto mixedIn = readAll (*AudioEdits::mixClip (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 900, eighthClip));
+        auto mixInExact = mixedIn.getNumSamples() == 1100 && mixedIn.getNumChannels() == 2;
+
+        for (int ch = 0; mixInExact && ch < 2; ++ch)
+            for (int i = 0; i < 1100; ++i)
+                mixInExact = mixInExact && juce::exactlyEqual (mixedIn.getSample (ch, i), i < 900  ? offset.getSample (ch, i)
+                                                                                         : i < 1000 ? offset.getSample (ch, i) + 0.125f
+                                                                                                    : 0.125f);
+
+        check (mixInExact, "paste mix: the clip added from the frame on, the file lengthened by what runs past its end");
+
         // The audible span: zeros and a quiet 0.0005 hiss around frames 100k to 200k, found exactly
         // across block boundaries; on the second channel only at the end; nothing in pure silence.
         juce::AudioBuffer<float> padding (2, 300000);

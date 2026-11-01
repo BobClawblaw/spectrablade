@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -69,7 +69,7 @@ namespace
     {
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
-            || (id >= cmdRemoveDc && id <= cmdSetSelection);
+            || (id >= cmdRemoveDc && id <= cmdPasteMix);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSetSelection; ++id)
+    for (int id = cmdOpen; id <= cmdPasteMix; ++id)
         ids.add (id);
 }
 
@@ -946,6 +946,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdCopy:       info.setInfo ("Copy", "Copy the selection", "Edit", 0); info.addDefaultKeypress ('c', cmd); info.setActive (hasSelection); break;
         case cmdPaste:      info.setInfo ("Paste", "Paste at the cursor or over the selection", "Edit", 0); info.addDefaultKeypress ('v', cmd);
                             info.setActive (! clipboard.isEmpty()); break;
+        case cmdPasteMix:   info.setInfo ("Paste Mix", "Mix the clipboard into the audio from the cursor, or the start of the selection", "Edit", 0);
+                            info.addDefaultKeypress ('v', cmd | shift); info.setActive (! clipboard.isEmpty() && hasAudio); break;
         case cmdDelete:     info.setInfo ("Delete", "Delete the selection", "Edit", 0);
                             info.addDefaultKeypress (juce::KeyPress::backspaceKey, 0); info.addDefaultKeypress (juce::KeyPress::deleteKey, 0);
                             info.setActive (hasSelection); break;
@@ -1292,7 +1294,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRedo:       if (multitrackMode) engine.session.redo(); else engine.document.redo(); break;
         case cmdCut:        if (multitrackMode) multitrack.cutSelectedClip(); else cut(); break;
         case cmdCopy:       if (multitrackMode) { multitrack.copySelectedClip(); commands.commandStatusChanged(); } else copy(); break;
-        case cmdPaste:      if (multitrackMode) multitrack.pasteClip(); else paste(); break;
+        case cmdPaste:      if (multitrackMode) multitrack.pasteClip(); else paste (false); break;
+        case cmdPasteMix:   paste (true); break;
         case cmdDuplicateClip: multitrack.duplicateSelectedClip(); break;
         case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
         case cmdSelectAll:  if (multitrackMode) multitrack.selectAllClips(); else waveform.selectAll(); break;
@@ -1534,7 +1537,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
-        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
         case 2:
         {
             add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut });
@@ -3425,7 +3428,7 @@ void MainComponent::cut()
                MarkerEdits::afterReplace (engine.document.getMarkers(), sel.getStart(), sel.getEnd(), 0));
 }
 
-void MainComponent::paste()
+void MainComponent::paste (bool mix)
 {
     if (clipboard.isEmpty())
         return;
@@ -3449,24 +3452,36 @@ void MainComponent::paste()
                 *converted = SampleRateConverter::convert (source, rate, progress);
                 return converted->numChannels > 0;
             },
-            [this, converted, version]
+            [this, converted, version, mix]
             {
                 if (engine.document.getVersion() != version)
                     showError ("Paste", "The audio changed while the clipboard was converted, so nothing was pasted.");
                 else
-                    pasteClip (*converted);
+                    pasteClip (*converted, mix);
             });
         backgroundJob->launchThread();
         return;
     }
 
-    pasteClip (clipboard);
+    pasteClip (clipboard, mix);
 }
 
-void MainComponent::pasteClip (const AudioClip& clip)
+void MainComponent::pasteClip (const AudioClip& clip, bool mix)
 {
     auto& doc = engine.document;
     auto sel = waveform.getSelection();
+
+    if (mix)
+    {
+        const auto at = sel.isEmpty() ? waveform.getCursor() : sel.getStart();
+
+        if (auto next = AudioEdits::mixClip (*doc.getSnapshot(), at, clip))
+            applyEdit (std::move (next), "Paste Mix", { at, at + clip.getNumFrames() });
+        else
+            showError ("Paste Mix", "The clipboard is too long to mix in one pass.");
+
+        return;
+    }
 
     if (sel.isEmpty())
         sel = { waveform.getCursor(), waveform.getCursor() };

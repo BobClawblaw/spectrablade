@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 108: Paste Mix**
+- Edit > Paste Mix (Cmd Shift V) adds the clipboard into the audio from the cursor, or the start of the selection, instead of inserting it: nothing after it moves, and the file grows only by whatever runs past its end. A clipboard with another channel count is fitted as Paste fits it, and one at another sample rate is converted first, as Paste does. The mixed span is left selected, and it is one undo step. The sum is not limited, so loud material can go past full scale.
+- Measured by the tests: 200 frames of 0.125 from a mono clipboard mixed into a stereo file of 1,000 frames at frame 900 leave the first 900 frames bit-identical, add exactly 0.125 to both channels of the last 100, and append 100 frames of 0.125, for 1,100 frames in all. The menu item, the key and the rate conversion path were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 107: Set Selection**
 - Edit > Set Selection asks for a start and a length, each in seconds or minutes and seconds, filled in from the current selection (or the cursor), then selects that span and scrolls to its start. A length running past the end of the file is cut to it; a start at or past the end, a zero length or a time that can't be read is refused with a message.
 - Measured by the tests: in a 10-second file at 48 kHz, 1.5 and 2 select frames 72,000 to 168,000, 0:09 and 0:05 select 432,000 to the end at 480,000, and 0 and 10 the whole file; a start of 10, a length of 0, and unreadable, empty or negative times give nothing. The dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -696,6 +700,7 @@ The tests run against the real machine:
 - Editor fade shapes: linear in and slow-start out, exact at every frame.
 - Balance: the mixer's stereo pan law, inside the range only.
 - Set Selection: typed starts and lengths, cut to the file, bad ones refused.
+- Paste Mix: added in place, the file lengthened only past its end.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -749,4 +754,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Extend Selection to Cursor, and Shift-click to extend the selection
+1. Editor: Copy to New File, opening the selection as a new untitled file

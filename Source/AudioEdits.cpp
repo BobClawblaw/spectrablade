@@ -133,6 +133,37 @@ Snapshot replaceWithClip (const AudioSnapshot& s, juce::int64 start, juce::int64
     return assemble (s.getNumChannels(), s.slice (0, r.getStart()), std::move (middle), s.slice (r.getEnd(), s.getNumFrames()));
 }
 
+Snapshot mixClip (const AudioSnapshot& s, juce::int64 at, const AudioClip& clip)
+{
+    const auto frames = clip.getNumFrames();
+
+    if (frames > std::numeric_limits<int>::max())
+        return nullptr;
+
+    const AudioSnapshot clipSnapshot (clip.numChannels, clip.segments);
+    const auto added = matchChannels (readRange (clipSnapshot, 0, frames), s.getNumChannels());
+    const auto total = s.getNumFrames();
+    at = juce::jlimit ((juce::int64) 0, total, at);
+    const auto overlap = (int) juce::jmin (frames, total - at);
+
+    auto next = processRange (s, at, at + overlap, [&added] (juce::AudioBuffer<float>& b)
+    {
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            b.addFrom (ch, 0, added, ch, 0, b.getNumSamples());
+    });
+
+    if (overlap == (int) frames)
+        return next;
+
+    juce::AudioBuffer<float> tail (s.getNumChannels(), (int) frames - overlap);
+
+    for (int ch = 0; ch < tail.getNumChannels(); ++ch)
+        tail.copyFrom (ch, 0, added, ch, overlap, tail.getNumSamples());
+
+    const AudioClip rest { s.getNumChannels(), 0.0, fromBuffer (std::move (tail))->getSegments() };
+    return replaceWithClip (*next, total, total, rest);
+}
+
 Snapshot insertSilence (const AudioSnapshot& s, juce::int64 at, juce::int64 frames)
 {
     jassert (juce::isPositiveAndBelow (frames, (juce::int64) std::numeric_limits<int>::max()));

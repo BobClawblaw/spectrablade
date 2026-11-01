@@ -80,8 +80,8 @@ private:
                     Markers);
     void cut();
     void copy();
-    void paste();
-    void pasteClip (const AudioClip&);
+    void paste (bool mix);
+    void pasteClip (const AudioClip&, bool mix);
     void chooseSampleRate();
     void convertSampleRate (double newRate);
     void deleteSelection();

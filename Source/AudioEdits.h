@@ -30,6 +30,11 @@ namespace AudioEdits
         A clip with a different channel count is mixed down or spread to fit. */
     Snapshot replaceWithClip (const AudioSnapshot&, juce::int64 start, juce::int64 end, const AudioClip&);
 
+    /** Adds the clip into the audio from frame `at` on (fitted to its channels as replaceWithClip
+        does), lengthening the file when the clip runs past its end. Nothing moves; nullptr when
+        the clip is too long to mix in one pass. */
+    Snapshot mixClip (const AudioSnapshot&, juce::int64 at, const AudioClip&);
+
     /** Reads [start, end), runs process on it in place and puts the result back. */
     Snapshot processRange (const AudioSnapshot&, juce::int64 start, juce::int64 end,
                            const std::function<void (juce::AudioBuffer<float>&)>& process);
