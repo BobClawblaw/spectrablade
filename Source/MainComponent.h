@@ -130,6 +130,9 @@ private:
     void showGainRamp();
     void showTremolo();
     void showEcho();
+    void showEqBand();
+    int eqBandType = 0;
+    double eqBandHz = 1000.0, eqBandGainDb = 6.0, eqBandQ = 1.0;
     int echoDelayMs = 250, echoFeedbackPercent = 40;
     double tremoloRateHz = 5.0;
     int tremoloDepthPercent = 50;
