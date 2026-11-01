@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 31: moving tracks**
+- Drag a track's or bus's header up or down by its background (not by its controls) to move it in the list; a yellow line shows where it will land. Multitrack > Move Track Up and Move Track Down (Cmd Option Up and Down) move the selected one a place at a time. Each move is an undo step ("Move Track"), and the moved track stays selected.
+- A track keeps everything as it moves: clips, effects, sends, envelopes, armed state and input. The mixer window's strips follow the new order.
+- Measured by the tests: moving a track down and up the list closes the others up behind it, and moves out of range or onto itself are refused; Move Track as an undo step with the track still selected; and through the real view, a header dragged by its background down two lanes moves its track there. The menu commands and the drop line were not checked by the tests, and none of it was tried by hand.
+
 **Milestone 30: bouncing a track, and zooming to the time range**
 - Multitrack > Bounce Track renders the selected track as it goes to the mix (its clips through its effects, volume, pan and automation) over the time range, or from the start to its last clip, into a 32-bit float WAV in the session's recordings folder. The bounce lands as one clip on a new track right after the source, named "Guitar Bounce" after it, and the source is muted, so the session sounds the same with the plug-ins' work done. It runs in the background with a progress bar and can be cancelled; the whole bounce is one undo step.
 - The new track takes over the source's sends, now fed with the bounced audio. A post-fader send carries the same signal as before, but a pre-fader send now carries the track after its volume, so it changes unless the volume was 0 dB.
@@ -269,6 +274,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
 - Copying, pasting and duplicating clips through the view, over what was on the track, and several clips selected, moved, pasted, duplicated and deleted together.
 - Clip gain: normalizing against a brute-force peak, its limits, and Command-dragging a clip in the view.

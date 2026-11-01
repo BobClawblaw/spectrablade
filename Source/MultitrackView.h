@@ -10,7 +10,7 @@
     Shift-click clips to select several: dragging any of them moves them all in time, and cut,
     copy, paste, duplicate and delete work on them together. Click to place the cursor, drag across the
     timeline to select a time range; drop audio files to add them as clips. A track's R button
-    arms it for recording.
+    arms it for recording. Drag a track's header up or down (by its background) to move the track.
 
     Under the ruler, the marker lane shows the session's markers and regions: click one to move
     the cursor to it (a region selects its range), drag it to move it, double-click it to rename
@@ -102,6 +102,9 @@ public:
 
     void splitSelectedClip();      // at the cursor
     void deleteSelectedTrack();
+
+    /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */
+    void moveTrack (int from, int to);
 
     bool isSnapping() const noexcept              { return snapping; }
     void setSnapping (bool on)                    { snapping = on; }
@@ -270,6 +273,7 @@ private:
     juce::int64 dragFrame = 0;             // frame under the mouse when the drag began (or the range's anchor)
     SessionClip dragClip;                  // the clip as it was
     std::vector<SessionClip> dragGroup;    // the other selected clips being moved with it, as they were
+    int trackDropIndex = -1;               // where a track whose header is being dragged would go
     int dragMarker = -1;                   // the marker being dragged, and the frames from its start to the mouse
     juce::int64 dragMarkerGrab = 0;
     int dragTrack = 0;

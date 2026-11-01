@@ -263,15 +263,43 @@ public:
 
     void mouseDown (const juce::MouseEvent&) override
     {
-        if (const auto& tracks = view.shown().tracks; ! tracks.empty())
-            for (size_t i = 0; i < tracks.size(); ++i)
-                if (tracks[i].id == trackId)
-                    view.selectTrack ((int) i);
+        view.selectTrack (index());
+    }
+
+    // Dragged by its background, the header moves its track: the view shows where it would go.
+    void mouseDrag (const juce::MouseEvent& e) override
+    {
+        if (e.getDistanceFromDragStartY() == 0 && view.trackDropIndex < 0)
+            return;
+
+        const auto y = e.getEventRelativeTo (&view).position.y;
+        view.trackDropIndex = juce::jlimit (0, juce::jmax (0, (int) view.shown().tracks.size() - 1), view.trackAt ((int) y));
+        view.repaint();
+    }
+
+    void mouseUp (const juce::MouseEvent&) override
+    {
+        const auto to = std::exchange (view.trackDropIndex, -1);
+        view.repaint();
+
+        if (to >= 0)
+            view.moveTrack (index(), to);
     }
 
     const juce::uint32 trackId;
 
 private:
+    int index() const
+    {
+        const auto& tracks = view.shown().tracks;
+
+        for (size_t i = 0; i < tracks.size(); ++i)
+            if (tracks[i].id == trackId)
+                return (int) i;
+
+        return -1;
+    }
+
     MultitrackView& view;
     juce::Label name;
     juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
@@ -1512,6 +1540,15 @@ void MultitrackView::paint (juce::Graphics& g)
             }
         }
 
+        // A track being moved: a line where it would land, above or below the track there.
+        if (trackDropIndex >= 0)
+        {
+            const auto from = getSelectedTrack();
+            const auto y = trackDropIndex > from ? laneTop (trackDropIndex + 1) : laneTop (trackDropIndex);
+            g.setColour (cursorColour);
+            g.fillRect (0, y - 1, getWidth(), 3);
+        }
+
         g.setColour (cursorColour);
         g.drawVerticalLine ((int) xForFrame (cursor), (float) area.getY(), (float) area.getBottom());
 
@@ -2065,6 +2102,17 @@ void MultitrackView::deleteSelectedTrack()
         selectedTrackId = 0;
         engine.session.apply (std::move (next), "Delete Track");
     }
+}
+
+void MultitrackView::moveTrack (int from, int to)
+{
+    auto next = *engine.session.getState();
+
+    if (! SessionEdits::moveTrack (next, from, to))
+        return;
+
+    selectedTrackId = next.tracks[(size_t) to].id;
+    engine.session.apply (std::move (next), "Move Track");
 }
 
 //==============================================================================

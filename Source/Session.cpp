@@ -533,6 +533,23 @@ juce::uint32 recordTakes (SessionState& s, int track, const juce::File& source, 
     return id;
 }
 
+bool moveTrack (SessionState& s, int from, int to)
+{
+    const auto count = (int) s.tracks.size();
+
+    if (! juce::isPositiveAndBelow (from, count) || ! juce::isPositiveAndBelow (to, count) || from == to)
+        return false;
+
+    const auto first = s.tracks.begin();
+
+    if (from < to)
+        std::rotate (first + from, first + from + 1, first + to + 1);
+    else
+        std::rotate (first + to, first + from, first + from + 1);
+
+    return true;
+}
+
 bool removeTrack (SessionState& s, int track)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))

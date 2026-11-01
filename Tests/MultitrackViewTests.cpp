@@ -719,6 +719,77 @@ void runMultitrackViewTests (AudioEngine& engine)
                    + juce::String (shownFrames.getEnd(), 1) + "); an empty range changes nothing");
     }
 
+    // Moving tracks: the edit, the undo step, and dragging a header by its background.
+    {
+        SessionState ordered;
+        ordered.sampleRate = rate;
+
+        for (auto name : { "One", "Two", "Three", "Four" })
+            ordered.addTrack().name = name;
+
+        const auto names = [] (const SessionState& st)
+        {
+            juce::StringArray result;
+
+            for (auto& t : st.tracks)
+                result.add (t.name);
+
+            return result.joinIntoString (" ");
+        };
+
+        auto edited = ordered;
+        const auto down = SessionEdits::moveTrack (edited, 0, 2);
+        const auto afterDown = names (edited);
+        const auto up = SessionEdits::moveTrack (edited, 3, 1);
+        check (down && afterDown == "Two Three One Four" && up && names (edited) == "Two Four Three One"
+                   && ! SessionEdits::moveTrack (edited, 1, 1) && ! SessionEdits::moveTrack (edited, 0, 4) && ! SessionEdits::moveTrack (edited, -1, 0),
+               "tracks: moving a track puts it at the new place and closes up behind it (" + afterDown + ", then " + names (edited) + ")");
+
+        engine.session.reset (ordered, {});
+        Mouse::settle();
+        view.moveTrack (3, 0);
+        Mouse::settle();
+        const auto moved = names (*engine.session.getState());
+        const auto selected = view.getSelectedTrack();
+        engine.session.undo();
+        Mouse::settle();
+        check (moved == "Four One Two Three" && selected == 0 && names (*engine.session.getState()) == "One Two Three Four",
+               "tracks: Move Track is an undo step, and the moved track stays selected");
+
+        // The header's background, below its controls: drag the first track down to the third lane.
+        const auto background = juce::Point<float> (6.0f, (float) (MultitrackView::rulerHeight + MultitrackView::trackHeight) - 3.0f);
+        // The view isn't on screen here, so look through the header area's children for it.
+        juce::Component* header = nullptr;
+
+        for (auto* area : view.getChildren())
+            for (auto* child : area->getChildren())
+                if (view.getLocalArea (child, child->getLocalBounds()).contains (background.toInt()) && child->getNumChildComponents() > 3)
+                    header = child;
+
+        const auto isHeader = header != nullptr;
+
+        if (isHeader)
+        {
+            const auto event = [&] (juce::Point<float> at, bool dragged)
+            {
+                const auto now = juce::Time::getCurrentTime();
+                const auto local = header->getLocalPoint (&view, at), pressed = header->getLocalPoint (&view, background);
+                return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), local, juce::ModifierKeys::leftButtonModifier,
+                                         juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                         juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                                         juce::MouseInputSource::defaultTiltY, header, header, now, pressed, now, 1, dragged);
+            };
+            const auto target = background.translated (0.0f, 2.0f * MultitrackView::trackHeight);
+            header->mouseDown (event (background, false));
+            header->mouseDrag (event (target, true));
+            header->mouseUp (event (target, true));
+            Mouse::settle();
+        }
+
+        check (isHeader && names (*engine.session.getState()) == "Two Three One Four" && engine.session.getUndoDescription() == "Move Track",
+               "tracks: dragging a track's header down two lanes moves it there (" + names (*engine.session.getState()) + ")");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

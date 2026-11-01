@@ -255,6 +255,10 @@ namespace SessionEdits
         replaces what the track had there. Returns the clip's id (0 with no passes). */
     juce::uint32 recordTakes (SessionState&, int track, const juce::File& source, AudioDocument::Snapshot audio,
                               juce::int64 position, juce::int64 length, const std::vector<juce::int64>& offsets);
+    /** Moves a track or bus from one place in the list to another, the others closing up behind
+        it. False when either place is out of range or they are the same. */
+    bool moveTrack (SessionState&, int from, int to);
+
     /** Removes a track or bus; removing a bus removes the sends to it. */
     bool removeTrack (SessionState&, int track);
 
