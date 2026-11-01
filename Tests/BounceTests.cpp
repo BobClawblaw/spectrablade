@@ -452,6 +452,54 @@ void runBounceTests()
                "insert time: envelopes hold their value across it and keep their shape after, later markers move on, a locked clip stays put");
     }
 
+    {
+        // Copying and pasting time: Guitar plays 1000 to 10000, Keys 0 to 12000.
+        const auto original = session (0.0f);
+        const auto copied = SessionEdits::copyTime (original, 2000, 5000);
+        auto pasted = original;
+        const auto didPaste = SessionEdits::pasteTime (pasted, copied, 8000);
+        check (didPaste && copied.length == 3000 && copied.tracks.size() == 3 && pasted.getLength() == 15000
+                   && identical (mix (pasted, { 0, 8000 }), mix (original, { 0, 8000 }))
+                   && identical (mix (pasted, { 8000, 11000 }), mix (original, { 2000, 5000 }))
+                   && identical (mix (pasted, { 11000, 15000 }), mix (original, { 8000, 12000 })),
+               "paste time: the copied time plays at the cursor, bit for bit on every track, with what was after it moved on");
+
+        auto marked = original;
+        marked.tracks[0].volumeEnvelope.points = { { 0, -4.0f }, { 6000, -12.0f }, { 9000, -2.0f } };
+        marked.markers = { { 1000, 0, "a" }, { 3000, 0, "b" }, { 9000, 0, "c" } };
+        SessionEdits::setClipLocked (marked, marked.tracks[1].clips[0].id, true);
+        const auto old = marked.tracks[0].volumeEnvelope;
+        const auto markedCopy = SessionEdits::copyTime (marked, 2000, 5000);
+        auto onto = marked;
+        SessionEdits::pasteTime (onto, markedCopy, 8000);
+        auto shaped = true;
+
+        for (juce::int64 f = 0; f < 15000; f += 250)
+            shaped = shaped && std::abs (onto.tracks[0].volumeEnvelope.valueAt (f) - old.valueAt (f < 8000 ? f : f < 11000 ? f - 6000 : f - 3000)) < 1.0e-4f;
+
+        auto plain = original;
+        SessionEdits::pasteTime (plain, markedCopy, 8000);
+        const auto& given = plain.tracks[0].volumeEnvelope;
+        const auto namedB = std::count_if (onto.markers.begin(), onto.markers.end(), [] (auto& m) { return m.name == "b"; });
+        const auto pastedB = std::any_of (onto.markers.begin(), onto.markers.end(), [] (auto& m) { return m.name == "b" && m.start == 9000; });
+        check (shaped && ! markedCopy.tracks[1].clips.empty() && ! markedCopy.tracks[1].clips[0].locked
+                   && std::abs (given.valueAt (4000)) < 1.0e-6f && std::abs (given.valueAt (8500) - old.valueAt (2500)) < 1.0e-4f
+                   && std::abs (given.valueAt (13000)) < 1.0e-6f && plain.tracks[1].volumeEnvelope.isEmpty()
+                   && onto.markers.size() == 4 && namedB == 2 && pastedB,
+               "paste time: envelopes keep their shape around the pasted line, a track without one gets one at its setting outside it, markers come too, copies unlocked");
+
+        SessionState other;
+        other.sampleRate = 44100.0;
+        other.addTrack();
+        SessionState single;
+        single.sampleRate = rate;
+        single.addTrack();
+        const auto onOne = SessionEdits::pasteTime (single, copied, 0);
+        check (! SessionEdits::pasteTime (other, copied, 0) && ! SessionEdits::pasteTime (pasted, SessionEdits::copyTime (original, 3000, 3000), 0)
+                   && onOne && single.tracks.size() == 1 && single.tracks[0].clips.size() == 1 && single.getLength() == 3000,
+               "paste time: refused at another rate or with nothing copied; tracks past the last are left out");
+    }
+
     auto gone = session (0.0f);
     check (Bounce::land (gone, 9999, {}, nullptr, 0) == 0 && gone.tracks.size() == 3,
            "bounce: nothing lands when the source track is gone");

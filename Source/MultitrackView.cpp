@@ -2474,6 +2474,53 @@ bool MultitrackView::insertTimeAtSelection()
     return true;
 }
 
+bool MultitrackView::copyTimeSelection()
+{
+    if (timeSelection.isEmpty())
+        return false;
+
+    copiedTime = SessionEdits::copyTime (*engine.session.getState(), timeSelection.getStart(), timeSelection.getEnd());
+    return true;
+}
+
+bool MultitrackView::cutTimeSelection()
+{
+    const auto range = timeSelection;
+
+    if (! copyTimeSelection())
+        return false;
+
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::deleteTime (next, range.getStart(), range.getEnd()))
+    {
+        engine.session.apply (std::move (next), "Cut Time");
+        setTimeSelection ({});
+        setCursor (range.getStart());
+    }
+
+    return true;
+}
+
+bool MultitrackView::canPasteTime() const
+{
+    return copiedTime.length > 0 && juce::exactlyEqual (copiedTime.sampleRate, engine.session.getState()->sampleRate);
+}
+
+bool MultitrackView::pasteTime()
+{
+    auto next = *engine.session.getState();
+    const auto at = cursor;
+
+    if (! canPasteTime() || ! SessionEdits::pasteTime (next, copiedTime, at))
+        return false;
+
+    engine.session.apply (std::move (next), "Paste Time");
+    setTimeSelection ({ at, at + copiedTime.length });
+    setCursor (at + copiedTime.length);
+    return true;
+}
+
 juce::uint32 MultitrackView::duplicateSelectedTrack()
 {
     auto next = *engine.session.getState();

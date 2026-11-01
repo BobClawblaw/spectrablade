@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 59: copying and pasting time**
+- Multitrack > Copy Time copies the time range from every track and bus: the clips across it, cut to it (losing their fades on the cut sides, unlocked), each envelope's line across it (volume, pan and effect parameters), and the markers in it. Cut Time copies it, then deletes it as Delete Time does, as one undo step.
+- Paste Time puts the copied time in at the cursor as one undo step: room is made as Insert Time does, each track's clips go onto the track at the same place in the list (tracks past the last are left out), its envelope lines take the place of the held values, and its markers are added. The pasted time becomes the range and the cursor moves to its end, so pastes follow each other. It is refused for a session at another sample rate.
+- A volume or pan line pasted onto a track without an envelope gives it one that stays at the track's setting outside the pasted time. An effect parameter's line is pasted only where the track already has that parameter's envelope. Where the copy had no line and the track has an envelope now, it holds its value across the pasted time.
+- Measured by the tests: the mix after pasting compared bit for bit with the mix before: the same up to the cursor, the copied time's mix there, and what was after moved on; a volume envelope matching the old one every 250 frames around the pasted line; a track without an envelope given one at its setting outside it; markers copied; locked clips copied unlocked; refusal at another rate and with nothing copied; a three-track copy onto a one-track session; and Cut Time and Paste Time from the view (undo steps, range, cursor). Pan and effect-parameter lines go through the same code but were not tested separately; none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 58: clearing, deleting and inserting time**
 - Three commands in the Multitrack menu work on the time range across the whole session, every track and bus, hidden ones too, each as one undo step:
   - Clear Range cuts every track's clips across the range and leaves the time empty; clips are split where the range starts and ends.
@@ -426,6 +432,7 @@ The tests run against the real machine:
 - Saving a copy with audio: copies, numbering, missing files, and the moved copy opening.
 - The session overview: its span, clicking and dragging to scroll, and drawing.
 - Time edits: clearing, deleting and inserting time across every track, with envelopes, markers and locked clips.
+- Copying and pasting time: the mix, envelopes, markers, rates and tracks.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -479,4 +486,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: copying and pasting the time range across every track (its clips, envelope points and markers together), pasting as inserted time
+1. Multitrack, continued: a tempo map, with tempo and time-signature changes along the session that the ruler, grid, snapping and metronome follow

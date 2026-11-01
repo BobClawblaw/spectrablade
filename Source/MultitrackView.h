@@ -166,6 +166,22 @@ public:
         or nothing changed. */
     bool insertTimeAtSelection();
 
+    /** Copies the time range from every track (SessionEdits::copyTime) for pasting as time.
+        False with no range. */
+    bool copyTimeSelection();
+
+    /** Copies the time range, then deletes it as Delete Time does, as one undo step ("Cut
+        Time"). False with no range. */
+    bool cutTimeSelection();
+
+    /** True when copied time can be pasted: there is some, from a session at this one's rate. */
+    bool canPasteTime() const;
+
+    /** Puts the copied time in at the cursor (SessionEdits::pasteTime) as one undo step ("Paste
+        Time"), selects it as the time range and moves the cursor to its end, so pastes follow
+        each other. */
+    bool pasteTime();
+
     /** Hides a track or bus from the lanes (it still plays, and stays in the mixer) or shows it
         again, as an undo step ("Hide Track", "Show Track"). Right-click a header to hide it. */
     void setTrackHidden (juce::uint32 trackId, bool hidden);
@@ -378,6 +394,7 @@ private:
     std::set<juce::uint32> selectedClips;  // selectedClip among them
     std::vector<std::pair<int, SessionClip>> copiedClips;   // with their tracks counted from the topmost
     double copiedRate = 0.0;               // the session rate the copied clips were at
+    SessionTime copiedTime;
     std::set<juce::uint32> armed;
     bool showBars = false;
     juce::Range<juce::int64> timeSelection, recording;

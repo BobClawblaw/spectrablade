@@ -1454,6 +1454,19 @@ void runMultitrackViewTests (AudioEngine& engine)
         check (clearedRange && engine.session.getUndoDescription() == "Clear Range" && engine.session.getState()->tracks[0].clips.size() == 2
                    && engine.session.getState()->getLength() == 144000,
                "time edits: clear range cuts every track across the range, as one step");
+
+        engine.session.reset (timed, {});
+        Mouse::settle();
+        view.setTimeSelection ({ 24000, 72000 });
+        const auto cutDone = view.cutTimeSelection();
+        const auto cutStep = engine.session.getUndoDescription();
+        const auto afterCut = engine.session.getState()->getLength();
+        view.setCursor (0);
+        const auto pasteDone = view.pasteTime();
+        check (cutDone && cutStep == "Cut Time" && afterCut == 96000 && view.canPasteTime() && pasteDone
+                   && engine.session.getUndoDescription() == "Paste Time" && engine.session.getState()->getLength() == 144000
+                   && view.getTimeSelection() == juce::Range<juce::int64> (0, 48000) && view.getCursor() == 48000,
+               "time edits: cut time takes the range out, paste time puts it in at the cursor, selected, with the cursor after it");
     }
 
     engine.session.reset ({}, {});

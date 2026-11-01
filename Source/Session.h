@@ -205,6 +205,24 @@ struct SessionState
 };
 
 //==============================================================================
+/** A stretch of a session's time copied from every track, for pasting as inserted time. Frames
+    count from the stretch's start. */
+struct SessionTime
+{
+    struct Track
+    {
+        std::vector<SessionClip> clips;            // cut to the stretch, unlocked
+        Envelope volume, pan;                      // empty where the track had none
+        std::vector<EffectEnvelope> effects;
+    };
+
+    juce::int64 length = 0;
+    double sampleRate = 0.0;
+    std::vector<Track> tracks;                     // in the session's order, buses included
+    Markers markers;
+};
+
+//==============================================================================
 /** Edits on a session state. Each returns false (and leaves the state alone) when it cannot apply. */
 namespace SessionEdits
 {
@@ -350,6 +368,21 @@ namespace SessionEdits
         move later by `length`; envelopes hold their value at `at` over the new time. Locked clips
         stay as they are, where they are. False when nothing changed. */
     bool insertTime (SessionState&, juce::int64 at, juce::int64 length);
+
+    /** Copies [start, end) from every track: the clips across it cut to it (losing their fades
+        on the cut sides), each envelope's line across it, and the markers in it as
+        MarkerEdits::afterCrop has them. Empty (length 0) when the range is. */
+    SessionTime copyTime (const SessionState&, juce::int64 start, juce::int64 end);
+
+    /** Puts copied time in at `at`: insertTime makes room, then each track's clips go onto the
+        track at the same place in the list (as unlocked copies with new ids; tracks past the last
+        are left out), its envelope lines replace the held values there, and its markers are
+        added. A volume or pan line pasted onto a track without an envelope gives it one that
+        stays at the track's setting outside the pasted time; an effect parameter's line is pasted
+        only where the track already has that parameter's envelope. Where the copy had no line,
+        the envelope holds its value, as insertTime does. False when the time is empty or at
+        another sample rate. */
+    bool pasteTime (SessionState&, const SessionTime&, juce::int64 at);
 
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);

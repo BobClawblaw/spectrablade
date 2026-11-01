@@ -945,6 +945,145 @@ bool insertTime (SessionState& s, juce::int64 at, juce::int64 length)
     return changeMarkers (s, MarkerEdits::afterReplace (s.markers, at, at, length)) || changed;
 }
 
+namespace
+{
+    /** An envelope's line across [start, end), from 0: its value at start, its points inside,
+        and its value at the last frame. Empty for an empty envelope. */
+    Envelope lineAcross (const Envelope& e, juce::int64 start, juce::int64 end)
+    {
+        if (e.isEmpty())
+            return {};
+
+        Envelope out;
+        out.points.push_back ({ 0, e.valueAt (start) });
+
+        for (auto& p : e.points)
+            if (p.frame > start && p.frame < end - 1)
+                out.points.push_back ({ p.frame - start, p.value });
+
+        if (end - 1 > start)
+            out.points.push_back ({ end - 1 - start, e.valueAt (end - 1) });
+
+        return out;
+    }
+
+    /** `before` (an envelope as it was, or with no points, the constant `setting`) with `length`
+        frames put in at `at` holding `line` (from lineAcross). The line before `at` and after
+        the new time keep their shape. */
+    Envelope withLine (const Envelope& before, const Envelope& line, juce::int64 at, juce::int64 length, float setting)
+    {
+        const auto base = before.isEmpty() ? Envelope { { { 0, setting } } } : before;
+        Envelope out;
+
+        for (auto& p : base.points)
+            if (p.frame < at)
+                out.points.push_back (p);
+
+        if (at > 0 && (out.points.empty() || out.points.back().frame < at - 1))
+            out.points.push_back ({ at - 1, base.valueAt (at - 1) });
+
+        for (auto& p : line.points)
+            out.points.push_back ({ p.frame + at, p.value });
+
+        out.points.push_back ({ at + length, base.valueAt (at) });
+
+        for (auto& p : base.points)
+            if (p.frame > at)
+                out.points.push_back ({ p.frame + length, p.value });
+
+        return out;
+    }
+}
+
+SessionTime copyTime (const SessionState& s, juce::int64 start, juce::int64 end)
+{
+    SessionTime t;
+
+    if (start < 0 || end <= start)
+        return t;
+
+    t.length = end - start;
+    t.sampleRate = s.sampleRate;
+    t.markers = MarkerEdits::afterCrop (s.markers, start, end);
+
+    for (auto& track : s.tracks)
+    {
+        auto& copy = t.tracks.emplace_back();
+
+        for (auto& c : track.clips)
+        {
+            if (c.getEnd() <= start || c.position >= end)
+                continue;
+
+            auto cut = c;
+            const auto from = juce::jmax (c.position, start), to = juce::jmin (c.getEnd(), end);
+            cut.offset += from - c.position;
+            cut.position = from - start;
+            cut.length = to - from;
+            cut.fadeIn = from > c.position ? 0 : cut.fadeIn;
+            cut.fadeOut = to < c.getEnd() ? 0 : cut.fadeOut;
+            cut.locked = false;
+            limitFades (cut);
+            copy.clips.push_back (std::move (cut));
+        }
+
+        copy.volume = lineAcross (track.volumeEnvelope, start, end);
+        copy.pan = lineAcross (track.panEnvelope, start, end);
+
+        for (auto& e : track.effectEnvelopes)
+            copy.effects.push_back ({ e.slotId, e.parameterId, lineAcross (e.envelope, start, end) });
+    }
+
+    return t;
+}
+
+bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
+{
+    if (t.length <= 0 || at < 0 || ! juce::exactlyEqual (t.sampleRate, s.sampleRate))
+        return false;
+
+    const auto before = s.tracks;
+    insertTime (s, at, t.length);
+
+    for (size_t i = 0; i < juce::jmin (s.tracks.size(), t.tracks.size()); ++i)
+    {
+        auto& track = s.tracks[i];
+        const auto& copied = t.tracks[i];
+
+        for (auto c : copied.clips)
+        {
+            c.id = s.nextId++;
+            c.position += at;
+            track.clips.push_back (std::move (c));
+        }
+
+        if (! copied.volume.isEmpty())
+            track.volumeEnvelope = withLine (before[i].volumeEnvelope, copied.volume, at, t.length, before[i].gainDb);
+
+        if (! copied.pan.isEmpty())
+            track.panEnvelope = withLine (before[i].panEnvelope, copied.pan, at, t.length, before[i].pan);
+
+        for (size_t e = 0; e < track.effectEnvelopes.size(); ++e)
+        {
+            auto& effect = track.effectEnvelopes[e];
+            const auto line = std::find_if (copied.effects.begin(), copied.effects.end(), [&effect] (auto& c)
+                                            { return c.slotId == effect.slotId && c.parameterId == effect.parameterId; });
+
+            if (line != copied.effects.end())
+                effect.envelope = withLine (before[i].effectEnvelopes[e].envelope, line->envelope, at, t.length, 0.0f);
+        }
+    }
+
+    for (auto m : t.markers)
+    {
+        m.start += at;
+        s.markers.push_back (std::move (m));
+    }
+
+    MarkerEdits::sort (s.markers);
+    return true;
+}
+
 juce::uint32 duplicateTrack (SessionState& s, int track)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))
