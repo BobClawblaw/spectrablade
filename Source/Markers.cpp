@@ -259,6 +259,102 @@ juce::String toCsv (const Markers& markers, double sampleRate)
     return csv;
 }
 
+std::optional<Markers> fromCsv (const juce::String& csv, double sampleRate, juce::int64 numFrames)
+{
+    // RFC 4180 rows: fields split at commas, quoted ones holding commas, doubled quotes and line breaks.
+    std::vector<juce::StringArray> rows;
+    juce::StringArray row;
+    juce::String field;
+    auto quoted = false, any = false;
+
+    const auto endRow = [&]
+    {
+        if (any || field.isNotEmpty())
+        {
+            row.add (field);
+            rows.push_back (row);
+        }
+
+        row.clear();
+        field.clear();
+        any = false;
+    };
+
+    for (auto p = csv.getCharPointer(); ! p.isEmpty(); ++p)
+    {
+        const auto c = *p;
+
+        if (quoted)
+        {
+            if (c == '"' && *(p + 1) == '"')      { field << '"'; ++p; }
+            else if (c == '"')                    quoted = false;
+            else                                  field << juce::String::charToString (c);
+        }
+        else if (c == '"')                        { quoted = true; any = true; }
+        else if (c == ',')                        { row.add (field); field.clear(); any = true; }
+        else if (c == '\n' || c == '\r')
+        {
+            endRow();
+        }
+        else
+        {
+            field << juce::String::charToString (c);
+        }
+    }
+
+    endRow();
+
+    if (quoted || rows.empty() || rows[0].size() < 4 || rows[0][0] != "Name" || rows[0][1] != "Start (s)" || rows[0][2] != "End (s)")
+        return {};
+
+    const auto seconds = [sampleRate] (const juce::String& text) -> std::optional<juce::int64>
+    {
+        const auto t = text.trim();
+
+        if (t.isEmpty() || ! t.containsOnly ("0123456789.") || t.indexOfChar ('.') != t.lastIndexOfChar ('.'))
+            return {};
+
+        return (juce::int64) std::llround (t.getDoubleValue() * sampleRate);
+    };
+
+    Markers markers;
+
+    for (size_t i = 1; i < rows.size(); ++i)
+    {
+        const auto& r = rows[i];
+        const auto start = r.size() >= 3 ? seconds (r[1]) : std::nullopt;
+
+        if (! start || (r[2].trim().isNotEmpty() && ! seconds (r[2])))
+            return {};
+
+        if (*start > numFrames)
+            continue;
+
+        const auto end = r[2].trim().isNotEmpty() ? juce::jmin (numFrames, *seconds (r[2])) : *start;
+        markers.push_back ({ *start, juce::jmax ((juce::int64) 0, end - *start), r[0] });
+    }
+
+    sort (markers);
+    return markers;
+}
+
+int merge (Markers& into, const Markers& added)
+{
+    auto count = 0;
+
+    for (auto& m : added)
+    {
+        if (std::any_of (into.begin(), into.end(), [&m] (const Marker& o) { return o.start == m.start && o.length == m.length && o.name == m.name; }))
+            continue;
+
+        into.push_back (m);
+        ++count;
+    }
+
+    sort (into);
+    return count;
+}
+
 std::unordered_map<juce::String, juce::String> toMetadata (const Markers& markers)
 {
     std::unordered_map<juce::String, juce::String> values;

@@ -202,6 +202,8 @@ private:
 
     /** Writes the markers of the session (in multitrack mode) or the open file as CSV. */
     void chooseMarkersCsv();
+    void chooseMarkersToImport();
+    void importMarkers (const juce::String& csv, const juce::String& fileName);
     void chooseClipsCsv();
     void toggleUndoHistory();
     void toggleNotes();

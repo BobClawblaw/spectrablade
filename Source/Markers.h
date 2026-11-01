@@ -74,6 +74,14 @@ namespace MarkerEdits
         comma, quote or line break are quoted, with quotes doubled. */
     juce::String toCsv (const Markers&, double sampleRate);
 
+    /** Reads markers written by toCsv, placed by their times in seconds at this rate, so a list moves
+        between files at different rates. Markers starting past numFrames are left out and regions
+        are cut to it. Nothing when the header isn't toCsv's or a line can't be read. */
+    std::optional<Markers> fromCsv (const juce::String& csv, double sampleRate, juce::int64 numFrames);
+
+    /** Adds the markers not already in `into` (same place, length and name), kept sorted; returns how many. */
+    int merge (Markers& into, const Markers& added);
+
     /** Reads WAV cue points with their labels and regions (cue + ltxt), or AIFF markers. */
     Markers fromMetadata (const juce::StringPairArray& metadata, juce::int64 numFrames);
 

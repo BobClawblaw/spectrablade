@@ -61,7 +61,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -917,7 +917,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdRenameMarkers; ++id)
+    for (int id = cmdOpen; id <= cmdImportMarkers; ++id)
         ids.add (id);
 }
 
@@ -1181,6 +1181,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdMarkerList: info.setInfo ("Marker List", "Show the session's markers and regions in a list", "Multitrack", 0);
                             info.setActive (multitrackMode);
                             info.setTicked (markerListWindow != nullptr); break;
+        case cmdImportMarkers: info.setInfo ("Import Markers from CSV...", "Add the markers and regions from a CSV file written by Export Markers", "File", 0);
+                            info.setActive (multitrackMode || hasAudio); break;
         case cmdExportMarkers: info.setInfo ("Export Markers as CSV...", "Write the markers and regions of the session or file to a CSV file", "File", 0);
                             info.setActive (multitrackMode ? ! engine.session.getState()->markers.empty() : ! engine.document.getMarkers().empty()); break;
         case cmdExportClips: info.setInfo ("Export Clip List as CSV...", "Write every clip in the session, with its track, times and file, to a CSV file", "File", 0);
@@ -1432,6 +1434,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMarkerList: toggleMarkerList(); break;
         case cmdQuantize:   multitrack.quantizeSelectedClips(); break;
         case cmdExportMarkers: chooseMarkersCsv(); break;
+        case cmdImportMarkers: chooseMarkersToImport(); break;
         case cmdExportClips: chooseClipsCsv(); break;
         case cmdCopyTime:   multitrack.copyTimeSelection(); break;
         case cmdPasteTime:  multitrack.pasteTime(); break;
@@ -1561,7 +1564,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
+            add ({ 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdDelete, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2224,6 +2227,48 @@ void MainComponent::chooseMarkersCsv()
                               if (file != juce::File() && ! file.replaceWithText (MarkerEdits::toCsv (markers, rate)))
                                   showError ("Export Markers", "Couldn't write " + file.getFullPathName() + ".");
                           });
+}
+
+void MainComponent::chooseMarkersToImport()
+{
+    const auto from = multitrackMode ? engine.session.getFile() : engine.document.getFile();
+    chooser = std::make_unique<juce::FileChooser> ("Import markers from CSV", from != juce::File() ? from.getParentDirectory()
+                                                                                                 : juce::File::getSpecialLocation (juce::File::userMusicDirectory),
+                                                   "*.csv");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              if (const auto file = fc.getResult(); file != juce::File())
+                                  importMarkers (file.loadFileAsString(), file.getFileName());
+                          });
+}
+
+void MainComponent::importMarkers (const juce::String& csv, const juce::String& fileName)
+{
+    const auto rate = multitrackMode ? engine.session.getSampleRate() : engine.document.getSampleRate();
+    const auto length = multitrackMode ? std::numeric_limits<juce::int64>::max() : engine.document.getNumFrames();
+    const auto read = MarkerEdits::fromCsv (csv, rate, length);
+
+    if (! read)
+    {
+        showError ("Import Markers", fileName + " is not a marker list written by Export Markers as CSV.");
+        return;
+    }
+
+    if (multitrackMode)
+    {
+        auto next = *engine.session.getState();
+
+        if (MarkerEdits::merge (next.markers, *read) > 0)
+            engine.session.apply (std::move (next), "Import Markers");
+    }
+    else
+    {
+        auto markers = engine.document.getMarkers();
+
+        if (MarkerEdits::merge (markers, *read) > 0)
+            engine.document.setMarkers (std::move (markers), "Import Markers");
+    }
 }
 
 void MainComponent::chooseClipsCsv()

@@ -123,6 +123,26 @@ namespace
                    && ! MarkerEdits::renameInSequence (untouched, " ") && untouched == toRegions,
                "markers: renamed in sequence in time order with two digits, three from 100; an empty name changes nothing");
 
+        // CSV in: what toCsv writes comes back the same at the same rate, odd names included; at
+        // another rate by its times; past the end left out or cut; anything else refused.
+        const Markers listed { { 0, 0, "Start" }, { 48000, 96000, "Verse, \"A\"" }, { 200000, 0, "Two\nlines" }, { 470000, 20000, "Tail" } };
+        const auto back = MarkerEdits::fromCsv (MarkerEdits::toCsv (listed, 48000.0), 48000.0, 1000000);
+        const auto halfRate = MarkerEdits::fromCsv (MarkerEdits::toCsv (listed, 48000.0), 24000.0, 1000000);
+        const auto cut = MarkerEdits::fromCsv (MarkerEdits::toCsv (listed, 48000.0), 48000.0, 480000);
+        check (back && *back == listed && halfRate && halfRate->size() == 4 && (*halfRate)[1].start == 24000 && (*halfRate)[1].length == 48000
+                   && cut && cut->size() == 4 && cut->back().getEnd() == 480000
+                   && MarkerEdits::fromCsv (MarkerEdits::toCsv (listed, 48000.0), 48000.0, 100000)->size() == 2,
+               "markers: a CSV list reads back exactly, by its times at another rate, cut to the file's length");
+        check (! MarkerEdits::fromCsv ("Track,Name\r\n", 48000.0, 1000) && ! MarkerEdits::fromCsv ({}, 48000.0, 1000)
+                   && ! MarkerEdits::fromCsv ("Name,Start (s),End (s),Length (s)\r\nA,abc,,\r\n", 48000.0, 1000)
+                   && ! MarkerEdits::fromCsv ("Name,Start (s),End (s),Length (s)\r\n\"open,1,,\r\n", 48000.0, 1000)
+                   && MarkerEdits::fromCsv ("Name,Start (s),End (s),Length (s)\r\n", 48000.0, 1000)->empty(),
+               "markers: another CSV, a bad time and an open quote are refused; a header alone is an empty list");
+
+        auto mergedInto = Markers { { 0, 0, "Start" } };
+        check (MarkerEdits::merge (mergedInto, listed) == 3 && mergedInto == listed && MarkerEdits::merge (mergedInto, listed) == 0,
+               "markers: merging adds only markers not already there, kept sorted");
+
         check (added == 3 && placed.joinIntoString (" ") == "Region 01@0+1000 Marker 02@50 Marker 01@150 Marker 03@250 Marker 04@350" && refused,
                "markers: a marker every step through the range, sorted and named in turn, skipping taken frames; a zero step and too many refused ("
                    + placed.joinIntoString (" ") + ")");

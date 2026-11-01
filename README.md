@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 115: Import Markers from CSV**
+- File > Import Markers from CSV reads a list written by Export Markers as CSV and adds its markers and regions to the open file or the session, as one undo step, leaving out any already there with the same place, length and name. Markers are placed by their times in seconds, so a list moves between files at different sample rates; in the editor, markers starting past the end of the file are left out and regions are cut to it. Names with commas, quotes or line breaks come back as written. Colours are not in the CSV, so imported markers take the default ones. A file that isn't such a list, or has a line that can't be read, is refused with a message and nothing is added.
+- Measured by the tests: four markers and regions, two with a comma, quotes and a line break in their names, written and read back at the same rate are identical; at half the rate they land at half the frames; cut to 480,000 frames the last region ends there, and cut to 100,000 only the two starting before remain; another CSV, a bad time and an unclosed quote are refused, and a header alone is an empty list; merging adds only new markers, and merging again adds none. The menu item and file dialog were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 114: Rename Markers in Sequence**
 - Markers > Rename Markers in Sequence asks for a name and gives every marker and region, in time order, that name and a number: "Take 01", "Take 02", and three digits once there are 100 or more, so names sort in order. Colours and positions are kept, and it is one undo step in the editor or the session. An empty name, or names that are already so, change nothing.
 - Measured by the tests: five markers and regions named " Take " come out "Take 01" to "Take 05" in time order with a colour kept; 100 markers run "T 001" to "T 100"; a blank name leaves them as they were. Through a real session view the renaming is one undo step, and repeating it adds none. The editor's dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -732,6 +736,7 @@ The tests run against the real machine:
 - Markers at intervals: placed, named and sorted, taken frames skipped, limits refused, one undo step in the session.
 - Regions from markers: each point to the next or the end, names and colours kept, in the session view too.
 - Renaming markers in sequence: time order, two or three digits, one undo step in the session.
+- Markers from CSV: round trip, other rates, cut to the file, bad files refused, merged without repeats.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -785,4 +790,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Marker list: Export and import markers as CSV in the editor, so marker sets can move between files
+1. Marker list: a Colour column, and sorting by name or time by clicking the column headers
