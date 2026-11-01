@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 147: Select Audible Span in the Selection**
+- Edit > Select Audible Span now looks only inside the selection when there is one, shrinking it to the first and last sound in it; with no selection it covers the whole file as before. Choosing it again keeps the same span. Fit Regions to Sound now uses the same code.
+- Measured by the tests: on a file with one loud frame at 100,000 and another at 200,000, the span inside frames 150,000 to 250,000 is just the second frame, the span inside 50,000 to 250,000 is the same as the whole file's, and a range holding neither, or an empty one, gives none; the earlier fit-regions test still passes unchanged. The menu item was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 146: Fade Selection Edges**
 - Effects > Fade Selection Edges asks for a fade time (10 ms to start, remembered while the app runs) and, in one undo step, fades the selection in over that time at its start and out over it at its end, with the fade shape chosen in Effects. Each fade is at most half the selection. It is the quick way to make a cut-out piece start and end without a click.
 - Measured by the tests: on a ramp, edge fades of 100 frames over frames 200 to 800 give exactly what a fade in over 200 to 300 and a fade out over 700 to 800 give, frame for frame; on a 10-frame selection each fade is cut to 5 frames; no fade time, or a selection of one frame, is refused. The dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -891,6 +895,7 @@ The tests run against the real machine:
 - Clipping starts: the first frame of every clipped run, in order, capped at the count.
 - Repair: clicks on a straight line redrawn back onto it, the frames around untouched.
 - Fade selection edges: a fade in and a fade out at the ends, each at most half the range.
+- Audible range in a range: only the sound inside it, in document frames.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -944,4 +949,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Select Audible Span inside the selection, shrinking it to the sound it holds
+1. Editor: Crop with Margins, cropping to the selection plus a chosen time either side

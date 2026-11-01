@@ -588,6 +588,11 @@ namespace
         const auto span = AudioEdits::audibleRange (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (padding)), threshold);
         check (span && span->getStart() == 100000 && span->getEnd() == 200001,
                "audible range: the first and last frame above the level on any channel, across blocks");
+        const auto paddingSnap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (padding));
+        check (AudioEdits::audibleRange (*paddingSnap, 150000, 250000, threshold) == juce::Range<juce::int64> (200000, 200001)
+                   && AudioEdits::audibleRange (*paddingSnap, 50000, 250000, threshold) == span
+                   && ! AudioEdits::audibleRange (*paddingSnap, 100001, 200000, threshold) && ! AudioEdits::audibleRange (*paddingSnap, 5, 5, threshold),
+               "audible range in a range: only the sound inside it, in document frames; none in a quiet or empty range");
 
         juce::AudioBuffer<float> hush (2, 70000);
         hush.clear();

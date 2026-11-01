@@ -1009,7 +1009,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio); break;
         case cmdFindClipping: info.setInfo ("Find Next Clipping", "Select the next run of three or more samples at full scale after the cursor", "Edit", 0);
                             info.setActive (hasAudio); break;
-        case cmdSelectAudible: info.setInfo ("Select Audible Span", "Select from the first sound to the last, at the level Trim Silence last used", "Edit", 0);
+        case cmdSelectAudible: info.setInfo ("Select Audible Span", "Select from the first sound to the last, in the selection or the whole file, at the level Trim Silence last used", "Edit", 0);
                             info.setActive (hasAudio); break;
         case cmdMixToMono:  info.setInfo ("Mix to Mono", "Average the channels into one", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() > 1); break;
@@ -3810,10 +3810,14 @@ void MainComponent::selectAudibleSpan()
     if (! doc.hasAudio())
         return;
 
-    if (const auto audible = AudioEdits::audibleRange (*doc.getSnapshot(), juce::Decibels::decibelsToGain (silenceThresholdDb, -200.0f)))
+    // Inside the selection when there is one, so choosing it again keeps the same span.
+    const auto r = selectionOrAll();
+
+    if (const auto audible = AudioEdits::audibleRange (*doc.getSnapshot(), r.getStart(), r.getEnd(), juce::Decibels::decibelsToGain (silenceThresholdDb, -200.0f)))
         waveform.setSelection (*audible);
     else
-        showError ("Select Audible Span", "The whole file is at or below " + juce::String (silenceThresholdDb, 1) + " dB.");
+        showError ("Select Audible Span", (waveform.getSelection().isEmpty() ? "The whole file" : "The whole selection")
+                                            + juce::String (" is at or below ") + juce::String (silenceThresholdDb, 1) + " dB.");
 }
 
 void MainComponent::showSetSelection()
