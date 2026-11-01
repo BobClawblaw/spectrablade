@@ -165,6 +165,7 @@ public:
     void update (const SessionTrack& t, int index, bool selected)
     {
         colour = t.isBus ? juce::Colour (0xff9aa3ad) : trackColour (index);
+        group = t.group;
         isSelected = selected;
         isBus = t.isBus;
         sendsButton.setVisible (! isBus);
@@ -221,6 +222,14 @@ public:
         g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (isBus ? 0xff16191d : 0xff1b1e23));
         g.setColour (colour);
         g.fillRect (0, 0, isBus ? 8 : 4, getHeight());
+
+        if (group != 0)
+        {
+            g.setColour (juce::Colours::lightgrey);
+            g.setFont (11.0f);
+            g.drawText ("G" + juce::String (group), juce::Rectangle<int> (getWidth() - 30, getHeight() - 15, 26, 12), juce::Justification::centredRight);
+        }
+
         g.setColour (laneLine);
         g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
     }
@@ -261,9 +270,31 @@ public:
         pan.setBounds (bottom);
     }
 
-    void mouseDown (const juce::MouseEvent&) override
+    void mouseDown (const juce::MouseEvent& e) override
     {
         view.selectTrack (index());
+
+        if (e.mods.isPopupMenu())
+            showGroupMenu();
+    }
+
+    void showGroupMenu()
+    {
+        const auto* t = view.engine.session.getState()->findTrack (trackId);
+
+        if (t == nullptr)
+            return;
+
+        // Groups link tracks' volume, mute and solo.
+        juce::PopupMenu groups;
+        groups.addItem ("None", true, t->group == 0, [this] { view.setTrackGroup (trackId, 0); });
+
+        for (int g = 1; g <= SessionTrack::maxGroups; ++g)
+            groups.addItem ("Group " + juce::String (g), true, t->group == g, [this, g] { view.setTrackGroup (trackId, g); });
+
+        juce::PopupMenu menu;
+        menu.addSubMenu ("Group", groups);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
     }
 
     // Dragged by its background, the header moves its track: the view shows where it would go.
@@ -301,6 +332,7 @@ private:
     }
 
     MultitrackView& view;
+    int group = 0;
     juce::Label name;
     juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
     juce::Slider gain, pan;
@@ -1881,8 +1913,15 @@ void MultitrackView::editTrack (juce::uint32 trackId, const juce::String& descri
     auto next = *engine.session.getState();
 
     for (auto& t : next.tracks)
+    {
         if (t.id == trackId)
+        {
+            const auto before = t;
             change (t);
+            SessionEdits::followGroup (next, before);
+            break;
+        }
+    }
 
     engine.session.apply (std::move (next), description, merge);
 }
@@ -2102,6 +2141,12 @@ void MultitrackView::deleteSelectedTrack()
         selectedTrackId = 0;
         engine.session.apply (std::move (next), "Delete Track");
     }
+}
+
+void MultitrackView::setTrackGroup (juce::uint32 trackId, int group)
+{
+    editTrack (trackId, group == 0 ? juce::String ("Ungroup Track") : "Group " + juce::String (group), false,
+               [group] (SessionTrack& t) { t.group = juce::jlimit (0, SessionTrack::maxGroups, group); });
 }
 
 void MultitrackView::moveTrack (int from, int to)

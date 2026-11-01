@@ -3,6 +3,7 @@
 
 #include <JuceHeader.h>
 #include "../Source/MixerView.h"
+#include "../Source/MultitrackView.h"
 #include "TestUtils.h"
 #include "MixerTests.h"
 
@@ -149,8 +150,83 @@ namespace
     }
 }
 
+namespace
+{
+    void testGroups (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+
+        for (auto [name, group, db] : { std::tuple { "Kick", 1, 0.0f }, { "Snare", 1, -6.0f }, { "Vocal", 0, -2.0f }, { "Toms", 1, -58.0f } })
+        {
+            auto& t = s.addTrack();
+            t.name = name;
+            t.group = group;
+            t.gainDb = db;
+        }
+
+        auto automated = s;
+        automated.tracks[1].volumeEnvelope.points = { { 0, -6.0f } };
+
+        // Kick down 3 dB: Snare follows by 3 dB, Toms stops at -60, Vocal (no group) stays.
+        auto edited = s;
+        auto before = edited.tracks[0];
+        edited.tracks[0].gainDb = -3.0f;
+        SessionEdits::followGroup (edited, before);
+        auto withEnvelope = automated;
+        before = withEnvelope.tracks[0];
+        withEnvelope.tracks[0].gainDb = -3.0f;
+        SessionEdits::followGroup (withEnvelope, before);
+        check (juce::exactlyEqual (edited.tracks[1].gainDb, -9.0f) && juce::exactlyEqual (edited.tracks[3].gainDb, -60.0f)
+                   && juce::exactlyEqual (edited.tracks[2].gainDb, -2.0f) && juce::exactlyEqual (withEnvelope.tracks[1].gainDb, -6.0f),
+               "groups: a volume change moves the group's other volumes by as many dB, within limits, not ones on envelopes");
+
+        before = edited.tracks[1];
+        edited.tracks[1].mute = true;
+        edited.tracks[1].solo = true;
+        SessionEdits::followGroup (edited, before);
+        check (edited.tracks[0].mute && edited.tracks[3].mute && edited.tracks[0].solo && ! edited.tracks[2].mute && ! edited.tracks[2].solo,
+               "groups: mute and solo go to the whole group");
+
+        // Through the mixer window and the multitrack view.
+        engine.session.reset (s, {});
+        MixerView mixer (engine);
+        mixer.setSize (MixerView::stripWidth * 6, 400);
+        const auto ids = [&] (int i) { return engine.session.getState()->tracks[(size_t) i].id; };
+        mixer.findFader (ids (1))->setValue (-4.0, juce::sendNotificationSync);
+        mixer.findMute (ids (0))->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        auto st = engine.session.getState();
+        check (std::abs (st->tracks[0].gainDb - 2.0f) < 1.0e-4f && std::abs (st->tracks[3].gainDb + 56.0f) < 1.0e-4f
+                   && st->tracks[1].mute && st->tracks[3].mute && ! st->tracks[2].mute
+                   && juce::exactlyEqual ((float) mixer.findFader (ids (0))->getValue(), st->tracks[0].gainDb),
+               "groups: a mixer fader and mute button move the whole group, and its strips show it ("
+                   + juce::String (st->tracks[0].gainDb, 3) + " dB)");
+
+        MultitrackView view (engine);
+        view.setTrackGroup (ids (2), 1);
+        const auto grouped = engine.session.getState()->tracks[2].group == 1 && engine.session.getUndoDescription() == "Group 1";
+        view.setTrackGroup (ids (2), 0);
+        check (grouped && engine.session.getState()->tracks[2].group == 0 && engine.session.getUndoDescription() == "Ungroup Track",
+               "groups: putting a track in a group and taking it out are undo steps");
+
+        auto saved = s;
+        saved.tracks[2].group = SessionTrack::maxGroups;
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (saved, file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        file.deleteFile();
+        check (error.isEmpty() && loaded.state.tracks.size() == 4 && loaded.state.tracks[0].group == 1 && loaded.state.tracks[2].group == 8,
+               "groups: session files keep each track's group");
+
+        engine.session.reset ({}, {});
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
     testLevels();
     testMixerView (engine);
+    testGroups (engine);
 }

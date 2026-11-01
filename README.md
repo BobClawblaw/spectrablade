@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 32: track groups**
+- Right-click a track's or bus's header (its background) and choose Group > Group 1 to 8, or None. The header shows its group ("G1"). Joining or leaving a group is an undo step.
+- In a group, moving one track's volume, from its header or its mixer strip, moves the others' by as many dB; muting or soloing one mutes or solos them all. Pan, sends and effects stay each track's own. A volume that reaches -60 or +12 dB stops there, so a group pushed past an end no longer keeps its spacing on the way back; a track whose volume is on an envelope is left to its envelope. Groups are saved in the session file.
+- Measured by the tests: a volume change moving the rest of the group by as many dB, a track stopping at -60 dB, one on an envelope and one outside the group untouched; mute and solo going to the whole group; through the real mixer window, a fader and a mute button moving the group with its strips showing it; joining and leaving a group as undo steps; groups in session files. The right-click menu and the G tag were not checked by the tests, and none of it was tried by hand.
+
 **Milestone 31: moving tracks**
 - Drag a track's or bus's header up or down by its background (not by its controls) to move it in the list; a yellow line shows where it will land. Multitrack > Move Track Up and Move Track Down (Cmd Option Up and Down) move the selected one a place at a time. Each move is an undo step ("Move Track"), and the moved track stays selected.
 - A track keeps everything as it moves: clips, effects, sends, envelopes, armed state and input. The mixer window's strips follow the new order.
@@ -274,6 +279,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
+- Track groups: volume, mute and solo following through a group, from the mixer too, and session files.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
 - Copying, pasting and duplicating clips through the view, over what was on the track, and several clips selected, moved, pasted, duplicated and deleted together.
@@ -322,4 +328,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: grouping tracks, so that volume, mute and solo changes apply to the whole group
+1. Multitrack, continued: nudging clips and the cursor by the grid with the keyboard

@@ -144,7 +144,10 @@ struct SessionTrack
     float gainDb = 0.0f;
     float pan = 0.0f;                      // -1 (left) to +1 (right)
     bool mute = false, solo = false;
+    int group = 0;                         // 0 for none, or 1 to maxGroups: volume, mute and solo changes follow through it
     TrackInput input;                      // what it records from (tracks only)
+
+    static constexpr int maxGroups = 8;
     std::vector<SessionClip> clips;
     std::vector<SessionSend> sends;
     Envelope volumeEnvelope, panEnvelope;  // dB, and -1 to +1
@@ -255,6 +258,11 @@ namespace SessionEdits
         replaces what the track had there. Returns the clip's id (0 with no passes). */
     juce::uint32 recordTakes (SessionState&, int track, const juce::File& source, AudioDocument::Snapshot audio,
                               juce::int64 position, juce::int64 length, const std::vector<juce::int64>& offsets);
+    /** After an edit of a track in a group (before is the track as it was), the others in its
+        group follow: a volume change moves theirs by as many dB (within -60 to +12, and not for a
+        volume on an envelope), and mute and solo take its state. */
+    void followGroup (SessionState&, const SessionTrack& before);
+
     /** Moves a track or bus from one place in the list to another, the others closing up behind
         it. False when either place is out of range or they are the same. */
     bool moveTrack (SessionState&, int from, int to);

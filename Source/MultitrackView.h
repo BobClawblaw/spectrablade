@@ -10,7 +10,8 @@
     Shift-click clips to select several: dragging any of them moves them all in time, and cut,
     copy, paste, duplicate and delete work on them together. Click to place the cursor, drag across the
     timeline to select a time range; drop audio files to add them as clips. A track's R button
-    arms it for recording. Drag a track's header up or down (by its background) to move the track.
+    arms it for recording. Drag a track's header up or down (by its background) to move the track;
+    right-click it to put the track in a group, whose volume, mute and solo changes go together.
 
     Under the ruler, the marker lane shows the session's markers and regions: click one to move
     the cursor to it (a region selects its range), drag it to move it, double-click it to rename
@@ -102,6 +103,10 @@ public:
 
     void splitSelectedClip();      // at the cursor
     void deleteSelectedTrack();
+
+    /** Puts a track or bus in a group (1 to SessionTrack::maxGroups) or none (0), as an undo
+        step. Right-click a header for its Group menu. */
+    void setTrackGroup (juce::uint32 trackId, int group);
 
     /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */
     void moveTrack (int from, int to);

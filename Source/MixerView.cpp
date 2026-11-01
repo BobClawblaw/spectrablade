@@ -194,8 +194,15 @@ private:
         auto next = *view.engine.session.getState();
 
         for (auto& t : next.tracks)
+        {
             if (t.id == trackId)
+            {
+                const auto before = t;
                 change (t);
+                SessionEdits::followGroup (next, before);
+                break;
+            }
+        }
 
         view.engine.session.apply (std::move (next), description, merge);
     }

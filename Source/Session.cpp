@@ -533,6 +533,34 @@ juce::uint32 recordTakes (SessionState& s, int track, const juce::File& source, 
     return id;
 }
 
+void followGroup (SessionState& s, const SessionTrack& before)
+{
+    const auto* changed = s.findTrack (before.id);
+
+    if (changed == nullptr || changed->group == 0)
+        return;
+
+    const auto delta = changed->gainDb - before.gainDb;
+    const auto mute = changed->mute, solo = changed->solo;
+    const auto group = changed->group;
+    const auto muteChanged = mute != before.mute, soloChanged = solo != before.solo;
+
+    for (auto& t : s.tracks)
+    {
+        if (t.id == before.id || t.group != group)
+            continue;
+
+        if (! juce::exactlyEqual (delta, 0.0f) && t.volumeEnvelope.isEmpty())
+            t.gainDb = juce::jlimit (-60.0f, 12.0f, t.gainDb + delta);
+
+        if (muteChanged)
+            t.mute = mute;
+
+        if (soloChanged)
+            t.solo = solo;
+    }
+}
+
 bool moveTrack (SessionState& s, int from, int to)
 {
     const auto count = (int) s.tracks.size();
@@ -911,6 +939,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         track->setAttribute ("mute", t.mute);
         track->setAttribute ("solo", t.solo);
 
+        if (t.group != 0)
+            track->setAttribute ("group", t.group);
+
         if (! t.input.isDefault())
         {
             track->setAttribute ("inputFirst", t.input.first);
@@ -1037,6 +1068,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.pan = (float) trackXml->getDoubleAttribute ("pan");
         track.mute = trackXml->getBoolAttribute ("mute");
         track.solo = trackXml->getBoolAttribute ("solo");
+        track.group = juce::jlimit (0, SessionTrack::maxGroups, trackXml->getIntAttribute ("group"));
 
         if (const auto channels = trackXml->getIntAttribute ("inputChannels"); ! track.isBus && (channels == 1 || channels == 2))
             track.input = { juce::jmax (0, trackXml->getIntAttribute ("inputFirst")), channels };
