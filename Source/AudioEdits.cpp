@@ -713,6 +713,37 @@ juce::Range<juce::int64> toZeroCrossings (Snapshot s, juce::Range<juce::int64> r
     return end > start ? juce::Range<juce::int64> (start, end) : range;
 }
 
+int markersToZeroCrossings (Snapshot s, Markers& markers, juce::int64 within)
+{
+    if (s == nullptr)
+        return 0;
+
+    const auto total = s->getNumFrames();
+    SessionClip whole;
+    whole.audio = std::move (s);
+    whole.length = total;
+    auto changed = 0;
+
+    for (auto& m : markers)
+    {
+        if (m.start >= total)
+            continue;
+
+        const auto start = SessionEdits::zeroCrossingNear (whole, m.start, within);
+        const auto end = m.isRegion() ? SessionEdits::zeroCrossingNear (whole, m.getEnd(), within) : start;
+
+        if (end < start || (m.isRegion() && end == start) || (start == m.start && end - start == m.length))
+            continue;
+
+        m.start = start;
+        m.length = end - start;
+        ++changed;
+    }
+
+    MarkerEdits::sort (markers);
+    return changed;
+}
+
 Snapshot crossfadeLoop (const AudioSnapshot& s, juce::int64 start, juce::int64 end, juce::int64 fade)
 {
     const auto r = clampRange (s, start, end);

@@ -300,6 +300,16 @@ namespace
         check (AudioEdits::toZeroCrossings (squareSnap, { 110, 390 }, 20) == R (100, 400) && AudioEdits::toZeroCrossings (squareSnap, { 120, 425 }, 20) == R (100, 425)
                    && AudioEdits::toZeroCrossings (squareSnap, { 5, 5 }, 20) == R (5, 5),
                "selection to zero crossings: each end to the nearest crossing in reach, one with none in reach left; an empty one stays");
+        auto snapped = Markers { { 110, 0, "A" }, { 425, 0, "B" }, { 210, 180, "R" }, { 150, 0, "On" }, { 2000, 0, "Past" } };
+        const auto snappedCount = AudioEdits::markersToZeroCrossings (squareSnap, snapped, 20);
+        juce::StringArray snappedText;
+
+        for (auto& m : snapped)
+            snappedText.add (m.name + "@" + juce::String (m.start) + "+" + juce::String (m.length));
+
+        check (snappedCount == 2 && snappedText.joinIntoString (" ") == "A@100+0 On@150+0 R@200+200 B@425+0 Past@2000+0",
+               "markers to zero crossings: points and both region ends to the nearest crossing in reach; ones on a crossing, out of reach or past the end left ("
+                   + snappedText.joinIntoString (" ") + ")");
 
         // Crossfade loop over [400, 800) with 100 frames: frames up to 700 and outside the range are
         // untouched, frame 799 becomes frame 399, and the frames in between are a blend of the two.

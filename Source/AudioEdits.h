@@ -141,6 +141,10 @@ namespace AudioEdits
         nearby stays, and the range is kept from turning inside out. */
     juce::Range<juce::int64> toZeroCrossings (Snapshot, juce::Range<juce::int64>, juce::int64 within);
 
+    /** Moves each marker to the nearest zero crossing in reach and each region's ends as
+        toZeroCrossings moves a range's; returns how many changed. */
+    int markersToZeroCrossings (Snapshot, Markers&, juce::int64 within);
+
     /** Makes [start, end) loop smoothly: its last `fade` frames are crossfaded (equal power) into
         the `fade` frames just before start, so its last frame is the one before start and playing
         on from end back to start continues as the audio did. nullptr when fade is not positive,

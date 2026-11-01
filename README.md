@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 152: Markers to Zero Crossings**
+- Markers > Markers to Zero Crossings moves every marker of the open file, and both ends of every region, to the nearest zero crossing up to 5 ms away (the reach Selection to Zero Crossings uses), so splitting or saving at the markers doesn't click. A marker with no crossing in reach stays where it is. It says so when nothing moves, and it is one undo step.
+- Measured by the tests: on a square wave crossing every 50 frames with a reach of 20, a marker at 110 moves to 100 and a region 210+180 becomes 200+200, while a marker already on a crossing, one 25 frames from the nearest, and one past the end stay; the list stays in time order. The menu item was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 151: Move Markers in Selection**
 - Markers > Move Markers in Selection asks for a time, with a minus sign to move earlier ("-0.5"), and moves the markers and regions that start inside the selection by it, in the editor and in a session. In the editor nothing may move before the start or past the end of the file; in a session nothing may move before 0. Otherwise it says so and moves none. It is one undo step.
 - Measured by the tests: moving [150, 400) by 250 frames moves a region at 200 and a marker at 300 and leaves markers at 100 and 500, with the list kept in time order; a move past the end or before 0, or by nothing, moves none, and a move to exactly 0 is allowed. A typed "-0.5", "+1:00" and " 2 " read as -0.5, 60 and 2 seconds; "--1" and "-" are refused. The dialog was not tried by hand in either mode. The whole suite passed, the default-device test included.
@@ -916,6 +920,7 @@ The tests run against the real machine:
 - Pieces between markers: the file split at its point markers, a Start piece before the first.
 - Delete markers in a range: those starting inside it go, the end excluded.
 - Move markers in a range: only those starting inside it, refused past either end; signed times read.
+- Markers to zero crossings: points and region ends moved to the nearest crossing in reach.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -969,4 +974,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers: Snap Markers to Zero Crossings, moving each point marker to the nearest crossing
+1. Effects: Gain Ramp, a gain that moves evenly in decibels from one level to another across the selection
