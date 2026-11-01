@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/ClipList.h"
 #include "../Source/ClipProperties.h"
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
@@ -267,6 +268,64 @@ namespace
 
 namespace
 {
+    void testClipList (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().name = "Drums";
+        s.addTrack().name = "Bass";
+        const auto late = SessionEdits::addClip (s, 1, juce::File ("/takes/bass.wav"), constant (1, 48000, 0.5f), 96000);
+        const auto first = SessionEdits::addClip (s, 0, juce::File ("/takes/kick.wav"), constant (1, 24000, 0.5f), 48000);
+        const auto beside = SessionEdits::addClip (s, 1, juce::File ("/takes/riff.wav"), constant (1, 12000, 0.5f), 48000);
+        SessionEdits::setClipLocked (s, beside, true);
+        SessionEdits::setClipMuted (s, beside, true);
+        SessionEdits::addClip (s, 1, juce::File ("/takes/far.wav"), constant (1, 4800, 0.5f), 48000 * 600);
+        engine.session.reset (s, {});
+
+        MultitrackView view (engine);
+        view.setSize (MultitrackView::headerWidth + 800, MultitrackView::rulerHeight + 3 * MultitrackView::trackHeight);
+        view.zoomToRange ({ 0, 48000 * 10 });
+        juce::uint32 chosen = 0;
+        ClipList list (engine, [&view] { return view.getSelectedClip(); }, [&] (juce::uint32 id) { chosen = id; view.showClip (id); });
+        list.setSize (700, 300);
+        const auto settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+
+        using C = ClipList::Column;
+        check (list.getNumRows() == 4 && list.getClip (0) == first && list.getClip (1) == beside && list.getClip (2) == late
+                   && list.getText (0, C::track) == "Drums" && list.getText (0, C::name) == "kick" && list.getText (0, C::start) == "1.000"
+                   && list.getText (0, C::length) == "0.500" && list.getText (0, C::file) == "kick.wav" && list.getText (1, C::state) == "Locked, Muted"
+                   && list.getText (2, C::state).isEmpty() && list.getHighlightedRow() < 0,
+               "clip list: every clip in time order (then by track), with its track, name, start, length, file and state");
+
+        list.chooseRow (2);
+        const auto shown = chosen == late && view.getSelectedClip() == late && view.getSelectedClips().size() == 1
+                           && view.getSelectedTrack() == 1 && view.getCursor() == 96000 && list.getHighlightedRow() == 2;
+        list.chooseRow (3);
+        const auto far = view.getSelectedClips().size() == 1 && view.getVisibleFrames().contains (48000.0 * 600)
+                         && list.getHighlightedRow() == 3;
+        check (shown && far, "clip list: clicking a row selects that clip alone, puts the cursor at its start and scrolls it into view");
+
+        auto renamed = *engine.session.getState();
+        renamed.tracks[0].clips[0].name = "kick 2";
+        engine.session.apply (std::move (renamed), "Rename Clip");
+        settle();
+        const auto followed = list.getText (0, C::name) == "kick 2";
+        engine.session.undo();
+        settle();
+        auto gone = *engine.session.getState();
+        SessionEdits::removeClip (gone, late);
+        engine.session.apply (std::move (gone), "Delete Clip");
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+        check (followed && list.getNumRows() == 3 && list.getText (0, C::name) == "kick" && list.getHighlightedRow() == 2,
+               "clip list: follows edits and undo, and a deleted clip's row goes, the highlight staying on the selected clip");
+
+        engine.session.reset ({}, {});
+        settle();
+    }
+}
+
+namespace
+{
     void testClipProperties (AudioEngine& engine)
     {
         SessionState s;
@@ -329,4 +388,5 @@ void runMixerTests (AudioEngine& engine)
     testMixerView (engine);
     testGroups (engine);
     testColours (engine);
+    testClipList (engine);
 }

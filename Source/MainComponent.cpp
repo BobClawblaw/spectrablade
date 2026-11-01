@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "AudioFileIO.h"
 #include "Bounce.h"
+#include "ClipList.h"
 #include "ClipProperties.h"
 #include "Metronome.h"
 #include "MixerView.h"
@@ -48,7 +49,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -101,6 +102,30 @@ public:
         setContentOwned (new ClipProperties (audioEngine, [&view] { return view.getSelectedClip(); }), false);
         centreWithSize (340, 250);
         setAlwaysOnTop (true);
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
+/** Every clip in the session, in a window that follows the selection. */
+class MainComponent::ClipListWindow final : public juce::DocumentWindow
+{
+public:
+    ClipListWindow (AudioEngine& audioEngine, MultitrackView& view, std::function<void()> onClose)
+        : DocumentWindow ("Clip List", juce::Colours::darkgrey, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new ClipList (audioEngine, [&view] { return view.getSelectedClip(); },
+                                       [&view] (juce::uint32 id) { view.showClip (id); }), false);
+        setResizable (true, false);
+        setResizeLimits (300, 150, 3000, 2000);
+        centreWithSize (710, 320);
         setVisible (true);
     }
 
@@ -625,6 +650,7 @@ MainComponent::~MainComponent()
     pluginListWindow = nullptr;
     mixerWindow = nullptr;
     clipPropertiesWindow = nullptr;
+    clipListWindow = nullptr;
 }
 
 void MainComponent::saveSettings()
@@ -694,7 +720,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdMuteClip; ++id)
+    for (int id = cmdOpen; id <= cmdClipList; ++id)
         ids.add (id);
 }
 
@@ -811,6 +837,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdLockClip:   info.setInfo ("Lock Clip", "Keep the selected clips from being moved, trimmed or deleted, or let them be again", "Multitrack", 0);
                             info.addDefaultKeypress ('l', cmd | shift); info.setTicked (multitrack.areSelectedClipsLocked());
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
+        case cmdClipList:   info.setInfo ("Clip List", "A window listing every clip in the session; click one to go to it", "Multitrack", 0);
+                            info.setTicked (clipListWindow != nullptr); break;
         case cmdMuteClip:   info.setInfo ("Mute Clip", "Keep the selected clips in place but silent, or let them be heard again", "Multitrack", 0);
                             info.setTicked (multitrack.areSelectedClipsMuted());
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
@@ -960,6 +988,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdBounceTrack: bounceTrack(); break;
         case cmdExportStems: chooseStemsFolder(); break;
         case cmdClipProperties: toggleClipProperties(); break;
+        case cmdClipList:   toggleClipList(); break;
         case cmdRepeatClip: multitrack.repeatSelectedClip(); break;
         case cmdRecordingOptions: showRecordingOptions(); break;
         case cmdTallerTracks:
@@ -1104,7 +1133,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1561,6 +1590,24 @@ void MainComponent::toggleMixer()
                                                                          if (safe != nullptr)
                                                                              safe->toggleMixer();
                                                                      }); });
+
+    commands.commandStatusChanged();
+}
+
+void MainComponent::toggleClipList()
+{
+    // Deleted later, not inside its own close button's callback.
+    if (clipListWindow != nullptr)
+        clipListWindow = nullptr;
+    else
+        clipListWindow = std::make_unique<ClipListWindow> (engine, multitrack, [this]
+        {
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+            {
+                if (safe != nullptr)
+                    safe->toggleClipList();
+            });
+        });
 
     commands.commandStatusChanged();
 }

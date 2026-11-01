@@ -58,6 +58,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Recorder.cpp
     Source/SessionRecording.cpp
     Source/Bounce.cpp
+    Source/ClipList.cpp
     Source/ClipProperties.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
@@ -132,6 +133,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Recorder.cpp
     Source/SessionRecording.cpp
     Source/Bounce.cpp
+    Source/ClipList.cpp
     Source/ClipProperties.cpp
     Source/PluginScanner.cpp
     Source/MixerView.cpp

@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 43: the clip list**
+- Multitrack > Clip List opens a window listing every clip in the session in time order (clips that start together by track): its track, name, start and length in seconds, file, and whether it is locked or muted. The selected clip's row is highlighted.
+- Clicking a row selects that clip alone, with its track, puts the cursor at its start, and scrolls the timeline to it (a tenth of the way in, at the same zoom) and the lanes to its track when it is out of view. The list follows edits and undo as they happen.
+- Measured by the tests, through the real list and view: the rows, their order and every column; clicking a row selecting the clip, setting the cursor and scrolling to a clip 10 minutes in; the list following a rename, its undo and a deletion, the highlight staying on the selected clip. Sorting by other columns is not offered; the window and its resizing were not checked by the tests, and none of it was tried by hand. The default-device test still hung opening the audio interface, as for Milestone 40; every other check passed.
+
 **Milestone 42: clip colours and the clip menu**
 - Right-clicking a clip now always opens a menu: its takes (when it has more than one; greyed out while it is locked), Colour, Lock and Mute. Right-clicking a clip that is part of a selection keeps the selection, so Colour, Lock and Mute work on every selected clip.
 - Colour gives the clips one of the eight track colours, or Track's to follow their track again, as one undo step ("Clip Colour"). Locked clips can be recoloured. A muted clip is still drawn grey.
@@ -334,6 +339,7 @@ The tests run against the real machine:
 - Locking clips: every refused edit, clips placed over locked ones, session files, and the view.
 - Muting clips: the mix, bounces and copies bit for bit, the view, and session files.
 - Clip colours: their own or the track's, the selection as one undo step, and session files.
+- The clip list: rows and columns, clicking a row, and following edits.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -387,4 +393,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a track's clips listed in a panel (name, start, length, file), clicking one to select it and show it
+1. Multitrack, continued: renaming a track by double-clicking its name, and duplicating a track with its clips, effects and settings

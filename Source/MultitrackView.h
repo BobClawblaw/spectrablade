@@ -125,6 +125,13 @@ public:
     /** Gives every selected clip a colour from TrackColours::palette, or -1 for its track's, as
         one undo step ("Clip Colour"). Right-click a clip for its Colour menu. */
     void setSelectedClipsColour (int colour);
+
+    /** Selects a clip alone (and its track), puts the cursor at its start and scrolls it into
+        view, keeping the zoom. False when there is no such clip. */
+    bool showClip (juce::uint32 clipId);
+
+    /** The track lanes' scroll position, in pixels from the top. */
+    int getScrollY() const noexcept    { return scrollY; }
     void deleteSelectedTrack();
 
     /** The grid point after a frame (or before it): the ruler's beats in bars and beats, otherwise

@@ -2233,6 +2233,36 @@ void MultitrackView::setSelectedClipsMuted (bool muted)
     setSelectedClipsFlag (SessionEdits::setClipMuted, muted, muted ? "Mute " : "Unmute ");
 }
 
+bool MultitrackView::showClip (juce::uint32 clipId)
+{
+    const auto where = shown().findClip (clipId);
+
+    if (! where.has_value())
+        return false;
+
+    const auto& clip = shown().tracks[(size_t) where->first].clips[(size_t) where->second];
+    selectClip (clipId, false);
+    selectTrack (where->first);
+    setCursor (clip.position);
+
+    // Horizontally, a tenth of the way in unless it starts in view already; vertically, its lane
+    // in view.
+    const auto width = (double) juce::jmax (1, timelineArea().getWidth()) * framesPerPixel;
+
+    if ((double) clip.position < viewStart || (double) clip.position >= viewStart + width)
+        setView ((double) clip.position - width * 0.1, framesPerPixel);
+
+    const auto visible = juce::jmax (1, timelineArea().getHeight());
+    const auto top = where->first * laneHeight;
+
+    if (top < scrollY || top + laneHeight > scrollY + visible)
+        scrollY = top;
+
+    updateScrollBars();
+    repaint();
+    return true;
+}
+
 void MultitrackView::setSelectedClipsColour (int colour)
 {
     auto next = *engine.session.getState();
