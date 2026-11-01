@@ -105,6 +105,7 @@ private:
     void selectRegionAtCursor();
     void showMarkersAtIntervals();
     void regionsFromMarkers();
+    void showRenameMarkers();
     void showGoToTime();
 
     // Effects

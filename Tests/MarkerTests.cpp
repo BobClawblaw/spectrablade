@@ -104,6 +104,25 @@ namespace
                "markers: regions from markers run each point to the next and the last to the end, keeping names and colours ("
                    + made.joinIntoString (" ") + ")");
 
+        // Renaming in sequence: time order, regions included, colours kept; an empty name refused.
+        auto renamed = toRegions;
+        juce::StringArray names;
+
+        if (MarkerEdits::renameInSequence (renamed, "  Take "))
+            for (auto& m : renamed)
+                names.add (m.name);
+
+        auto many = Markers (100, Marker {});
+
+        for (size_t i = 0; i < many.size(); ++i)
+            many[i].start = (juce::int64) i;
+
+        auto untouched = toRegions;
+        check (names.joinIntoString (",") == "Take 01,Take 02,Take 03,Take 04,Take 05" && renamed[2].colour == 2
+                   && MarkerEdits::renameInSequence (many, "T") && many.front().name == "T 001" && many.back().name == "T 100"
+                   && ! MarkerEdits::renameInSequence (untouched, " ") && untouched == toRegions,
+               "markers: renamed in sequence in time order with two digits, three from 100; an empty name changes nothing");
+
         check (added == 3 && placed.joinIntoString (" ") == "Region 01@0+1000 Marker 02@50 Marker 01@150 Marker 03@250 Marker 04@350" && refused,
                "markers: a marker every step through the range, sorted and named in turn, skipping taken frames; a zero step and too many refused ("
                    + placed.joinIntoString (" ") + ")");

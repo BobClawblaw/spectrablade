@@ -2350,6 +2350,17 @@ int MultitrackView::addMarkersAtIntervals (juce::int64 step)
     return added;
 }
 
+bool MultitrackView::renameMarkersInSequence (const juce::String& base)
+{
+    auto next = *engine.session.getState();
+
+    if (! MarkerEdits::renameInSequence (next.markers, base) || next.markers == engine.session.getState()->markers)
+        return false;
+
+    engine.session.apply (std::move (next), "Rename Markers");
+    return true;
+}
+
 int MultitrackView::regionsFromMarkers()
 {
     auto next = *engine.session.getState();

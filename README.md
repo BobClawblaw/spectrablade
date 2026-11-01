@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 114: Rename Markers in Sequence**
+- Markers > Rename Markers in Sequence asks for a name and gives every marker and region, in time order, that name and a number: "Take 01", "Take 02", and three digits once there are 100 or more, so names sort in order. Colours and positions are kept, and it is one undo step in the editor or the session. An empty name, or names that are already so, change nothing.
+- Measured by the tests: five markers and regions named " Take " come out "Take 01" to "Take 05" in time order with a colour kept; 100 markers run "T 001" to "T 100"; a blank name leaves them as they were. Through a real session view the renaming is one undo step, and repeating it adds none. The editor's dialog was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 113: Regions from Markers**
 - Markers > Regions from Markers turns each point marker into a region running to the next point marker, or to the end (of the file, or of the session's last clip) after the last one, keeping its name and colour, as one undo step. Existing regions are left alone and don't end the new ones; a point at the very end stays a point. Together with Add Markers at Intervals and Save Each Region As (or Export Regions), a long recording can be cut into equal files.
 - Measured by the tests: points at 100, 300, 700 and 1,000 in a 1,000-frame file, with a region at 150, become regions 100 to 300, 300 to 700 (its colour kept) and 700 to 1,000, the point at the end staying a point and the region untouched. Through a real session view, the one point becomes a region to the end of the last clip as one undo step. The editor's command was not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -727,6 +731,7 @@ The tests run against the real machine:
 - Select Region at Cursor: the innermost region, none at an end or outside, in the session view too.
 - Markers at intervals: placed, named and sorted, taken frames skipped, limits refused, one undo step in the session.
 - Regions from markers: each point to the next or the end, names and colours kept, in the session view too.
+- Renaming markers in sequence: time order, two or three digits, one undo step in the session.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -780,4 +785,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Markers: Rename Markers in Sequence, giving the selected markers a typed base name and a number each
+1. Marker list: Export and import markers as CSV in the editor, so marker sets can move between files

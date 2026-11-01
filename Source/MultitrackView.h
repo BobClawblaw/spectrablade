@@ -96,6 +96,9 @@ public:
         clip, as one undo step; returns how many were turned (see MarkerEdits::regionsFromPoints). */
     int regionsFromMarkers();
 
+    /** Renames the session's markers in sequence as one undo step (see MarkerEdits::renameInSequence). */
+    bool renameMarkersInSequence (const juce::String& base);
+
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;
     juce::uint32 getSelectedClip() const noexcept { return selectedClip; }

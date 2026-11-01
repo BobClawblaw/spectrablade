@@ -54,6 +54,10 @@ namespace MarkerEdits
         many were turned. */
     int regionsFromPoints (Markers&, juce::int64 end);
 
+    /** Names every marker and region, in time order, "<base> 01", "<base> 02", ... (three digits
+        from 100 on). The base is trimmed; an empty one changes nothing and returns false. */
+    bool renameInSequence (Markers&, const juce::String& base);
+
     /** Most markers addAtIntervals adds at once. */
     constexpr int maxIntervalMarkers = 1000;
 

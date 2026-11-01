@@ -542,6 +542,13 @@ void runMultitrackViewTests (AudioEngine& engine)
                "view: regions from markers runs the last point to the end of the last clip, as one undo step");
         engine.session.undo();
 
+        const auto renamedInView = view.renameMarkersInSequence ("Part");
+        const auto& partNames = engine.session.getState()->markers;
+        check (renamedInView && partNames.size() == 2 && partNames[0].name == "Part 01" && partNames[1].name == "Part 02"
+                   && engine.session.getUndoDescription() == "Rename Markers" && ! view.renameMarkersInSequence ("Part"),
+               "view: renaming the markers in sequence is one undo step; the same names again add none");
+        engine.session.undo();
+
         // Going to a time far out of view scrolls there, keeping the zoom; one in view doesn't scroll.
         const auto viewBefore = view.getVisibleFrames();
         const auto zoomBefore = viewBefore.getLength();

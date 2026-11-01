@@ -114,6 +114,22 @@ int regionsFromPoints (Markers& markers, juce::int64 end)
     return turned;
 }
 
+bool renameInSequence (Markers& markers, const juce::String& base)
+{
+    const auto trimmed = base.trim();
+
+    if (trimmed.isEmpty() || markers.empty())
+        return false;
+
+    sort (markers);
+    const auto digits = juce::jmax (2, (int) juce::String ((int) markers.size()).length());
+
+    for (size_t i = 0; i < markers.size(); ++i)
+        markers[i].name = trimmed + " " + juce::String ((int) i + 1).paddedLeft ('0', digits);
+
+    return true;
+}
+
 int addAtIntervals (Markers& markers, juce::Range<juce::int64> range, juce::int64 step)
 {
     if (step <= 0 || range.isEmpty() || (range.getLength() + step - 1) / step > maxIntervalMarkers)
