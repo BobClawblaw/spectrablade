@@ -7,7 +7,9 @@
     to rename it, and Delete or Backspace to delete it. Follows the session, so edits and undo
     show here at once. The search box above it shows only the markers whose name contains what
     is typed, ignoring case. Clicking a column header sorts by that column, and again reverses it;
-    names sort ignoring case with numbers in order, and points count as ending where they start. */
+    names sort ignoring case with numbers in order, and points count as ending where they start.
+    Below the table a line counts the markers and regions (and how many the search shows), with
+    Rename and Delete buttons for the highlighted row. */
 class MarkerTable final : public juce::Component,
                          private juce::TableListBoxModel,
                          private juce::ChangeListener
@@ -36,6 +38,16 @@ public:
     /** Types into the search box, as the keyboard does. */
     void setSearch (const juce::String&);
 
+    /** "3 markers, 2 regions", with "(2 shown)" while the search hides some. */
+    juce::String getSummary() const                     { return summary.getText(); }
+
+    /** Highlights a row (or none, with -1), as the keyboard does. */
+    void highlightRow (int row);
+
+    /** Clicks the Rename or Delete button, as the mouse does (nothing while it is off). */
+    void pressRename()                                  { if (rename.isEnabled()) rename.onClick(); }
+    void pressDelete()                                  { if (remove.isEnabled()) remove.onClick(); }
+
     /** Sorts by a column, as clicking its header does; 0 goes back to time order. */
     void setSort (int column, bool forwards);
 
@@ -50,6 +62,8 @@ private:
     void returnKeyPressed (int lastRowSelected) override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void sortOrderChanged (int column, bool forwards) override;
+    void selectedRowsChanged (int lastRowSelected) override;
+    void updateSummary();
     void refilter();
 
     Session& session;
@@ -59,6 +73,8 @@ private:
     bool sortForwards = true;
     juce::TextEditor search;
     juce::TableListBox table { {}, this };
+    juce::Label summary;
+    juce::TextButton rename { "Rename" }, remove { "Delete" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MarkerTable)
 };

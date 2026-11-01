@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 130: marker list count and buttons**
+- Below the marker list a line counts the markers and regions ("3 markers, 2 regions", adding "(2 shown)" while the search hides some), beside Rename and Delete buttons that act on the highlighted row as Return and Delete do. The buttons are off when no row is highlighted.
+- Measured by the tests, through a real marker list: two markers and two regions are counted, and "(2 shown)" added when a search shows two; Delete with no row highlighted asks for nothing, and with the second row highlighted asks for exactly the marker that row shows. Clicking the buttons with the mouse and the layout were not checked, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 129: Next and Previous Region**
 - Markers > Next Region (Cmd Shift ]) and Previous Region (Cmd Shift [) select the region starting next after the selection (or the cursor), or the last one starting before it, and scroll to it, in the editor or the session. Point markers are passed over; of regions starting together the shortest comes first. At the first or last region nothing changes.
 - Measured by the tests: among regions at [50, 450), [150, 250) and [220, 240) with point markers between them, stepping forwards from 0 visits them in that order and stops, and backwards from the last returns to [150, 250); of two regions starting together the shorter is chosen. Through a real session view, Next from the cursor selects the first region, then the second, then stays; Previous returns to the first. The keys and the editor's command were not exercised by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -806,6 +810,7 @@ The tests run against the real machine:
 - Regions over clips: overlapping and touching clips joined, a gap starting another, none twice.
 - Select clips in region: the region as the range and its clips; nothing outside a region.
 - Next and previous region: by start, points passed over, in the session view too.
+- Marker list count and buttons: counts with the search, Delete for the highlighted marker only.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -859,4 +864,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Marker list: Add and Delete buttons, and a count of markers and regions
+1. Clip list: a count line, with the total length of the clips shown

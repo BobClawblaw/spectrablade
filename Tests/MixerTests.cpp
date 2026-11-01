@@ -727,6 +727,23 @@ namespace
         check (byName == "intro|Take 1|Take 2|take 10" && byLength == "Take 2|intro|take 10|Take 1" && lengthMapped
                    && byTime == "take 10|Take 2|intro|Take 1",
                "marker list: sorted by name ignoring case with numbers in order, by length backwards, and back to time order (" + byName + "; " + byLength + ")");
+
+        // The count line and the buttons: two of four shown by a search; Delete on a highlighted row
+        // asks for its marker; nothing highlighted, no button.
+        std::vector<int> removed;
+        MarkerTable withButtons (engine.session, { {}, {}, [&removed] (int i) { removed.push_back (i); } });
+        withButtons.setSize (470, 320);
+        const auto counted = withButtons.getSummary() == "2 markers, 2 regions";
+        withButtons.setSearch ("take 1");
+        const auto filtered = withButtons.getSummary() == "2 markers, 2 regions (2 shown)";
+        withButtons.pressDelete();
+        const auto noneHighlighted = removed.empty();
+        withButtons.highlightRow (1);
+        withButtons.pressDelete();
+        withButtons.pressRename();
+        check (counted && filtered && noneHighlighted && removed == std::vector<int> { withButtons.getMarkerIndex (1) } && removed[0] >= 0,
+               "marker list: the count of markers and regions and how many are shown; Delete asks for the highlighted marker, nothing without one ("
+                   + withButtons.getSummary() + ")");
         engine.session.reset ({}, {});
         settle();
     }

@@ -19,6 +19,18 @@ MarkerTable::MarkerTable (Session& s, Actions a) : session (s), actions (std::mo
     search.onEscapeKey = [this] { setSearch ({}); };
     addAndMakeVisible (search);
 
+    summary.setColour (juce::Label::textColourId, juce::Colours::grey);
+    addAndMakeVisible (summary);
+
+    rename.onClick = [this] { returnKeyPressed (table.getSelectedRow()); };
+    remove.onClick = [this] { deleteKeyPressed (table.getSelectedRow()); };
+
+    for (auto* b : { &rename, &remove })
+    {
+        b->setEnabled (false);
+        addAndMakeVisible (*b);
+    }
+
     session.addChangeListener (this);
     refilter();
 }
@@ -64,7 +76,40 @@ void MarkerTable::refilter()
     if (table.getSelectedRow() >= getNumRows())
         table.deselectAllRows();
 
+    updateSummary();
+    selectedRowsChanged (table.getSelectedRow());
     repaint();
+}
+
+void MarkerTable::updateSummary()
+{
+    const auto& markers = session.getState()->markers;
+    const auto regions = (int) std::count_if (markers.begin(), markers.end(), [] (const Marker& m) { return m.isRegion(); });
+    const auto points = (int) markers.size() - regions;
+    const auto count = [] (int n, const char* word) { return juce::String (n) + " " + word + (n == 1 ? "" : "s"); };
+    auto text = count (points, "marker") + ", " + count (regions, "region");
+
+    if ((size_t) getNumRows() < markers.size())
+        text << " (" << getNumRows() << " shown)";
+
+    summary.setText (text, juce::dontSendNotification);
+}
+
+void MarkerTable::highlightRow (int row)
+{
+    if (juce::isPositiveAndBelow (row, getNumRows()))
+        table.selectRow (row);
+    else
+        table.deselectAllRows();
+
+    selectedRowsChanged (table.getSelectedRow());
+}
+
+void MarkerTable::selectedRowsChanged (int lastRowSelected)
+{
+    const auto any = getMarkerIndex (lastRowSelected) >= 0;
+    rename.setEnabled (any && actions.rename != nullptr);
+    remove.setEnabled (any && actions.remove != nullptr);
 }
 
 void MarkerTable::setSort (int column, bool forwards)
@@ -179,5 +224,10 @@ void MarkerTable::resized()
 {
     auto r = getLocalBounds();
     search.setBounds (r.removeFromTop (26).reduced (4, 2));
+    auto bottom = r.removeFromBottom (28).reduced (4, 3);
+    remove.setBounds (bottom.removeFromRight (70));
+    bottom.removeFromRight (6);
+    rename.setBounds (bottom.removeFromRight (70));
+    summary.setBounds (bottom);
     table.setBounds (r);
 }
