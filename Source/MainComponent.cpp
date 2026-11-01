@@ -10,6 +10,7 @@
 #include "SampleRateConverter.h"
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
+#include "TimeStretch.h"
 
 namespace
 {
@@ -50,7 +51,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -722,7 +723,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdZeroCrossings; ++id)
+    for (int id = cmdOpen; id <= cmdStretchClip; ++id)
         ids.add (id);
 }
 
@@ -894,6 +895,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
         case cmdZeroCrossings: info.setInfo ("Cut at Zero Crossings", "Move splits and dragged clip edges to the nearest zero crossing, up to 5 ms away", "Multitrack", 0);
                             info.setTicked (multitrack.isFindingZeroCrossings()); info.setActive (multitrackMode); break;
+        case cmdStretchClip: info.setInfo ("Stretch Clip...", "Make the selected clip longer or shorter without changing its pitch", "Multitrack", 0);
+                            info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdCloseGaps:  info.setInfo ("Close Gaps", "Move the selected track's clips back so each starts where the one before ends", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
         case cmdHideTrack:  info.setInfo ("Hide Track", "Leave the selected track or bus out of the lanes; it still plays", "Multitrack", 0);
@@ -1063,6 +1066,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSelectClipsAfter: multitrack.selectClipsAfterCursor(); break;
         case cmdMoveClipsToCursor: multitrack.moveSelectedClipsToCursor(); break;
         case cmdCloseGaps:  multitrack.closeGapsOnSelectedTrack(); break;
+        case cmdStretchClip: askToStretchSelectedClip(); break;
         case cmdZeroCrossings:
             multitrack.setFindingZeroCrossings (! multitrack.isFindingZeroCrossings());
             appProperties.getUserSettings()->setValue (zeroCrossingsKey, multitrack.isFindingZeroCrossings());
@@ -1167,7 +1171,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1904,6 +1908,61 @@ void MainComponent::reverseSelectedClip()
     auto next = *state;
     SessionEdits::reverseClip (next, clipId, file, reversed);
     engine.session.apply (std::move (next), "Reverse Clip");
+}
+
+void MainComponent::askToStretchSelectedClip()
+{
+    auto* box = new juce::AlertWindow ("Stretch Clip", "The clip's new length, keeping its pitch.", juce::MessageBoxIconType::NoIcon);
+    box->addTextEditor ("percent", "100", "Length (% of now, " + juce::String (juce::roundToInt (TimeStretch::shortest * 100.0)) + " to "
+                                              + juce::String (juce::roundToInt (TimeStretch::longest * 100.0)) + ")");
+    box->getTextEditor ("percent")->setInputRestrictions (6, ".0123456789");
+    box->addButton ("Stretch", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        const auto ratio = box->getTextEditorContents ("percent").getDoubleValue() / 100.0;
+
+        if (result != 1)
+            return;
+
+        if (ratio < TimeStretch::shortest || ratio > TimeStretch::longest)
+            showError ("Stretch Clip", "The length must be from 50% to 200% of what it is now.");
+        else if (std::abs (ratio - 1.0) > 1.0e-9)
+            stretchSelectedClip (ratio);
+    }), true);
+}
+
+void MainComponent::stretchSelectedClip (double ratio)
+{
+    const auto state = engine.session.getState();
+    const auto clipId = multitrack.getSelectedClip();
+    const auto where = state->findClip (clipId);
+
+    if (! where.has_value())
+        return;
+
+    // Like a reversed clip, the stretched audio gets a file of its own.
+    const auto& clip = state->tracks[(size_t) where->first].clips[(size_t) where->second];
+
+    if (clip.locked)
+        return;
+
+    const auto stretched = SessionEdits::stretchedAudio (clip, ratio, state->sampleRate);
+    const auto folder = recordingsFolder();
+    const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (clip.name) + " Stretched", ".wav", false);
+    auto error = stretched == nullptr ? juce::String ("The clip has no audio.")
+                                      : ! folder.createDirectory() ? "Could not make the folder " + folder.getFullPathName()
+                                                                   : AudioFileIO::save (*stretched, state->sampleRate, file, 32, engine.formatManager);
+
+    if (error.isNotEmpty())
+    {
+        showError ("Stretch Clip", error);
+        return;
+    }
+
+    auto next = *state;
+    SessionEdits::stretchClip (next, clipId, file, stretched);
+    engine.session.apply (std::move (next), "Stretch Clip");
 }
 
 void MainComponent::chooseStemsFolder()

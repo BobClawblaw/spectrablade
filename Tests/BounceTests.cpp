@@ -2,6 +2,7 @@
 #include "../Source/AudioEdits.h"
 #include "../Source/Bounce.h"
 #include "../Source/OfflineRender.h"
+#include "../Source/TimeStretch.h"
 #include "TestUtils.h"
 #include "BounceTests.h"
 
@@ -72,8 +73,88 @@ namespace
     }
 }
 
+namespace
+{
+    // Frequency from the rising zero crossings between two sample indices.
+    double frequencyOf (const float* x, int from, int to, double sampleRate)
+    {
+        std::vector<double> rises;
+
+        for (int i = from + 1; i < to; ++i)
+            if (x[i - 1] < 0.0f && x[i] >= 0.0f)
+                rises.push_back ((double) (i - 1) + (double) x[i - 1] / (double) (x[i - 1] - x[i]));
+
+        return rises.size() < 2 ? 0.0 : sampleRate * (double) (rises.size() - 1) / (rises.back() - rises.front());
+    }
+
+    void testTimeStretch()
+    {
+        constexpr int length = 96000;
+        juce::AudioBuffer<float> tone (2, length);
+
+        for (int i = 0; i < length; ++i)
+        {
+            const auto v = 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / (float) rate);
+            tone.setSample (0, i, v);
+            tone.setSample (1, i, -v);
+        }
+
+        const auto inputFrequency = frequencyOf (tone.getReadPointer (0), 24000, 72000, rate);
+        auto lengthsRight = true, pitchKept = true, levelKept = true, inStep = true;
+        juce::String found;
+
+        for (auto ratio : { 0.5, 0.75, 1.5, 2.0 })
+        {
+            const auto out = TimeStretch::stretch (tone, ratio, rate);
+            const auto n = out.getNumSamples();
+            lengthsRight = lengthsRight && n == (int) std::llround (length * ratio);
+
+            // The middle half, away from the ends.
+            const auto f = frequencyOf (out.getReadPointer (0), n / 4, 3 * n / 4, rate);
+            const auto rms = out.getRMSLevel (0, n / 4, n / 2);
+            pitchKept = pitchKept && std::abs (f / inputFrequency - 1.0) < 0.005;
+            levelKept = levelKept && std::abs (juce::Decibels::gainToDecibels (rms / (0.5f / std::sqrt (2.0f)))) < 1.0f;
+            found << juce::String (ratio, 2) << "x: " << juce::String (f, 2) << " Hz, " << juce::String (juce::Decibels::gainToDecibels (rms), 2) << " dBFS; ";
+
+            for (int i = 0; i < n && inStep; ++i)
+                inStep = juce::exactlyEqual (out.getSample (1, i), -out.getSample (0, i));
+        }
+
+        check (lengthsRight && pitchKept && levelKept && inStep,
+               "time stretch: lengths from 50% to 200%, a 440 Hz tone's pitch within 0.5% and level within 1 dB, channels cut in step ("
+                   + found.trimEnd() + " input " + juce::String (inputFrequency, 2) + " Hz)");
+
+        const auto started = juce::Time::getMillisecondCounterHiRes();
+        juce::AudioBuffer<float> long10 (2, 480000);
+        long10.clear();
+        long10.copyFrom (0, 0, tone, 0, 0, length);
+        const auto stretched = TimeStretch::stretch (long10, 1.5, rate);
+        const auto ms = juce::Time::getMillisecondCounterHiRes() - started;
+        check (stretched.getNumSamples() == 720000, "time stretch: 10 s of stereo to 15 s in " + juce::String (ms, 0) + " ms");
+
+        // On a clip: the part it plays, its fades scaled, and not when locked.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        const auto id = SessionEdits::addClip (s, 0, juce::File ("/takes/tone.wav"), AudioEdits::fromBuffer (juce::AudioBuffer<float> (tone)), 5000);
+        SessionEdits::trimClip (s, id, 5000 + 1000, 5000 + 49000);   // plays 48000 frames
+        SessionEdits::setClipFades (s, id, 4800, 2400);
+        const auto audio = SessionEdits::stretchedAudio (s.tracks[0].clips[0], 1.5, rate);
+        auto locked = s;
+        SessionEdits::setClipLocked (locked, id, true);
+        const auto refused = ! SessionEdits::stretchClip (locked, id, juce::File ("/takes/tone Stretched.wav"), audio);
+        const auto applied = SessionEdits::stretchClip (s, id, juce::File ("/takes/tone Stretched.wav"), audio);
+        const auto& c = s.tracks[0].clips[0];
+        check (refused && applied && audio->getNumFrames() == 72000 && c.position == 6000 && c.offset == 0 && c.length == 72000
+                   && c.fadeIn == 7200 && c.fadeOut == 3600 && c.audio == audio && c.source.getFileName() == "tone Stretched.wav",
+               "time stretch: a clip plays its stretched part from where it starts, fades scaled with it, and a locked one is refused");
+    }
+}
+
 void runBounceTests()
 {
+    testTimeStretch();
+
     const juce::Range<juce::int64> range (0, 12000);
 
     for (auto db : { 0.0f, -6.0f })

@@ -281,6 +281,14 @@ namespace SessionEdits
         from its start, its fades change ends, and other takes go. */
     bool reverseClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot reversed);
 
+    /** The part of the clip's audio that plays, stretched to `ratio` times its length (within
+        TimeStretch::shortest to longest) at the same pitch. Null with no audio. */
+    AudioDocument::Snapshot stretchedAudio (const SessionClip&, double ratio, double sampleRate);
+
+    /** Makes a clip play stretched audio (from stretchedAudio(), saved as file), all of it, from
+        where it starts; its fades scale with it, and its takes go. False for a locked clip. */
+    bool stretchClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot stretched);
+
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
         (or split in two) and lose their fade on the cut side. False when nothing was there. */
     bool clearRange (SessionState&, int track, juce::int64 start, juce::int64 end);

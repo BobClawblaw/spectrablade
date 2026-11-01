@@ -6,6 +6,7 @@
 #include "AudioFileIO.h"
 #include "Metronome.h"
 #include "SampleRateConverter.h"
+#include "TimeStretch.h"
 #include "TrackColours.h"
 
 //==============================================================================
@@ -592,6 +593,36 @@ bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     c->audio = std::move (reversed);
     c->offset = 0;
     std::swap (c->fadeIn, c->fadeOut);
+    c->takes.clear();
+    c->activeTake = 0;
+    limitFades (*c);
+    return true;
+}
+
+AudioDocument::Snapshot stretchedAudio (const SessionClip& c, double ratio, double sampleRate)
+{
+    if (c.audio == nullptr || c.length <= 0)
+        return nullptr;
+
+    juce::AudioBuffer<float> part (c.audio->getNumChannels(), (int) c.length);
+    c.audio->read (part, 0, c.offset, (int) c.length);
+    return AudioEdits::fromBuffer (TimeStretch::stretch (part, ratio, sampleRate));
+}
+
+bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched)
+{
+    auto* c = findUnlocked (s, clipId);
+
+    if (c == nullptr || stretched == nullptr || c->length <= 0)
+        return false;
+
+    const auto scale = (double) stretched->getNumFrames() / (double) c->length;
+    c->source = file;
+    c->length = stretched->getNumFrames();
+    c->audio = std::move (stretched);
+    c->offset = 0;
+    c->fadeIn = (juce::int64) std::llround ((double) c->fadeIn * scale);
+    c->fadeOut = (juce::int64) std::llround ((double) c->fadeOut * scale);
     c->takes.clear();
     c->activeTake = 0;
     limitFades (*c);

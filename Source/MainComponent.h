@@ -125,6 +125,8 @@ private:
     void bounceTrack();
     void duplicateTrack();
     void reverseSelectedClip();
+    void askToStretchSelectedClip();
+    void stretchSelectedClip (double ratio);
     void chooseStemsFolder();
     void exportStems (const juce::File& folder, juce::Range<juce::int64>);
 

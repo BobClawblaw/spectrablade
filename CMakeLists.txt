@@ -47,6 +47,7 @@ target_sources(SpectraBlade PRIVATE
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
+    Source/TimeStretch.cpp
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
@@ -122,6 +123,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
+    Source/TimeStretch.cpp
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
     Source/Loudness.cpp

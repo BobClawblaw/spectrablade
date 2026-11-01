@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 51: stretching clips**
+- Multitrack > Stretch Clip... asks for the selected clip's new length, from 50% to 200% of what it is now, and makes it that long at the same pitch. The part of the clip that plays is stretched into a 32-bit float WAV of its own ("Vocal Stretched.wav") in the session's recordings folder, and the clip plays all of it from where it started; its fades scale with it and its takes go. It is an undo step ("Stretch Clip"), and refused on a locked clip.
+- The stretching is waveform-similarity overlap-add (WSOLA), written from Verhelst and Roelands' 1993 paper: Hann-windowed frames of about 40 ms laid half a frame apart, each taken from within 10 ms of where it falls in the original, where it best continues the frame before (by the products of every channel, so channels out of phase don't cancel). All channels are cut at the same places.
+- It runs while the window waits: 10 s of stereo to 15 s took 891 ms in the tests, so a long clip holds the window up for a while.
+- Measured by the tests: lengths at 50%, 75%, 150% and 200%; a 440 Hz tone at -9.03 dBFS coming out at 440.00 Hz and -9.03 dBFS at each (measured over the middle half, by zero crossings and RMS); the right channel, the left inverted, staying exactly the inverse of the left; and on a clip, the part it plays stretched, fades scaled, and a locked clip refused. A first version found matching frames from the channels' sum, which this out-of-phase test caught (the pitch came out as much as 4.07% off). Music, speech and transients were not tested or listened to; the dialog was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 50: cutting at zero crossings**
 - Multitrack > Cut at Zero Crossings (off to start with, kept in the settings) moves Split Clip's cut and a dragged clip edge to the nearest point, up to 5 ms away, where the clip's audio crosses zero (its channels summed), so the cut doesn't click. Where there is none that close, the cut stays where it was. It works after snapping: an edge snapped to the cursor can then move up to 5 ms off it.
 - Measured by the tests: on a square wave changing sign every 50 frames, the nearest crossing within reach, none out of reach, none when another channel keeps the sum from crossing, and only inside the audio; through the real view, a split landing on the crossing with the option on and at the cursor with it off. Dragging an edge with the option on was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -379,6 +385,7 @@ The tests run against the real machine:
 - Moving the selected clips to the cursor, together, and not when locked.
 - Closing gaps on a track, around locked clips and keeping overlaps.
 - Zero crossings: finding them, and splits landing on them.
+- Time stretch: lengths, pitch and level kept on a tone, channels in step, and the clip edit.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -432,4 +439,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a clip's pitch-preserving time-stretch, which needs a stretching algorithm written from published methods
+1. Multitrack, continued: stretching, reversing and bouncing in the background with a progress bar and Cancel, so long clips don't hold the window up
