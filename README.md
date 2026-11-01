@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 70: clip gain lines**
+- Each clip can have a gain line: gain in dB, from -60 to +24, on top of the clip's own gain, changing over the clip in straight lines (in dB) between points. Multitrack > Clip Gain Lines shows every clip's line across its body, 0 dB half way up: click a line to add a point at the line's value, drag a point to move it (it stays between its neighbours and inside the part of the clip heard), Alt-click a point to remove it. Each is an undo step. Hidden, a clip with points still shows its line, fainter. Locked clips and clips on frozen tracks can't be changed. Where a shown track envelope's line is under the mouse too, the track envelope takes the click.
+- The points sit on the clip's audio, not the session's time, so the line stays with the sound when the clip is moved, trimmed or split (both parts keep it), and a take change shifts it with the take. Reversing a clip turns its line round and stretching or pitch-shifting scales it, both from the part heard. Playback, mixdowns, bounces, stems, regions and freezing all use it, and it is saved with the session.
+- The waveform drawn in the clip doesn't follow the line, and Normalize sets the clip's gain from its audio alone, ignoring the line.
+- Measured by the tests: a steady clip, trimmed, mixing with its line every 7th frame within 0.000001 of the mix without it times the line's gain (largest difference 0.000000014), with the points landing on the session frames they should; moved, trimmed and split, the clip mixing bit for bit the same where it still plays; reversing turning the line round (within 0.00000024) and stretching scaling its points; a take change shifting the line; a locked clip refused and values limited; the line through a session file; and, through the view, adding, dragging and removing a point, with nothing happening while the lines are hidden. How the lines look and the menu item were not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
+
 **Milestone 69: grouping clips**
 - Multitrack > Group Clips (Cmd G), also Group in a clip's right-click menu, groups the selected clips, on any tracks, locked ones too. Clicking any clip in a group then selects the whole group, so dragging it moves them all by the same amount, each on its own track, and deleting, nudging, locking, muting and the other edits on the selection act on them all; Shift-clicking a grouped clip takes the whole group out of the selection. Ungroup Clips (Cmd Shift G, or Ungroup in the menu) breaks up every group the selected clips are in. Grouping a clip again takes it out of its old group. Each is an undo step, and grouped clips show two chain links in their title bar.
 - Split parts of a grouped clip stay in its group; copies (Duplicate, Repeat, pasting, pasting time, Duplicate Track) don't join it. As before, a selection with a locked clip in it doesn't move. Select All and the other Select commands select what they match, not whole groups. Groups are saved with the session.
@@ -492,6 +498,7 @@ The tests run against the real machine:
 - Keyboard shortcuts: storing changes and restoring them over the defaults.
 - Freezing a track: the mix bit for bit, refused edits, the session file, collecting, and the lane.
 - Clip groups: the edits, the session file, and selecting and dragging a group in the view.
+- Clip gain lines: the mix, the line following edits, the session file, and editing points in the view.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -545,4 +552,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: clip gain envelopes, a volume line inside each clip that moves with it
+1. Multitrack, continued: track folders, tracks gathered under a folder that can be collapsed, with the folder's mute and solo over them

@@ -254,10 +254,101 @@ namespace
     }
 }
 
+namespace
+{
+    /** A clip's gain at a session frame, from its line, as a gain. */
+    float lineGain (const SessionClip& c, juce::int64 frame)
+    {
+        return juce::Decibels::decibelsToGain (c.gainEnvelope.valueAt (c.offset + frame - c.position), -150.0f);
+    }
+
+    void testClipGainEnvelope()
+    {
+        // A steady mono clip from 1000, its audio's first 500 frames trimmed off, with a line
+        // from 0 dB down to -12 dB and up to +6 dB.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        juce::AudioBuffer<float> steady (1, 20000);
+        steady.clear();
+        juce::FloatVectorOperations::fill (steady.getWritePointer (0), 0.25f, 20000);
+        const auto clip = SessionEdits::addClip (s, 0, juce::File ("/takes/steady.wav"), AudioEdits::fromBuffer (std::move (steady)), 1000);
+        SessionEdits::trimClip (s, clip, 1500, 1000 + 20000);
+        auto plain = s;
+        Envelope line;
+        line.points = { { 2000, 0.0f }, { 6000, -12.0f }, { 9000, 6.0f } };
+        const auto set = SessionEdits::setClipGainEnvelope (s, clip, line);
+        const juce::Range<juce::int64> range (0, 22000);
+        const auto withLine = mix (s, range), without = mix (plain, range);
+        const auto& c = s.tracks[0].clips[0];
+        auto worst = 0.0f;
+
+        for (int i = 0; i < 22000; i += 7)
+            for (int ch = 0; ch < 2; ++ch)
+                worst = juce::jmax (worst, std::abs (withLine.getSample (ch, i) - without.getSample (ch, i) * (i >= 1500 && i < 21000 ? lineGain (c, i) : 1.0f)));
+
+        // The clip plays its audio from frame 500 at session frame 1500: audio frame 6000 at 7000.
+        check (set && worst < 1.0e-6f && std::abs (lineGain (c, 7000) - juce::Decibels::decibelsToGain (-12.0f)) < 1.0e-6f
+                   && std::abs (lineGain (c, 10000) - juce::Decibels::decibelsToGain (6.0f)) < 1.0e-6f,
+               "clip gain line: the mix follows the line at the clip's audio frames, every 7th frame within 0.000001 (" + juce::String (worst, 9) + ")");
+
+        // Moved, trimmed further and split, the line stays with the sound.
+        auto moved = s;
+        SessionEdits::moveClip (moved, clip, 0, 4000);
+        const auto movedMix = mix (moved, { 2500, 24500 });
+        auto trimmed = s;
+        SessionEdits::trimClip (trimmed, clip, 3000, 21000);
+        const auto trimmedMix = mix (trimmed, { 3000, 21000 }), beforeTrim = mix (s, { 3000, 21000 });
+        auto split = s;
+        SessionEdits::splitClip (split, clip, 7000);
+        check (identical (mix (s, range), withLine) && identical (movedMix, mix (s, { 0, 22000 })) && identical (trimmedMix, beforeTrim)
+                   && identical (mix (split, range), withLine),
+               "clip gain line: moved, trimmed or split, the clip plays the same, bit for bit, where it still plays");
+
+        // Reversed and stretched, the line turns round or scales with the audio.
+        auto reversed = s;
+        const auto& r0 = reversed.tracks[0].clips[0];
+        const auto before = r0;
+        SessionEdits::reverseClip (reversed, clip, juce::File ("/takes/steady Reversed.wav"), SessionEdits::reversedAudio (r0));
+        const auto& r1 = reversed.tracks[0].clips[0];
+        auto reverseWorst = 0.0f;
+
+        for (juce::int64 i = 0; i < before.length; i += 11)
+            reverseWorst = juce::jmax (reverseWorst, std::abs (lineGain (r1, r1.position + i) - lineGain (before, before.position + before.length - 1 - i)));
+
+        auto stretched = s;
+        juce::AudioBuffer<float> twice (1, 39000);
+        twice.clear();
+        SessionEdits::stretchClip (stretched, clip, juce::File ("/takes/steady Stretched.wav"), AudioEdits::fromBuffer (std::move (twice)));
+        const auto& st = stretched.tracks[0].clips[0];
+        const auto& sp = st.gainEnvelope.points;
+        check (reverseWorst < 1.0e-6f && r1.offset == 0 && sp.size() == 5 && sp[1].frame == 3000 && sp[2].frame == 11000 && sp[3].frame == 17000
+                   && juce::exactlyEqual (sp[2].value, -12.0f) && sp.back().frame == 38999 - 1,
+               "clip gain line: reversing turns the line round (within " + juce::String (reverseWorst, 9) + "), stretching scales it");
+
+        // Choosing another take keeps the line on the same moments; a locked clip is refused,
+        // and values are kept to the clip gain's range.
+        auto takes = s;
+        auto& tc = takes.tracks[0].clips[0];
+        tc.takes = { { tc.source, tc.audio, 0 }, { tc.source, tc.audio, 300 } };
+        const auto chose = SessionEdits::chooseTake (takes, clip, 1);
+        const auto shifted = takes.tracks[0].clips[0].gainEnvelope.points[0].frame == 2300;
+        auto locked = s;
+        SessionEdits::setClipLocked (locked, clip, true);
+        const auto refused = ! SessionEdits::setClipGainEnvelope (locked, clip, {});
+        auto limited = s;
+        SessionEdits::setClipGainEnvelope (limited, clip, { { { 0, -90.0f }, { 10, 40.0f } } });
+        const auto& lp = limited.tracks[0].clips[0].gainEnvelope.points;
+        check (chose && shifted && refused && juce::exactlyEqual (lp[0].value, SessionClip::minGainDb) && juce::exactlyEqual (lp[1].value, SessionClip::maxGainDb),
+               "clip gain line: a take change shifts the line with the take, a locked clip is refused, values are limited");
+    }
+}
+
 void runBounceTests()
 {
     testTimeStretch();
     testFreeze();
+    testClipGainEnvelope();
 
     const juce::Range<juce::int64> range (0, 12000);
 

@@ -254,6 +254,12 @@ public:
         seconds. */
     void setShowBars (bool show)                  { showBars = show; repaint(); }
     bool isShowingBars() const noexcept           { return showBars; }
+
+    /** Shows each clip's gain line across its body, 0 dB half way up, for editing: a click on
+        a line adds a point, dragging moves one, Alt-click removes it. Hidden, a clip with points
+        still shows its line, fainter. */
+    void setShowClipGain (bool show)              { showClipGain = show; repaint(); }
+    bool isShowingClipGain() const noexcept       { return showClipGain; }
     void setCrossfading (bool on)                 { crossfading = on; }
 
     /** With automation writing on, a track's volume or pan control stays live while playing,
@@ -326,7 +332,14 @@ private:
     class TrackHeader;
     class SendsPanel;
 
-    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain };
+    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain, clipGainPoint };
+
+    /** A point of a clip's gain line, or a place on it. */
+    struct ClipGainHit
+    {
+        int track = -1, clip = -1;         // indices
+        int point = -1;                    // -1: on the line between points
+    };
 
     /** A point of a shown envelope, or a place on its line. */
     struct EnvelopeHit
@@ -364,6 +377,10 @@ private:
     juce::Rectangle<float> fadeHandle (int track, const SessionClip&, bool fadeOut) const;
 
     std::optional<EnvelopeHit> envelopeAt (juce::Point<int>) const;
+    std::optional<ClipGainHit> clipGainAt (juce::Point<int>) const;
+    juce::Rectangle<float> clipGainArea (int track, const SessionClip&) const;
+    juce::int64 clipAudioFrameForX (const SessionClip&, float x) const;
+    void drawClipGain (juce::Graphics&, int track, const SessionClip&) const;
     float yForValue (int track, const AutomationTarget&, float value) const;
     float valueForY (int track, const AutomationTarget&, float y) const;
     void drawEnvelope (juce::Graphics&, int track, const AutomationTarget&) const;
@@ -422,6 +439,7 @@ private:
     SessionTime copiedTime;
     std::set<juce::uint32> armed;
     bool showBars = false;
+    bool showClipGain = false;
     juce::Range<juce::int64> timeSelection, recording;
 
     Drag drag = Drag::none;
@@ -434,6 +452,7 @@ private:
     int dragTrack = 0;
     EnvelopeHit dragEnvelope;              // the point being dragged
     Envelope dragEnvelopeBase;             // its envelope, with the point, as the drag began
+    ClipGainHit dragClipGain;              // the clip gain point being dragged, its line as it began in dragEnvelopeBase
     juce::String dragDescription;          // the undo step a drag makes
 
     bool snapping = true, crossfading = true, writingAutomation = false, zeroCrossings = false;

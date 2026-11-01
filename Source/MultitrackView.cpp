@@ -1270,6 +1270,122 @@ std::optional<MultitrackView::EnvelopeHit> MultitrackView::envelopeAt (juce::Poi
     return std::abs ((float) p.y - lineY) <= 5.0f ? std::optional<EnvelopeHit> (hit) : std::nullopt;
 }
 
+namespace
+{
+    // A clip's gain line: its whole range, 0 dB half way up.
+    juce::NormalisableRange<float> clipGainScale()
+    {
+        juce::NormalisableRange<float> scale (SessionClip::minGainDb, SessionClip::maxGainDb);
+        scale.setSkewForCentre (0.0f);
+        return scale;
+    }
+
+    float yForClipGain (juce::Rectangle<float> area, float db)
+    {
+        return area.getBottom() - clipGainScale().convertTo0to1 (juce::jlimit (SessionClip::minGainDb, SessionClip::maxGainDb, db)) * area.getHeight();
+    }
+
+    float clipGainForY (juce::Rectangle<float> area, float y)
+    {
+        return clipGainScale().convertFrom0to1 (juce::jlimit (0.0f, 1.0f, (area.getBottom() - y) / area.getHeight()));
+    }
+}
+
+juce::Rectangle<float> MultitrackView::clipGainArea (int track, const SessionClip& c) const
+{
+    // The body below the title bar, a little in from its top and bottom.
+    return clipBounds (track, c).toFloat().withTrimmedTop (17.0f).reduced (0.0f, 4.0f);
+}
+
+juce::int64 MultitrackView::clipAudioFrameForX (const SessionClip& c, float x) const
+{
+    const auto frame = juce::jlimit (c.position, juce::jmax (c.position, c.getEnd() - 1), frameForX (x));
+    return c.offset + (frame - c.position);
+}
+
+std::optional<MultitrackView::ClipGainHit> MultitrackView::clipGainAt (juce::Point<int> p) const
+{
+    if (! showClipGain)
+        return std::nullopt;
+
+    const auto hit = clipAt (p);
+
+    if (! hit.has_value())
+        return std::nullopt;
+
+    const auto& track = shown().tracks[(size_t) hit->first];
+    const auto& clip = track.clips[(size_t) hit->second];
+    const auto area = clipGainArea (hit->first, clip);
+
+    if (clip.locked || track.isFrozen() || area.getHeight() < 8.0f)
+        return std::nullopt;
+
+    ClipGainHit found { hit->first, hit->second, -1 };
+    auto nearest = 7.0f;
+    const auto& points = clip.gainEnvelope.points;
+
+    for (size_t i = 0; i < points.size(); ++i)
+    {
+        const auto x = xForFrame (clip.position + points[i].frame - clip.offset);
+        const auto distance = p.toFloat().getDistanceFrom ({ x, yForClipGain (area, points[i].value) });
+
+        if (distance < nearest)
+        {
+            nearest = distance;
+            found.point = (int) i;
+        }
+    }
+
+    if (found.point >= 0)
+        return found;
+
+    const auto lineY = yForClipGain (area, clip.gainEnvelope.valueAt (clipAudioFrameForX (clip, (float) p.x)));
+    return std::abs ((float) p.y - lineY) <= 5.0f ? std::optional<ClipGainHit> (found) : std::nullopt;
+}
+
+void MultitrackView::drawClipGain (juce::Graphics& g, int track, const SessionClip& c) const
+{
+    if (! showClipGain && c.gainEnvelope.isEmpty())
+        return;
+
+    const auto area = clipGainArea (track, c);
+    const auto left = juce::jmax (area.getX(), (float) headerWidth), right = juce::jmin (area.getRight(), (float) timelineArea().getRight());
+
+    if (area.getHeight() < 8.0f || right <= left)
+        return;
+
+    // Sampled every other pixel: the line is straight in dB, and dB aren't spaced evenly here.
+    juce::Path line;
+
+    for (auto x = left; ; x = juce::jmin (right, x + 2.0f))
+    {
+        const auto y = yForClipGain (area, c.gainEnvelope.valueAt (clipAudioFrameForX (c, x)));
+
+        if (line.isEmpty())
+            line.startNewSubPath (x, y);
+        else
+            line.lineTo (x, y);
+
+        if (x >= right)
+            break;
+    }
+
+    const auto colour = juce::Colour (0xffffb35c).withAlpha (showClipGain ? 1.0f : 0.5f);
+    g.setColour (colour);
+    g.strokePath (line, juce::PathStrokeType (1.5f));
+
+    if (! showClipGain)
+        return;
+
+    for (auto& p : c.gainEnvelope.points)
+    {
+        const auto x = xForFrame (c.position + p.frame - c.offset);
+
+        if (x >= left - 4.0f && x <= right + 4.0f)
+            g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ x, yForClipGain (area, p.value) }));
+    }
+}
+
 juce::AudioProcessorParameter* MultitrackView::findEffectParameter (juce::uint32 trackId, const AutomationTarget& target) const
 {
     if (target.parameter != AutomationParameter::effect)
@@ -1692,6 +1808,9 @@ void MultitrackView::paint (juce::Graphics& g)
                 g.drawText ("Frozen", lane.withTrimmedLeft (6).withTrimmedBottom (3).withHeight (lane.getHeight() - 3),
                             juce::Justification::bottomLeft);
             }
+
+            for (auto& c : track.clips)
+                drawClipGain (g, t, c);
 
             if (const auto parameter = getShownEnvelope (track.id))
                 drawEnvelope (g, t, *parameter);
@@ -2933,6 +3052,43 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    if (const auto hit = clipGainAt (p))
+    {
+        const auto& clip = shown().tracks[(size_t) hit->track].clips[(size_t) hit->clip];
+        auto envelope = clip.gainEnvelope;
+        selectTrack (hit->track);
+
+        if (hit->point >= 0 && e.mods.isAltDown())
+        {
+            envelope.remove (hit->point);
+            auto next = *engine.session.getState();
+            SessionEdits::setClipGainEnvelope (next, clip.id, std::move (envelope));
+            engine.session.apply (std::move (next), "Delete Clip Gain Point");
+            return;
+        }
+
+        dragClip = clip;
+        dragClipGain = *hit;
+        dragDescription = "Move Clip Gain Point";
+
+        // A click on the line adds a point there, at the value the line has, and drags it.
+        if (hit->point < 0)
+        {
+            const auto frame = clipAudioFrameForX (clip, (float) p.x);
+            dragClipGain.point = envelope.add (frame, envelope.valueAt (frame));
+            dragDescription = "Add Clip Gain Point";
+
+            auto next = *engine.session.getState();
+            SessionEdits::setClipGainEnvelope (next, clip.id, envelope);
+            preview = std::move (next);
+        }
+
+        dragEnvelopeBase = std::move (envelope);
+        drag = Drag::clipGainPoint;
+        repaint();
+        return;
+    }
+
     if (const auto hit = clipAt (p))
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
@@ -3051,6 +3207,14 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         case Drag::fadeOut:
             SessionEdits::setClipFades (next, dragClip.id, dragClip.fadeIn, dragClip.getEnd() - snapped (frameForX ((float) p.x), dragClip.id));
             break;
+        case Drag::clipGainPoint:
+        {
+            // Kept within the part of the clip heard.
+            auto envelope = dragEnvelopeBase;
+            envelope.move (dragClipGain.point, clipAudioFrameForX (dragClip, (float) p.x), clipGainForY (clipGainArea (dragClipGain.track, dragClip), (float) p.y));
+            SessionEdits::setClipGainEnvelope (next, dragClip.id, std::move (envelope));
+            break;
+        }
         case Drag::envelopePoint:
         {
             auto envelope = dragEnvelopeBase;
@@ -3132,6 +3296,10 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
     {
         cursorShape = envelope->point >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::CrosshairCursor;
     }
+    else if (const auto gain = clipGainAt (p))
+    {
+        cursorShape = gain->point >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::CrosshairCursor;
+    }
     else if (const auto hit = clipAt (p))
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
@@ -3157,7 +3325,7 @@ void MultitrackView::mouseDoubleClick (const juce::MouseEvent& e)
         return;
     }
 
-    if (envelopeAt (p).has_value())
+    if (envelopeAt (p).has_value() || clipGainAt (p).has_value())
         return;
 
     if (const auto hit = clipAt (p); hit.has_value() && onOpenInEditor != nullptr)

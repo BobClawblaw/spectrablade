@@ -72,6 +72,7 @@ namespace SessionMixer
     {
         juce::AudioBuffer<float> clip, track, held, discard;
         juce::AudioBuffer<float> automation;   // pan, volume: envelope values for the block
+        juce::AudioBuffer<float> clipGains;    // a clip's gain envelope for the block, in dB then as gains
         std::map<juce::uint32, juce::AudioBuffer<float>> buses;
 
         struct Delay
@@ -85,7 +86,7 @@ namespace SessionMixer
 
         void reserve (int frames)
         {
-            for (auto* b : { &clip, &track, &held, &discard, &automation })
+            for (auto* b : { &clip, &track, &held, &discard, &automation, &clipGains })
                 b->setSize (2, frames);
         }
     };

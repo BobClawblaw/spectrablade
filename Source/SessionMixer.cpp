@@ -190,7 +190,7 @@ namespace
     /** The track's clips, panned, before its effects and volume, into frames [0, numFrames) of out.
         pans, when the pan is automated, holds the pan for each of those frames. */
     void renderTrack (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
-                      juce::AudioBuffer<float>& scratch, const float* pans)
+                      juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains, const float* pans)
     {
         out.clear (0, 0, numFrames);
         out.clear (1, 0, numFrames);
@@ -222,6 +222,20 @@ namespace
                                 * FadeShapes::level (clip.fadeOutShape, clip.length - 1 - inClip, clip.fadeOut);
                     }
                 }
+            }
+
+            // The gain envelope, read at the clip's audio frames.
+            if (! clip.gainEnvelope.isEmpty())
+            {
+                grow (gains, count);
+                auto* g = gains.getWritePointer (0);
+                clip.gainEnvelope.fill (clip.offset + (from - clip.position), g, count);
+
+                for (int i = 0; i < count; ++i)
+                    g[i] = juce::Decibels::decibelsToGain (g[i], -150.0f);
+
+                for (int ch = 0; ch < channels; ++ch)
+                    juce::FloatVectorOperations::multiply (scratch.getWritePointer (ch), g, count);
             }
 
             const auto clipGain = juce::Decibels::decibelsToGain (clip.gainDb, -150.0f);
@@ -290,7 +304,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (track.isFrozen())
             readFrozen (track, start + ahead, buffers.track, numFrames);
         else if (live == nullptr || live->clips)
-            renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, panAutomated ? pans : nullptr);
+            renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, buffers.clipGains, panAutomated ? pans : nullptr);
         else
             buffers.track.clear (0, numFrames);
 

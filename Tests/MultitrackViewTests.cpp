@@ -1607,6 +1607,49 @@ void runMultitrackViewTests (AudioEngine& engine)
     }
 
     {
+        // Clip gain lines: shown, a click on a clip's line adds a point at the line's value, a
+        // drag moves it, Alt-click removes it; hidden, a click on the line selects the clip.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        const auto a = SessionEdits::addClip (s, 0, juce::File ("/tmp/a.wav"), silence (240000), 48000);
+        engine.session.reset (s, {});
+
+        // A view of its own, with no track envelopes shown from earlier.
+        MultitrackView gainView (engine);
+        gainView.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 3 * MultitrackView::trackHeight + 12);
+        gainView.zoomToFit();
+        gainView.setSnapping (false);
+        Mouse gainMouse { gainView };
+        Mouse::settle();
+        const auto shown = gainView.getVisibleFrames();
+        const auto at = [&] (juce::int64 frame) { return (float) ((double) MultitrackView::headerWidth + ((double) frame - shown.getStart()) / (shown.getLength() / timelineWidth)); };
+        const auto linePoints = [&] { return engine.session.getState()->tracks[0].clips[0].gainEnvelope.points; };
+
+        // 0 dB is half way down the body, below the 16-pixel title bar and 4 pixels in.
+        const auto top = (float) MultitrackView::rulerHeight + 3.0f + 17.0f + 4.0f, bottom = (float) (MultitrackView::rulerHeight + MultitrackView::trackHeight) - 3.0f - 4.0f;
+        const auto zeroY = (top + bottom) / 2.0f;
+        gainMouse.click ({ at (96000), zeroY });
+        const auto hiddenDoesNothing = linePoints().empty() && gainView.getSelectedClips() == std::vector<juce::uint32> { a };
+
+        gainView.setShowClipGain (true);
+        Mouse::settle();
+        gainMouse.click ({ at (96000), zeroY });
+        const auto added = linePoints().size() == 1 && std::abs (linePoints()[0].frame - 48000) < 600 && std::abs (linePoints()[0].value) < 0.5f
+                           && engine.session.getUndoDescription() == "Add Clip Gain Point";
+        const auto pointAt = linePoints().empty() ? (juce::int64) 48000 : linePoints()[0].frame;   // of the clip's audio
+        gainMouse.drag ({ at (pointAt + 48000), zeroY }, { at (192000), bottom });
+        const auto dragged = linePoints().size() == 1 && std::abs (linePoints()[0].frame - 144000) < 600
+                             && juce::exactlyEqual (linePoints()[0].value, SessionClip::minGainDb)
+                             && engine.session.getUndoDescription() == "Move Clip Gain Point";
+        gainMouse.click ({ at ((linePoints().empty() ? (juce::int64) 144000 : linePoints()[0].frame) + 48000), bottom }, juce::ModifierKeys::altModifier);
+        const auto removed = linePoints().empty() && engine.session.getUndoDescription() == "Delete Clip Gain Point";
+
+        check (hiddenDoesNothing && added && dragged && removed,
+               "clip gain line: with the lines shown, clicking a clip's line adds a point, dragging moves it (by its clip's audio frames), Alt-click removes it");
+    }
+
+    {
         // A frozen track: an icy wash over the lane where its frozen audio plays, past its clips.
         SessionState s;
         s.sampleRate = rate;

@@ -28,6 +28,40 @@ namespace FadeShapes
     FadeShape fromId (const juce::String&);   // S-curve for one it doesn't know
 }
 
+/** A point on an envelope: the value at a frame (of the session, or for a clip's gain, of its audio). */
+struct AutomationPoint
+{
+    juce::int64 frame = 0;
+    float value = 0.0f;
+
+    bool operator== (const AutomationPoint& o) const noexcept { return frame == o.frame && juce::exactlyEqual (value, o.value); }
+};
+
+/** How a value (a track's volume or pan, a clip's gain) changes over time: points in time
+    order, joined by straight lines. Before the first point the value is the first point's,
+    after the last the last's. An envelope with no points leaves the setting in charge. */
+struct Envelope
+{
+    std::vector<AutomationPoint> points;
+
+    bool isEmpty() const noexcept                 { return points.empty(); }
+    float valueAt (juce::int64 frame) const;
+
+    /** The values at frames start to start + n - 1; the same as valueAt at each, however the
+        frames are split into blocks. */
+    void fill (juce::int64 start, float* out, int n) const;
+
+    /** Adds a point (after any others at the same frame, not before 0); returns its index. */
+    int add (juce::int64 frame, float value);
+
+    /** Moves a point, keeping it between its neighbours in time and not before 0. Returns its index. */
+    int move (int index, juce::int64 frame, float value);
+
+    void remove (int index);
+
+    bool operator== (const Envelope& o) const noexcept { return points == o.points; }
+};
+
 struct SessionClip
 {
     juce::uint32 id = 0;
@@ -44,6 +78,11 @@ struct SessionClip
     bool muted = false;                    // stays in place but isn't heard (in playback, mixdowns, bounces and stems)
     int colour = -1;                       // a place in TrackColours::palette, or -1 for its track's colour
     juce::uint32 groupId = 0;              // clips sharing a non-zero id are selected (so moved and deleted) together
+
+    /** Gain in dB on top of gainDb, from minGainDb to maxGainDb, its points at frames of the
+        clip's audio, so the line stays with the sound when the clip is moved, trimmed or split.
+        Empty: none. */
+    Envelope gainEnvelope;
     juce::String note;                     // free text, shown along the clip's bottom edge
 
     static constexpr float minGainDb = -60.0f, maxGainDb = 24.0f;
@@ -70,40 +109,6 @@ struct SessionSend
     juce::uint32 busId = 0;
     float gainDb = 0.0f;
     bool preFader = false;
-};
-
-/** A point on an envelope: the value at a session frame. */
-struct AutomationPoint
-{
-    juce::int64 frame = 0;
-    float value = 0.0f;
-
-    bool operator== (const AutomationPoint& o) const noexcept { return frame == o.frame && juce::exactlyEqual (value, o.value); }
-};
-
-/** How a track's volume or pan changes over time: points in time order, joined by straight
-    lines. Before the first point the value is the first point's, after the last the last's.
-    An envelope with no points leaves the track's own setting in charge. */
-struct Envelope
-{
-    std::vector<AutomationPoint> points;
-
-    bool isEmpty() const noexcept                 { return points.empty(); }
-    float valueAt (juce::int64 frame) const;
-
-    /** The values at frames start to start + n - 1; the same as valueAt at each, however the
-        frames are split into blocks. */
-    void fill (juce::int64 start, float* out, int n) const;
-
-    /** Adds a point (after any others at the same frame, not before 0); returns its index. */
-    int add (juce::int64 frame, float value);
-
-    /** Moves a point, keeping it between its neighbours in time and not before 0. Returns its index. */
-    int move (int index, juce::int64 frame, float value);
-
-    void remove (int index);
-
-    bool operator== (const Envelope& o) const noexcept { return points == o.points; }
 };
 
 /** What an envelope automates: a track's volume or pan, or a parameter of one of its effects. */
@@ -310,6 +315,10 @@ namespace SessionEdits
         audio, where its channels' sum crosses zero: the sum changes sign between the frame before
         and it, or is 0 there. `frame` itself when there is none. */
     juce::int64 zeroCrossingNear (const SessionClip&, juce::int64 frame, juce::int64 within);
+
+    /** Sets a clip's gain envelope (see SessionClip::gainEnvelope), its values limited to
+        SessionClip::minGainDb to maxGainDb. False for a locked clip, or one on a frozen track. */
+    bool setClipGainEnvelope (SessionState&, juce::uint32 clipId, Envelope);
 
     /** Groups clips, locked or not, so selecting one selects them all; they leave any group they
         were in. Returns the group's id, or 0 when fewer than two of them exist. */

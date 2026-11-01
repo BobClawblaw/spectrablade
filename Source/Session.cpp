@@ -423,6 +423,11 @@ bool chooseTake (SessionState& s, juce::uint32 clipId, int index)
     c->length = end - start;
     c->position = start;
     c->activeTake = index;
+
+    // The same moment is to.shift - from.shift frames further into the new take's audio.
+    for (auto& p : c->gainEnvelope.points)
+        p.frame += to.shift - from.shift;
+
     limitFades (*c);
     return true;
 }
@@ -450,6 +455,20 @@ bool setClipColour (SessionState& s, juce::uint32 clipId, int colour)
         return false;
 
     c->colour = colour;
+    return true;
+}
+
+bool setClipGainEnvelope (SessionState& s, juce::uint32 clipId, Envelope envelope)
+{
+    auto* c = findUnlocked (s, clipId);
+
+    if (c == nullptr)
+        return false;
+
+    for (auto& p : envelope.points)
+        p.value = juce::jlimit (SessionClip::minGainDb, SessionClip::maxGainDb, p.value);
+
+    c->gainEnvelope = std::move (envelope);
     return true;
 }
 
@@ -703,6 +722,33 @@ AudioDocument::Snapshot reversedAudio (const SessionClip& c)
     return AudioEdits::reverse (part, 0, part.getNumFrames());
 }
 
+}
+
+namespace
+{
+    /** An envelope's line across [start, end), from 0: its value at start, its points inside,
+        and its value at the last frame. Empty for an empty envelope. */
+    Envelope lineAcross (const Envelope& e, juce::int64 start, juce::int64 end)
+    {
+        if (e.isEmpty())
+            return {};
+
+        Envelope out;
+        out.points.push_back ({ 0, e.valueAt (start) });
+
+        for (auto& p : e.points)
+            if (p.frame > start && p.frame < end - 1)
+                out.points.push_back ({ p.frame - start, p.value });
+
+        if (end - 1 > start)
+            out.points.push_back ({ end - 1 - start, e.valueAt (end - 1) });
+
+        return out;
+    }
+}
+
+namespace SessionEdits
+{
 bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot reversed)
 {
     auto* c = findUnlocked (s, clipId);
@@ -710,6 +756,14 @@ bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     if (c == nullptr || reversed == nullptr)
         return false;
 
+    // The line across the part heard, back to front, as the new audio is.
+    auto line = lineAcross (c->gainEnvelope, c->offset, c->offset + c->length);
+    std::reverse (line.points.begin(), line.points.end());
+
+    for (auto& p : line.points)
+        p.frame = c->length - 1 - p.frame;
+
+    c->gainEnvelope = std::move (line);
     c->source = file;
     c->length = reversed->getNumFrames();
     c->audio = std::move (reversed);
@@ -751,6 +805,12 @@ bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
         return false;
 
     const auto scale = (double) stretched->getNumFrames() / (double) c->length;
+    auto line = lineAcross (c->gainEnvelope, c->offset, c->offset + c->length);
+
+    for (auto& p : line.points)
+        p.frame = (juce::int64) std::llround ((double) p.frame * scale);
+
+    c->gainEnvelope = std::move (line);
     c->source = file;
     c->length = stretched->getNumFrames();
     c->audio = std::move (stretched);
@@ -1101,26 +1161,6 @@ bool insertTime (SessionState& s, juce::int64 at, juce::int64 length)
 
 namespace
 {
-    /** An envelope's line across [start, end), from 0: its value at start, its points inside,
-        and its value at the last frame. Empty for an empty envelope. */
-    Envelope lineAcross (const Envelope& e, juce::int64 start, juce::int64 end)
-    {
-        if (e.isEmpty())
-            return {};
-
-        Envelope out;
-        out.points.push_back ({ 0, e.valueAt (start) });
-
-        for (auto& p : e.points)
-            if (p.frame > start && p.frame < end - 1)
-                out.points.push_back ({ p.frame - start, p.value });
-
-        if (end - 1 > start)
-            out.points.push_back ({ end - 1 - start, e.valueAt (end - 1) });
-
-        return out;
-    }
-
     /** `before` (an envelope as it was, or with no points, the constant `setting`) with `length`
         frames put in at `at` holding `line` (from lineAcross). The line before `at` and after
         the new time keep their shape. */
@@ -1815,6 +1855,18 @@ juce::String save (const SessionState& state, const juce::File& target,
             if (c.note.isNotEmpty())
                 clip->setAttribute ("note", c.note);
 
+            if (! c.gainEnvelope.isEmpty())
+            {
+                auto* gainXml = clip->createNewChildElement ("GAIN");
+
+                for (auto& point : c.gainEnvelope.points)
+                {
+                    auto* pointXml = gainXml->createNewChildElement ("POINT");
+                    pointXml->setAttribute ("frame", juce::String (point.frame));
+                    pointXml->setAttribute ("value", point.value);
+                }
+            }
+
             if (! c.takes.empty())
             {
                 clip->setAttribute ("activeTake", c.activeTake);
@@ -1998,6 +2050,12 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
                 clip.groupId = id;
             }
+
+            if (auto* gainXml = clipXml->getChildByName ("GAIN"))
+                for (auto* pointXml : gainXml->getChildWithTagNameIterator ("POINT"))
+                    clip.gainEnvelope.points.push_back ({ pointXml->getStringAttribute ("frame").getLargeIntValue(),
+                                                         juce::jlimit (SessionClip::minGainDb, SessionClip::maxGainDb,
+                                                                       (float) pointXml->getDoubleAttribute ("value")) });
 
             // Takes, kept only when every one's audio is there; otherwise the clip plays the one it had.
             std::vector<SessionClip::Take> takes;

@@ -793,6 +793,32 @@ namespace
                "clip groups: kept in a session file, each group with a fresh id, a group left with one clip too");
     }
 
+    void testClipGainFile (AudioEngine& engine)
+    {
+        const auto folder = juce::File::createTempFile ("clipgain");
+        folder.createDirectory();
+        const auto take = folder.getChildFile ("take.wav");
+        const auto written = AudioFileIO::save (*constant (1, 4800, 0.1f), rate, take, 24, engine.formatManager).isEmpty();
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        const auto a = SessionEdits::addClip (s, 0, take, constant (1, 4800, 0.1f), 0);
+        SessionEdits::addClip (s, 0, take, constant (1, 4800, 0.1f), 9600);
+        const Envelope line { { { 100, -3.5f }, { 2000, 0.0f }, { 4000, 12.0f } } };
+        SessionEdits::setClipGainEnvelope (s, a, line);
+        const auto sessionFile = folder.getChildFile ("Gain.sbsession");
+        const auto error = SessionFile::save (s, sessionFile);
+        const auto text = sessionFile.loadFileAsString();
+        const auto loaded = SessionFile::load (sessionFile, engine.formatManager);
+        folder.deleteRecursively();
+        const auto& lc = loaded.state.tracks[0].clips;
+
+        check (written && error.isEmpty() && loaded.error.isEmpty() && lc.size() == 2 && lc[0].gainEnvelope == line && lc[1].gainEnvelope.isEmpty()
+                   && text.indexOf ("<GAIN") == text.lastIndexOf ("<GAIN"),
+               "clip gain line: kept in a session file, and left out for a clip without one");
+    }
+
     /** Two commands with default keys, as the main window has many. */
     struct TwoCommands final : public juce::ApplicationCommandTarget
     {
@@ -859,4 +885,5 @@ void runMixerTests (AudioEngine& engine)
     testKeyShortcuts();
     testFrozenFile (engine);
     testClipGroups (engine);
+    testClipGainFile (engine);
 }
