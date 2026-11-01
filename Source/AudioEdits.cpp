@@ -576,4 +576,26 @@ juce::Range<juce::int64> toZeroCrossings (Snapshot s, juce::Range<juce::int64> r
     const auto end = SessionEdits::zeroCrossingNear (whole, range.getEnd(), within);
     return end > start ? juce::Range<juce::int64> (start, end) : range;
 }
+
+Snapshot crossfadeLoop (const AudioSnapshot& s, juce::int64 start, juce::int64 end, juce::int64 fade)
+{
+    const auto r = clampRange (s, start, end);
+
+    if (fade <= 0 || fade > r.getLength() / 2 || fade > r.getStart() || fade > std::numeric_limits<int>::max())
+        return nullptr;
+
+    const auto lead = readRange (s, r.getStart() - fade, r.getStart());
+
+    return processRange (s, r.getEnd() - fade, r.getEnd(), [&lead, fade] (juce::AudioBuffer<float>& b)
+    {
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const auto in = FadeShapes::level (FadeShape::equalPower, i + 1, fade);
+            const auto out = FadeShapes::level (FadeShape::equalPower, fade - 1 - i, fade);
+
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                b.setSample (ch, i, b.getSample (ch, i) * out + lead.getSample (ch, i) * in);
+        }
+    });
+}
 }

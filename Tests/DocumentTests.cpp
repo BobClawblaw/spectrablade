@@ -296,6 +296,28 @@ namespace
                    && AudioEdits::toZeroCrossings (squareSnap, { 5, 5 }, 20) == R (5, 5),
                "selection to zero crossings: each end to the nearest crossing in reach, one with none in reach left; an empty one stays");
 
+        // Crossfade loop over [400, 800) with 100 frames: frames up to 700 and outside the range are
+        // untouched, frame 799 becomes frame 399, and the frames in between are a blend of the two.
+        juce::AudioBuffer<float> rampUp (1, 1000);
+
+        for (int i = 0; i < 1000; ++i)
+            rampUp.setSample (0, i, (float) i / 1000.0f);
+
+        const auto rampSnap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (rampUp));
+        const auto looped = readAll (*AudioEdits::crossfadeLoop (*rampSnap, 400, 800, 100));
+        auto loopKept = true;
+
+        for (int i = 0; i < 1000; ++i)
+            if (i < 700 || i >= 800)
+                loopKept = loopKept && juce::exactlyEqual (looped.getSample (0, i), rampUp.getSample (0, i));
+
+        const auto middle = looped.getSample (0, 750);
+        check (loopKept && juce::exactlyEqual (looped.getSample (0, 799), rampUp.getSample (0, 399))
+                   && ! juce::exactlyEqual (middle, rampUp.getSample (0, 750)) && ! juce::exactlyEqual (middle, rampUp.getSample (0, 350))
+                   && ! AudioEdits::crossfadeLoop (*rampSnap, 400, 800, 0) && ! AudioEdits::crossfadeLoop (*rampSnap, 400, 800, 201)
+                   && ! AudioEdits::crossfadeLoop (*rampSnap, 50, 800, 100),
+               "crossfade loop: the end blended into the audio before the start, its last frame the one before the start; bad lengths refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

@@ -130,6 +130,7 @@ private:
     static constexpr float clipLevel = 0.999f;
     static constexpr int clipRun = 3;
     void applyFade (bool out);
+    void showCrossfadeLoop();
     void showBalance();
     void showSetSelection();
     void convertChannels (int numChannels);

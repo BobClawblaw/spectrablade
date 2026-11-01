@@ -105,6 +105,12 @@ namespace AudioEdits
         nearby stays, and the range is kept from turning inside out. */
     juce::Range<juce::int64> toZeroCrossings (Snapshot, juce::Range<juce::int64>, juce::int64 within);
 
+    /** Makes [start, end) loop smoothly: its last `fade` frames are crossfaded (equal power) into
+        the `fade` frames just before start, so its last frame is the one before start and playing
+        on from end back to start continues as the audio did. nullptr when fade is not positive,
+        more than half the range, or more than the audio before start. */
+    Snapshot crossfadeLoop (const AudioSnapshot&, juce::int64 start, juce::int64 end, juce::int64 fade);
+
     /** Largest absolute sample value in [start, end) across all channels. */
     float peakLevel (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
