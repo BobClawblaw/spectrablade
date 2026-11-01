@@ -206,6 +206,44 @@ void runBusTests()
                    + juce::String (juce::jmax (w3, w4), 9) + " against sums made by hand)");
     }
 
+    // Polarity: a track's output (with what it sends) turned upside down, bit for bit; a bus's too.
+    {
+        const auto negated = [] (juce::AudioBuffer<float> b)
+        {
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                juce::FloatVectorOperations::negate (b.getWritePointer (ch), b.getReadPointer (ch), b.getNumSamples());
+
+            return b;
+        };
+
+        auto onlyA = s;
+        onlyA.tracks[1].mute = true;
+        auto invertedA = onlyA;
+        invertedA.tracks[0].invertPolarity = true;
+        auto onlyB = s;
+        onlyB.tracks[0].mute = true;
+        auto invertedB = onlyB;
+        invertedB.tracks[1].invertPolarity = true;
+        const auto trackFlipped = same (play (invertedA, 0, length, 512, nullptr), negated (play (onlyA, 0, length, 512, nullptr)))
+                                  && same (play (invertedB, 0, length, 512, nullptr), negated (play (onlyB, 0, length, 512, nullptr)));
+
+        // A inverted and X inverted: A's direct sound upside down, its send through X the right way up.
+        auto twice = invertedA;
+        twice.tracks[2].invertPolarity = true;
+        juce::AudioBuffer<float> expected (2, length);
+        expected.clear();
+        add (expected, aPost, -1.0f, -1.0f);
+        add (expected, aPost, x * xl, x * xr);
+        const auto w = worst (play (twice, 0, length, 512, nullptr), expected);
+
+        auto frozenFrom = s;
+        frozenFrom.tracks[0].invertPolarity = true;
+        const auto source = SessionEdits::frozenSource (frozenFrom, frozenFrom.tracks[0].id);
+        check (trackFlipped && w < 1.0e-6f && source.tracks.size() == 1 && ! source.tracks[0].invertPolarity,
+               "polarity: an inverted track sounds (and sends, before and after its volume) exactly upside down; an inverted bus flips what reaches it; "
+               "freezing renders without it (worst " + juce::String (w, 9) + " against sums made by hand)");
+    }
+
     // Delay compensation through buses: effects on A (300), X (500) and Y (64), none on B.
     {
         const auto dry = play (s, 0, length, length, nullptr);

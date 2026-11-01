@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 88: polarity invert**
+- Each track and bus can have its polarity inverted: its output is turned upside down after its effects and before its volume, so what it sends to buses (before or after its volume) is inverted too. Use it to fix a microphone that is wired backwards, or to line up two microphones on one source.
+- In the mixer each strip has a Ø switch between M and S. In the track headers it is Invert Polarity in the right-click menu, and a yellow Ø before the name marks an inverted track. Both are undo steps ("Invert Polarity", "Restore Polarity"), and the session file keeps the setting.
+- A frozen track's audio is rendered without the inversion, which is applied as the track plays, so it sounds the same frozen or live and can be switched without freezing again.
+- Measured by the tests, through the session mixer: an inverted track (with a send after its volume, and with one before it and one after) playing exactly the negation of the same track uninverted, bit for bit; a track and the bus it feeds both inverted, so its direct sound is upside down and its send through the bus the right way up (worst difference 0 against the sum made by hand); and the freezing source state dropping the inversion. Also the strip's switch, the header command, the undo steps and the session file. The header menu and the Ø mark were not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
+
 **Milestone 87: searching the marker list**
 - The marker list has a search box like the clip list's: type to show only the markers and regions whose name contains the text, ignoring case and spaces around it; Escape clears it. Clicking, renaming and deleting act on the marker a row shows, and the list keeps following edits and undo while filtered.
 - Measured by the tests: a search in capitals finding one region; that row choosing the region (index 1, not row 0) and selecting its range; a marker renamed to match joining the list in time order; a search matching nothing; and clearing it showing every marker again. Typing into the box and Escape were not checked by the tests, nor renaming or deleting from a filtered list (they use the same row-to-marker mapping as choosing), and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -592,6 +598,7 @@ The tests run against the real machine:
 - The mixer strip menu: solo safe and colour, ticks and undo steps.
 - Clip list search: names, files, tracks, case and following edits.
 - Marker list search: names, case, rows mapped to markers and following edits.
+- Polarity: inverted tracks and buses through the mixer, freezing, the strip switch and the session file.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -645,4 +652,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a polarity (phase) invert switch for each track and bus, in the header and the mixer
+1. Multitrack, continued: Tap Tempo, setting the session tempo from the spacing of taps on a key

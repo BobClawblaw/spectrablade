@@ -1188,6 +1188,30 @@ namespace
         const auto cleared = ! engine.session.getState()->tracks[1].soloSafe && engine.session.getUndoDescription() == "Not Solo Safe";
         check (offered && made && ticked && coloured && colourTicked && cleared,
                "mixer: a strip's menu makes it solo safe and back and sets its colour, as undo steps, ticking what is set");
+
+        // The polarity switch on a strip and in the header menu's command; kept in session files.
+        mixer.findPolarity (busId)->triggerClick();
+        settle();
+        const auto flipped = engine.session.getState()->tracks[1].invertPolarity && engine.session.getUndoDescription() == "Invert Polarity"
+                             && mixer.findPolarity (busId)->getToggleState() && mixer.findPolarity (999) == nullptr;
+        MultitrackView view (engine);
+        const auto trackId = engine.session.getState()->tracks[0].id;
+        view.setTrackPolarityInverted (trackId, true);
+        settle();
+        const auto both = engine.session.getState()->tracks[0].invertPolarity && mixer.findPolarity (trackId)->getToggleState();
+
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (*engine.session.getState(), file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        auto text = file.loadFileAsString();
+        file.deleteFile();
+        const auto filed = error.isEmpty() && loaded.state.tracks.size() == 2 && loaded.state.tracks[0].invertPolarity
+                           && loaded.state.tracks[1].invertPolarity && text.contains ("invert=\"1\"");
+
+        view.setTrackPolarityInverted (trackId, false);
+        const auto restored = ! engine.session.getState()->tracks[0].invertPolarity && engine.session.getUndoDescription() == "Restore Polarity";
+        check (flipped && both && filed && restored,
+               "polarity: the strip's switch and the header's command invert a track or bus as undo steps, shown on the strip, and kept in session files");
     }
 
     void testLoadReadout (AudioEngine& engine)

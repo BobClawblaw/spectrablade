@@ -180,6 +180,7 @@ struct SessionTrack
     float pan = 0.0f;                      // -1 (left) to +1 (right)
     bool mute = false, solo = false;
     bool soloSafe = false;                 // keeps playing when other tracks are soloed (a reverb return, say)
+    bool invertPolarity = false;           // its output turned upside down, after its effects and before its volume
     int group = 0;                         // 0 for none, or 1 to maxGroups: volume, mute and solo changes follow through it
     int colour = -1;                       // a place in TrackColours::palette, or -1 for one by its place in the list
     bool hidden = false;                   // left out of the lanes (it still plays and shows in the mixer)

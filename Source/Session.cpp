@@ -1384,6 +1384,7 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
         auto t = *track;
         t.sends.clear();
         t.mute = t.solo = false;
+        t.invertPolarity = false;   // applied after the frozen audio, as after live effects
         t.gainDb = 0.0f;
         t.volumeEnvelope = {};
         t.frozenAudio = nullptr;
@@ -1828,6 +1829,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.soloSafe)
             track->setAttribute ("soloSafe", true);
 
+        if (t.invertPolarity)
+            track->setAttribute ("invert", true);
+
         if (t.group != 0)
             track->setAttribute ("group", t.group);
 
@@ -2050,6 +2054,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.mute = trackXml->getBoolAttribute ("mute");
         track.solo = trackXml->getBoolAttribute ("solo");
         track.soloSafe = trackXml->getBoolAttribute ("soloSafe");
+        track.invertPolarity = trackXml->getBoolAttribute ("invert");
         track.group = juce::jlimit (0, SessionTrack::maxGroups, trackXml->getIntAttribute ("group"));
         track.colour = juce::jlimit (-1, 7, trackXml->getIntAttribute ("colour", -1));
         track.hidden = trackXml->getBoolAttribute ("hidden");

@@ -120,12 +120,22 @@ public:
             b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? juce::Colour (0xffd0453a) : juce::Colour (0xffd8b43a));
         }
 
+        polarity.setClickingTogglesState (true);
+        polarity.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffe3c74f));
+        polarity.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
+        polarity.setTooltip ("Invert polarity: turn the track's output upside down, after its effects");
+        polarity.onClick = [this]
+        {
+            const auto on = polarity.getToggleState();
+            edit (on ? "Invert Polarity" : "Restore Polarity", false, [on] (SessionTrack& t) { t.invertPolarity = on; });
+        };
+
         mute.setTooltip ("Mute");
         solo.setTooltip ("Solo: play only soloed tracks");
         mute.onClick = [this] { const auto on = mute.getToggleState(); edit (on ? "Mute" : "Unmute", false, [on] (SessionTrack& t) { t.mute = on; }); };
         solo.onClick = [this] { const auto on = solo.getToggleState(); edit (on ? "Solo" : "Unsolo", false, [on] (SessionTrack& t) { t.solo = on; }); };
 
-        for (auto* c : std::initializer_list<juce::Component*> { &fader, &pan, &mute, &solo })
+        for (auto* c : std::initializer_list<juce::Component*> { &fader, &pan, &mute, &polarity, &solo })
             addAndMakeVisible (c);
     }
 
@@ -139,12 +149,14 @@ public:
         {
             pan.setVisible (! isFolder);
             meter.setVisible (! isFolder);
+            polarity.setVisible (! isFolder);
         }
 
         colour = TrackColours::of (t, index);
         name.setText (t.name, juce::dontSendNotification);
         mute.setToggleState (t.mute, juce::dontSendNotification);
         solo.setToggleState (t.solo, juce::dontSendNotification);
+        polarity.setToggleState (t.invertPolarity, juce::dontSendNotification);
         solo.setTooltip (t.soloSafe ? "Solo: play only soloed tracks (this one is solo safe: it plays anyway)" : "Solo: play only soloed tracks");
         soloSafe = t.soloSafe;
 
@@ -240,8 +252,12 @@ public:
         pan.setBounds (r.removeFromTop (22));
         r.removeFromTop (4);
         auto buttons = r.removeFromTop (22);
-        mute.setBounds (buttons.removeFromLeft (buttons.getWidth() / 2 - 2));
-        solo.setBounds (buttons.removeFromRight (buttons.getWidth() - 4));
+        const auto each = (buttons.getWidth() - 4) / 3;
+        mute.setBounds (buttons.removeFromLeft (each));
+        buttons.removeFromLeft (2);
+        polarity.setBounds (buttons.removeFromLeft (each));
+        buttons.removeFromLeft (2);
+        solo.setBounds (buttons);
         r.removeFromTop (6);
         meter.setBounds (r.removeFromRight (16));
         r.removeFromRight (4);
@@ -251,7 +267,7 @@ public:
     const juce::uint32 trackId;
     Meter meter;
     juce::Slider fader, pan;
-    juce::TextButton mute { "M" }, solo { "S" };
+    juce::TextButton mute { "M" }, solo { "S" }, polarity { juce::String (juce::CharPointer_UTF8 ("\xc3\x98")) };
 
 private:
     void edit (const juce::String& description, bool merge, const std::function<void (SessionTrack&)>& change)
@@ -343,6 +359,8 @@ MixerView::Strip* MixerView::findStrip (juce::uint32 trackId) const
 juce::Slider* MixerView::findFader (juce::uint32 trackId) const   { auto* s = findStrip (trackId); return s != nullptr ? &s->fader : nullptr; }
 juce::Slider* MixerView::findPan (juce::uint32 trackId) const     { auto* s = findStrip (trackId); return s != nullptr ? &s->pan : nullptr; }
 juce::Button* MixerView::findMute (juce::uint32 trackId) const    { auto* s = findStrip (trackId); return s != nullptr ? &s->mute : nullptr; }
+juce::Button* MixerView::findPolarity (juce::uint32 trackId) const { auto* s = findStrip (trackId); return s != nullptr ? &s->polarity : nullptr; }
+
 juce::PopupMenu MixerView::getStripMenu (juce::uint32 trackId) const
 {
     auto* s = findStrip (trackId);

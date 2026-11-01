@@ -325,6 +325,10 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (inserts != nullptr && ! track.isFrozen() && inserts->isActive (track.id))
             inserts->process (track, start + own + ahead, buffers.track, numFrames);
 
+        if (track.invertPolarity)
+            for (int ch = 0; ch < 2; ++ch)
+                juce::FloatVectorOperations::negate (buffers.track.getWritePointer (ch), buffers.track.getReadPointer (ch), numFrames);
+
         // The track's output is now the audio at start + ahead.
         const auto send = [&] (const SessionSend& s, float volume)
         {
@@ -384,6 +388,10 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         if (inserts != nullptr && inserts->isActive (bus.id))
             inserts->process (bus, start + latencyOf (inserts, bus.id), input, numFrames);
+
+        if (bus.invertPolarity)
+            for (int ch = 0; ch < 2; ++ch)
+                juce::FloatVectorOperations::negate (input.getWritePointer (ch), input.getReadPointer (ch), numFrames);
 
         const auto index = (int) (&bus - state.tracks.data());
         const auto folder = state.folderGain (bus);

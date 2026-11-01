@@ -3,7 +3,8 @@
 #include "AudioEngine.h"
 
 /** The session as a mixing desk: a strip for each track and bus, in the session's order, with its
-    meter, volume fader, pan, mute and solo, and a master strip metering what goes to the outputs.
+    meter, volume fader, pan, mute, polarity switch and solo, and a master strip metering what goes
+    to the outputs.
 
     The controls edit the session as the track headers do (each change an undo step, a fader's
     drag one step); an automated volume or pan follows its envelope and can't be moved here.
@@ -27,6 +28,7 @@ public:
     juce::Slider* findPan (juce::uint32 trackId) const;
     juce::Button* findMute (juce::uint32 trackId) const;
     juce::Button* findSolo (juce::uint32 trackId) const;
+    juce::Button* findPolarity (juce::uint32 trackId) const;
 
     /** The menu a strip shows when right-clicked: Solo Safe, and a Colour submenu (each an undo
         step); empty for an unknown id. */

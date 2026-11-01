@@ -199,6 +199,13 @@ public:
         if (std::exchange (soloSafe, t.soloSafe) != t.soloSafe)
             repaint();
 
+        if (std::exchange (inverted, t.invertPolarity) != t.invertPolarity)
+        {
+            name.setTooltip (inverted ? "Polarity inverted" : juce::String());
+            resized();
+            repaint();
+        }
+
         const auto& effects = view.engine.getTrackEffects();
         const auto slots = effects.getNumSlots (trackId);
         effectsButton.setButtonText (slots > 0 ? "FX " + juce::String (slots) : juce::String ("FX"));
@@ -366,6 +373,13 @@ public:
             g.drawText ("G" + juce::String (group), juce::Rectangle<int> (getWidth() - 30, getHeight() - 15, 26, 12), juce::Justification::centredRight);
         }
 
+        if (inverted && ! isFolder)
+        {
+            g.setColour (juce::Colour (0xffe3c74f));
+            g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
+            g.drawText (juce::String (juce::CharPointer_UTF8 ("\xc3\x98")), name.getX() - 14, name.getY(), 14, name.getHeight(), juce::Justification::centred);
+        }
+
         // Solo safe: a bar under the solo button.
         if (soloSafe && solo.isVisible() && ! solo.getBounds().isEmpty())
         {
@@ -405,6 +419,11 @@ public:
         }
 
         effectsButton.setBounds (top.removeFromRight (40));
+
+        // Inverted polarity: a Ø before the name.
+        if (inverted)
+            top.removeFromLeft (14);
+
         name.setBounds (top);
         r.removeFromTop (8);
         gain.setBounds (r.removeFromTop (22));
@@ -492,6 +511,10 @@ public:
 
         menu.addSubMenu ("Group", groups);
         menu.addItem ("Solo Safe", true, t->soloSafe, [this, safe = t->soloSafe] { view.setTrackSoloSafe (trackId, ! safe); });
+
+        if (! t->isFolder)
+            menu.addItem ("Invert Polarity", true, t->invertPolarity, [this, on = t->invertPolarity] { view.setTrackPolarityInverted (trackId, ! on); });
+
         menu.addSubMenu ("Colour", colours);
         menu.addItem ("Note...", [this] { view.askForTrackNote (trackId); });
         menu.addItem ("Hide", [this] { view.setTrackHidden (trackId, true); });
@@ -538,7 +561,7 @@ private:
     juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
     juce::Slider gain, pan;
     juce::Colour colour;
-    bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false, soloSafe = false;
+    bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false, soloSafe = false, inverted = false;
     int members = 0;
     float levels[2] {}, holds[2] {};
     int holdLeft[2] {};
@@ -3277,6 +3300,11 @@ void MultitrackView::setTrackColour (juce::uint32 trackId, int colour)
 {
     editTrack (trackId, "Track Colour", false,
                [colour] (SessionTrack& t) { t.colour = juce::isPositiveAndBelow (colour, (int) TrackColours::palette.size()) ? colour : -1; });
+}
+
+void MultitrackView::setTrackPolarityInverted (juce::uint32 trackId, bool inverted)
+{
+    editTrack (trackId, inverted ? "Invert Polarity" : "Restore Polarity", false, [inverted] (SessionTrack& t) { t.invertPolarity = inverted; });
 }
 
 void MultitrackView::setTrackSoloSafe (juce::uint32 trackId, bool safe)
