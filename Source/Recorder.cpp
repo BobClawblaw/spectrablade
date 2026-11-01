@@ -264,3 +264,34 @@ Recorder::Placement Recorder::place (const Take& take, juce::int64 punchIn, juce
     p.destStart = p.takeStart + offset;
     return p;
 }
+
+std::vector<Recorder::Placement> Recorder::placeLoop (const Take& take, juce::int64 loopStart, juce::int64 loopEnd, int roundTripLatency)
+{
+    std::vector<Placement> passes;
+    const auto length = loopEnd - loopStart;
+
+    if (length <= 0)
+        return passes;
+
+    // The played frame counts on through each pass, so pass k is [loopStart, loopEnd) + k * length.
+    for (juce::int64 k = 0;; ++k)
+    {
+        auto p = place (take, loopStart + k * length, loopEnd + k * length, roundTripLatency);
+
+        if (p.takeEnd <= p.takeStart)
+            break;
+
+        const auto complete = p.takeEnd - p.takeStart == length && p.destStart == loopStart + k * length;
+
+        if (! complete && ! passes.empty())
+            break;
+
+        p.destStart -= k * length;
+        passes.push_back (p);
+
+        if (! complete)
+            break;
+    }
+
+    return passes;
+}

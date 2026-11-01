@@ -543,6 +543,35 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
         });
 }
 
+void MultitrackView::showTakesMenu (juce::uint32 clipId)
+{
+    const auto where = shown().findClip (clipId);
+
+    if (! where.has_value())
+        return;
+
+    const auto& clip = shown().tracks[(size_t) where->first].clips[(size_t) where->second];
+    juce::PopupMenu menu;
+
+    for (int i = 0; i < (int) clip.takes.size(); ++i)
+        menu.addItem (i + 1, "Take " + juce::String (i + 1), true, i == clip.activeTake);
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(),
+        [this, clipId, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
+        {
+            if (safe != nullptr && result > 0)
+                chooseTake (clipId, result - 1);
+        });
+}
+
+void MultitrackView::chooseTake (juce::uint32 clipId, int index)
+{
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::chooseTake (next, clipId, index))
+        engine.session.apply (std::move (next), "Choose Take " + juce::String (index + 1));
+}
+
 std::optional<AutomationTarget> MultitrackView::getShownEnvelope (juce::uint32 trackId) const
 {
     if (const auto found = shownEnvelopes.find (trackId); found != shownEnvelopes.end())
@@ -1224,7 +1253,9 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
     g.fillRect (title);
     g.setColour (juce::Colours::white);
     g.setFont (12.0f);
-    g.drawText (c.name, title.withTrimmedLeft (12).withTrimmedRight (10), juce::Justification::centredLeft, true);   // clear of the fade handles
+    const auto name = c.takes.size() > 1 ? c.name + "  (take " + juce::String (c.activeTake + 1) + " of " + juce::String ((int) c.takes.size()) + ")"
+                                          : c.name;
+    g.drawText (name, title.withTrimmedLeft (12).withTrimmedRight (10), juce::Justification::centredLeft, true);   // clear of the fade handles
 
     // Waveform: one peak per pixel column, each channel in its own band.
     if (c.audio != nullptr && body.getHeight() > 4)
@@ -1526,6 +1557,19 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         dragFrame = snapped (frameForX ((float) p.x), 0, false);
         setCursor (dragFrame);
         setTimeSelection ({});
+        return;
+    }
+
+    // A right-click on a clip with takes picks the one it plays.
+    if (const auto hit = clipAt (p); hit.has_value() && e.mods.isPopupMenu())
+    {
+        const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
+        selectedClip = clip.id;
+        selectTrack (hit->first);
+
+        if (clip.takes.size() > 1)
+            showTakesMenu (clip.id);
+
         return;
     }
 

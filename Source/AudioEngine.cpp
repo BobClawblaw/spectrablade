@@ -56,24 +56,50 @@ void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
         stateVersion = v;
     }
 
-    const auto start = position.load();
+    auto start = position.load();
+    const auto from = loopStart.load(), to = loopEnd.load();
+
+    // A loop: up to its end, then back to its start, as often as the block needs.
+    if (to > from && start < to)
+    {
+        for (int done = 0; done < info.numSamples;)
+        {
+            const auto n = (int) juce::jmin ((juce::int64) (info.numSamples - done), to - start);
+            renderRun (start, info, info.startSample + done, n);
+            done += n;
+            start += n;
+
+            if (start >= to)
+                start = from;
+        }
+
+        position = nextFrame = start;
+        return;
+    }
+
+    renderRun (start, info, info.startSample, info.numSamples);
+    position = nextFrame = start + info.numSamples;
+}
+
+void SessionSource::renderRun (juce::int64 start, const juce::AudioSourceChannelInfo& info, int destStart, int numFrames)
+{
     const auto stop = stopFrame.load();
-    auto count = info.numSamples;
+    auto count = numFrames;
 
     if (stop >= 0)
-        count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) info.numSamples, stop - start);
+        count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) numFrames, stop - start);
 
     // After a jump, effects with latency are run over the frames they read ahead, so they play
     // in time from the first block.
     if (start != nextFrame)
         SessionMixer::prime (*state, start, buffers, inserts);
 
-    SessionMixer::render (*state, start, *info.buffer, info.startSample, count, buffers, &inserts);
+    SessionMixer::render (*state, start, *info.buffer, destStart, count, buffers, &inserts);
 
-    if (count < info.numSamples)
-        info.buffer->clear (info.startSample + count, info.numSamples - count);
+    if (count < numFrames)
+        info.buffer->clear (destStart + count, numFrames - count);
 
-    position = nextFrame = start + info.numSamples;
+    nextFrame = start + numFrames;
 }
 
 //==============================================================================
@@ -115,6 +141,7 @@ void DocumentPlayerProcessor::resetSource()
     stopAt = -1;
     source.setStopFrame (-1);
     sessionSource.setStopFrame (-1);
+    sessionSource.setLoop (0, 0);
 }
 
 void DocumentPlayerProcessor::play (juce::int64 startFrame, juce::int64 stopFrame)

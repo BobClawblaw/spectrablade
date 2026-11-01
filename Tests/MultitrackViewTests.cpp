@@ -315,6 +315,22 @@ void runMultitrackViewTests (AudioEngine& engine)
         engine.removeTrackPlugin (trackId, 0);
     }
 
+    // A loop-recorded clip: choosing another take is an undo step of its own.
+    {
+        SessionState withTakes;
+        withTakes.sampleRate = rate;
+        withTakes.addTrack();
+        const auto id = SessionEdits::recordTakes (withTakes, 0, juce::File ("/tmp/takes.wav"), silence (96000), 48000, 24000, { 0, 24000, 48000 });
+        engine.session.reset (withTakes, {});
+        Mouse::settle();
+        view.chooseTake (id, 0);
+        check (clip (id).activeTake == 0 && clip (id).offset == 0 && engine.session.getUndoDescription() == "Choose Take 1",
+               "view: choosing a clip's take is one undo step");
+
+        engine.session.undo();
+        check (clip (id).activeTake == 2 && clip (id).offset == 48000, "view: undo goes back to the take that was playing");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

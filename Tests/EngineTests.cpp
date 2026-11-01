@@ -339,7 +339,7 @@ int main (int argc, char* argv[])
         runMultitrackViewTests (engine);
         runMixDownTests (engine);
         runEffectAutomationTests (engine.formatManager);
-        runTrackRecordingTests();
+        runTrackRecordingTests (engine.formatManager);
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

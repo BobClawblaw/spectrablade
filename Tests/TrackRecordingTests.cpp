@@ -3,6 +3,7 @@
 
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
+#include "../Source/AudioFileIO.h"
 #include "TestUtils.h"
 #include "TrackRecordingTests.h"
 
@@ -264,12 +265,217 @@ namespace
         normal.cycle();
         check (! normal.player.isPlaying(), "track recording: plain playback of an empty session still stops at its end");
     }
+
+    /** A session with one long clip on its only track, as the punch-in test plays it. */
+    SessionState rampSession()
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        SessionClip c;
+        c.id = s.nextId++;
+        c.audio = ramp (2, 80000, 0.05f);
+        c.length = 80000;
+        c.fadeIn = 1000;
+        s.tracks[0].clips.push_back (c);
+        return s;
+    }
+
+    void testLoopRecordingThroughPlayer()
+    {
+        constexpr int roundTrip = 731;
+        const juce::int64 punchIn = 30011, punchOut = 41017, preroll = 24000, length = punchOut - punchIn;
+
+        Session session;
+        session.reset (rampSession(), {});
+        const auto before = session.getState();
+
+        // Three passes round the loop and half of a fourth.
+        Loopback loop (session, roundTrip);
+        loop.recorder.start();
+
+        for (int i = 0; i < 6; ++i)
+            loop.cycle();
+
+        loop.player.play (punchIn - preroll, std::numeric_limits<juce::int64>::max() / 4);
+        loop.player.setLoop (punchIn, punchOut);
+
+        while (loop.player.getPlayedFrame().load() < punchIn + 3 * length + length / 2 + roundTrip)
+            loop.cycle();
+
+        check (loop.player.getPositionFrames() >= punchIn && loop.player.getPositionFrames() < punchOut,
+               "loop recording: the player stays inside the loop while its played frame counts on");
+
+        const auto take = loop.recorder.stop();
+        loop.player.pause();
+        loop.player.clearLoop();
+        const auto passes = Recorder::placeLoop (take, punchIn, punchOut, roundTrip);
+        auto placed = passes.size() == 3;
+
+        for (size_t k = 0; placed && k < passes.size(); ++k)
+            placed = passes[k].destStart == punchIn && passes[k].takeEnd - passes[k].takeStart == length
+                         && passes[k].takeStart == passes[0].takeStart + (juce::int64) k * length;
+
+        check (placed, "loop recording: three complete passes, one loop length apart, each landing at the loop start ("
+                           + juce::String ((int) passes.size()) + " passes); the half pass is left out");
+
+        // Every pass is what the session plays over the range, mixed on its own.
+        juce::AudioBuffer<float> mix (2, (int) length);
+        SessionMixer::Buffers buffers;
+        SessionMixer::render (*before, punchIn, mix, 0, mix.getNumSamples(), buffers);
+        const auto audio = std::make_shared<const AudioSnapshot> (take.clip.numChannels, take.clip.segments);
+        auto same = placed;
+
+        for (size_t k = 0; same && k < passes.size(); ++k)
+        {
+            juce::AudioBuffer<float> got (2, mix.getNumSamples());
+            audio->read (got, 0, passes[k].takeStart, mix.getNumSamples());
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; same && i < mix.getNumSamples(); ++i)
+                    same = got.getSample (ch, i) == mix.getSample (ch, i);
+        }
+
+        check (same, "loop recording: each pass matches the session's own mix over the loop, bit for bit");
+
+        // Stopped during the first pass (a loop longer than the recording): that part is kept.
+        const auto lone = Recorder::placeLoop (take, punchIn, punchIn + 10 * length, roundTrip);
+        check (lone.size() == 1 && lone[0].destStart == punchIn && lone[0].takeStart == passes[0].takeStart
+                   && lone[0].takeEnd == take.clip.getNumFrames(),
+               "loop recording: a single pass cut short is kept, up to where recording stopped");
+        check (Recorder::placeLoop (take, punchOut, punchIn, roundTrip).empty(), "loop recording: an empty loop places nothing");
+
+        // Onto the track: the last pass plays, the others are takes.
+        if (! placed)
+            return;
+
+        auto next = *before;
+        std::vector<juce::int64> offsets;
+
+        for (auto& p : passes)
+            offsets.push_back (p.takeStart);
+
+        const auto id = SessionEdits::recordTakes (next, 0, juce::File ("/takes/Track 1.wav"), audio, punchIn, length, offsets);
+        const auto& t = next.tracks[0];
+        const auto* c = clipAt (t, punchIn);
+        check (c != nullptr && c->id == id && c->takes.size() == 3 && c->activeTake == 2 && c->offset == offsets[2]
+                   && c->position == punchIn && c->length == length && t.clips.size() == 3
+                   && clipAt (t, punchIn - 1)->getEnd() == punchIn && clipAt (t, punchOut)->position == punchOut,
+               "takes: a loop recording lands as one clip playing the last pass, with the old clip cut around it");
+
+        auto chosen = true;
+
+        for (int k : { 0, 1, 2 })
+        {
+            auto pick = next;
+            const auto picked = k == 2 ? ! SessionEdits::chooseTake (pick, id, k) : SessionEdits::chooseTake (pick, id, k);
+            const auto* pc = clipAt (pick.tracks[0], punchIn);
+            chosen = chosen && picked && pc->activeTake == k && pc->offset == offsets[(size_t) k]
+                         && pc->position == punchIn && pc->length == length;
+        }
+
+        check (chosen && ! SessionEdits::chooseTake (next, id, 3) && ! SessionEdits::chooseTake (next, id, -1),
+               "takes: choosing a take plays its pass in the same place (choosing the one playing, or none, changes nothing)");
+
+        // Split in half: each half keeps the takes, and the second half's choice stays in time.
+        auto split = next;
+        SessionEdits::splitClip (split, id, punchIn + length / 2);
+        const auto* secondHalf = clipAt (split.tracks[0], punchIn + length / 2);
+        const auto secondId = secondHalf->id;
+        SessionEdits::chooseTake (split, secondId, 0);
+        const auto* firstHalf = clipAt (split.tracks[0], punchIn);
+        secondHalf = clipAt (split.tracks[0], punchIn + length / 2);
+        check (firstHalf->takes.size() == 3 && firstHalf->activeTake == 2 && secondHalf->takes.size() == 3
+                   && secondHalf->activeTake == 0 && secondHalf->offset == offsets[0] + length / 2,
+               "takes: after a split, each half chooses its own take, in time");
+    }
+
+    void testTakeLimits()
+    {
+        // Take 1 sits 2000 frames later in the file than take 0 (offsets 0 and 2000).
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        const auto id = SessionEdits::recordTakes (s, 0, juce::File ("/takes/Limits.wav"), ramp (2, 10000, 0.1f), 5000, 3000, { 0, 2000 });
+        auto& c = s.tracks[0].clips[0];
+        check (c.id == id && c.takes[0].shift == 0 && c.takes[1].shift == 2000, "takes: each take's shift is its offset from the first");
+
+        // Start dragged 1000 frames earlier: take 0 has nothing there, so the clip starts where it begins.
+        c.position = 4000;
+        c.offset = 1000;
+        c.length = 4000;
+        c.fadeIn = 3500;
+        auto early = s;
+        SessionEdits::chooseTake (early, id, 0);
+        const auto& e = early.tracks[0].clips[0];
+        check (e.position == 5000 && e.offset == 0 && e.length == 3000 && e.fadeIn <= e.length,
+               "takes: a take that starts later than the clip shortens it at the start (" + juce::String (e.position) + ", "
+                   + juce::String (e.length) + ")");
+
+        // Take 0 last: choosing take 1, which runs out sooner in the file, shortens the clip at the end.
+        auto late = s;
+        auto& lc = late.tracks[0].clips[0];
+        lc.takes[0].shift = 0;
+        lc.takes[1].shift = 7000;
+        lc.activeTake = 0;
+        lc.position = 5000;
+        lc.offset = 2000;
+        lc.length = 3000;
+        SessionEdits::chooseTake (late, id, 1);
+        check (lc.position == 5000 && lc.offset == 9000 && lc.length == 1000,
+               "takes: a take that ends sooner shortens the clip at the end (" + juce::String (lc.length) + ")");
+    }
+
+    void testTakesFile (juce::AudioFormatManager& formats)
+    {
+        const auto folder = juce::File::createTempFile ("takes");
+        folder.createDirectory();
+        const auto wav = folder.getChildFile ("Track 1.wav");
+        const auto audio = ramp (2, 12000, 0.2f);
+        const auto saved = AudioFileIO::save (*audio, rate, wav, 32, formats);
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        const auto id = SessionEdits::recordTakes (s, 0, wav, audio, 1000, 4000, { 0, 4000, 8000 });
+        SessionEdits::chooseTake (s, id, 1);
+        const auto session = folder.getChildFile ("Takes.sbsession");
+        const auto error = SessionFile::save (s, session);
+        const auto loaded = SessionFile::load (session, formats);
+
+        const auto& want = s.tracks[0].clips[0];
+        auto same = saved.isEmpty() && error.isEmpty() && loaded.error.isEmpty() && loaded.state.tracks.size() == 1
+                        && loaded.state.tracks[0].clips.size() == 1;
+
+        if (same)
+        {
+            const auto& got = loaded.state.tracks[0].clips[0];
+            same = got.takes.size() == 3 && got.activeTake == 1 && got.offset == want.offset && got.length == want.length
+                       && got.takes[2].shift == 8000 && got.takes[1].audio == got.audio;
+        }
+
+        check (same, "takes: a clip's takes and the one chosen come back from a session file");
+
+        // A take whose file is gone: the clip still loads, playing the take it had, without takes.
+        s.tracks[0].clips[0].takes[2].source = folder.getChildFile ("Missing.wav");
+        SessionFile::save (s, session);
+        const auto partial = SessionFile::load (session, formats);
+        check (partial.state.tracks.size() == 1 && partial.state.tracks[0].clips.size() == 1
+                   && partial.state.tracks[0].clips[0].takes.empty() && partial.state.tracks[0].clips[0].offset == want.offset
+                   && partial.missing.size() == 1,
+               "takes: with one take's file missing, the clip loads without its takes");
+
+        folder.deleteRecursively();
+    }
 }
 
-void runTrackRecordingTests()
+void runTrackRecordingTests (juce::AudioFormatManager& formats)
 {
     testClearRange();
     testRecordClip();
     testPunchInThroughPlayer();
     testRecordPastTheEnd();
+    testLoopRecordingThroughPlayer();
+    testTakeLimits();
+    testTakesFile (formats);
 }

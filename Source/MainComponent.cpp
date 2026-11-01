@@ -38,7 +38,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation
+        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -633,7 +633,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdWriteAutomation; ++id)
+    for (int id = cmdOpen; id <= cmdLoopRecording; ++id)
         ids.add (id);
 }
 
@@ -729,6 +729,9 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
         case cmdSnapping:   info.setInfo ("Snapping", "Line dragged clips, edges, fades and points up with clip edges, the cursor and the ruler", "Multitrack", 0);
                             info.addDefaultKeypress ('s', 0); info.setTicked (multitrack.isSnapping()); info.setActive (multitrackMode); break;
+        case cmdLoopRecording: info.setInfo ("Loop Recording", "Record over the time range again and again, keeping each pass as a take", "Multitrack", 0);
+                            info.addDefaultKeypress ('l', 0); info.setTicked (loopRecording);
+                            info.setActive (multitrackMode && ! engine.getRecorder().isRecording()); break;
         case cmdWriteAutomation: info.setInfo ("Write Automation", "While playing, dragging a track's volume or pan writes it into its envelope", "Multitrack", 0);
                             info.addDefaultKeypress ('w', 0); info.setTicked (multitrack.isWritingAutomation()); info.setActive (multitrackMode); break;
         case cmdCrossfade:  info.setInfo ("Crossfade Overlaps", "Crossfade a clip moved or trimmed over part of another", "Multitrack", 0);
@@ -863,6 +866,10 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdSplitClip:  multitrack.splitSelectedClip(); break;
         case cmdMixDown:    chooseMixDownFile(); break;
+        case cmdLoopRecording:
+            loopRecording = ! loopRecording;
+            commands.commandStatusChanged();
+            break;
         case cmdWriteAutomation:
             multitrack.setWritingAutomation (! multitrack.isWritingAutomation());
             commands.commandStatusChanged();
@@ -916,7 +923,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, 0, cmdMixDown }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -969,7 +976,8 @@ void MainComponent::timerCallback()
             const auto end = punchOut >= 0 ? juce::jmin (played, punchOut) : played;
             multitrack.showRecording ({ punchIn, juce::jmax (punchIn, end) });
 
-            if (punchOut >= 0 && played >= punchOut + (juce::int64) (rate * 0.25))
+            // A loop records until it is stopped.
+            if (! recordingLoop && punchOut >= 0 && played >= punchOut + (juce::int64) (rate * 0.25))
             {
                 stopRecording();
                 return;
@@ -2282,7 +2290,8 @@ void MainComponent::startRecording()
 
     juce::Logger::writeToLog ("Recording: input " + juce::String (engine.getInputFirstChannel() + 1) + " x"
                               + juce::String (engine.getInputNumChannels()) + ", punch in " + juce::String (punchIn)
-                              + ", punch out " + juce::String (punchOut) + ", round trip " + juce::String (recordLatency));
+                              + ", punch out " + juce::String (punchOut) + (recordingLoop ? ", looping" : "")
+                              + ", round trip " + juce::String (recordLatency));
     refreshInputChoices();
     commands.commandStatusChanged();
 }
@@ -2296,6 +2305,7 @@ void MainComponent::stopRecording()
 
     auto take = recorder.stop();
     engine.getPlayer().pause();
+    engine.getPlayer().clearLoop();
     refreshInputChoices();
     commands.commandStatusChanged();
 
@@ -2365,6 +2375,7 @@ void MainComponent::startSessionRecording()
     punchOut = range.isEmpty() ? -1 : range.getEnd();
     recordLatency = engine.getRoundTripLatency();
     recordTrackId = multitrack.getArmedTrack();
+    recordingLoop = loopRecording && ! range.isEmpty();
 
     player.pause();
 
@@ -2379,6 +2390,9 @@ void MainComponent::startSessionRecording()
     recordingSession = true;
     player.play (juce::jmax ((juce::int64) 0, punchIn - (juce::int64) (deviceRate * prerollSeconds)),
                  std::numeric_limits<juce::int64>::max() / 4);
+
+    if (recordingLoop)
+        player.setLoop (punchIn, punchOut);
 
     juce::Logger::writeToLog ("Recording to the session: input " + juce::String (engine.getInputFirstChannel() + 1) + " x"
                               + juce::String (engine.getInputNumChannels()) + ", punch in " + juce::String (punchIn)
@@ -2400,13 +2414,19 @@ juce::File MainComponent::recordingsFolder() const
 
 void MainComponent::finishSessionRecording (const Recorder::Take& take)
 {
-    const auto placement = Recorder::place (take, punchIn, punchOut, recordLatency);
+    // A loop's complete passes become takes of one clip, kept together in one file.
+    const auto passes = recordingLoop ? Recorder::placeLoop (take, punchIn, punchOut, recordLatency)
+                                      : std::vector<Recorder::Placement> { Recorder::place (take, punchIn, punchOut, recordLatency) };
+    const auto asTakes = recordingLoop && passes.size() > 1;
+    recordingLoop = false;
 
-    if (placement.takeEnd <= placement.takeStart)
+    if (passes.empty() || passes.front().takeEnd <= passes.front().takeStart)
         return;
 
+    const auto placement = passes.front();
+    const auto takeEnd = passes.back().takeEnd;
     const AudioSnapshot takeAudio (take.clip.numChannels, take.clip.segments);
-    const auto clip = AudioEdits::copy (takeAudio, placement.takeStart, placement.takeEnd, take.clip.sampleRate);
+    const auto clip = AudioEdits::copy (takeAudio, placement.takeStart, takeEnd, take.clip.sampleRate);
     auto audio = std::make_shared<const AudioSnapshot> (clip.numChannels, clip.segments);
 
     auto state = *engine.session.getState();
@@ -2434,10 +2454,23 @@ void MainComponent::finishSessionRecording (const Recorder::Take& take)
         return;
     }
 
-    SessionEdits::recordClip (state, track, file, std::move (audio), placement.destStart);
+    if (asTakes)
+    {
+        std::vector<juce::int64> offsets;
+
+        for (auto& pass : passes)
+            offsets.push_back (pass.takeStart - placement.takeStart);
+
+        SessionEdits::recordTakes (state, track, file, std::move (audio), placement.destStart, punchOut - punchIn, offsets);
+    }
+    else
+    {
+        SessionEdits::recordClip (state, track, file, std::move (audio), placement.destStart);
+    }
 
     // One undo step, which also takes back the rate change of a session that had no audio yet.
-    engine.session.apply (std::move (state), "Record", recordChangedRate);
+    engine.session.apply (std::move (state), asTakes ? "Loop Record (" + juce::String ((int) passes.size()) + " takes)" : juce::String ("Record"),
+                          recordChangedRate);
     multitrack.setTimeSelection ({});
 }
 

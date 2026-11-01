@@ -174,6 +174,7 @@ private:
     // A take going onto a session track (the armed one, or a new one when recordTrackId is 0)
     // rather than into the document.
     bool recordingSession = false, recordChangedRate = false;
+    bool loopRecording = false, recordingLoop = false;   // the option, and a take under way that loops
     juce::uint32 recordTrackId = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)

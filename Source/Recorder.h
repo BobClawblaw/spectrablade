@@ -52,6 +52,11 @@ public:
         was playing) the take starts at punchIn as it is. */
     static Placement place (const Take&, juce::int64 punchIn, juce::int64 punchOut, int roundTripLatency);
 
+    /** The passes of a take recorded while the player looped [loopStart, loopEnd): where each
+        complete pass is in the take, all landing at loopStart. A pass cut short when recording
+        stopped is left out, unless it is the only one. */
+    static std::vector<Placement> placeLoop (const Take&, juce::int64 loopStart, juce::int64 loopEnd, int roundTripLatency);
+
     //==============================================================================
     void audioDeviceIOCallbackWithContext (const float* const* inputs, int numInputs,
                                            float* const* outputs, int numOutputs, int numSamples,

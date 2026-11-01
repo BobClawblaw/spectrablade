@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 20: loop recording into takes**
+- Turn on Multitrack > Loop Recording (L), select a time range and record: after the preroll the session plays the range over and over, and each pass is kept as a take. Stop when you like; a pass cut short by stopping is dropped, unless it is the only one.
+- The passes land as one clip over the range, playing the last pass; what the armed track had there is cut around it, as for a punch-in. All the passes are saved in one 32-bit float WAV, and the whole recording is one undo step ("Loop Record (3 takes)").
+- Right-click the clip to choose another take; the one playing is ticked, and the clip's title says "take 2 of 3". Each take stays in time with the range, so you can trim, move or split the clip first: after a split, each half chooses its own take. If a take has no audio for part of the clip, the clip is shortened to where it has. Choosing is an undo step, and takes and the one chosen are saved in the session file.
+- Measured by the tests: the session's own output, looped back with 731 frames of latency into the recorder while the real player looped an 11,006-frame range three and a half times, gives three complete passes one loop length apart, each bit for bit equal to the session mix over the range; the half pass is dropped. Also checked: a lone pass cut short is kept, choosing each take plays its pass in place, takes after a split, the clip shortened at either end, session files (and one with a take's file missing, which loads the clip without takes), and choosing through the view as one undo step. Loop recording with a real interface was not tried by hand.
+
 **Milestone 19: writing effect parameters while playing**
 - With Multitrack > Write Automation on and the session playing, grab a control in a track effect's own window and turn it: from when you grab it to when you let go, what you do is written into that parameter's envelope, which is shown over the lane. While you hold the control, the envelope leaves the parameter to you; when you let go, it goes back to what it had over 0.1 s (for a parameter with no envelope yet, to the value it had when you grabbed it). Held still, the control keeps writing its value. Each pass is one undo step.
 - This needs effects that report when a control is grabbed and let go (begin and end of a gesture), as most Audio Units and VST3 effects do. Values an effect is given from its envelope are not taken for your moves, even from effects that report every change.
@@ -60,7 +66,7 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - The take is lined up with the round-trip latency, as in the editor, and saved as a 32-bit float WAV in a "<session> Recordings" folder beside the session file (in Music/SpectraBlade/Recordings while the session is unsaved). Past the end of the session the player plays silence, so a take there still lines up.
 - A session with no audio yet takes the interface's sample rate; otherwise the interface must run at the session's rate.
 - Measured by the tests: the session's own output, looped back with 731 frames of latency into the recorder during a punch-in through the real player, lands bit for bit equal to the session mix over the range. Also checked: clearing a range (clips inside, across each edge, and a split from one clip), placing a take onto an armed track, a bus or no track, and recording from past the end of an empty session.
-- Not yet: input monitoring through the track's effects, several armed tracks at once, and loop recording into takes.
+- Not yet: input monitoring through the track's effects and several armed tracks at once. Loop recording came in milestone 20.
 
 **Milestone 12: buses and sends**
 - Multitrack > Add Bus (Cmd+Shift+B) adds a bus: a row with no clips that plays what tracks send it, through its own effects (the FX button), volume and pan. Its lane lists the tracks feeding it.
@@ -198,7 +204,7 @@ The tests run against the real machine:
 - Effect automation: a test plug-in's parameter following its envelope bit for bit across block sizes, after a jump, behind chain latency and after reordering; bypass, removed effects, slot ids and session files; touches in an effect's window reported in order, envelope values not taken for touches, and touched parameters held off their envelopes.
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
-- Recording onto tracks: a punch-in through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session.
+- Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
 - Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
 - Loudness against the EBU Tech 3341 and 3342 signals at two rates, 5.1 channel weights, gating, true peak between samples, measuring part of a file, and cancelling.
@@ -240,4 +246,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: loop recording into takes, and input monitoring through a track's effects
+1. Multitrack, continued: input monitoring through a track's effects

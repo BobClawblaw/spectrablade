@@ -16,6 +16,19 @@ struct SessionClip
     float gainDb = 0.0f;
     juce::int64 fadeIn = 0, fadeOut = 0;   // frames, raised-cosine
 
+    /** Other recordings of the same stretch (loop recording's passes), one of them in use. A
+        take's audio is read `shift` frames on from where take 0's would be, so trims and splits
+        apply to every take at once. With takes, source, audio and offset are the active take's. */
+    struct Take
+    {
+        juce::File source;
+        AudioDocument::Snapshot audio;
+        juce::int64 shift = 0;
+    };
+
+    std::vector<Take> takes;
+    int activeTake = 0;
+
     juce::int64 getEnd() const noexcept    { return position + length; }
 };
 
@@ -190,6 +203,10 @@ namespace SessionEdits
 
     bool removeClip (SessionState&, juce::uint32 clipId);
 
+    /** Puts take `index` of a clip in use. It keeps its place and length where the take's audio
+        allows; otherwise it is cut back to what the take has. */
+    bool chooseTake (SessionState&, juce::uint32 clipId, int index);
+
     /** Crossfades a clip with the clips it partly overlaps on its track: where another clip ends
         inside it, its fade in and the other's fade out both span the overlap; where another starts
         inside it, its fade out and the other's fade in do. Clips inside another, or holding one,
@@ -203,6 +220,12 @@ namespace SessionEdits
     /** Places a recorded take at position on a track (a new one when track is past the last or a
         bus), replacing what the track had there. Returns the clip's id. */
     juce::uint32 recordClip (SessionState&, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position);
+
+    /** Places the passes of a loop recording: one clip at position, length frames long, with a
+        take for each pass, starting at each of offsets in the recording, the last in use. It
+        replaces what the track had there. Returns the clip's id (0 with no passes). */
+    juce::uint32 recordTakes (SessionState&, int track, const juce::File& source, AudioDocument::Snapshot audio,
+                              juce::int64 position, juce::int64 length, const std::vector<juce::int64>& offsets);
     /** Removes a track or bus; removing a bus removes the sends to it. */
     bool removeTrack (SessionState&, int track);
 

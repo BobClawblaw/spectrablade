@@ -6,8 +6,9 @@
     pan, and on tracks their sends) and the tracks' clips with their waveforms. Drag a clip to
     move it (onto another track, or below the last for a new one); drag its edges to trim it, and
     the handles at its top corners to set its fades; double-click it to open its file in the
-    editor. Click to place the cursor, drag across the timeline to select a time range; drop audio
-    files to add them as clips. A track's R button arms it for recording.
+    editor; right-click it to choose among its takes. Click to place the cursor, drag across the
+    timeline to select a time range; drop audio files to add them as clips. A track's R button
+    arms it for recording.
 
     A track's A button shows its volume or pan envelope, or one for a parameter of its effects,
     over its lane: click the line to add a point, drag points to move them, Option-click one to
@@ -51,6 +52,10 @@ public:
     /** The selected track (the one last clicked), or -1. */
     int getSelectedTrack() const;
     juce::uint32 getSelectedClip() const noexcept { return selectedClip; }
+
+    /** Puts one of a clip's takes in use (from loop recording), as one undo step. A right-click
+        on a clip with takes offers them. */
+    void chooseTake (juce::uint32 clipId, int index);
 
     void deleteSelectedClip();
     void splitSelectedClip();      // at the cursor
@@ -171,6 +176,7 @@ private:
     void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
     void showSends (juce::uint32 trackId, juce::Component& target);
     void showAutomationMenu (juce::uint32 trackId, juce::Component& target);
+    void showTakesMenu (juce::uint32 clipId);
     void editTrack (juce::uint32 trackId, const juce::String& description, bool merge,
                     const std::function<void (SessionTrack&)>& change);
 

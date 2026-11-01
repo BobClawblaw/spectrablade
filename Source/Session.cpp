@@ -322,6 +322,35 @@ bool splitClip (SessionState& s, juce::uint32 clipId, juce::int64 frame)
     return true;
 }
 
+bool chooseTake (SessionState& s, juce::uint32 clipId, int index)
+{
+    auto* c = find (s, clipId);
+
+    if (c == nullptr || ! juce::isPositiveAndBelow (index, (int) c->takes.size()) || index == c->activeTake)
+        return false;
+
+    const auto& from = c->takes[(size_t) c->activeTake];
+    const auto& to = c->takes[(size_t) index];
+    const auto offset = c->offset + to.shift - from.shift;
+    const auto available = to.audio != nullptr ? to.audio->getNumFrames() : 0;
+
+    // Keep the clip inside the take's audio.
+    const auto start = c->position + juce::jmax ((juce::int64) 0, -offset);
+    const auto end = juce::jmin (c->getEnd(), c->position - offset + available);
+
+    if (end <= start)
+        return false;
+
+    c->source = to.source;
+    c->audio = to.audio;
+    c->offset = offset + (start - c->position);
+    c->length = end - start;
+    c->position = start;
+    c->activeTake = index;
+    limitFades (*c);
+    return true;
+}
+
 bool removeClip (SessionState& s, juce::uint32 clipId)
 {
     const auto where = s.findClip (clipId);
@@ -432,6 +461,27 @@ juce::uint32 recordClip (SessionState& s, int track, const juce::File& source, A
         clearRange (s, track, position, position + audio->getNumFrames());
 
     return addClip (s, track, source, std::move (audio), position);
+}
+
+juce::uint32 recordTakes (SessionState& s, int track, const juce::File& source, AudioDocument::Snapshot audio,
+                          juce::int64 position, juce::int64 length, const std::vector<juce::int64>& offsets)
+{
+    if (audio == nullptr || offsets.empty() || length <= 0)
+        return 0;
+
+    if (juce::isPositiveAndBelow (track, (int) s.tracks.size()) && ! s.tracks[(size_t) track].isBus)
+        clearRange (s, track, position, position + length);
+
+    const auto id = addClip (s, track, source, audio, position);
+    auto* c = find (s, id);
+
+    for (auto o : offsets)
+        c->takes.push_back ({ source, audio, o - offsets.front() });
+
+    c->activeTake = (int) offsets.size() - 1;
+    c->offset = offsets.back();
+    c->length = juce::jlimit ((juce::int64) 0, audio->getNumFrames() - c->offset, length);
+    return id;
 }
 
 bool removeTrack (SessionState& s, int track)
@@ -820,6 +870,19 @@ juce::String save (const SessionState& state, const juce::File& target,
             clip->setAttribute ("gainDb", c.gainDb);
             clip->setAttribute ("fadeIn", juce::String (c.fadeIn));
             clip->setAttribute ("fadeOut", juce::String (c.fadeOut));
+
+            if (! c.takes.empty())
+            {
+                clip->setAttribute ("activeTake", c.activeTake);
+
+                for (auto& take : c.takes)
+                {
+                    auto* takeXml = clip->createNewChildElement ("TAKE");
+                    takeXml->setAttribute ("file", take.source.getRelativePathFrom (target.getParentDirectory()));
+                    takeXml->setAttribute ("absolute", take.source.getFullPathName());
+                    takeXml->setAttribute ("shift", juce::String (take.shift));
+                }
+            }
         }
     }
 
@@ -896,34 +959,41 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         for (auto* clipXml : trackXml->getChildWithTagNameIterator ("CLIP"))
         {
             // The relative path first, so a session moved with its audio still finds it.
-            auto source = file.getParentDirectory().getChildFile (clipXml->getStringAttribute ("file"));
-
-            if (! source.existsAsFile())
-                source = juce::File (clipXml->getStringAttribute ("absolute"));
-
-            const auto key = source.getFullPathName();
-
-            if (audio.find (key) == audio.end())
+            const auto locate = [&] (const juce::XmlElement& xml)
             {
-                auto loaded = AudioFileIO::load (source, formats);
+                auto source = file.getParentDirectory().getChildFile (xml.getStringAttribute ("file"));
 
-                if (loaded.snapshot != nullptr && loaded.error.isEmpty() && ! juce::exactlyEqual (loaded.sampleRate, state.sampleRate))
-                    loaded.snapshot = SampleRateConverter::convert (*loaded.snapshot, loaded.sampleRate, state.sampleRate);
+                if (! source.existsAsFile())
+                    source = juce::File (xml.getStringAttribute ("absolute"));
 
-                audio[key] = loaded.error.isEmpty() ? loaded.snapshot : nullptr;
+                const auto key = source.getFullPathName();
 
-                if (audio[key] == nullptr)
-                    result.missing.addIfNotAlreadyThere (source.getFullPathName());
-            }
+                if (audio.find (key) == audio.end())
+                {
+                    auto loaded = AudioFileIO::load (source, formats);
 
-            if (audio[key] == nullptr)
+                    if (loaded.snapshot != nullptr && loaded.error.isEmpty() && ! juce::exactlyEqual (loaded.sampleRate, state.sampleRate))
+                        loaded.snapshot = SampleRateConverter::convert (*loaded.snapshot, loaded.sampleRate, state.sampleRate);
+
+                    audio[key] = loaded.error.isEmpty() ? loaded.snapshot : nullptr;
+
+                    if (audio[key] == nullptr)
+                        result.missing.addIfNotAlreadyThere (source.getFullPathName());
+                }
+
+                return std::pair { source, audio[key] };
+            };
+
+            const auto [source, clipAudio] = locate (*clipXml);
+
+            if (clipAudio == nullptr)
                 continue;
 
             SessionClip clip;
             clip.id = state.nextId++;
             clip.name = clipXml->getStringAttribute ("name", source.getFileNameWithoutExtension());
             clip.source = source;
-            clip.audio = audio[key];
+            clip.audio = clipAudio;
             clip.position = juce::jmax ((juce::int64) 0, clipXml->getStringAttribute ("position").getLargeIntValue());
             clip.offset = juce::jlimit ((juce::int64) 0, clip.audio->getNumFrames(), clipXml->getStringAttribute ("offset").getLargeIntValue());
             clip.length = juce::jlimit ((juce::int64) 0, clip.audio->getNumFrames() - clip.offset,
@@ -931,6 +1001,26 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             clip.gainDb = (float) clipXml->getDoubleAttribute ("gainDb");
             clip.fadeIn = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeIn").getLargeIntValue());
             clip.fadeOut = juce::jlimit ((juce::int64) 0, clip.length, clipXml->getStringAttribute ("fadeOut").getLargeIntValue());
+
+            // Takes, kept only when every one's audio is there; otherwise the clip plays the one it had.
+            std::vector<SessionClip::Take> takes;
+
+            for (auto* takeXml : clipXml->getChildWithTagNameIterator ("TAKE"))
+            {
+                const auto [takeSource, takeAudio] = locate (*takeXml);
+                takes.push_back ({ takeSource, takeAudio, takeXml->getStringAttribute ("shift").getLargeIntValue() });
+            }
+
+            const auto active = clipXml->getIntAttribute ("activeTake");
+
+            if (juce::isPositiveAndBelow (active, (int) takes.size())
+                && std::all_of (takes.begin(), takes.end(), [] (auto& t) { return t.audio != nullptr; })
+                && takes[(size_t) active].audio == clip.audio)
+            {
+                clip.takes = std::move (takes);
+                clip.activeTake = active;
+            }
+
             track.clips.push_back (std::move (clip));
         }
     }

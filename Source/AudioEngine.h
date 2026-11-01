@@ -42,6 +42,9 @@ public:
     /** Frames from this one onwards play as silence (-1 = play to the end). */
     void setStopFrame (juce::int64 frame)                     { stopFrame = frame; }
 
+    /** Plays [start, end) over and over once it gets there (end <= start: no loop). */
+    void setLoop (juce::int64 start, juce::int64 end)         { loopStart = start; loopEnd = end; }
+
     void prepareToPlay (int blockSize, double) override;
     void releaseResources() override                          {}
     void getNextAudioBlock (const juce::AudioSourceChannelInfo&) override;
@@ -59,7 +62,9 @@ private:
     juce::uint32 stateVersion = 0;
     SessionMixer::Buffers buffers;
     juce::int64 nextFrame = -1;            // where the last block ended; anything else is a jump
-    std::atomic<juce::int64> position { 0 }, stopFrame { -1 };
+    std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
+
+    void renderRun (juce::int64 start, const juce::AudioSourceChannelInfo&, int destStart, int numFrames);
 };
 
 //==============================================================================
@@ -84,6 +89,12 @@ public:
 
     /** Plays from start; stops by itself at stopFrame (-1 = the end). */
     void play (juce::int64 startFrame, juce::int64 stopFrame);
+
+    /** In session mode, plays [start, end) over and over once it gets there, until play() or
+        clearLoop(). The played frame keeps counting on through each pass, so frame f of pass k
+        (from 0) is played frame f + k * (end - start). */
+    void setLoop (juce::int64 start, juce::int64 end)      { sessionSource.setLoop (start, end); }
+    void clearLoop()                                       { sessionSource.setLoop (0, 0); }
     void pause()                                  { transport.stop(); }
     bool isPlaying() const                        { return transport.isPlaying(); }
     juce::int64 getPositionFrames() const;
