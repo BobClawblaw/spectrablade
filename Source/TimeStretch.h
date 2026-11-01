@@ -20,4 +20,13 @@ namespace TimeStretch
         buffer comes back. */
     juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate,
                                       const std::function<bool (float)>& progress = {});
+
+    /** Semitones a pitch shift can go up or down: as far as stretching can go. */
+    inline constexpr double widestShift = 12.0;
+
+    /** The input at a pitch `semitones` higher (or lower, when negative; within widestShift),
+        just as long: stretched by the pitch ratio, then resampled back to its length. progress
+        as for stretch. */
+    juce::AudioBuffer<float> shiftPitch (const juce::AudioBuffer<float>& input, double semitones, double sampleRate,
+                                         const std::function<bool (float)>& progress = {});
 }

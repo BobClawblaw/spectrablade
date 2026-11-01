@@ -287,8 +287,14 @@ namespace SessionEdits
     AudioDocument::Snapshot stretchedAudio (const SessionClip&, double ratio, double sampleRate,
                                             const std::function<bool (float)>& progress = {});
 
-    /** Makes a clip play stretched audio (from stretchedAudio(), saved as file), all of it, from
-        where it starts; its fades scale with it, and its takes go. False for a locked clip. */
+    /** The part of the clip's audio that plays, `semitones` higher or lower and just as long.
+        Null with no audio, or when progress cancels. */
+    AudioDocument::Snapshot pitchedAudio (const SessionClip&, double semitones, double sampleRate,
+                                          const std::function<bool (float)>& progress = {});
+
+    /** Makes a clip play processed audio of the part it played (from stretchedAudio() or
+        pitchedAudio(), saved as file), all of it, from where it starts; its fades scale with
+        its length, and its takes go. False for a locked clip. */
     bool stretchClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot stretched);
 
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back

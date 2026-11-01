@@ -126,7 +126,9 @@ private:
     void duplicateTrack();
     void reverseSelectedClip();
     void askToStretchSelectedClip();
-    void stretchSelectedClip (double ratio);
+    void askToShiftSelectedClip();
+    void processSelectedClip (const juce::String& action, const juce::String& suffix,
+                              std::function<AudioDocument::Snapshot (const SessionClip&, const std::function<bool (float)>&)> process);
     void chooseStemsFolder();
     void exportStems (const juce::File& folder, juce::Range<juce::int64>);
 

@@ -141,6 +141,33 @@ namespace
                    && heard.back() < 1.0f && cancelled.getNumSamples() == 0 && calls == 3,
                "time stretch: progress rises from 0 towards 1 as it goes, and stopping it part way gives nothing");
 
+        // Pitch shifts keep the length and move the tone by the ratio.
+        auto shiftsRight = true;
+        juce::String shifted;
+
+        for (auto semitones : { -12.0, -5.0, 7.0, 12.0 })
+        {
+            const auto out = TimeStretch::shiftPitch (tone, semitones, rate);
+            const auto n = out.getNumSamples();
+            const auto f = frequencyOf (out.getReadPointer (0), n / 4, 3 * n / 4, rate);
+            const auto wanted = inputFrequency * std::pow (2.0, semitones / 12.0);
+            const auto rms = out.getRMSLevel (0, n / 4, n / 2);
+            auto inverse = true;
+
+            for (int i = 0; i < n && inverse; ++i)
+                inverse = juce::exactlyEqual (out.getSample (1, i), -out.getSample (0, i));
+
+            shiftsRight = shiftsRight && n == length && std::abs (f / wanted - 1.0) < 0.005 && inverse
+                          && std::abs (juce::Decibels::gainToDecibels (rms / (0.5f / std::sqrt (2.0f)))) < 1.0f;
+            shifted << juce::String (semitones, 0) << ": " << juce::String (f, 2) << " Hz (" << juce::String (wanted, 2) << "), "
+                    << juce::String (juce::Decibels::gainToDecibels (rms), 2) << " dBFS; ";
+        }
+
+        auto shiftCalls = 0;
+        check (shiftsRight && TimeStretch::shiftPitch (tone, 5.0, rate, [&shiftCalls] (float) { return ++shiftCalls < 2; }).getNumSamples() == 0,
+               "pitch shift: the same length, a 440 Hz tone within 0.5% of each shifted pitch and within 1 dB, channels in step, and cancelling ("
+                   + shifted.trimEnd() + ")");
+
         // On a clip: the part it plays, its fades scaled, and not when locked.
         SessionState s;
         s.sampleRate = rate;
@@ -149,6 +176,12 @@ namespace
         SessionEdits::trimClip (s, id, 5000 + 1000, 5000 + 49000);   // plays 48000 frames
         SessionEdits::setClipFades (s, id, 4800, 2400);
         const auto audio = SessionEdits::stretchedAudio (s.tracks[0].clips[0], 1.5, rate);
+        auto pitched = s;
+        const auto up = SessionEdits::pitchedAudio (s.tracks[0].clips[0], 3.0, rate);
+        const auto pitchedApplied = SessionEdits::stretchClip (pitched, id, juce::File ("/takes/tone Shifted.wav"), up);
+        const auto& p = pitched.tracks[0].clips[0];
+        check (pitchedApplied && up->getNumFrames() == 48000 && p.length == 48000 && p.fadeIn == 4800 && p.fadeOut == 2400 && p.position == 6000,
+               "pitch shift: a clip keeps its place, length and fades");
         auto locked = s;
         SessionEdits::setClipLocked (locked, id, true);
         const auto refused = ! SessionEdits::stretchClip (locked, id, juce::File ("/takes/tone Stretched.wav"), audio);

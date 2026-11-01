@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 53: shifting a clip's pitch**
+- Multitrack > Shift Clip Pitch... asks for a shift from -12 to +12 semitones (fractions allowed) and moves the selected clip's pitch by it without changing its length: the part that plays is stretched by the pitch ratio with the Milestone 51 stretching, then resampled back to its length with the app's sample-rate converter. Like Stretch Clip, it runs in the background with Cancel, writes "Vocal Shifted.wav" to the recordings folder, is an undo step ("Shift Clip Pitch"), keeps the clip's place, length and fades, and is refused on a locked clip.
+- Measured by the tests: a 440 Hz tone at -9.03 dBFS shifted by -12, -5, +7 and +12 semitones coming out at 220.00, 329.63, 659.26 and 880.00 Hz (each as worked out) at -9.03 dBFS, the same length, with the channels in step; cancelling part way giving nothing; and on a clip, its place, length and fades kept. Formants move with the pitch (nothing keeps them in place); music and speech were not tested or listened to; the dialog was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 52: stretching in the background**
 - Stretch Clip now runs on a thread of its own behind a progress window with Cancel, as mixing down and bouncing do, so a long clip no longer holds the window up. Cancelling leaves the clip as it was and writes no file. Reversing a clip stays immediate: it only copies the audio back to front.
 - Measured by the tests: the stretch's progress rising from 0 towards 1, and stopping it part way giving nothing, with every Milestone 51 measurement unchanged (10 s of stereo to 15 s took 869 ms this run). The progress window and Cancel were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -390,6 +394,7 @@ The tests run against the real machine:
 - Closing gaps on a track, around locked clips and keeping overlaps.
 - Zero crossings: finding them, and splits landing on them.
 - Time stretch: lengths, pitch and level kept on a tone, channels in step, progress and cancelling, and the clip edit.
+- Pitch shift: four shifts of a tone landing on their pitches at the same length and level, cancelling, and the clip edit.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -443,4 +448,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: changing a clip's pitch in semitones without changing its length, from the same stretching and a resampler
+1. Multitrack, continued: Edit > Undo History, a window listing the session's undo steps, clicking one to go back or forward to it

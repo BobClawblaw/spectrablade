@@ -610,6 +610,17 @@ AudioDocument::Snapshot stretchedAudio (const SessionClip& c, double ratio, doub
     return stretched.getNumSamples() > 0 ? AudioEdits::fromBuffer (std::move (stretched)) : nullptr;
 }
 
+AudioDocument::Snapshot pitchedAudio (const SessionClip& c, double semitones, double sampleRate, const std::function<bool (float)>& progress)
+{
+    if (c.audio == nullptr || c.length <= 0)
+        return nullptr;
+
+    juce::AudioBuffer<float> part (c.audio->getNumChannels(), (int) c.length);
+    c.audio->read (part, 0, c.offset, (int) c.length);
+    auto shifted = TimeStretch::shiftPitch (part, semitones, sampleRate, progress);
+    return shifted.getNumSamples() > 0 ? AudioEdits::fromBuffer (std::move (shifted)) : nullptr;
+}
+
 bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched)
 {
     auto* c = findUnlocked (s, clipId);

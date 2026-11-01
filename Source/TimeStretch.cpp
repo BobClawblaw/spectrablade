@@ -1,4 +1,5 @@
 #include "TimeStretch.h"
+#include "SampleRateConverter.h"
 
 namespace TimeStretch
 {
@@ -111,6 +112,30 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
             for (int ch = 0; ch < channels; ++ch)
                 out.getWritePointer (ch)[o] /= weight[(size_t) o];
 
+    return out;
+}
+
+juce::AudioBuffer<float> shiftPitch (const juce::AudioBuffer<float>& input, double semitones, double sampleRate,
+                                     const std::function<bool (float)>& progress)
+{
+    // Longer by the pitch ratio, then played that much faster: higher by it, and as long as before.
+    const auto ratio = std::pow (2.0, juce::jlimit (-widestShift, widestShift, semitones) / 12.0);
+    const auto part = [&progress] (float from, float to)
+    {
+        return [&progress, from, to] (float p) { return progress == nullptr || progress (from + (to - from) * p); };
+    };
+
+    const auto stretched = stretch (input, ratio, sampleRate, part (0.0f, 0.7f));
+    juce::AudioBuffer<float> out;
+
+    if (stretched.getNumSamples() == 0 && input.getNumSamples() > 0)
+        return {};
+
+    if (! SampleRateConverter::convert (stretched, sampleRate * ratio, sampleRate, out, part (0.7f, 1.0f)))
+        return {};
+
+    // The converter rounds its length up: exactly the input's length, as silence if short.
+    out.setSize (out.getNumChannels(), input.getNumSamples(), true, true);
     return out;
 }
 }
