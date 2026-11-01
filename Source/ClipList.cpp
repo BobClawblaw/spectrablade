@@ -20,6 +20,9 @@ ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, 
     search.onEscapeKey = [this] { setSearch ({}); };
     addAndMakeVisible (search);
 
+    summary.setColour (juce::Label::textColourId, juce::Colours::grey);
+    addAndMakeVisible (summary);
+
     engine.session.addChangeListener (this);
     rebuild();
     startTimerHz (8);
@@ -89,6 +92,33 @@ void ClipList::rebuild()
                                    juce::String ((double) c->length / s->sampleRate, 3), c->source.getFileName(), flags.joinIntoString (", ") },
                           t, c->position, c->length });
     }
+
+    // The count line: every clip, its locked and muted ones, and the shown clips' total length.
+    auto total = 0, locked = 0, muted = 0;
+    juce::int64 shownFrames = 0;
+
+    for (auto& t : s->tracks)
+        for (auto& c : t.clips)
+        {
+            ++total;
+            locked += c.locked ? 1 : 0;
+            muted += c.muted ? 1 : 0;
+        }
+
+    for (auto& r : rows)
+        shownFrames += r.length;
+
+    auto text = juce::String (total) + (total == 1 ? " clip" : " clips");
+
+    if (locked > 0)
+        text << ", " << locked << " locked";
+
+    if (muted > 0)
+        text << ", " << muted << " muted";
+
+    text << (rows.size() < (size_t) total ? "; " + juce::String ((int) rows.size()) + " shown, " : juce::String ("; "))
+         << juce::String ((double) shownFrames / s->sampleRate, 3) << " s in all";
+    summary.setText (text, juce::dontSendNotification);
 
     if (sortColumn != 0)
     {
@@ -191,5 +221,6 @@ void ClipList::resized()
 {
     auto r = getLocalBounds();
     search.setBounds (r.removeFromTop (26).reduced (4, 2));
+    summary.setBounds (r.removeFromBottom (24).reduced (4, 0));
     table.setBounds (r);
 }

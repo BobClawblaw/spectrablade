@@ -8,7 +8,8 @@
     The search box above it shows only the clips whose name, file or track contains what is
     typed, ignoring case. Clicking a column header sorts by that column, and again reverses it:
     tracks in their session order, times by value, text ignoring case with numbers in order;
-    rows that tie keep time order. */
+    rows that tie keep time order. A line below counts the clips (and how many the search shows)
+    and adds up the length of those shown. */
 class ClipList final : public juce::Component,
                        private juce::TableListBoxModel,
                        private juce::ChangeListener,
@@ -42,6 +43,9 @@ public:
     void setSearch (const juce::String&);
     juce::String getSearch() const                      { return search.getText(); }
 
+    /** "4 clips, 1 locked, 1 muted; 3.500 s in all", with "3 shown" while the search hides some. */
+    juce::String getSummary() const                     { return summary.getText(); }
+
     /** Sorts by a column, as clicking its header does; 0 goes back to time order. */
     void setSort (int column, bool forwards);
 
@@ -72,6 +76,7 @@ private:
     bool sortForwards = true;
     juce::TextEditor search;
     juce::TableListBox table { {}, this };
+    juce::Label summary;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ClipList)
 };

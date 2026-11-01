@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 131: clip list count line**
+- Below the clip list a line counts the session's clips, with how many are locked and muted, and adds up the length of the clips shown ("3 clips, 1 locked, 1 muted; 0.850 s in all"), saying how many are shown while the search hides some. It follows edits and undo with the list.
+- Measured by the tests, through a real clip list: three clips (one locked and muted) of 0.5, 0.25 and 0.1 seconds read "3 clips, 1 locked, 1 muted; 0.850 s in all", and a search for one of them "1 shown, 0.250 s in all". The layout was not looked at, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 130: marker list count and buttons**
 - Below the marker list a line counts the markers and regions ("3 markers, 2 regions", adding "(2 shown)" while the search hides some), beside Rename and Delete buttons that act on the highlighted row as Return and Delete do. The buttons are off when no row is highlighted.
 - Measured by the tests, through a real marker list: two markers and two regions are counted, and "(2 shown)" added when a search shows two; Delete with no row highlighted asks for nothing, and with the second row highlighted asks for exactly the marker that row shows. Clicking the buttons with the mouse and the layout were not checked, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -811,6 +815,7 @@ The tests run against the real machine:
 - Select clips in region: the region as the range and its clips; nothing outside a region.
 - Next and previous region: by start, points passed over, in the session view too.
 - Marker list count and buttons: counts with the search, Delete for the highlighted marker only.
+- Clip list count line: clips, locked and muted, and the shown clips' total length.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -864,4 +869,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Clip list: a count line, with the total length of the clips shown
+1. Editor: Copy Selection Time, putting the selection's start, end and length on the clipboard as text

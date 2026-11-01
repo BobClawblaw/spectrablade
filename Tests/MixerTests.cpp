@@ -578,6 +578,12 @@ namespace
         check (list.getNumRows() == 3 && longestFirst && rowMapsClip && byNameSorted && trackOrder && ordered (column (C::start), true, true),
                "clip list: sorted by length backwards, by name and by track order, each row still its clip, and back to time order");
 
+        const auto allCounted = list.getSummary() == "3 clips, 1 locked, 1 muted; 0.850 s in all";
+        list.setSearch ("riff");
+        const auto oneCounted = list.getSummary() == "3 clips, 1 locked, 1 muted; 1 shown, 0.250 s in all";
+        list.setSearch ({});
+        check (allCounted && oneCounted, "clip list: the count line, with locked and muted clips and the shown clips' length (" + list.getSummary() + ")");
+
         engine.session.reset ({}, {});
         settle();
     }
