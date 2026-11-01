@@ -1,8 +1,85 @@
 #include "TrackEffects.h"
 
+namespace
+{
+    // Set while an effect is given a value from an envelope, so its echo isn't taken for a touch.
+    thread_local bool followingEnvelope = false;
+}
+
 TrackEffects::~TrackEffects()
 {
+    cancelPendingUpdate();
     clear();
+}
+
+//==============================================================================
+TrackEffects::Watcher::Watcher (TrackEffects& o, juce::uint32 track, juce::uint32 slot,
+                                const std::map<juce::String, juce::AudioProcessorParameter*>& parameters)
+    : owner (o), trackId (track), slotId (slot)
+{
+    for (auto& [id, parameter] : parameters)
+    {
+        byIndex[parameter->getParameterIndex()] = { parameter, id };
+        parameter->addListener (this);
+    }
+}
+
+TrackEffects::Watcher::~Watcher()
+{
+    for (auto& [index, entry] : byIndex)
+        entry.first->removeListener (this);
+}
+
+void TrackEffects::Watcher::parameterValueChanged (int index, float value)
+{
+    if (! followingEnvelope)
+        report (ParameterTouch::Kind::change, index, value);
+}
+
+void TrackEffects::Watcher::parameterGestureChanged (int index, bool starting)
+{
+    if (const auto found = byIndex.find (index); found != byIndex.end())
+        report (starting ? ParameterTouch::Kind::begin : ParameterTouch::Kind::end, index, found->second.first->getValue());
+}
+
+void TrackEffects::Watcher::report (ParameterTouch::Kind kind, int index, float value)
+{
+    const auto found = byIndex.find (index);
+
+    if (found == byIndex.end())
+        return;
+
+    // Effects may report from any thread, the audio thread included: queue it briefly.
+    {
+        const juce::SpinLock::ScopedLockType sl (owner.touchesLock);
+        owner.touches.push_back ({ kind, trackId, slotId, found->second.second, value });
+    }
+
+    owner.triggerAsyncUpdate();
+}
+
+void TrackEffects::handleAsyncUpdate()
+{
+    std::vector<ParameterTouch> pending;
+
+    {
+        const juce::SpinLock::ScopedLockType sl (touchesLock);
+        std::swap (pending, touches);
+    }
+
+    if (onParameterTouched != nullptr)
+        for (auto& t : pending)
+            onParameterTouched (t);
+}
+
+void TrackEffects::setTouched (juce::uint32 trackId, juce::uint32 slotId, const juce::String& parameterId, bool isTouched)
+{
+    const juce::ScopedLock sl (lock);
+
+    if (isTouched)
+        touched.insert ({ trackId, slotId, parameterId });
+    else
+        touched.erase ({ trackId, slotId, parameterId });
 }
 
 void TrackEffects::prepareSlot (Slot& slot) const
@@ -121,6 +198,7 @@ juce::uint32 TrackEffects::add (juce::uint32 trackId, std::unique_ptr<juce::Audi
     const juce::ScopedLock sl (lock);
     slot->id = slotId != 0 ? slotId : nextSlotId;
     nextSlotId = juce::jmax (nextSlotId, slot->id + 1);
+    slot->watcher = std::make_unique<Watcher> (*this, trackId, slot->id, slot->parameters);
     chains[trackId].push_back (std::move (slot));
     return chains[trackId].back()->id;
 }
@@ -310,7 +388,11 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
                 for (auto& e : track.effectEnvelopes)
                     if (e.slotId == s->id)
                         if (const auto found = s->parameters.find (e.parameterId); found != s->parameters.end())
-                            found->second->setValue (e.envelope.valueAt (stepStart - delayed));
+                            if (touched.empty() || touched.count ({ track.id, s->id, e.parameterId }) == 0)
+                            {
+                                const juce::ScopedValueSetter<bool> following (followingEnvelope, true);
+                                found->second->setValue (e.envelope.valueAt (stepStart - delayed));
+                            }
 
             delayed += juce::jmax (0, s->plugin->getLatencySamples());
             auto& p = *s->plugin;

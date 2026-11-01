@@ -217,8 +217,8 @@ namespace SessionEdits
     /** Writes a pass of automation recorded while playing: points in time order. From the pass's
         first frame to returnFrames after its last, the envelope's old points give way to the
         pass, which starts from the old value there and ends by going back, over returnFrames,
-        to the old value. Outside that, the envelope (or, with none, the track's setting) stays
-        as it was. */
+        to the old value. Outside that, the envelope (or, with none, the track's setting, or for
+        an effect parameter the value the pass starts from) stays as it was. */
     bool writeAutomation (SessionState&, juce::uint32 trackId, const AutomationTarget&,
                           const std::vector<AutomationPoint>& pass, juce::int64 returnFrames);
 }

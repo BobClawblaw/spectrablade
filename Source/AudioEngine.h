@@ -214,6 +214,14 @@ public:
     /** Removes every track's effects (for a new session). */
     void clearTrackEffects();
 
+    /** Hears the track effects' parameters moved in their windows (TrackEffects::onParameterTouched),
+        and holds one off its envelope while it is touched. */
+    void setTrackEffectsListener (std::function<void (const TrackEffects::ParameterTouch&)> listener) { trackEffects.onParameterTouched = std::move (listener); }
+    void setTrackEffectTouched (juce::uint32 trackId, juce::uint32 slotId, const juce::String& parameterId, bool touched)
+    {
+        trackEffects.setTouched (trackId, slotId, parameterId, touched);
+    }
+
     /** Restores track effects from session file EFFECTS elements, by track id, one after another. */
     void loadTrackEffects (std::map<juce::uint32, std::shared_ptr<juce::XmlElement>> effects, AddCallback onDone);
 

@@ -422,6 +422,12 @@ private:
 MultitrackView::MultitrackView (AudioEngine& e) : engine (e)
 {
     state = engine.session.getState();
+    engine.setTrackEffectsListener ([this] (const TrackEffects::ParameterTouch& touch)
+    {
+        auto& player = engine.getPlayer();
+        const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session;
+        effectParameterTouched (touch, playing ? std::optional<juce::int64> (player.getPositionFrames()) : std::nullopt);
+    });
     addAndMakeVisible (headerArea);
     addAndMakeVisible (hScroll);
     addAndMakeVisible (vScroll);
@@ -435,6 +441,8 @@ MultitrackView::MultitrackView (AudioEngine& e) : engine (e)
 
 MultitrackView::~MultitrackView()
 {
+    engine.setTrackEffectsListener (nullptr);
+    finishAutomationPass();
     engine.session.removeChangeListener (this);
 }
 
@@ -709,7 +717,7 @@ void MultitrackView::setWritingAutomation (bool on)
     rebuildHeaders();
 }
 
-void MultitrackView::startAutomationPass (juce::uint32 trackId, AutomationParameter p, juce::int64 frame, float value)
+void MultitrackView::startAutomationPass (juce::uint32 trackId, const AutomationTarget& p, juce::int64 frame, float value)
 {
     finishAutomationPass();
 
@@ -719,7 +727,29 @@ void MultitrackView::startAutomationPass (juce::uint32 trackId, AutomationParame
         return;
 
     pass = AutomationPass { trackId, p, *current, { { juce::jmax ((juce::int64) 0, frame), value } } };
+
+    // An effect parameter being written is held off its envelope, and its envelope shown.
+    if (p.parameter == AutomationParameter::effect)
+    {
+        engine.setTrackEffectTouched (trackId, p.slotId, p.parameterId, true);
+        showEnvelope (trackId, p);
+    }
+
     applyAutomationPass (true);
+}
+
+void MultitrackView::effectParameterTouched (const TrackEffects::ParameterTouch& touch, std::optional<juce::int64> playFrame)
+{
+    using Kind = TrackEffects::ParameterTouch::Kind;
+    const auto target = AutomationTarget::effect (touch.slotId, touch.parameterId);
+    const auto underWay = isAutomationPassUnderWay (touch.trackId, target);
+
+    if (touch.kind == Kind::begin && writingAutomation && playFrame.has_value())
+        startAutomationPass (touch.trackId, target, *playFrame, touch.value);
+    else if (touch.kind == Kind::change && underWay && playFrame.has_value())
+        continueAutomationPass (*playFrame, touch.value);
+    else if (touch.kind == Kind::end && underWay)
+        finishAutomationPass();
 }
 
 void MultitrackView::continueAutomationPass (juce::int64 frame, float value)
@@ -756,6 +786,9 @@ void MultitrackView::continueAutomationPass (juce::int64 frame, float value)
 
 void MultitrackView::finishAutomationPass()
 {
+    if (pass.has_value() && pass->parameter.parameter == AutomationParameter::effect)
+        engine.setTrackEffectTouched (pass->trackId, pass->parameter.slotId, pass->parameter.parameterId, false);
+
     pass.reset();
 }
 
@@ -766,8 +799,9 @@ void MultitrackView::applyAutomationPass (bool first)
     SessionEdits::writeAutomation (next, pass->trackId, pass->parameter, pass->points, returnFrames);
 
     // The first write is a step of its own; the rest of the pass merges into it.
-    engine.session.apply (std::move (next), pass->parameter == AutomationParameter::volume ? "Write Volume Automation"
-                                                                                           : "Write Pan Automation", ! first);
+    const auto kind = pass->parameter.parameter;
+    engine.session.apply (std::move (next), kind == AutomationParameter::volume ? "Write Volume Automation"
+                                          : kind == AutomationParameter::pan ? "Write Pan Automation" : "Write Effect Automation", ! first);
 }
 
 void MultitrackView::rebuildHeaders()

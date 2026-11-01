@@ -63,7 +63,8 @@ public:
 
     /** With automation writing on, a track's volume or pan control stays live while playing,
         even when automated: dragging it records a pass into its envelope (startAutomationPass to
-        finishAutomationPass), heard as it is written and undone as one step. */
+        finishAutomationPass), heard as it is written and undone as one step. So does turning a
+        control in a track effect's own window, from when it is grabbed to when it is let go. */
     bool isWritingAutomation() const noexcept     { return writingAutomation; }
     void setWritingAutomation (bool);
 
@@ -71,10 +72,14 @@ public:
         the pass so far into the session; when the pass ends, the envelope goes back to what it
         had over returnSeconds. A position before the last ends the pass (playback jumped). */
     static constexpr double returnSeconds = 0.1;
-    void startAutomationPass (juce::uint32 trackId, AutomationParameter, juce::int64 frame, float value);
+    void startAutomationPass (juce::uint32 trackId, const AutomationTarget&, juce::int64 frame, float value);
     void continueAutomationPass (juce::int64 frame, float value);
     void finishAutomationPass();
-    bool isAutomationPassUnderWay (juce::uint32 trackId, AutomationParameter p) const noexcept
+
+    /** A track effect's parameter touched in its window, with the play position when the
+        session is playing. Gestures start and finish passes; values continue them. */
+    void effectParameterTouched (const TrackEffects::ParameterTouch&, std::optional<juce::int64> playFrame);
+    bool isAutomationPassUnderWay (juce::uint32 trackId, const AutomationTarget& p) const noexcept
     {
         return pass.has_value() && pass->trackId == trackId && pass->parameter == p;
     }
@@ -192,7 +197,7 @@ private:
     struct AutomationPass
     {
         juce::uint32 trackId = 0;
-        AutomationParameter parameter = AutomationParameter::volume;
+        AutomationTarget parameter;
         SessionState base;                 // the session as the pass began
         std::vector<AutomationPoint> points;
     };

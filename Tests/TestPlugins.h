@@ -97,13 +97,22 @@ public:
     {
         float value = 0.5f;
         float getValue() const override                         { return value; }
-        void setValue (float v) override                        { value = v; ++changes; }
+        void setValue (float v) override
+        {
+            value = v;
+            ++changes;
+
+            if (echo)   // as some plug-ins do, report every change, the host's own included
+                sendValueChangedMessageToListeners (v);
+        }
+
         float getDefaultValue() const override                  { return 0.5f; }
         juce::String getName (int) const override               { return "Gain"; }
         juce::String getLabel() const override                  { return {}; }
         float getValueForText (const juce::String& t) const override { return t.getFloatValue(); }
         juce::String getParameterID() const override            { return "gain"; }
         int changes = 0;
+        bool echo = false;
     };
 
     GainPlugin()

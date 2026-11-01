@@ -153,6 +153,52 @@ void runEffectAutomationTests (juce::AudioFormatManager& formats)
         check (same (play (automated, 0, length, 512, &effects), dry), "effect automation: a bypassed effect's envelope does nothing");
     }
 
+    // Touches in an effect's window are reported in order; the envelope's own values are not,
+    // even from an effect that echoes every change. A touched parameter is left to the hand.
+    {
+        TrackEffects effects;
+        effects.prepare (rate);
+        const auto slot = effects.add (trackId, std::make_unique<GainPlugin>());
+        auto* gain = dynamic_cast<GainPlugin*> (effects.getPlugin (trackId, 0))->gain;
+        gain->echo = true;
+        std::vector<TrackEffects::ParameterTouch> heard;
+        effects.onParameterTouched = [&heard] (const TrackEffects::ParameterTouch& t) { heard.push_back (t); };
+
+        gain->beginChangeGesture();
+        gain->setValueNotifyingHost (0.8f);
+        gain->endChangeGesture();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+
+        using Kind = TrackEffects::ParameterTouch::Kind;
+        const auto is = [&] (size_t i, Kind k, float v)
+        {
+            return heard[i].kind == k && heard[i].trackId == trackId && heard[i].slotId == slot && heard[i].parameterId == "gain"
+                && heard[i].value == v;
+        };
+        // The echo from setValue counts as a change too, so the hand's move is heard once or twice.
+        check (heard.size() >= 3 && is (0, Kind::begin, 0.5f) && is (1, Kind::change, 0.8f) && is (heard.size() - 1, Kind::end, 0.8f),
+               "effect automation: grabbing, turning and letting go of a parameter in its window is reported in order");
+
+        heard.clear();
+        auto automated = s;
+        SessionEdits::setEnvelope (automated, trackId, AutomationTarget::effect (slot, "gain"), ramp);
+        const auto followed = play (automated, 0, length, 512, &effects);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (50);
+        check (heard.empty() && same (followed, expected (dry, ramp, 0)),
+               "effect automation: values from an envelope are not reported as touches, even when the effect echoes them");
+
+        effects.setTouched (trackId, slot, "gain", true);
+        gain->value = 0.25f;
+        const auto changes = gain->changes;
+        auto halved = dry;
+        halved.applyGain (0.5f);
+        check (same (play (automated, 0, length, 512, &effects), halved) && gain->changes == changes,
+               "effect automation: a touched parameter is held off its envelope");
+
+        effects.setTouched (trackId, slot, "gain", false);
+        check (same (play (automated, 0, length, 512, &effects), expected (dry, ramp, 0)), "effect automation: let go, it follows its envelope again");
+    }
+
     // An envelope whose effect has gone is kept but unused; values stay in range; clearing removes it.
     {
         TrackEffects effects;

@@ -537,15 +537,22 @@ bool writeAutomation (SessionState& s, juce::uint32 trackId, const AutomationTar
 
     const auto old = *found;
     const auto start = pass.front().frame, back = pass.back().frame + juce::jmax ((juce::int64) 0, returnFrames);
+
+    // An effect parameter with no envelope holds the value the pass started from.
+    const auto oldValue = [&] (juce::int64 frame)
+    {
+        return p.parameter == AutomationParameter::effect && old.envelope (p).isEmpty() ? pass.front().value : old.valueAt (p, frame);
+    };
+
     Envelope e;
 
     for (auto& point : old.envelope (p).points)
         if (point.frame < start)
             e.points.push_back (point);
 
-    e.points.push_back ({ start, old.valueAt (p, start) });
+    e.points.push_back ({ start, oldValue (start) });
     e.points.insert (e.points.end(), pass.begin(), pass.end());
-    e.points.push_back ({ back, old.valueAt (p, back) });
+    e.points.push_back ({ back, oldValue (back) });
 
     for (auto& point : old.envelope (p).points)
         if (point.frame > back)

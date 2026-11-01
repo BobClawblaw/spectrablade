@@ -17,11 +17,33 @@
     its envelope at the start of each step, at the frame of the audio its effect is working on
     (earlier by the latency of the effects before it).
 
+    Moves of the effects' parameters in their own windows are reported (onParameterTouched), so
+    they can be written as automation. While a parameter is touched its envelope leaves it alone.
+
     Changes are made on the message thread; the mixer calls the SessionMixer::Inserts methods on
     the audio thread. A track whose chain is being changed plays silence for that block. */
-class TrackEffects final : public SessionMixer::Inserts
+class TrackEffects final : public SessionMixer::Inserts,
+                           private juce::AsyncUpdater
 {
 public:
+    /** A parameter moved in an effect's window: a gesture (a knob grabbed) beginning or ending,
+        or a new value (0 to 1). */
+    struct ParameterTouch
+    {
+        enum class Kind { begin, change, end };
+        Kind kind = Kind::change;
+        juce::uint32 trackId = 0, slotId = 0;
+        juce::String parameterId;
+        float value = 0.0f;
+    };
+
+    /** Called on the message thread for each touch, in order. Values the effects are given from
+        envelopes are not reported. */
+    std::function<void (const ParameterTouch&)> onParameterTouched;
+
+    /** While a parameter is touched, its envelope doesn't set it, so what the hand does wins. */
+    void setTouched (juce::uint32 trackId, juce::uint32 slotId, const juce::String& parameterId, bool touched);
+
     /** The largest block a plug-in is given; longer runs are split. */
     static constexpr int maxBlock = 1024;
 
@@ -75,6 +97,21 @@ public:
     void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames) override;
 
 private:
+    /** Listens to one slot's parameters for touches. */
+    struct Watcher final : public juce::AudioProcessorParameter::Listener
+    {
+        Watcher (TrackEffects&, juce::uint32 trackId, juce::uint32 slotId, const std::map<juce::String, juce::AudioProcessorParameter*>&);
+        ~Watcher() override;
+
+        void parameterValueChanged (int index, float value) override;
+        void parameterGestureChanged (int index, bool starting) override;
+        void report (ParameterTouch::Kind, int index, float value);
+
+        TrackEffects& owner;
+        juce::uint32 trackId, slotId;
+        std::map<int, std::pair<juce::AudioProcessorParameter*, juce::String>> byIndex;
+    };
+
     struct Slot
     {
         std::unique_ptr<juce::AudioPluginInstance> plugin;
@@ -82,7 +119,11 @@ private:
         bool bypassed = false;
         juce::AudioBuffer<float> work;
         std::map<juce::String, juce::AudioProcessorParameter*> parameters;
+        std::unique_ptr<Watcher> watcher;      // after the plug-in, so it goes first
     };
+
+    void handleAsyncUpdate() override;
+
 
     using Chain = std::vector<std::unique_ptr<Slot>>;
 
@@ -95,5 +136,9 @@ private:
     std::map<juce::uint32, Chain> chains;
     double rate = 48000.0;
     juce::uint32 nextSlotId = 1;
+    std::set<std::tuple<juce::uint32, juce::uint32, juce::String>> touched;   // guarded by lock
+
+    juce::SpinLock touchesLock;
+    std::vector<ParameterTouch> touches;   // waiting for the message thread
     juce::MidiBuffer midi;
 };

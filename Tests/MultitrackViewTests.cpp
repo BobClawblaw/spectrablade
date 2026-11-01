@@ -282,6 +282,34 @@ void runMultitrackViewTests (AudioEngine& engine)
                         ++effectPixels;
 
             check (effectPixels > 50, "view: draws the effect parameter's envelope (" + juce::String (effectPixels) + " pixels of its hue)");
+
+            // Writing it from the effect's window: grabbed at 0.3 while playing at 10000, turned to
+            // 0.6 by 20000, let go. Without playback a grab writes nothing.
+            const auto clicked = engine.session.getState()->tracks[0].envelope (target).points;
+            using Kind = TrackEffects::ParameterTouch::Kind;
+            // No message loop between touches: with the player stopped, the view's timer would end the pass.
+            const auto touch = [&] (Kind kind, float value, std::optional<juce::int64> frame)
+            {
+                view.effectParameterTouched ({ kind, trackId, slotId, parameterId, value }, frame);
+            };
+
+            view.setWritingAutomation (true);
+            touch (Kind::begin, 0.3f, std::nullopt);
+            check (! view.isAutomationPassUnderWay (trackId, target), "view: an effect's control grabbed while stopped writes nothing");
+
+            touch (Kind::begin, 0.3f, 10000);
+            touch (Kind::change, 0.6f, 20000);
+            touch (Kind::end, 0.6f, 20000);
+            Mouse::settle();
+            const auto before = clicked[0].value;
+            const std::vector<AutomationPoint> wantWritten { { 10000, before }, { 10000, 0.3f }, { 20000, 0.6f }, { 24800, before }, clicked[0] };
+            check (engine.session.getState()->tracks[0].envelope (target).points == wantWritten
+                       && engine.session.getUndoDescription() == "Write Effect Automation" && ! view.isAutomationPassUnderWay (trackId, target),
+                   "view: turning an effect's control in its window while playing writes its envelope, as one step");
+
+            engine.session.undo();
+            Mouse::settle();
+            view.setWritingAutomation (false);
         }
 
         engine.removeTrackPlugin (trackId, 0);
