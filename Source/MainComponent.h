@@ -125,6 +125,8 @@ private:
     void mixDown (const juce::File&, int bitDepth, juce::Range<juce::int64>);
     void bounceTrack();
     void duplicateTrack();
+    void chooseTrackTemplateToSave();
+    void chooseTrackTemplateToAdd();
     void reverseSelectedClip();
     void askToStretchSelectedClip();
     void askToShiftSelectedClip();

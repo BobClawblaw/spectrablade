@@ -11,6 +11,7 @@
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
+#include "TrackTemplate.h"
 #include "UndoHistory.h"
 
 namespace
@@ -52,7 +53,7 @@ namespace
         cmdDuplicateClip, cmdBounceTrack, cmdMoveTrackUp, cmdMoveTrackDown,
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
-        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory
+        cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -748,7 +749,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdUndoHistory; ++id)
+    for (int id = cmdOpen; id <= cmdAddFromTemplate; ++id)
         ids.add (id);
 }
 
@@ -922,6 +923,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setTicked (multitrack.isFindingZeroCrossings()); info.setActive (multitrackMode); break;
         case cmdStretchClip: info.setInfo ("Stretch Clip...", "Make the selected clip longer or shorter without changing its pitch", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
+        case cmdSaveTrackTemplate: info.setInfo ("Save Track as Template...", "Save the selected track's settings, sends and effects to start new tracks from", "Multitrack", 0);
+                            info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0); break;
+        case cmdAddFromTemplate: info.setInfo ("Add Track from Template...", "Add a track or bus made from a saved template", "Multitrack", 0);
+                            info.setActive (multitrackMode && ! isRecording()); break;
         case cmdUndoHistory: info.setInfo ("Undo History", "A window listing the session's undo steps; click one to go back or forward to it", "Edit", 0);
                             info.setTicked (undoHistoryWindow != nullptr); break;
         case cmdShiftPitch: info.setInfo ("Shift Clip Pitch...", "Raise or lower the selected clip's pitch without changing its length", "Multitrack", 0);
@@ -1098,6 +1103,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdStretchClip: askToStretchSelectedClip(); break;
         case cmdShiftPitch: askToShiftSelectedClip(); break;
         case cmdUndoHistory: toggleUndoHistory(); break;
+        case cmdSaveTrackTemplate: chooseTrackTemplateToSave(); break;
+        case cmdAddFromTemplate: chooseTrackTemplateToAdd(); break;
         case cmdZeroCrossings:
             multitrack.setFindingZeroCrossings (! multitrack.isFindingZeroCrossings());
             appProperties.getUserSettings()->setValue (zeroCrossingsKey, multitrack.isFindingZeroCrossings());
@@ -1202,7 +1209,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1686,6 +1693,77 @@ void MainComponent::duplicateTrack()
         if (errors.isNotEmpty())
             showError ("Track effects", "Some of the track's effects could not be copied:\n\n" + errors);
     });
+}
+
+void MainComponent::chooseTrackTemplateToSave()
+{
+    const auto state = engine.session.getState();
+    const auto index = multitrack.getSelectedTrack();
+
+    if (! juce::isPositiveAndBelow (index, (int) state->tracks.size()))
+        return;
+
+    const auto trackId = state->tracks[(size_t) index].id;
+    const auto suggested = juce::File::getSpecialLocation (juce::File::userMusicDirectory)
+                               .getChildFile (juce::File::createLegalFileName (state->tracks[(size_t) index].name) + TrackTemplate::extension);
+
+    chooser = std::make_unique<juce::FileChooser> ("Save track template", suggested, juce::String ("*") + TrackTemplate::extension);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this, trackId] (const juce::FileChooser& fc)
+                          {
+                              if (fc.getResult() == juce::File())
+                                  return;
+
+                              const auto file = fc.getResult().withFileExtension (TrackTemplate::extension);
+
+                              const auto xml = TrackTemplate::create (*engine.session.getState(), trackId, engine.getTrackEffects().createXml (trackId));
+
+                              if (xml == nullptr || ! xml->writeTo (file))
+                                  showError ("Save Track as Template", "Could not write " + file.getFullPathName());
+                          });
+}
+
+void MainComponent::chooseTrackTemplateToAdd()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Add track from template", juce::File::getSpecialLocation (juce::File::userMusicDirectory),
+                                                   juce::String ("*") + TrackTemplate::extension);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              const auto file = fc.getResult();
+
+                              if (file == juce::File())
+                                  return;
+
+                              const auto xml = juce::XmlDocument::parse (file);
+                              auto next = *engine.session.getState();
+                              const auto added = xml != nullptr ? TrackTemplate::add (next, *xml) : TrackTemplate::Added {};
+
+                              if (added.trackId == 0)
+                              {
+                                  showError ("Add Track from Template", file.getFileName() + " is not a track template.");
+                                  return;
+                              }
+
+                              engine.session.apply (std::move (next), "Add Track from Template");
+
+                              if (! added.missingBuses.isEmpty())
+                                  showError ("Add Track from Template", "This session has no bus called " + added.missingBuses.joinIntoString (", ")
+                                                                            + ", so the track doesn't send there.");
+
+                              if (added.effects == nullptr)
+                                  return;
+
+                              engine.session.markEffectsChanged();
+                              engine.loadTrackEffects ({ { added.trackId, added.effects } }, [this] (const juce::String& errors)
+                              {
+                                  engine.session.sendChangeMessage();   // the track headers show the effects
+
+                                  if (errors.isNotEmpty())
+                                      showError ("Track effects", "Some of the template's effects could not be loaded:\n\n" + errors);
+                              });
+                          });
 }
 
 void MainComponent::toggleUndoHistory()

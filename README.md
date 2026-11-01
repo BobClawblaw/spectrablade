@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 55: track templates**
+- Multitrack > Save Track as Template... writes the selected track's or bus's settings to a .sbtrack file: its name, volume, pan, colour, input, note, sends (by the bus's name) and its effects chain, each plug-in's state, bypass and slot included. Its clips, envelopes, group, mute and solo are not kept.
+- Multitrack > Add Track from Template... adds a track or bus made from one at the end of the session, as an undo step ("Add Track from Template"), and loads its effects onto it. Its sends go to the session's first bus with the same name; when there is none, the message names the bus and the track doesn't send there. A plug-in that can't be loaded is named, as when a session opens.
+- Measured by the tests: a template written to a file and read back, added to a session with the bus and to one without: the settings, note, input, a send matched by name, and the effects element all kept; clips, group and mute left out; the missing bus named; and a track id or XML that isn't a template giving nothing. The file dialogs and the effects loading onto the new track were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 54: the undo history**
 - Edit > Undo History opens a window listing the session's undo steps, oldest first, from "Start". The step the session is at is highlighted and the ones that can be redone are grey; clicking a step goes back or forward to it, as that many undos or redos would. A new step drops the grey ones, as it always has. The history is the session's: the single-file editor's own undo isn't listed.
 - Measured by the tests, through the real list: three steps listed after Start with the last highlighted; clicking the first going back to it with the rest redoable, the last going forward again, and Start (where the session was saved) leaving it clean; a click past the end doing nothing; and a new step dropping the redoable ones. The window was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -400,6 +405,7 @@ The tests run against the real machine:
 - Time stretch: lengths, pitch and level kept on a tone, channels in step, progress and cancelling, and the clip edit.
 - Pitch shift: four shifts of a tone landing on their pitches at the same length and level, cancelling, and the clip edit.
 - The undo history: listing steps, going back and forward by clicking, and new steps.
+- Track templates: what they keep, sends by bus name, and a file round trip.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -453,4 +459,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: saving and loading track templates (a track's effects, volume, pan, sends and colour) for new sessions
+1. Multitrack, continued: a session overview strip above the lanes showing every clip in miniature, dragging it to scroll

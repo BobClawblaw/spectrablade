@@ -1,0 +1,80 @@
+#include "TrackTemplate.h"
+#include "TrackColours.h"
+
+namespace TrackTemplate
+{
+std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 trackId, std::unique_ptr<juce::XmlElement> effects)
+{
+    const auto* t = s.findTrack (trackId);
+
+    if (t == nullptr)
+        return nullptr;
+
+    auto xml = std::make_unique<juce::XmlElement> ("TRACKTEMPLATE");
+    xml->setAttribute ("name", t->name);
+    xml->setAttribute ("bus", t->isBus);
+    xml->setAttribute ("gainDb", t->gainDb);
+    xml->setAttribute ("pan", t->pan);
+    xml->setAttribute ("colour", t->colour);
+    xml->setAttribute ("note", t->note);
+    xml->setAttribute ("inputFirst", t->input.first);
+    xml->setAttribute ("inputChannels", t->input.channels);
+
+    for (auto& send : t->sends)
+    {
+        if (const auto* bus = s.findTrack (send.busId))
+        {
+            auto* sendXml = xml->createNewChildElement ("SEND");
+            sendXml->setAttribute ("bus", bus->name);
+            sendXml->setAttribute ("gainDb", send.gainDb);
+            sendXml->setAttribute ("preFader", send.preFader);
+        }
+    }
+
+    if (effects != nullptr)
+        xml->addChildElement (effects.release());
+
+    return xml;
+}
+
+Added add (SessionState& s, const juce::XmlElement& xml)
+{
+    Added added;
+
+    if (! xml.hasTagName ("TRACKTEMPLATE"))
+        return added;
+
+    auto& t = xml.getBoolAttribute ("bus") ? s.addBus() : s.addTrack();
+    t.name = xml.getStringAttribute ("name", t.name);
+    t.gainDb = (float) xml.getDoubleAttribute ("gainDb");
+    t.pan = juce::jlimit (-1.0f, 1.0f, (float) xml.getDoubleAttribute ("pan"));
+    t.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, xml.getIntAttribute ("colour", -1));
+    t.note = xml.getStringAttribute ("note");
+    t.input.first = xml.getIntAttribute ("inputFirst", t.input.first);
+    t.input.channels = xml.getIntAttribute ("inputChannels", t.input.channels);
+    const auto id = t.id;
+
+    if (! t.isBus)
+    {
+        for (auto* sendXml : xml.getChildWithTagNameIterator ("SEND"))
+        {
+            const auto busName = sendXml->getStringAttribute ("bus");
+            const auto bus = std::find_if (s.tracks.begin(), s.tracks.end(), [&busName] (auto& b) { return b.isBus && b.name == busName; });
+
+            if (bus == s.tracks.end())
+            {
+                added.missingBuses.addIfNotAlreadyThere (busName);
+                continue;
+            }
+
+            SessionEdits::setSend (s, id, { bus->id, (float) sendXml->getDoubleAttribute ("gainDb"), sendXml->getBoolAttribute ("preFader") });
+        }
+    }
+
+    if (const auto* effects = xml.getChildByName ("EFFECTS"))
+        added.effects = std::make_shared<juce::XmlElement> (*effects);
+
+    added.trackId = id;
+    return added;
+}
+}

@@ -3,6 +3,7 @@
 #include "../Source/Bounce.h"
 #include "../Source/OfflineRender.h"
 #include "../Source/TimeStretch.h"
+#include "../Source/TrackTemplate.h"
 #include "TestUtils.h"
 #include "BounceTests.h"
 
@@ -330,6 +331,42 @@ void runBounceTests()
             t.hidden = true;
 
         check (identical (mix (hidden, { 0, 12000 }), mix (session (0.0f), { 0, 12000 })), "hiding: hidden tracks and buses still play, bit for bit");
+    }
+
+    // Track templates: what they keep, sends matched to buses by name, and through a file.
+    {
+        auto from = session (-4.5f);
+        from.tracks[0].colour = 4;
+        from.tracks[0].note = "DI & amp";
+        from.tracks[0].input = { 2, 1 };
+        from.tracks[0].group = 3;
+        from.tracks[0].mute = true;
+        auto effects = std::make_unique<juce::XmlElement> ("EFFECTS");
+        effects->createNewChildElement ("SLOT")->setAttribute ("id", 7);
+        const auto xml = TrackTemplate::create (from, from.tracks[0].id, std::move (effects));
+        const auto file = juce::File::createTempFile (TrackTemplate::extension);
+        const auto written = xml != nullptr && xml->writeTo (file);
+        const auto read = juce::XmlDocument::parse (file);
+        file.deleteFile();
+
+        // Into a session with the bus (renamed to match) and one without.
+        SessionState into;
+        into.sampleRate = rate;
+        into.addTrack().name = "Keys";
+        into.addBus().name = from.tracks[2].name;
+        auto bare = into;
+        bare.tracks.pop_back();
+        const auto added = read != nullptr ? TrackTemplate::add (into, *read) : TrackTemplate::Added {};
+        const auto withoutBus = read != nullptr ? TrackTemplate::add (bare, *read) : TrackTemplate::Added {};
+        const auto& t = into.tracks.back();
+        check (written && added.trackId == t.id && t.name == "Guitar" && ! t.isBus && juce::exactlyEqual (t.gainDb, -4.5f)
+                   && juce::exactlyEqual (t.pan, -0.3f) && t.colour == 4 && t.note == "DI & amp" && t.input == TrackInput { 2, 1 }
+                   && t.group == 0 && ! t.mute && t.clips.empty() && t.sends.size() == 1 && t.sends[0].busId == into.tracks[1].id
+                   && juce::exactlyEqual (t.sends[0].gainDb, -10.0f) && added.effects != nullptr && added.effects->getChildByName ("SLOT") != nullptr
+                   && added.effects->getChildByName ("SLOT")->getIntAttribute ("id") == 7 && added.missingBuses.isEmpty()
+                   && withoutBus.trackId != 0 && bare.tracks.back().sends.empty() && withoutBus.missingBuses == juce::StringArray { from.tracks[2].name }
+                   && TrackTemplate::create (from, 999, nullptr) == nullptr && TrackTemplate::add (bare, juce::XmlElement ("SESSION")).trackId == 0,
+               "track templates: settings, note, input, sends by bus name and effects through a file, not clips, group or mute; a missing bus named");
     }
 
     auto gone = session (0.0f);
