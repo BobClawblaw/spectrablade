@@ -117,7 +117,18 @@ private:
     void confirmDiscardSession (std::function<void()> proceed);
     void newSession();
     void chooseSession();
-    void openSession (const juce::File&);
+    /** Opens a session file. With `as`, the session takes that file as its own (none for an
+        unsaved one) and starts with changes to save: a recovered copy. */
+    void openSession (const juce::File&, std::optional<juce::File> as = std::nullopt);
+
+    /** Writes a recovery copy of the session when it has changes made since the last copy, at
+        most every SessionRecovery::intervalSeconds; removes it as soon as there is nothing
+        unsaved (the session was saved, or undone back to where it was). */
+    void keepRecoveryCopy();
+
+    /** At startup, offers the copy left by a session that wasn't closed normally. */
+    void offerRecoveredSession();
+    juce::File recoveryFolder();
     void saveSession (std::function<void (bool saved)> done = {});
     void saveSessionAs (std::function<void (bool saved)> done = {});
     void saveSessionCopyWithAudio();
@@ -175,6 +186,9 @@ private:
     void saveSettings();
 
     juce::ApplicationProperties appProperties;
+    juce::uint32 recoveredVersion = 0;         // the session version last copied for recovery
+    juce::uint32 lastRecoveryCheck = 0;        // when, in milliseconds since startup
+    bool recoveryCopyKept = false;
     juce::TooltipWindow tooltips { this, 700 };   // without one, no control's tooltip ever shows
     AudioEngine engine;
     juce::ApplicationCommandManager commands;

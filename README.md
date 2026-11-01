@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 64: recovering a session after a crash**
+- While the session has unsaved changes, a copy of it (with its track effects) is written every two minutes, when it has changed since the last copy, to a Recovery folder beside the app's settings, with a note of the session's own file and the time. Not while recording, since the takes aren't in the session until they stop. Saving the session, undoing back to where it was saved, or quitting normally removes the copy.
+- When SpectraBlade starts and finds a copy, it says which session it was and when the copy was made, and offers to open it. Opened, it takes the session's own file (or none, if it had never been saved) and starts with changes to save; Discard removes it. The audio the copy uses is the session's own files; changes made in the last two minutes before a crash can be lost.
+- Measured by the tests: a copy written to a new folder, found with its session's file and a time between before and after writing, and opening with its tracks and markers; an untitled session's copy naming no file; clearing removing it; and a recovered session starting with changes to save. The two-minute timer, the startup question and a real crash were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 63: quantizing clips, and snapping dropped files**
 - Multitrack > Quantize Clips to Grid moves each selected clip, on its own track, so it starts on the nearest line of the grid snapping uses: in bars and beats the beats (or bars, zoomed out) of the tempo map, otherwise the ruler's marks. It is one undo step ("Quantize Clip", "Quantize 3 Clips"); locked clips stay, and no clip goes before the session's start.
 - Audio files dropped onto the lanes now land on the grid (or another snap target) when snapping is on, as dragged clips do; before, they landed exactly where they were dropped.
@@ -457,6 +462,7 @@ The tests run against the real machine:
 - The marker list and markers as CSV.
 - Export Regions: which regions, and their files.
 - Quantizing clips to seconds and to beats, and snapping dropped files.
+- Recovery copies: writing, finding, clearing, and a recovered session needing saving.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -510,4 +516,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Sessions: saving a recovery copy of an unsaved session every few minutes, and offering it after a crash
+1. Multitrack, continued: track freeze, rendering a track through its effects to a file it then plays instead (and unfreezing back), to free the CPU

@@ -9,6 +9,7 @@
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/SessionCollect.h"
+#include "../Source/SessionRecovery.h"
 #include "../Source/TrackColours.h"
 #include "../Source/UndoHistory.h"
 #include "TestUtils.h"
@@ -621,6 +622,42 @@ namespace
     }
 }
 
+namespace
+{
+    void testRecovery (AudioEngine& engine)
+    {
+        const auto folder = juce::File::createTempFile ("recovery");   // not made yet: write makes it
+        const auto none = ! SessionRecovery::find (folder).has_value();
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().name = "Vocal";
+        s.markers = { { 4800, 0, "Here" } };
+        const auto original = folder.getSiblingFile ("Song.sbsession");
+        const auto before = juce::Time::getCurrentTime().toMilliseconds();
+        const auto error = SessionRecovery::write (s, original, [] (juce::uint32) { return std::unique_ptr<juce::XmlElement>(); }, folder);
+        const auto found = SessionRecovery::find (folder);
+        const auto loaded = found.has_value() ? SessionFile::load (found->session, engine.formatManager) : SessionFile::Loaded {};
+        check (none && error.isEmpty() && found.has_value() && found->original == original && found->written.toMilliseconds() >= before
+                   && found->written.toMilliseconds() <= juce::Time::getCurrentTime().toMilliseconds()
+                   && loaded.error.isEmpty() && loaded.state.tracks.size() == 1 && loaded.state.tracks[0].name == "Vocal" && loaded.state.markers == s.markers,
+               "recovery: a copy is written to its folder with the session's own file and the time, and opens as the session");
+
+        const auto untitled = SessionRecovery::write (s, {}, {}, folder).isEmpty() && SessionRecovery::find (folder).has_value()
+                              && SessionRecovery::find (folder)->original == juce::File();
+        SessionRecovery::clear (folder);
+        const auto cleared = ! SessionRecovery::find (folder).has_value();
+        folder.deleteRecursively();
+
+        Session session;
+        session.reset (s, original);
+        const auto cleanAtFirst = ! session.isDirty();
+        session.markUnsaved();
+        check (untitled && cleared && cleanAtFirst && session.isDirty() && session.getFile() == original,
+               "recovery: an unsaved session's copy names no file; clearing removes it; a recovered session starts with changes to save");
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
     testClipProperties (engine);
@@ -633,4 +670,5 @@ void runMixerTests (AudioEngine& engine)
     testUndoHistory (engine);
     testCollect (engine);
     testMarkerList (engine);
+    testRecovery (engine);
 }

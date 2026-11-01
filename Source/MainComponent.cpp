@@ -10,6 +10,7 @@
 #include "PluginScanner.h"
 #include "SampleRateConverter.h"
 #include "SessionCollect.h"
+#include "SessionRecovery.h"
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
@@ -684,6 +685,75 @@ MainComponent::MainComponent()
     setWantsKeyboardFocus (true);
     setSize (1200, 680);
     startTimerHz (20);
+    lastRecoveryCheck = juce::Time::getMillisecondCounter();
+
+    juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+    {
+        if (safe != nullptr)
+            safe->offerRecoveredSession();
+    });
+}
+
+juce::File MainComponent::recoveryFolder()
+{
+    return appProperties.getUserSettings()->getFile().getParentDirectory().getChildFile ("Recovery");
+}
+
+void MainComponent::keepRecoveryCopy()
+{
+    if (! engine.session.isDirty())
+    {
+        if (recoveryCopyKept)
+            SessionRecovery::clear (recoveryFolder());
+
+        recoveryCopyKept = false;
+        return;
+    }
+
+    const auto now = juce::Time::getMillisecondCounter();
+
+    if (now - lastRecoveryCheck < (juce::uint32) SessionRecovery::intervalSeconds * 1000u)
+        return;
+
+    lastRecoveryCheck = now;
+
+    // Not while recording: the takes aren't in the session until they stop.
+    if (engine.session.getVersion() == recoveredVersion || isRecording())
+        return;
+
+    recoveredVersion = engine.session.getVersion();
+    const auto error = SessionRecovery::write (*engine.session.getState(), engine.session.getFile(),
+                                               [this] (juce::uint32 id) { return engine.getTrackEffects().createXml (id); }, recoveryFolder());
+    recoveryCopyKept = error.isEmpty();
+
+    if (error.isNotEmpty())
+        juce::Logger::writeToLog ("Could not write the recovery copy: " + error);
+}
+
+void MainComponent::offerRecoveredSession()
+{
+    const auto copy = SessionRecovery::find (recoveryFolder());
+
+    if (! copy.has_value())
+        return;
+
+    const auto name = copy->original != juce::File() ? copy->original.getFileName() : juce::String ("an untitled session");
+    juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Recover Session",
+                                        "SpectraBlade closed without saving changes to " + name + ". A copy from "
+                                            + copy->written.toString (true, true, false) + " was kept. Open it?",
+                                        "Open", "Discard", this,
+                                        juce::ModalCallbackFunction::create ([this, found = *copy] (int result)
+                                        {
+                                            if (result == 1)
+                                            {
+                                                openSession (found.session, found.original);
+                                                recoveryCopyKept = true;   // kept until the session is saved
+                                            }
+                                            else
+                                            {
+                                                SessionRecovery::clear (recoveryFolder());
+                                            }
+                                        }));
 }
 
 MainComponent::~MainComponent()
@@ -696,6 +766,9 @@ MainComponent::~MainComponent()
             r->stop();
 
     saveSettings();
+
+    // A normal close: the user has saved or discarded the session's changes.
+    SessionRecovery::clear (recoveryFolder());
     renderJob = nullptr;
     backgroundJob = nullptr;
     engine.onPluginAboutToBeRemoved = nullptr;
@@ -1356,6 +1429,7 @@ void MainComponent::timerCallback()
 {
     auto& player = engine.getPlayer();
     auto& recorder = engine.getRecorder();
+    keepRecoveryCopy();
 
     updateInputs();
 
@@ -1607,7 +1681,7 @@ void MainComponent::chooseSession()
                           });
 }
 
-void MainComponent::openSession (const juce::File& file)
+void MainComponent::openSession (const juce::File& file, std::optional<juce::File> as)
 {
     auto loaded = SessionFile::load (file, engine.formatManager);
 
@@ -1619,7 +1693,11 @@ void MainComponent::openSession (const juce::File& file)
 
     engine.getPlayer().pause();
     engine.clearTrackEffects();
-    engine.session.reset (std::move (loaded.state), file);
+    engine.session.reset (std::move (loaded.state), as.value_or (file));
+
+    if (as.has_value())
+        engine.session.markUnsaved();
+
     multitrack.setCursor (0);
     setMultitrack (true);
     multitrack.zoomToFit();

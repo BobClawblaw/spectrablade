@@ -484,6 +484,9 @@ public:
     bool isDirty() const noexcept                 { return position != savedPosition || effectsChanged; }
     void markSaved (const juce::File& savedAs);
 
+    /** Marks the session as having changes to save (a recovered copy, say), at every step. */
+    void markUnsaved();
+
     /** Track effects live outside the undoable state; changing them still needs saving. */
     void markEffectsChanged();
 

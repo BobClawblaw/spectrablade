@@ -1489,6 +1489,12 @@ void Session::markSaved (const juce::File& savedAs)
     sendChangeMessage();
 }
 
+void Session::markUnsaved()
+{
+    savedPosition = -1;
+    sendChangeMessage();
+}
+
 void Session::releaseUnusedStates()
 {
     pendingRelease.erase (std::remove_if (pendingRelease.begin(), pendingRelease.end(),
