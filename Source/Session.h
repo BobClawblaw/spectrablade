@@ -179,6 +179,17 @@ struct SessionTrack
     juce::String note;                     // free text, shown in the header's tooltip
     TrackInput input;                      // what it records from (tracks only)
 
+    /** A frozen track plays this (its clips, pan and effects rendered, from session frame 0)
+        instead of its clips and effects; its volume, sends, mute and solo still apply. Its clips
+        can't be changed while it is frozen. */
+    AudioDocument::Snapshot frozenAudio;
+    juce::File frozenFile;
+
+    bool isFrozen() const noexcept                { return frozenAudio != nullptr; }
+
+    /** False for a bus or a frozen track: clips meant for it go onto a new track instead. */
+    bool takesClips() const noexcept              { return ! isBus && ! isFrozen(); }
+
     static constexpr int maxGroups = 8;
     std::vector<SessionClip> clips;
     std::vector<SessionSend> sends;
@@ -378,6 +389,18 @@ namespace SessionEdits
         input. Its effects are not in the state; copy them by the new id. Returns the copy's id,
         or 0 when there is no such track. */
     juce::uint32 duplicateTrack (SessionState&, int track);
+
+    /** How long past a frozen track's last clip its effects are rendered, for tails to ring out. */
+    inline constexpr double freezeTailSeconds = 5.0;
+
+    /** Freezes a track: it plays `audio` (from frozenSource rendered, saved as file) from frame 0
+        instead of its clips and effects. False for a bus or a track that is gone. */
+    bool freezeTrack (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot audio);
+    bool unfreezeTrack (SessionState&, juce::uint32 trackId);
+
+    /** What freezing a track renders: the track alone with its clips, pan and effects, at 0 dB
+        with no volume envelope, sends or solo, unmuted. */
+    SessionState frozenSource (const SessionState&, juce::uint32 trackId);
 
     /** Moves each clip on a track that starts after the end of the clips before it back to that
         end, from the first clip on, so they play one after another. A clip overlapping the ones

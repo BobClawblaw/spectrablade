@@ -194,9 +194,70 @@ namespace
     }
 }
 
+namespace
+{
+    void testFreeze()
+    {
+        // The guitar panned, sent to a bus after its volume, with a volume envelope: frozen, it
+        // plays its rendered audio through the same volume, envelope and send.
+        for (auto db : { 0.0f, -6.0f })
+        {
+            auto s = session (db);
+            const auto guitar = s.tracks[0].id;
+            Envelope ride;
+            ride.points = { { 0, 0.0f }, { 6000, -9.0f }, { 12000, 2.0f } };
+            SessionEdits::setEnvelope (s, guitar, AutomationParameter::volume, ride);
+            const juce::Range<juce::int64> range (0, 14000);
+            const auto before = mix (s, range);
+            auto frozenAudio = AudioEdits::fromBuffer (mix (SessionEdits::frozenSource (s, guitar), { 0, 10000 + 2000 }));
+
+            auto frozen = s;
+            const auto froze = SessionEdits::freezeTrack (frozen, guitar, juce::File ("/takes/Guitar Frozen.wav"), frozenAudio);
+            const auto after = mix (frozen, range);
+            const auto most = largestDifference (before, after);
+            const auto& source = SessionEdits::frozenSource (s, guitar).tracks;
+
+            check (froze && frozen.tracks[0].isFrozen() && ! frozen.tracks[0].takesClips() && source.size() == 1 && source[0].sends.empty()
+                       && juce::exactlyEqual (source[0].gainDb, 0.0f) && source[0].volumeEnvelope.points.empty() && juce::exactlyEqual (source[0].pan, -0.3f)
+                       && frozenAudio->getNumChannels() == 2,
+                   "freeze: renders the track alone with its pan, at 0 dB with no envelope or sends, in stereo");
+            check (identical (before, after),
+                   "freeze: at " + juce::String (db) + " dB with a volume envelope and a send, the mix is bit for bit the live one (largest difference "
+                       + juce::String (most, 10) + ")");
+
+            auto unfrozen = frozen;
+            check (SessionEdits::unfreezeTrack (unfrozen, guitar) && ! unfrozen.tracks[0].isFrozen() && identical (mix (unfrozen, range), before)
+                       && ! SessionEdits::unfreezeTrack (unfrozen, guitar),
+                   "freeze: unfreezing plays the clips live again, mixing as before");
+        }
+
+        // While frozen its clips stay as they are, and new ones go onto a new track.
+        auto s = session (0.0f);
+        const auto guitar = s.tracks[0].id;
+        const auto clip = s.tracks[0].clips[0].id;
+        const auto busFrozen = SessionEdits::freezeTrack (s, s.tracks[2].id, {}, ramp (2, 100, 0.1f));
+        SessionEdits::freezeTrack (s, guitar, juce::File ("/takes/Guitar Frozen.wav"), ramp (2, 12000, 0.1f));
+        const auto kept = s;
+        const auto refused = ! SessionEdits::moveClip (s, clip, 1, 5000) && ! SessionEdits::splitClip (s, clip, 3000)
+                             && ! SessionEdits::setClipMuted (s, clip, true);
+        auto cleared = s;
+        SessionEdits::clearTime (cleared, 0, 100000);
+        const auto clipAfter = cleared.tracks[0].clips;
+        const auto added = SessionEdits::addClip (s, 0, juce::File ("/takes/more.wav"), ramp (1, 500, 0.1f), 0);
+        const auto moved = SessionEdits::moveClip (s, s.tracks[1].clips[0].id, 0, 2000);
+
+        check (! busFrozen && refused && clipAfter.size() == 1 && clipAfter[0].position == kept.tracks[0].clips[0].position
+                   && clipAfter[0].length == kept.tracks[0].clips[0].length && s.tracks[0].clips.size() == 1
+                   && s.tracks.size() == 4 && s.tracks[3].clips.size() == 1 && s.tracks[3].clips[0].id == added
+                   && moved && s.tracks[1].clips[0].position == 2000,
+               "freeze: a frozen track's clips can't be moved, split, muted or cleared; added clips go to a new track and moves onto it stay put");
+    }
+}
+
 void runBounceTests()
 {
     testTimeStretch();
+    testFreeze();
 
     const juce::Range<juce::int64> range (0, 12000);
 

@@ -79,6 +79,32 @@ namespace
         return inserts != nullptr && inserts->isActive (id) ? inserts->getLatency (id) : 0;
     }
 
+    /** A track's own latency: none when it is frozen, as its effects don't run. */
+    int latencyOf (Inserts* inserts, const SessionTrack& track)
+    {
+        return track.isFrozen() ? 0 : latencyOf (inserts, track.id);
+    }
+
+    /** A frozen track's audio from frame start, into frames [0, numFrames) of out. */
+    void readFrozen (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames)
+    {
+        out.clear (0, 0, numFrames);
+        out.clear (1, 0, numFrames);
+        const auto& audio = *track.frozenAudio;
+        const auto from = juce::jmax ((juce::int64) 0, start), to = juce::jmin (audio.getNumFrames(), start + numFrames);
+
+        if (to <= from)
+            return;
+
+        // Read into the right place of out: frames before 0 stay silent.
+        const auto offset = (int) (from - start), count = (int) (to - from);
+        juce::AudioBuffer<float> part (out.getArrayOfWritePointers(), 2, offset, count);
+        audio.read (part, 0, from, count);
+
+        if (audio.getNumChannels() == 1)
+            part.copyFrom (1, 0, part, 0, 0, count);
+    }
+
     /** The most latency among the buses the track sends to: how far its sends must run ahead. */
     int sendLatency (const SessionState& state, const SessionTrack& track, Inserts* inserts)
     {
@@ -251,7 +277,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (track.isBus || ! plays (state, track))
             continue;
 
-        const auto own = latencyOf (inserts, track.id);
+        const auto own = latencyOf (inserts, track);
         const auto ahead = sendLatency (state, track, inserts);
         const auto panAutomated = ! track.panEnvelope.isEmpty();
 
@@ -259,18 +285,22 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (panAutomated)
             track.panEnvelope.fill (start + own + ahead, pans, numFrames);
 
-        if (live == nullptr || live->clips)
+        // A frozen track's audio already has its clips, pan and effects: it is the track's
+        // output at start + ahead.
+        if (track.isFrozen())
+            readFrozen (track, start + ahead, buffers.track, numFrames);
+        else if (live == nullptr || live->clips)
             renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, panAutomated ? pans : nullptr);
         else
             buffers.track.clear (0, numFrames);
 
-        if (live != nullptr && live->audio != nullptr)
+        if (live != nullptr && live->audio != nullptr && ! track.isFrozen())
             for (int i = 0; i < live->count; ++i)
                 if (const auto& in = live->inputs[(size_t) i]; in.trackId == track.id && in.numChannels > 0
                                                                 && in.firstChannel + in.numChannels <= live->audio->getNumChannels())
                     addLive (in, *live->audio, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
 
-        if (inserts != nullptr && inserts->isActive (track.id))
+        if (inserts != nullptr && ! track.isFrozen() && inserts->isActive (track.id))
             inserts->process (track, start + own + ahead, buffers.track, numFrames);
 
         // The track's output is now the audio at start + ahead.
@@ -390,7 +420,7 @@ void prime (const SessionState& state, juce::int64 start, Buffers& buffers, Inse
 
     for (auto& track : state.tracks)
         if (! track.isBus && plays (state, track))
-            longest = juce::jmax (longest, latencyOf (&inserts, track.id) + sendLatency (state, track, &inserts));
+            longest = juce::jmax (longest, latencyOf (&inserts, track) + sendLatency (state, track, &inserts));
 
     const auto chunk = juce::jmax (1, buffers.discard.getNumSamples());
 

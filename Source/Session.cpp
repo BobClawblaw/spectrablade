@@ -279,11 +279,16 @@ namespace
         return where.has_value() ? &s.tracks[(size_t) where->first].clips[(size_t) where->second] : nullptr;
     }
 
-    // A clip the edits may change: there, and not locked.
+    // A clip the edits may change: there, not locked, and not on a frozen track.
     SessionClip* findUnlocked (SessionState& s, juce::uint32 clipId)
     {
-        auto* c = find (s, clipId);
-        return c != nullptr && ! c->locked ? c : nullptr;
+        const auto where = s.findClip (clipId);
+
+        if (! where.has_value() || s.tracks[(size_t) where->first].isFrozen())
+            return nullptr;
+
+        auto* c = &s.tracks[(size_t) where->first].clips[(size_t) where->second];
+        return ! c->locked ? c : nullptr;
     }
 
     void limitFades (SessionClip& c)
@@ -295,7 +300,7 @@ namespace
 
 juce::uint32 addClip (SessionState& s, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position)
 {
-    if (track < 0 || track >= (int) s.tracks.size() || s.tracks[(size_t) track].isBus)
+    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
     {
         s.addTrack();
         track = (int) s.tracks.size() - 1;
@@ -323,7 +328,7 @@ bool moveClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int64 po
     auto clip = from[(size_t) where->second];
     clip.position = juce::jmax ((juce::int64) 0, position);
 
-    if (toTrack < (int) s.tracks.size() && s.tracks[(size_t) toTrack].isBus)
+    if (toTrack < (int) s.tracks.size() && ! s.tracks[(size_t) toTrack].takesClips())
         toTrack = where->first;
 
     if (toTrack == where->first)
@@ -450,8 +455,10 @@ bool setClipColour (SessionState& s, juce::uint32 clipId, int colour)
 bool setClipMuted (SessionState& s, juce::uint32 clipId, bool muted)
 {
     auto* c = find (s, clipId);
+    const auto where = s.findClip (clipId);
 
-    if (c == nullptr || c->muted == muted)
+    // A frozen track plays its frozen audio, so muting its clips would change nothing heard.
+    if (c == nullptr || c->muted == muted || s.tracks[(size_t) where->first].isFrozen())
         return false;
 
     c->muted = muted;
@@ -590,7 +597,7 @@ bool setClipFades (SessionState& s, juce::uint32 clipId, juce::int64 fadeIn, juc
 
 juce::uint32 placeClip (SessionState& s, int track, const SessionClip& clip, juce::int64 position)
 {
-    if (track < 0 || track >= (int) s.tracks.size() || s.tracks[(size_t) track].isBus)
+    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
     {
         s.addTrack();
         track = (int) s.tracks.size() - 1;
@@ -710,7 +717,7 @@ bool setClipFadeShape (SessionState& s, juce::uint32 clipId, bool fadeOut, FadeS
 
 bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
 {
-    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || end <= start)
+    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || end <= start || s.tracks[(size_t) track].isFrozen())
         return false;
 
     auto& clips = s.tracks[(size_t) track].clips;
@@ -755,7 +762,7 @@ bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
 
 juce::uint32 recordClip (SessionState& s, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position)
 {
-    if (audio != nullptr && juce::isPositiveAndBelow (track, (int) s.tracks.size()) && ! s.tracks[(size_t) track].isBus)
+    if (audio != nullptr && juce::isPositiveAndBelow (track, (int) s.tracks.size()) && s.tracks[(size_t) track].takesClips())
         clearRange (s, track, position, position + audio->getNumFrames());
 
     return addClip (s, track, source, std::move (audio), position);
@@ -767,7 +774,7 @@ juce::uint32 recordTakes (SessionState& s, int track, const juce::File& source, 
     if (audio == nullptr || offsets.empty() || length <= 0)
         return 0;
 
-    if (juce::isPositiveAndBelow (track, (int) s.tracks.size()) && ! s.tracks[(size_t) track].isBus)
+    if (juce::isPositiveAndBelow (track, (int) s.tracks.size()) && s.tracks[(size_t) track].takesClips())
         clearRange (s, track, position, position + length);
 
     const auto id = addClip (s, track, source, audio, position);
@@ -829,7 +836,7 @@ bool moveTrack (SessionState& s, int from, int to)
 
 int closeGaps (SessionState& s, int track)
 {
-    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))
+    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || s.tracks[(size_t) track].isFrozen())
         return 0;
 
     auto& clips = s.tracks[(size_t) track].clips;
@@ -995,7 +1002,7 @@ bool deleteTime (SessionState& s, juce::int64 start, juce::int64 end)
 
     for (auto& track : s.tracks)
         for (auto& c : track.clips)
-            if (! c.locked && c.position >= end)
+            if (! c.locked && ! track.isFrozen() && c.position >= end)
             {
                 c.position -= end - start;
                 changed = true;
@@ -1015,7 +1022,7 @@ bool insertTime (SessionState& s, juce::int64 at, juce::int64 length)
 
     for (auto& track : s.tracks)
         for (auto& c : track.clips)
-            if (! c.locked && c.position < at && at < c.getEnd())
+            if (! c.locked && ! track.isFrozen() && c.position < at && at < c.getEnd())
                 across.push_back (c.id);
 
     for (auto id : across)
@@ -1023,7 +1030,7 @@ bool insertTime (SessionState& s, juce::int64 at, juce::int64 length)
 
     for (auto& track : s.tracks)
         for (auto& c : track.clips)
-            if (! c.locked && c.position >= at)
+            if (! c.locked && ! track.isFrozen() && c.position >= at)
             {
                 c.position += length;
                 changed = true;
@@ -1138,7 +1145,7 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
         auto& track = s.tracks[i];
         const auto& copied = t.tracks[i];
 
-        for (auto c : copied.clips)
+        for (auto c : track.isFrozen() ? std::vector<SessionClip>() : copied.clips)
         {
             c.id = s.nextId++;
             c.position += at;
@@ -1201,6 +1208,50 @@ bool removeTempoChange (SessionState& s, juce::int64 bar)
     const auto before = changes.size();
     changes.erase (std::remove_if (changes.begin(), changes.end(), [bar] (auto& c) { return c.bar == bar; }), changes.end());
     return changes.size() != before;
+}
+
+bool freezeTrack (SessionState& s, juce::uint32 trackId, const juce::File& file, AudioDocument::Snapshot audio)
+{
+    const auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || track->isBus || audio == nullptr)
+        return false;
+
+    track->frozenAudio = std::move (audio);
+    track->frozenFile = file;
+    return true;
+}
+
+bool unfreezeTrack (SessionState& s, juce::uint32 trackId)
+{
+    const auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || ! track->isFrozen())
+        return false;
+
+    track->frozenAudio = nullptr;
+    track->frozenFile = juce::File();
+    return true;
+}
+
+SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
+{
+    auto alone = s;
+    alone.tracks.clear();
+
+    if (const auto* track = s.findTrack (trackId))
+    {
+        auto t = *track;
+        t.sends.clear();
+        t.mute = t.solo = false;
+        t.gainDb = 0.0f;
+        t.volumeEnvelope = {};
+        t.frozenAudio = nullptr;
+        t.frozenFile = juce::File();
+        alone.tracks.push_back (std::move (t));
+    }
+
+    return alone;
 }
 
 juce::uint32 duplicateTrack (SessionState& s, int track)
@@ -1662,6 +1713,13 @@ juce::String save (const SessionState& state, const juce::File& target,
             if (auto effects = trackEffects (t.id))
                 track->addChildElement (effects.release());
 
+        if (t.isFrozen())
+        {
+            auto* frozen = track->createNewChildElement ("FROZEN");
+            frozen->setAttribute ("file", t.frozenFile.getRelativePathFrom (target.getParentDirectory()));
+            frozen->setAttribute ("absolute", t.frozenFile.getFullPathName());
+        }
+
         for (auto& c : t.clips)
         {
             auto* clip = track->createNewChildElement ("CLIP");
@@ -1754,6 +1812,32 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     state.beatsPerBar = juce::jlimit (1, 16, root->getIntAttribute ("beatsPerBar", 4));
     std::map<juce::String, AudioDocument::Snapshot> audio;   // by full path: each file read once
 
+    // The relative path first, so a session moved with its audio still finds it.
+    const auto locate = [&] (const juce::XmlElement& xml)
+    {
+        auto source = file.getParentDirectory().getChildFile (xml.getStringAttribute ("file"));
+
+        if (! source.existsAsFile())
+            source = juce::File (xml.getStringAttribute ("absolute"));
+
+        const auto key = source.getFullPathName();
+
+        if (audio.find (key) == audio.end())
+        {
+            auto loaded = AudioFileIO::load (source, formats);
+
+            if (loaded.snapshot != nullptr && loaded.error.isEmpty() && ! juce::exactlyEqual (loaded.sampleRate, state.sampleRate))
+                loaded.snapshot = SampleRateConverter::convert (*loaded.snapshot, loaded.sampleRate, state.sampleRate);
+
+            audio[key] = loaded.error.isEmpty() ? loaded.snapshot : nullptr;
+
+            if (audio[key] == nullptr)
+                result.missing.addIfNotAlreadyThere (source.getFullPathName());
+        }
+
+        return std::pair { source, audio[key] };
+    };
+
     for (auto* trackXml : root->getChildWithTagNameIterator ("TRACK"))
     {
         auto& track = trackXml->getBoolAttribute ("bus") ? state.addBus() : state.addTrack();
@@ -1805,34 +1889,16 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         if (auto* effects = trackXml->getChildByName ("EFFECTS"))
             result.effects[track.id] = std::make_shared<juce::XmlElement> (*effects);
 
+        // Frozen audio that cannot be found leaves the track unfrozen, playing its clips live again.
+        if (auto* frozenXml = trackXml->getChildByName ("FROZEN"); frozenXml != nullptr && ! track.isBus)
+            if (const auto [source, frozenAudio] = locate (*frozenXml); frozenAudio != nullptr)
+            {
+                track.frozenFile = source;
+                track.frozenAudio = frozenAudio;
+            }
+
         for (auto* clipXml : trackXml->getChildWithTagNameIterator ("CLIP"))
         {
-            // The relative path first, so a session moved with its audio still finds it.
-            const auto locate = [&] (const juce::XmlElement& xml)
-            {
-                auto source = file.getParentDirectory().getChildFile (xml.getStringAttribute ("file"));
-
-                if (! source.existsAsFile())
-                    source = juce::File (xml.getStringAttribute ("absolute"));
-
-                const auto key = source.getFullPathName();
-
-                if (audio.find (key) == audio.end())
-                {
-                    auto loaded = AudioFileIO::load (source, formats);
-
-                    if (loaded.snapshot != nullptr && loaded.error.isEmpty() && ! juce::exactlyEqual (loaded.sampleRate, state.sampleRate))
-                        loaded.snapshot = SampleRateConverter::convert (*loaded.snapshot, loaded.sampleRate, state.sampleRate);
-
-                    audio[key] = loaded.error.isEmpty() ? loaded.snapshot : nullptr;
-
-                    if (audio[key] == nullptr)
-                        result.missing.addIfNotAlreadyThere (source.getFullPathName());
-                }
-
-                return std::pair { source, audio[key] };
-            };
-
             const auto [source, clipAudio] = locate (*clipXml);
 
             if (clipAudio == nullptr)

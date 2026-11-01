@@ -697,6 +697,42 @@ namespace
 
 namespace
 {
+    void testFrozenFile (AudioEngine& engine)
+    {
+        const auto folder = juce::File::createTempFile ("frozen");
+        folder.createDirectory();
+        const auto take = folder.getChildFile ("take.wav"), frozenFile = folder.getChildFile ("Elsewhere/Guitar Frozen.wav");
+        frozenFile.getParentDirectory().createDirectory();
+        const auto written = AudioFileIO::save (*constant (1, 4800, 0.25f), rate, take, 24, engine.formatManager).isEmpty()
+                             && AudioFileIO::save (*constant (2, 9600, 0.5f), rate, frozenFile, 32, engine.formatManager).isEmpty();
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addTrack();
+        SessionEdits::addClip (s, 0, take, constant (1, 4800, 0.25f), 0);
+        SessionEdits::addClip (s, 1, take, constant (1, 4800, 0.25f), 0);
+        SessionEdits::freezeTrack (s, s.tracks[0].id, frozenFile, constant (2, 9600, 0.5f));
+        const auto sessionFile = folder.getChildFile ("Frozen.sbsession");
+        const auto error = SessionFile::save (s, sessionFile);
+        const auto loaded = SessionFile::load (sessionFile, engine.formatManager);
+        const auto& lt = loaded.state.tracks;
+        const auto roundTrip = lt.size() == 2 && lt[0].isFrozen() && lt[0].frozenFile == frozenFile && lt[0].frozenAudio->getNumFrames() == 9600
+                               && lt[0].frozenAudio->getNumChannels() == 2 && lt[0].clips.size() == 1 && ! lt[1].isFrozen();
+
+        // Collecting copies the frozen audio too; without it, the track opens unfrozen.
+        const auto plan = SessionCollect::plan (s, folder.getChildFile ("Audio"));
+        const auto collected = plan.copies.size() == 2 && plan.state.tracks[0].frozenFile == folder.getChildFile ("Audio/Guitar Frozen.wav");
+        frozenFile.deleteFile();
+        const auto withoutIt = SessionFile::load (sessionFile, engine.formatManager);
+        folder.deleteRecursively();
+
+        check (written && error.isEmpty() && loaded.error.isEmpty() && loaded.missing.isEmpty() && roundTrip && collected
+                   && withoutIt.state.tracks.size() == 2 && ! withoutIt.state.tracks[0].isFrozen() && withoutIt.state.tracks[0].clips.size() == 1
+                   && withoutIt.missing == juce::StringArray { frozenFile.getFullPathName() },
+               "freeze: a frozen track's audio kept in a session file and collected with it; missing, the track opens unfrozen and the file is named");
+    }
+
     /** Two commands with default keys, as the main window has many. */
     struct TwoCommands final : public juce::ApplicationCommandTarget
     {
@@ -761,4 +797,5 @@ void runMixerTests (AudioEngine& engine)
     testRecovery (engine);
     testFadeShapeFile (engine);
     testKeyShortcuts();
+    testFrozenFile (engine);
 }

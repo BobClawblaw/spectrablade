@@ -59,7 +59,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -883,7 +883,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdKeyShortcuts; ++id)
+    for (int id = cmdOpen; id <= cmdFreezeTrack; ++id)
         ids.add (id);
 }
 
@@ -1032,6 +1032,18 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                                             && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].isBus
                                             && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].clips.empty());
                             break;
+        case cmdFreezeTrack:
+        {
+            const auto state = engine.session.getState();
+            const auto index = multitrack.getSelectedTrack();
+            const auto* track = juce::isPositiveAndBelow (index, (int) state->tracks.size()) ? &state->tracks[(size_t) index] : nullptr;
+            const auto frozen = track != nullptr && track->isFrozen();
+            info.setInfo (frozen ? "Unfreeze Track" : "Freeze Track",
+                          "Render the selected track through its effects to a file it plays instead, freeing the CPU; or play its clips live again", "Multitrack", 0);
+            info.setTicked (frozen);
+            info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || ! track->clips.empty()));
+            break;
+        }
         case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip right after it", "Multitrack", 0);
                             info.addDefaultKeypress ('d', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
         case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
@@ -1213,6 +1225,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdZoomFit:    if (multitrackMode) multitrack.zoomToFit(); else waveform.zoomToFit(); break;
         case cmdZoomSelection: if (multitrackMode) multitrack.zoomToRange (multitrack.getTimeSelection()); else waveform.zoomToSelection(); break;
         case cmdBounceTrack: bounceTrack(); break;
+        case cmdFreezeTrack: freezeOrUnfreezeTrack(); break;
         case cmdExportStems: chooseStemsFolder(); break;
         case cmdExportRegions: chooseRegionsFolder(); break;
         case cmdClipProperties: toggleClipProperties(); break;
@@ -1395,7 +1408,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems, cmdExportRegions }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -2268,6 +2281,94 @@ void MainComponent::bounceTrack()
 
             if (warnings->isNotEmpty())
                 showError ("Bounce Track", file.getFileName() + " was bounced without these effects, which could not be loaded:\n" + *warnings);
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
+}
+
+void MainComponent::freezeOrUnfreezeTrack()
+{
+    const auto state = engine.session.getState();
+    const auto index = multitrack.getSelectedTrack();
+
+    if (! juce::isPositiveAndBelow (index, (int) state->tracks.size()) || state->tracks[(size_t) index].isBus)
+        return;
+
+    const auto& track = state->tracks[(size_t) index];
+    const auto trackId = track.id;
+
+    if (track.isFrozen())
+    {
+        auto next = *state;
+        SessionEdits::unfreezeTrack (next, trackId);
+        engine.session.apply (std::move (next), "Unfreeze Track");
+        return;
+    }
+
+    // From frame 0, so the frozen audio lines up with the session, to the last clip's end
+    // plus a tail for reverbs and delays to ring out.
+    juce::int64 end = 0;
+
+    for (auto& c : track.clips)
+        end = juce::jmax (end, c.getEnd());
+
+    if (end == 0)
+        return;
+
+    const auto rate = engine.session.getSampleRate();
+    const auto range = juce::Range<juce::int64> (0, end + (juce::int64) (SessionEdits::freezeTailSeconds * rate));
+    const auto file = recordingsFolder().getNonexistentChildFile (juce::File::createLegalFileName (track.name) + " Frozen "
+                                                                      + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"),
+                                                                  ".wav", false);
+    auto alone = std::make_shared<SessionState> (SessionEdits::frozenSource (*state, trackId));
+    auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
+
+    if (auto xml = engine.getTrackEffects().createXml (trackId))
+        (*effects)[trackId] = std::move (xml);
+
+    auto inserts = std::make_shared<TrackEffects>();
+    auto audio = std::make_shared<AudioDocument::Snapshot>();
+    auto error = std::make_shared<juce::String>();
+    auto warnings = std::make_shared<juce::String>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Freezing " + track.name + "...",
+        [this, alone, effects, inserts, audio, error, warnings, file, rate, range] (const std::function<bool (float)>& progress)
+        {
+            *warnings = OfflineRender::loadTrackEffects (*effects, engine.pluginFormatManager, rate, *inserts);
+            juce::AudioBuffer<float> mix;
+
+            if (! OfflineRender::mixSession (*alone, range, mix, inserts.get(), progress))
+                return false;
+
+            *audio = AudioEdits::fromBuffer (std::move (mix));
+
+            if (! file.getParentDirectory().createDirectory())
+                *error = "Could not make the folder " + file.getParentDirectory().getFullPathName();
+            else
+                *error = AudioFileIO::save (**audio, rate, file, 32, engine.formatManager);
+
+            return true;
+        },
+        [this, audio, error, warnings, file, trackId]
+        {
+            if (error->isNotEmpty())
+            {
+                showError ("Freeze Track", *error);
+                return;
+            }
+
+            auto next = *engine.session.getState();
+
+            if (! SessionEdits::freezeTrack (next, trackId, file, *audio))
+            {
+                showError ("Freeze Track", "The track was deleted while it was freezing; its audio is in " + file.getFullPathName() + ".");
+                return;
+            }
+
+            engine.session.apply (std::move (next), "Freeze Track");
+
+            if (warnings->isNotEmpty())
+                showError ("Freeze Track", file.getFileName() + " was frozen without these effects, which could not be loaded:\n" + *warnings);
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();

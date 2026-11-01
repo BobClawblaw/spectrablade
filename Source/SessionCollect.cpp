@@ -39,6 +39,9 @@ Plan plan (const SessionState& s, const juce::File& audioFolder)
 
     for (auto& t : p.state.tracks)
     {
+        if (t.isFrozen())
+            place (t.frozenFile);
+
         for (auto& c : t.clips)
         {
             place (c.source);

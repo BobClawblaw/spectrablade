@@ -1544,6 +1544,28 @@ void runMultitrackViewTests (AudioEngine& engine)
                "dropping files: with snapping on they land on the grid, without it where they are dropped");
     }
 
+    {
+        // A frozen track: an icy wash over the lane where its frozen audio plays, past its clips.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        SessionEdits::addClip (s, 0, juce::File ("/tmp/a.wav"), silence (48000), 0);
+        engine.session.reset (s, {});
+        view.zoomToFit();
+        Mouse::settle();
+        const auto shown = view.getVisibleFrames();
+        const auto px = (int) std::lround ((double) MultitrackView::headerWidth + (96000.0 - shown.getStart()) / (shown.getLength() / timelineWidth));
+        const auto py = (int) bodyY;
+        const auto live = view.createComponentSnapshot (view.getLocalBounds(), true, 1.0f).getPixelAt (px, py);
+        SessionEdits::freezeTrack (s, s.tracks[0].id, juce::File ("/tmp/a Frozen.wav"), silence (144000));
+        engine.session.apply (s, "Freeze Track");
+        Mouse::settle();
+        const auto frozen = view.createComponentSnapshot (view.getLocalBounds(), true, 1.0f).getPixelAt (px, py);
+        check (frozen.getBlue() > live.getBlue() + 20 && frozen.getBlue() > frozen.getRed(),
+               "freeze: the lane shows an icy wash past the clips, where the frozen audio plays (blue " + juce::String (live.getBlue())
+                   + " to " + juce::String (frozen.getBlue()) + ")");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

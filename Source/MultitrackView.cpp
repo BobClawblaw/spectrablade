@@ -7,6 +7,7 @@ namespace
     const juce::Colour background (0xff15181d);
     const juce::Colour laneColour (0xff191c22);
     const juce::Colour laneAlternate (0xff1c2027);
+    const juce::Colour frozenColour (0xff9fd8ff);
     const juce::Colour laneLine (0xff2a2f37);
     const juce::Colour cursorColour (0xffffd34d);
     const juce::Colour playColour (0xffffffff);
@@ -1659,6 +1660,25 @@ void MultitrackView::paint (juce::Graphics& g)
                 g.setColour (juce::Colours::white.withAlpha (0.6f));
                 g.strokePath (fadeCurve (c.fadeOutShape, (float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut), (float) r.getY() + 16.0f, (float) r.getBottom()),
                               juce::PathStrokeType (1.0f));
+            }
+
+            // A frozen track plays its rendered audio: an icy wash over the frames it covers, so
+            // it is clear its clips can't be changed until it is unfrozen.
+            if (track.isFrozen())
+            {
+                const auto x0 = juce::jmax ((float) lane.getX(), xForFrame (0));
+                const auto x1 = juce::jmin ((float) lane.getRight(), xForFrame (track.frozenAudio->getNumFrames()));
+
+                if (x1 > x0)
+                {
+                    g.setColour (frozenColour.withAlpha (0.18f));
+                    g.fillRect (juce::Rectangle<float> (x0, (float) lane.getY(), x1 - x0, (float) lane.getHeight() - 1.0f));
+                }
+
+                g.setColour (frozenColour);
+                g.setFont (12.0f);
+                g.drawText ("Frozen", lane.withTrimmedLeft (6).withTrimmedBottom (3).withHeight (lane.getHeight() - 3),
+                            juce::Justification::bottomLeft);
             }
 
             if (const auto parameter = getShownEnvelope (track.id))
