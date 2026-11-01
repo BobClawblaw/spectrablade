@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 49: closing gaps**
+- Multitrack > Close Gaps moves the selected track's clips back, in time order from the first, so each starts where the ones before it end, as one undo step ("Close Gaps"). A clip that overlapped the one before it moves with it by the same amount, keeping the overlap. Locked clips stay where they are, and the clips after one close up to it.
+- Measured by the tests: five clips added out of order, with a gap, a locked clip and an overlap, ending at the frames worked out by hand, a clip on another track untouched, and nothing more to do the second time; through the real view, on the selected track as one undo step. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 48: moving clips to the cursor**
 - Multitrack > Move Clips to Cursor moves the selected clips together, each staying on its own track, so that the earliest starts at the cursor, as one undo step ("Move Clips to Cursor"). Nothing moves when one of them is locked or they are already there. Nudging now shares the same code.
 - Measured by the tests, through the real view: two clips on two tracks moved to the cursor keeping their 20000-frame spacing, as one undo step; nothing when already there or when locked; and the existing nudge tests still passing. The menu item was not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -369,6 +373,7 @@ The tests run against the real machine:
 - Notes: on clips through Clip Properties, on tracks, and in session files.
 - Selecting clips on a track and after the cursor, leaving out hidden tracks.
 - Moving the selected clips to the cursor, together, and not when locked.
+- Closing gaps on a track, around locked clips and keeping overlaps.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -422,4 +427,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: closing the gaps between the clips on a track (Multitrack > Close Gaps), as one undo step
+1. Multitrack, continued: snapping a clip's start to the nearest zero crossing when splitting or trimming, to avoid clicks

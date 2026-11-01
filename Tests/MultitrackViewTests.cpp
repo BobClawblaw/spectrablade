@@ -1294,6 +1294,39 @@ void runMultitrackViewTests (AudioEngine& engine)
                "move to cursor: the selected clips move together, the earliest to the cursor, as one undo step; not when there already or locked");
     }
 
+    // Closing the gaps on a track: in time order, around a locked clip, leaving overlaps.
+    {
+        SessionState gappy;
+        gappy.sampleRate = rate;
+        gappy.addTrack();
+        gappy.addTrack();
+        // Added out of order: 1000-2000, 5000-6000 (locked), 3000-4000, 8000-9000 overlapping 8500-9500.
+        const auto b = SessionEdits::addClip (gappy, 0, juce::File ("/tmp/b.wav"), silence (1000), 5000);
+        const auto a = SessionEdits::addClip (gappy, 0, juce::File ("/tmp/a.wav"), silence (1000), 1000);
+        const auto c = SessionEdits::addClip (gappy, 0, juce::File ("/tmp/c.wav"), silence (1000), 8000);
+        const auto d = SessionEdits::addClip (gappy, 0, juce::File ("/tmp/d.wav"), silence (1000), 8500);
+        const auto e = SessionEdits::addClip (gappy, 0, juce::File ("/tmp/e.wav"), silence (1000), 3000);
+        const auto other = SessionEdits::addClip (gappy, 1, juce::File ("/tmp/other.wav"), silence (1000), 7000);
+        SessionEdits::setClipLocked (gappy, b, true);
+        auto closed = gappy;
+        const auto moved = SessionEdits::closeGaps (closed, 0);
+        const auto pos = [&closed] (juce::uint32 id)
+        {
+            const auto where = closed.findClip (id);
+            return closed.tracks[(size_t) where->first].clips[(size_t) where->second].position;
+        };
+        check (moved == 3 && pos (a) == 1000 && pos (e) == 2000 && pos (b) == 5000 && pos (c) == 6000 && pos (d) == 6500 && pos (other) == 7000
+                   && SessionEdits::closeGaps (closed, 0) == 0 && SessionEdits::closeGaps (closed, 7) == 0,
+               "close gaps: clips close up in time order from the first, around a locked one, keeping an overlap, other tracks untouched");
+
+        engine.session.reset (gappy, {});
+        Mouse::settle();
+        mouse.click ({ (float) MultitrackView::headerWidth + 900.0f, bodyY });   // the first lane, past its clips
+        const auto viaView = view.closeGapsOnSelectedTrack() && engine.session.getUndoDescription() == "Close Gaps"
+                             && ! view.closeGapsOnSelectedTrack();
+        check (viaView, "close gaps: on the selected track as one undo step, and nothing the second time");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

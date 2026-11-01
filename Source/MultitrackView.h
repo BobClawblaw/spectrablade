@@ -148,6 +148,10 @@ public:
         Returns the copy's id (0 with none selected); its effects are the caller's to copy. */
     juce::uint32 duplicateSelectedTrack();
 
+    /** Closes the gaps between the selected track's clips (SessionEdits::closeGaps) as one undo
+        step ("Close Gaps"). False when nothing moved. */
+    bool closeGapsOnSelectedTrack();
+
     /** Hides a track or bus from the lanes (it still plays, and stays in the mixer) or shows it
         again, as an undo step ("Hide Track", "Show Track"). Right-click a header to hide it. */
     void setTrackHidden (juce::uint32 trackId, bool hidden);

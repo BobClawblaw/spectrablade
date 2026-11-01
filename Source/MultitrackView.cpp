@@ -2408,6 +2408,17 @@ bool MultitrackView::showAllTracks()
     return any;
 }
 
+bool MultitrackView::closeGapsOnSelectedTrack()
+{
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::closeGaps (next, getSelectedTrack()) == 0)
+        return false;
+
+    engine.session.apply (std::move (next), "Close Gaps");
+    return true;
+}
+
 juce::uint32 MultitrackView::duplicateSelectedTrack()
 {
     auto next = *engine.session.getState();

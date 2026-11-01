@@ -1,4 +1,7 @@
 #include "Session.h"
+
+#include <numeric>
+
 #include "AudioEdits.h"
 #include "AudioFileIO.h"
 #include "Metronome.h"
@@ -672,6 +675,45 @@ bool moveTrack (SessionState& s, int from, int to)
         std::rotate (first + to, first + from, first + from + 1);
 
     return true;
+}
+
+int closeGaps (SessionState& s, int track)
+{
+    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()))
+        return 0;
+
+    auto& clips = s.tracks[(size_t) track].clips;
+    std::vector<size_t> order (clips.size());
+    std::iota (order.begin(), order.end(), (size_t) 0);
+    std::stable_sort (order.begin(), order.end(), [&clips] (auto a, auto b) { return clips[a].position < clips[b].position; });
+
+    // A clip that overlapped the ones before it moves with them, by the same amount, keeping the
+    // overlap; one after a gap starts where they now end.
+    auto moved = 0;
+    juce::int64 shift = 0;
+    std::optional<juce::int64> oldEnd, newEnd;
+
+    for (auto i : order)
+    {
+        auto& c = clips[i];
+        const auto from = c.position;
+
+        if (c.locked)
+            shift = 0;
+        else if (oldEnd.has_value() && from < *oldEnd)
+            c.position = juce::jmax ((juce::int64) 0, from + shift);
+        else if (newEnd.has_value() && from > *newEnd)
+            c.position = *newEnd;
+
+        if (! c.locked && ! (oldEnd.has_value() && from < *oldEnd))
+            shift = c.position - from;
+
+        moved += c.position != from ? 1 : 0;
+        oldEnd = juce::jmax (oldEnd.value_or (0), from + c.length);
+        newEnd = juce::jmax (newEnd.value_or (0), c.getEnd());
+    }
+
+    return moved;
 }
 
 juce::uint32 duplicateTrack (SessionState& s, int track)

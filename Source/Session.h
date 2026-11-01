@@ -307,6 +307,12 @@ namespace SessionEdits
         or 0 when there is no such track. */
     juce::uint32 duplicateTrack (SessionState&, int track);
 
+    /** Moves each clip on a track that starts after the end of the clips before it back to that
+        end, from the first clip on, so they play one after another. A clip overlapping the ones
+        before it moves with them, keeping the overlap. Locked clips stay where they are, and the
+        ones after them close up to them. Returns how many clips moved. */
+    int closeGaps (SessionState&, int track);
+
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);
     bool removeSend (SessionState&, juce::uint32 trackId, juce::uint32 busId);
