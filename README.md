@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 163: Select Previous Sound**
+- Edit > Select Previous Sound selects the previous stretch of sound between silences, at the level and time Find Next Silence last used (-60 dB and half a second to start), without asking. It takes the last sound that ends before the cursor or the start of the selection, so choosing it again steps back through the takes one by one, as Select Next Sound steps forward; from the very end of a file that ends with sound, it selects that last sound. It says so when no sound comes before.
+- Measured by the tests: on the file with sounds at 100–300, 350–500 and 520–800, stepping back from the end gives 520–800, then 350–500, then 100–300, then none; from inside the second sound it gives the first; a ramp with no silence gives the whole file from its end and nothing from frame 995. The menu item was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 162: Fade Each Region**
 - Effects > Fade Each Region asks for a fade time (the one Fade Selection Edges last used, 10 ms to start) and fades every region of the file in at its start and out at its end, each fade at most half the region, with the fade shape chosen in Effects; the audio between regions is left alone. A region one frame long, or one overlapping a region already done, is left as it is, and it says how many were. It shares its dialog with Fade Selection Edges and its region loop with Normalize Each Region, and it is one undo step.
 - Measured by the tests: on a ramp, regions at 100–300 and 500–800 with 50-frame fades come out exactly as Fade Selection Edges makes each, frame for frame, with everything else untouched; a region overlapping the first and a one-frame region are skipped (2 counted). The dialog was not tried by hand. The whole suite passed, the default-device test included.
@@ -971,6 +975,7 @@ The tests run against the real machine:
 - Silence outside: everything but the range zeroed, the range bit for bit.
 - Normalize each region: each peak to the level on its own; overlapping and silent ones skipped.
 - Fade each region: each region faded as Fade Selection Edges fades it.
+- Previous sound: the sound before the previous silence, stepping back from each one's start, and none before the first.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1024,4 +1029,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Select Previous Sound, stepping back through the takes as Select Next Sound steps forward
+1. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection

@@ -637,6 +637,11 @@ namespace
         check (soundFrom (0) == R (100, 300) && soundFrom (300) == R (350, 500) && soundFrom (500) == R (520, 800) && soundFrom (150) == R (350, 500)
                    && ! soundFrom (800) && AudioEdits::nextSound (*rampSnap, 0, 0.0001f, 10) == R (0, 1000) && ! AudioEdits::nextSound (*rampSnap, 5, 0.0001f, 10),
                "next sound: the sound after the next silence, stepping on from each one's end; from 0 a file starting loud starts there; none after the last");
+        const auto soundBefore = [&takesSnap] (juce::int64 to) { return AudioEdits::previousSound (*takesSnap, to, 0.01f, 10); };
+        check (soundBefore (1000) == R (520, 800) && soundBefore (520) == R (350, 500) && soundBefore (350) == R (100, 300) && soundBefore (400) == R (100, 300)
+                   && ! soundBefore (100) && ! soundBefore (0) && AudioEdits::previousSound (*rampSnap, 1000, 0.0001f, 10) == R (0, 1000)
+                   && ! AudioEdits::previousSound (*rampSnap, 995, 0.0001f, 10),
+               "previous sound: the sound before the previous silence, stepping back from each one's start; at the end a file ending loud ends there; none before the first");
 
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.

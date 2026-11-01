@@ -158,6 +158,10 @@ namespace AudioEdits
         sound follows. */
     std::optional<juce::Range<juce::int64>> nextSound (const AudioSnapshot&, juce::int64 from, float level, juce::int64 minFrames);
 
+    /** The previous of those stretches of sound: the last one ending before `to`, or at the end of
+        the file, the last sound when the file doesn't end quiet. Nothing when no sound comes before. */
+    std::optional<juce::Range<juce::int64>> previousSound (const AudioSnapshot&, juce::int64 to, float level, juce::int64 minFrames);
+
     /** The middle frame of each of those pauses. */
     std::vector<juce::int64> quietMiddles (const AudioSnapshot&, float level, juce::int64 minFrames, size_t maxCount);
 
