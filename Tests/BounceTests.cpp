@@ -344,8 +344,48 @@ namespace
     }
 }
 
+namespace
+{
+    void testFolderStems()
+    {
+        // Guitar and the bus it sends to in a folder at -3 dB, Keys outside; an empty folder too.
+        auto s = session (0.0f);
+        const auto guitar = s.tracks[0].id, keys = s.tracks[1].id, bus = s.tracks[2].id;
+        auto& folder = s.addFolder();
+        folder.gainDb = -3.0f;
+        folder.mute = true;   // a folder's own mute is left out of its stem
+        const auto folderId = folder.id;
+        const auto emptyId = s.addFolder().id;
+        SessionEdits::setTrackFolder (s, guitar, folderId);
+        SessionEdits::setTrackFolder (s, bus, folderId);
+        s.tracks[1].solo = true;   // so are solos
+
+        const juce::Range<juce::int64> range (0, 12000);
+        const auto stem = mix (Bounce::isolateFolder (s, folderId), range);
+        auto asHeard = s;
+        asHeard.tracks[1].solo = false;
+        asHeard.tracks[1].mute = true;
+        asHeard.tracks[3].mute = false;
+        const auto listed = Bounce::stemFolders (s) == std::vector<juce::uint32> { folderId };
+
+        // A send to a bus outside the folder is left out of its stem, and a muted track in it stays muted.
+        auto outside = s;
+        SessionEdits::setTrackFolder (outside, bus, 0);
+        outside.tracks[0].mute = true;
+        const auto alone = Bounce::isolateFolder (outside, folderId);
+
+        check (listed && identical (stem, mix (asHeard, range)) && stem.getMagnitude (0, 12000) > 0.01f,
+               "folder stems: a folder's stem is its tracks and buses mixed as set, with its volume, bit for bit, leaving out its own mute, solos and the other tracks; empty folders have none");
+        check (alone.tracks.size() == 2 && alone.tracks[0].id == guitar && alone.tracks[0].sends.empty() && alone.tracks[0].mute
+                   && alone.findTrack (bus) == nullptr && alone.findTrack (keys) == nullptr && emptyId != 0
+                   && juce::exactlyEqual (mix (alone, range).getMagnitude (0, 12000), 0.0f),
+               "folder stems: sends to buses outside the folder are left out, and a muted track in it stays silent");
+    }
+}
+
 void runBounceTests()
 {
+    testFolderStems();
     testTimeStretch();
     testFreeze();
     testClipGainEnvelope();

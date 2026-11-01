@@ -48,6 +48,40 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
     return id;
 }
 
+SessionState isolateFolder (const SessionState& s, juce::uint32 folderId)
+{
+    auto alone = s;
+    alone.tracks.clear();
+
+    for (auto& t : s.tracks)
+        if (t.id == folderId || t.folderId == folderId)
+            alone.tracks.push_back (t);
+
+    for (auto& t : alone.tracks)
+    {
+        t.solo = false;
+
+        if (t.isFolder)
+            t.mute = false;
+
+        t.sends.erase (std::remove_if (t.sends.begin(), t.sends.end(), [&alone] (auto& send) { return alone.findTrack (send.busId) == nullptr; }),
+                       t.sends.end());
+    }
+
+    return alone;
+}
+
+std::vector<juce::uint32> stemFolders (const SessionState& s)
+{
+    std::vector<juce::uint32> ids;
+
+    for (auto& f : s.tracks)
+        if (f.isFolder && std::any_of (s.tracks.begin(), s.tracks.end(), [&f] (auto& t) { return t.folderId == f.id && ! t.clips.empty(); }))
+            ids.push_back (f.id);
+
+    return ids;
+}
+
 std::vector<juce::uint32> stemTracks (const SessionState& s)
 {
     std::vector<juce::uint32> ids;

@@ -148,8 +148,8 @@ private:
     void askToShiftSelectedClip();
     void processSelectedClip (const juce::String& action, const juce::String& suffix,
                               std::function<AudioDocument::Snapshot (const SessionClip&, const std::function<bool (float)>&)> process);
-    void chooseStemsFolder();
-    void exportStems (const juce::File& folder, juce::Range<juce::int64>);
+    void chooseStemsFolder (bool folders);
+    void exportStems (const juce::File& folder, juce::Range<juce::int64>, bool folders);
 
     // Transport and windows
     void togglePlay();

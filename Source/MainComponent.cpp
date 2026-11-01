@@ -59,7 +59,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -883,7 +883,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdAddFolder; ++id)
+    for (int id = cmdOpen; id <= cmdExportFolderStems; ++id)
         ids.add (id);
 }
 
@@ -1017,6 +1017,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
         case cmdClipProperties: info.setInfo ("Clip Properties", "A window with the selected clip's name, start, length, gain and fades", "Multitrack", 0);
                             info.addDefaultKeypress ('i', cmd | shift); info.setTicked (clipPropertiesWindow != nullptr); break;
+        case cmdExportFolderStems: info.setInfo ("Export Folder Stems...", "Write each folder's tracks and buses, mixed together through their effects, to a file of its own", "Multitrack", 0);
+                            info.setActive (multitrackMode && backgroundJob == nullptr && ! Bounce::stemFolders (*engine.session.getState()).empty()); break;
         case cmdExportStems: info.setInfo ("Export Stems...", "Write each track, alone through its effects, to a file of its own", "Multitrack", 0);
                             info.setActive (multitrackMode && backgroundJob == nullptr && ! Bounce::stemTracks (*engine.session.getState()).empty());
                             break;
@@ -1235,7 +1237,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdZoomSelection: if (multitrackMode) multitrack.zoomToRange (multitrack.getTimeSelection()); else waveform.zoomToSelection(); break;
         case cmdBounceTrack: bounceTrack(); break;
         case cmdFreezeTrack: freezeOrUnfreezeTrack(); break;
-        case cmdExportStems: chooseStemsFolder(); break;
+        case cmdExportStems: chooseStemsFolder (false); break;
+        case cmdExportFolderStems: chooseStemsFolder (true); break;
         case cmdExportRegions: chooseRegionsFolder(); break;
         case cmdClipProperties: toggleClipProperties(); break;
         case cmdClipList:   toggleClipList(); break;
@@ -1421,7 +1424,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportRegions }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -2524,13 +2527,13 @@ void MainComponent::processSelectedClip (const juce::String& action, const juce:
     commands.commandStatusChanged();
 }
 
-void MainComponent::chooseStemsFolder()
+void MainComponent::chooseStemsFolder (bool folders)
 {
     const auto session = engine.session.getFile();
-    chooser = std::make_unique<juce::FileChooser> ("Export stems to", session != juce::File() ? session.getParentDirectory()
+    chooser = std::make_unique<juce::FileChooser> (folders ? "Export folder stems to" : "Export stems to", session != juce::File() ? session.getParentDirectory()
                                                                                           : juce::File::getSpecialLocation (juce::File::userMusicDirectory));
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
-                          [this] (const juce::FileChooser& fc)
+                          [this, folders] (const juce::FileChooser& fc)
                           {
                               const auto folder = fc.getResult();
 
@@ -2540,7 +2543,8 @@ void MainComponent::chooseStemsFolder()
                               // The time range if there is one, otherwise the whole session from its start.
                               const auto timeRange = multitrack.getTimeSelection();
                               exportStems (folder, ! timeRange.isEmpty() ? timeRange
-                                                                         : juce::Range<juce::int64> (0, engine.session.getState()->getLength()));
+                                                                         : juce::Range<juce::int64> (0, engine.session.getState()->getLength()),
+                                           folders);
                           });
 }
 
@@ -2615,7 +2619,7 @@ void MainComponent::exportRegions (const juce::File& folder)
     commands.commandStatusChanged();
 }
 
-void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int64> range)
+void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int64> range, bool folders)
 {
     const auto state = engine.session.getState();
     const auto rate = engine.session.getSampleRate();
@@ -2624,16 +2628,26 @@ void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int
     struct Stem
     {
         std::shared_ptr<const SessionState> alone;
-        std::unique_ptr<juce::XmlElement> effects;
+        std::map<juce::uint32, std::unique_ptr<juce::XmlElement>> effects;   // of each track and bus in it
         juce::File file;
     };
 
+    // A track alone, or a folder with what is in it.
     auto stems = std::make_shared<std::vector<Stem>>();
-    const auto ids = Bounce::stemTracks (*state);
+    const auto ids = folders ? Bounce::stemFolders (*state) : Bounce::stemTracks (*state);
 
     for (size_t i = 0; i < ids.size(); ++i)
-        stems->push_back ({ std::make_shared<const SessionState> (Bounce::isolate (*state, ids[i])), engine.getTrackEffects().createXml (ids[i]),
-                            folder.getChildFile (Bounce::stemFileName (sessionName, (int) i + 1, state->findTrack (ids[i])->name)) });
+    {
+        Stem stem;
+        stem.alone = std::make_shared<const SessionState> (folders ? Bounce::isolateFolder (*state, ids[i]) : Bounce::isolate (*state, ids[i]));
+        stem.file = folder.getChildFile (Bounce::stemFileName (sessionName, (int) i + 1, state->findTrack (ids[i])->name));
+
+        for (auto& t : stem.alone->tracks)
+            if (auto xml = engine.getTrackEffects().createXml (t.id))
+                stem.effects[t.id] = std::move (xml);
+
+        stems->push_back (std::move (stem));
+    }
 
     // Fresh plug-ins for each stem, kept until the job is deleted on the message thread.
     auto inserts = std::make_shared<std::vector<std::unique_ptr<TrackEffects>>>();
@@ -2648,13 +2662,8 @@ void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int
             for (size_t i = 0; i < stems->size(); ++i)
             {
                 auto& stem = (*stems)[i];
-                std::map<juce::uint32, std::unique_ptr<juce::XmlElement>> effects;
-
-                if (stem.effects != nullptr)
-                    effects[stem.alone->tracks.front().id] = std::move (stem.effects);
-
                 inserts->push_back (std::make_unique<TrackEffects>());
-                *warnings += OfflineRender::loadTrackEffects (effects, engine.pluginFormatManager, rate, *inserts->back());
+                *warnings += OfflineRender::loadTrackEffects (stem.effects, engine.pluginFormatManager, rate, *inserts->back());
                 juce::AudioBuffer<float> mix;
                 const auto part = [&progress, i, count] (float p) { return progress (((float) i + p) / count); };
 

@@ -19,6 +19,15 @@ namespace Bounce
     /** The tracks (not buses) that have clips, in the session's order: what Export Stems writes. */
     std::vector<juce::uint32> stemTracks (const SessionState&);
 
+    /** A folder and what is in it alone, as Export Folder Stems renders it: its tracks and buses
+        as they are set (their own mutes too), sending only to buses in the folder, nothing
+        soloed, and the folder's volume but not its mute. */
+    SessionState isolateFolder (const SessionState&, juce::uint32 folderId);
+
+    /** The folders with a track with clips in them, in the session's order: what Export Folder
+        Stems writes. */
+    std::vector<juce::uint32> stemFolders (const SessionState&);
+
     /** A stem's file name: "Song - 01 Guitar.wav", numbered by the track's place among the stems
         so names stay apart and sort in order, with characters files can't hold left out. */
     juce::String stemFileName (const juce::String& sessionName, int number, const juce::String& trackName);

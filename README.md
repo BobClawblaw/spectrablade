@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 73: folder stems**
+- Multitrack > Export Folder Stems... writes one file per folder, for each folder with a track with clips in it: its tracks and buses mixed together as they are set (volumes, pans, envelopes, clip settings and their own mutes), through their effects (fresh plug-ins for each stem), with the folder's volume. The folder's own mute and any solos are left out, as are tracks outside the folder and sends to buses outside it. Like Export Stems, it covers the time range if there is one, otherwise the session from its start, and the files are 32-bit float, named "Session - 01 Folder.wav" by the folder's place among them. It runs in the background with a progress bar and can be cancelled.
+- Measured by the tests: a folder holding a track and the bus it sends to, at -3 dB, muted itself and with a track outside soloed, rendering bit for bit as the session does with only the folder's tracks heard; a send to a bus outside the folder left out, and a muted track in it silent; and only folders with clips in them listed. Export Stems now loads effects the same way for each track alone, and its tests pass unchanged. Writing the files, the menu item and plug-ins in a folder stem were not checked by the tests, and none of it was tried by hand or heard. The whole suite passed, the default-device test included.
+
 **Milestone 72: folder volume**
 - A folder's header has a volume control, which acts as if added to the volume of every track and bus in it: it scales what each sends to the mix and its sends after the volume (before-volume sends are left alone), on top of its own volume and volume envelope. Changing it is an undo step, as a track's volume is. It isn't automated, and writing automation leaves it alone.
 - Freezing, bouncing and exporting stems render a track on its own, as before, so without its folder's volume (or mute); a frozen track in a folder still has the folder's volume applied as it plays. Bounce Track now puts the new track in the source's folder (in Milestone 71 it went in none), so the folder's mute, solo and volume still act on what is heard. Folder volumes are saved with the session.
@@ -511,6 +515,7 @@ The tests run against the real machine:
 - Clip groups: the edits, the session file, and selecting and dragging a group in the view.
 - Clip gain lines: the mix, the line following edits, the session file, and editing points in the view.
 - Folders: mute, solo and volume through them, the edits, the session file, and adding and collapsing them in the view.
+- Folder stems: what each one renders, and which folders get one.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -564,4 +569,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: exporting each folder's tracks mixed together as one stem
+1. Multitrack, continued: a strip in the mixer for each folder, with its volume, mute and solo
