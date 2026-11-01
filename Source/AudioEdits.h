@@ -35,6 +35,9 @@ namespace AudioEdits
 
     Snapshot gain (const AudioSnapshot&, juce::int64 start, juce::int64 end, float decibels);
     Snapshot silence (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+
+    /** Puts frames of silence in at a frame, moving what follows later. frames must fit in an int. */
+    Snapshot insertSilence (const AudioSnapshot&, juce::int64 at, juce::int64 frames);
     Snapshot invert (const AudioSnapshot&, juce::int64 start, juce::int64 end);
     Snapshot reverse (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
@@ -43,6 +46,7 @@ namespace AudioEdits
 
     /** Exchanges the first two channels over [start, end); with fewer than two it changes nothing. */
     Snapshot swapChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end);
+
     Snapshot fadeIn (const AudioSnapshot&, juce::int64 start, juce::int64 end);
     Snapshot fadeOut (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 

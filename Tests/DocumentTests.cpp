@@ -218,6 +218,18 @@ namespace
         const auto monoOut = readAll (*AudioEdits::swapChannels (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (monoIn)), 0, 1000));
         check (monoOut.getNumChannels() == 1 && identical (monoOut, monoIn), "swap channels: a mono file comes back unchanged");
 
+        // Inserting silence: 500 zero frames at 300, everything after moved on exactly.
+        const auto padded = readAll (*AudioEdits::insertSilence (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (offset)), 300, 500));
+        auto padExact = padded.getNumSamples() == 1500 && padded.getNumChannels() == 2;
+
+        for (int ch = 0; padExact && ch < 2; ++ch)
+            for (int i = 0; i < 1500; ++i)
+                padExact = padExact && juce::exactlyEqual (padded.getSample (ch, i), i < 300 ? offset.getSample (ch, i)
+                                                                                     : i < 800 ? 0.0f
+                                                                                               : offset.getSample (ch, i - 500));
+
+        check (padExact, "insert silence: the length of zeros at the frame, what was after it moved on exactly");
+
         auto faded = readAll (*AudioEdits::fadeIn (*original, 1000, 2000));
         check (faded.getSample (0, 1000) == 0.0f && faded.getSample (0, 1999) == signal.getSample (0, 1999)
                    && faded.getSample (0, 999) == signal.getSample (0, 999),

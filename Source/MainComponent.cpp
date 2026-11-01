@@ -60,7 +60,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -913,7 +913,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSwapChannels; ++id)
+    for (int id = cmdOpen; id <= cmdInsertSilence; ++id)
         ids.add (id);
 }
 
@@ -959,6 +959,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio); break;
         case cmdSwapChannels: info.setInfo ("Swap Channels", "Exchange left and right in the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() == 2); break;
+        case cmdInsertSilence: info.setInfo ("Insert Silence...", "Put a chosen length of silence in at the cursor, or the start of the selection", "Effects", 0);
+                            info.setActive (hasAudio); break;
         case cmdApplyRack:  info.setInfo ("Apply Effects Rack", "Render the rack's effects into the audio", "Effects", 0);
                             info.addDefaultKeypress ('r', cmd); info.setActive (hasAudio && engine.getNumRackSlots() > 0); break;
 
@@ -1288,6 +1290,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdReverse:    applySimpleEffect ("Reverse", &AudioEdits::reverse, false); break;
         case cmdRemoveDc:   applySimpleEffect ("Remove DC Offset", &AudioEdits::removeDcOffset, false); break;
         case cmdSwapChannels: applySimpleEffect ("Swap Channels", &AudioEdits::swapChannels, false); break;
+        case cmdInsertSilence: showInsertSilence(); break;
         case cmdApplyRack:  applyRackToSelection(); break;
         case cmdPlayPause:  togglePlay(); break;
         case cmdLoopPlayback:
@@ -1510,7 +1513,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdNextClip, cmdPreviousClip, cmdCrop, 0, cmdConvertRate }); break;
-        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, 0,
+        case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInsertSilence, cmdInvert, cmdReverse, cmdRemoveDc, cmdSwapChannels, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
@@ -3206,6 +3209,42 @@ void MainComponent::showGoToTime()
         else
             waveform.showFrame (juce::jmin (*frame, engine.document.getNumFrames()));
     }), true);
+}
+
+void MainComponent::showInsertSilence()
+{
+    auto* box = new juce::AlertWindow ("Insert Silence", "Length in seconds (2.5) or minutes and seconds (1:30).",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("length", "1.0");
+    box->addButton ("Insert", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto typed = box->getTextEditorContents ("length");
+        const auto frames = TimeEntry::parse (typed, engine.document.getSampleRate(), nullptr);
+
+        if (! frames || *frames <= 0 || *frames >= std::numeric_limits<int>::max())
+            showError ("Insert Silence", "\"" + typed.trim() + "\" is not a length that can be inserted.");
+        else
+            insertSilence (*frames);
+    }), true);
+}
+
+void MainComponent::insertSilence (juce::int64 frames)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio())
+        return;
+
+    const auto sel = waveform.getSelection();
+    const auto at = sel.isEmpty() ? waveform.getCursor() : sel.getStart();
+    applyEdit (AudioEdits::insertSilence (*doc.getSnapshot(), at, frames), "Insert Silence", { at, at + frames },
+               MarkerEdits::afterReplace (doc.getMarkers(), at, at, frames));
 }
 
 void MainComponent::selectBetweenMarkers()

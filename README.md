@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 101: Insert Silence**
+- Effects > Insert Silence asks for a length in seconds or minutes and seconds and puts that much silence in at the cursor, or at the start of the selection, moving the audio and markers after it later. The inserted silence is left selected, and it is one undo step. A length that does not parse, is not positive, or is too long for one buffer is refused with a message.
+- Measured by the tests: 500 frames inserted at frame 300 of a two-channel file give exactly the first 300 frames, 500 zeros, and the rest moved on unchanged. The dialog, the selection afterwards and the marker shift were not exercised by the tests (the marker shift reuses the edit already tested for paste), and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 100: Swap Channels**
 - Effects > Swap Channels exchanges left and right in the selection, or the whole file when nothing is selected. It is offered only for two-channel files and is one undo step.
 - Measured by the tests: inside the range each channel holds exactly what the other held, outside it nothing changes, and a mono file passed to the edit comes back bit-identical. The menu item, and its being greyed out for mono files, were not checked by the tests or by hand. The whole suite passed, the default-device test included.
@@ -660,6 +664,7 @@ The tests run against the real machine:
 - Moving between tracks: down and up, hidden tracks, and scrolling the lane and header into view.
 - Remove DC Offset: each channel centred exactly, nothing outside the range changed.
 - Swap Channels: exchanged exactly inside the range, mono unchanged.
+- Insert Silence: zeros at the frame, the rest moved on exactly.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -713,4 +718,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Insert Silence, adding a chosen length of silence at the cursor
+1. Editor: Trim Silence, removing near-silent audio from the start and end of the file

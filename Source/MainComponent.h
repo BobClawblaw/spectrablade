@@ -98,6 +98,8 @@ private:
     void showGoToTime();
 
     // Effects
+    void showInsertSilence();
+    void insertSilence (juce::int64 frames);
     void askForDecibels (const juce::String& title, const juce::String& label, float initial,
                          std::function<void (float)> onOk);
     void applyGain();

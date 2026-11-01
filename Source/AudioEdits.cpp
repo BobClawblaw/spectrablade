@@ -123,6 +123,15 @@ Snapshot replaceWithClip (const AudioSnapshot& s, juce::int64 start, juce::int64
     return assemble (s.getNumChannels(), s.slice (0, r.getStart()), std::move (middle), s.slice (r.getEnd(), s.getNumFrames()));
 }
 
+Snapshot insertSilence (const AudioSnapshot& s, juce::int64 at, juce::int64 frames)
+{
+    jassert (juce::isPositiveAndBelow (frames, (juce::int64) std::numeric_limits<int>::max()));
+    juce::AudioBuffer<float> zeros (s.getNumChannels(), (int) frames);
+    zeros.clear();
+    const AudioClip clip { s.getNumChannels(), 0.0, fromBuffer (std::move (zeros))->getSegments() };
+    return replaceWithClip (s, at, at, clip);
+}
+
 Snapshot processRange (const AudioSnapshot& s, juce::int64 start, juce::int64 end,
                        const std::function<void (juce::AudioBuffer<float>&)>& process)
 {
