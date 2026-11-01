@@ -766,4 +766,16 @@ Snapshot fillWithClip (const AudioSnapshot& s, juce::int64 start, juce::int64 en
 
     return replaceWithClip (s, r.getStart(), r.getEnd(), filled);
 }
+
+Snapshot fadeEdges (const AudioSnapshot& s, juce::int64 start, juce::int64 end, juce::int64 fadeFrames, FadeShape shape)
+{
+    const auto r = clampRange (s, start, end);
+    const auto fade = juce::jmin (fadeFrames, r.getLength() / 2);
+
+    if (fade <= 0)
+        return nullptr;
+
+    const auto faded = fadeIn (s, r.getStart(), r.getStart() + fade, shape);
+    return fadeOut (*faded, r.getEnd() - fade, r.getEnd(), shape);
+}
 }

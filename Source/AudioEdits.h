@@ -78,6 +78,10 @@ namespace AudioEdits
     Snapshot fadeIn (const AudioSnapshot&, juce::int64 start, juce::int64 end, FadeShape = FadeShape::sCurve);
     Snapshot fadeOut (const AudioSnapshot&, juce::int64 start, juce::int64 end, FadeShape = FadeShape::sCurve);
 
+    /** Fades in over the first fadeFrames of [start, end) and out over the last, each at most half
+        the range; nullptr for an empty range or no fade. */
+    Snapshot fadeEdges (const AudioSnapshot&, juce::int64 start, juce::int64 end, juce::int64 fadeFrames, FadeShape = FadeShape::sCurve);
+
     /** One channel's levels over a range: largest absolute sample, RMS, and average (DC offset). */
     struct ChannelLevels
     {

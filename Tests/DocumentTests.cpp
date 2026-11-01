@@ -454,6 +454,20 @@ namespace
                    && ! AudioEdits::repair (*longSnap, 100, 100 + AudioEdits::maxRepairFrames + 1),
                "repair: clicks on a straight line redrawn back onto it, the frames around untouched; no room either side, empty or too long refused");
 
+        const auto edged = readAll (*AudioEdits::fadeEdges (*rampSnap, 200, 800, 100, FadeShape::linear));
+        const auto inOnly = readAll (*AudioEdits::fadeIn (*rampSnap, 200, 300, FadeShape::linear));
+        const auto outOnly = readAll (*AudioEdits::fadeOut (*rampSnap, 700, 800, FadeShape::linear));
+        auto edgesRight = edged.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && edgesRight; ++i)
+            edgesRight = juce::exactlyEqual (edged.getSample (0, i), i < 500 ? inOnly.getSample (0, i) : outOnly.getSample (0, i));
+
+        const auto shortEdged = readAll (*AudioEdits::fadeEdges (*rampSnap, 200, 210, 100, FadeShape::linear));
+        const auto shortIn = readAll (*AudioEdits::fadeIn (*rampSnap, 200, 205, FadeShape::linear));
+        check (edgesRight && juce::exactlyEqual (shortEdged.getSample (0, 202), shortIn.getSample (0, 202))
+                   && ! AudioEdits::fadeEdges (*rampSnap, 200, 800, 0) && ! AudioEdits::fadeEdges (*rampSnap, 200, 201, 100),
+               "fade selection edges: the same as a fade in at the start and a fade out at the end, each at most half the range; no fade refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 146: Fade Selection Edges**
+- Effects > Fade Selection Edges asks for a fade time (10 ms to start, remembered while the app runs) and, in one undo step, fades the selection in over that time at its start and out over it at its end, with the fade shape chosen in Effects. Each fade is at most half the selection. It is the quick way to make a cut-out piece start and end without a click.
+- Measured by the tests: on a ramp, edge fades of 100 frames over frames 200 to 800 give exactly what a fade in over 200 to 300 and a fade out over 700 to 800 give, frame for frame; on a 10-frame selection each fade is cut to 5 frames; no fade time, or a selection of one frame, is refused. The dialog was not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 145: Repair Selection**
 - Effects > Repair Selection redraws a selection of up to 4,096 frames as a smooth cubic curve from the frame before it to the frame after it, each end keeping the slope of the audio outside it. It is the hand-picked counterpart of Click and Pop Repair, for a click, a dropout or a clipped spot that the automatic search misses or that you want fixed exactly where you selected. It needs two frames of audio on each side, and it is one undo step.
 - Measured by the tests: twenty alternating ±0.9 clicks on a straight line are redrawn back onto the line to within 1e-6, and every frame outside the selection is bit for bit; a range without two frames on each side, an empty one and one of 4,097 frames are refused. How it sounds on real damage was not listened to, and the menu item was not tried by hand. The whole suite passed, the default-device test included.
@@ -886,6 +890,7 @@ The tests run against the real machine:
 - Stereo correlation: +1 for the same channels, -1 for one inverted, none for mono.
 - Clipping starts: the first frame of every clipped run, in order, capped at the count.
 - Repair: clicks on a straight line redrawn back onto it, the frames around untouched.
+- Fade selection edges: a fade in and a fade out at the ends, each at most half the range.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -939,4 +944,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Fade Selection Edges, a short fade in and fade out at both ends of the selection in one step
+1. Editor: Select Audible Span inside the selection, shrinking it to the sound it holds
