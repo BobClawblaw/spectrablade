@@ -179,6 +179,7 @@ struct SessionTrack
     float gainDb = 0.0f;
     float pan = 0.0f;                      // -1 (left) to +1 (right)
     bool mute = false, solo = false;
+    bool soloSafe = false;                 // keeps playing when other tracks are soloed (a reverb return, say)
     int group = 0;                         // 0 for none, or 1 to maxGroups: volume, mute and solo changes follow through it
     int colour = -1;                       // a place in TrackColours::palette, or -1 for one by its place in the list
     bool hidden = false;                   // left out of the lanes (it still plays and shows in the mixer)
@@ -249,6 +250,7 @@ struct SessionState
     /** Muted or soloed itself or through its folder. */
     bool isMuted (const SessionTrack&) const;
     bool isSoloed (const SessionTrack&) const;
+    bool isSoloSafe (const SessionTrack&) const;
 
     /** Its folder's volume as a gain, by which its output and post-fader sends are scaled; 1
         out of any folder. */

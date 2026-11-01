@@ -60,7 +60,8 @@ namespace
         if (track.isFolder || state.isMuted (track))
             return false;
 
-        if (! state.anySolo() || state.isSoloed (track))
+        // Solo safe: played whatever else is soloed (a bus still hears only what plays into it).
+        if (! state.anySolo() || state.isSoloed (track) || state.isSoloSafe (track))
             return true;
 
         // A soloed bus brings the tracks feeding it; a soloed track brings the buses it feeds.

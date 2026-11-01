@@ -194,6 +194,10 @@ public:
 
         mute.setToggleState (t.mute, juce::dontSendNotification);
         solo.setToggleState (t.solo, juce::dontSendNotification);
+        solo.setTooltip (t.soloSafe ? "Solo: play only soloed tracks (this one is solo safe: it plays anyway)" : "Solo: play only soloed tracks");
+
+        if (std::exchange (soloSafe, t.soloSafe) != t.soloSafe)
+            repaint();
 
         const auto& effects = view.engine.getTrackEffects();
         const auto slots = effects.getNumSlots (trackId);
@@ -362,6 +366,13 @@ public:
             g.drawText ("G" + juce::String (group), juce::Rectangle<int> (getWidth() - 30, getHeight() - 15, 26, 12), juce::Justification::centredRight);
         }
 
+        // Solo safe: a bar under the solo button.
+        if (soloSafe && solo.isVisible() && ! solo.getBounds().isEmpty())
+        {
+            g.setColour (juce::Colour (0xffe3c74f));
+            g.fillRect (solo.getBounds().getX() + 3, solo.getBounds().getBottom() + 1, solo.getWidth() - 6, 2);
+        }
+
         g.setColour (laneLine);
         g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
     }
@@ -480,6 +491,7 @@ public:
         }
 
         menu.addSubMenu ("Group", groups);
+        menu.addItem ("Solo Safe", true, t->soloSafe, [this, safe = t->soloSafe] { view.setTrackSoloSafe (trackId, ! safe); });
         menu.addSubMenu ("Colour", colours);
         menu.addItem ("Note...", [this] { view.askForTrackNote (trackId); });
         menu.addItem ("Hide", [this] { view.setTrackHidden (trackId, true); });
@@ -526,7 +538,7 @@ private:
     juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
     juce::Slider gain, pan;
     juce::Colour colour;
-    bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false;
+    bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false, soloSafe = false;
     int members = 0;
     float levels[2] {}, holds[2] {};
     int holdLeft[2] {};
@@ -3265,6 +3277,11 @@ void MultitrackView::setTrackColour (juce::uint32 trackId, int colour)
 {
     editTrack (trackId, "Track Colour", false,
                [colour] (SessionTrack& t) { t.colour = juce::isPositiveAndBelow (colour, (int) TrackColours::palette.size()) ? colour : -1; });
+}
+
+void MultitrackView::setTrackSoloSafe (juce::uint32 trackId, bool safe)
+{
+    editTrack (trackId, safe ? "Solo Safe" : "Not Solo Safe", false, [safe] (SessionTrack& t) { t.soloSafe = safe; });
 }
 
 void MultitrackView::setTrackGroup (juce::uint32 trackId, int group)

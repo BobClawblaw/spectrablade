@@ -1061,6 +1061,42 @@ namespace
 
 namespace
 {
+    void testSoloSafe (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = 48000.0;
+        s.addTrack();
+        s.addBus();
+        s.addFolder();
+        s.tracks[0].folderId = s.tracks[2].id;
+        engine.session.reset (s, {});
+        MultitrackView view (engine);
+        const auto busId = engine.session.getState()->tracks[1].id, folderId = engine.session.getState()->tracks[2].id;
+
+        view.setTrackSoloSafe (busId, true);
+        const auto* after = engine.session.getState().get();
+        const auto set = after->tracks[1].soloSafe && engine.session.getUndoDescription() == "Solo Safe" && ! after->isSoloSafe (after->tracks[0]);
+
+        // A folder's solo safe covers what is in it.
+        view.setTrackSoloSafe (folderId, true);
+        after = engine.session.getState().get();
+        const auto viaFolder = after->isSoloSafe (after->tracks[0]) && ! after->tracks[0].soloSafe;
+
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto error = SessionFile::save (*engine.session.getState(), file);
+        const auto loaded = SessionFile::load (file, engine.formatManager);
+        file.deleteFile();
+        const auto filed = error.isEmpty() && loaded.state.tracks.size() == 3 && ! loaded.state.tracks[0].soloSafe
+                           && loaded.state.tracks[1].soloSafe && loaded.state.tracks[2].soloSafe;
+
+        view.setTrackSoloSafe (busId, false);
+        const auto off = ! engine.session.getState()->tracks[1].soloSafe && engine.session.getUndoDescription() == "Not Solo Safe";
+        engine.session.undo();
+        const auto undone = engine.session.getState()->tracks[1].soloSafe;
+        check (set && viaFolder && filed && off && undone,
+               "solo safe: set and cleared as undo steps, through a folder for its members, and kept in session files");
+    }
+
     void testLoadReadout (AudioEngine& engine)
     {
         LoadReadout::Reading now { 0.123, 0 };
@@ -1122,4 +1158,5 @@ void runMixerTests (AudioEngine& engine)
     testFolderStrips (engine);
     testSessionNotes (engine);
     testLoadReadout (engine);
+    testSoloSafe (engine);
 }

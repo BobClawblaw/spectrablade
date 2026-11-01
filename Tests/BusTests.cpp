@@ -176,6 +176,34 @@ void runBusTests()
         add (expected, aPost, x * xl, x * xr);
         const auto w2 = worst (play (soloA, 0, length, 512, nullptr), expected);
         check (w2 < 1.0e-6f, "buses: soloing a track plays it and the buses it feeds, and nothing else");
+
+        // Solo safe: with A soloed, a solo-safe B plays, with its send into X (which A's solo
+        // brings); a solo-safe Y adds what B sends it; a solo-safe bus alone hears nothing, as
+        // nothing playing feeds it.
+        auto safeB = soloA;
+        safeB.tracks[1].soloSafe = true;
+        add (expected, bPost, 1.0f, 1.0f);
+        add (expected, bPre, gain (-6.0f) * x * xl, gain (-6.0f) * x * xr);
+        const auto w3 = worst (play (safeB, 0, length, 512, nullptr), expected);
+
+        auto safeBY = safeB;
+        safeBY.tracks[3].soloSafe = true;
+        add (expected, bPost, gain (-10.0f) * y, gain (-10.0f) * y);
+        const auto w4 = worst (play (safeBY, 0, length, 512, nullptr), expected);
+
+        auto safeY = soloA;
+        safeY.tracks[3].soloSafe = true;
+        const auto w5 = worst (play (safeY, 0, length, 512, nullptr), play (soloA, 0, length, 512, nullptr));
+
+        auto mutedSafe = safeB;
+        mutedSafe.tracks[1].mute = true;
+        auto unsoloed = s;
+        unsoloed.tracks[1].soloSafe = true;
+        check (w3 < 1.0e-6f && w4 < 1.0e-6f && juce::exactlyEqual (w5, 0.0f)
+                   && same (play (mutedSafe, 0, length, 512, nullptr), play (soloA, 0, length, 512, nullptr))
+                   && same (play (unsoloed, 0, length, 512, nullptr), play (s, 0, length, 512, nullptr)),
+               "buses: solo safe tracks and buses play beside a solo (a bus only what plays into it); muted still mutes; no effect without a solo (worst "
+                   + juce::String (juce::jmax (w3, w4), 9) + " against sums made by hand)");
     }
 
     // Delay compensation through buses: effects on A (300), X (500) and Y (64), none on B.

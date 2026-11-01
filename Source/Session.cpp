@@ -39,6 +39,12 @@ bool SessionState::isSoloed (const SessionTrack& t) const
     return t.solo || (folder != nullptr && folder->solo);
 }
 
+bool SessionState::isSoloSafe (const SessionTrack& t) const
+{
+    const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;
+    return t.soloSafe || (folder != nullptr && folder->soloSafe);
+}
+
 float SessionState::folderGain (const SessionTrack& t) const
 {
     const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;
@@ -1819,6 +1825,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         track->setAttribute ("mute", t.mute);
         track->setAttribute ("solo", t.solo);
 
+        if (t.soloSafe)
+            track->setAttribute ("soloSafe", true);
+
         if (t.group != 0)
             track->setAttribute ("group", t.group);
 
@@ -2040,6 +2049,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.pan = (float) trackXml->getDoubleAttribute ("pan");
         track.mute = trackXml->getBoolAttribute ("mute");
         track.solo = trackXml->getBoolAttribute ("solo");
+        track.soloSafe = trackXml->getBoolAttribute ("soloSafe");
         track.group = juce::jlimit (0, SessionTrack::maxGroups, trackXml->getIntAttribute ("group"));
         track.colour = juce::jlimit (-1, 7, trackXml->getIntAttribute ("colour", -1));
         track.hidden = trackXml->getBoolAttribute ("hidden");

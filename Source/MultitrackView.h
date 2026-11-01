@@ -262,6 +262,7 @@ public:
     /** Puts a track or bus in a group (1 to SessionTrack::maxGroups) or none (0), as an undo
         step. Right-click a header for its Group menu. */
     void setTrackGroup (juce::uint32 trackId, int group);
+    void setTrackSoloSafe (juce::uint32 trackId, bool safe);
 
     /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */
     void moveTrack (int from, int to);

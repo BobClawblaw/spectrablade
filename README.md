@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 84: solo safe**
+- Right-click a track, bus or folder header and choose Solo Safe to keep it playing when other tracks are soloed: a reverb return stays on while you solo the vocal, say. A solo-safe bus still plays only what reaches it from tracks that are playing. Mute still silences a solo-safe track, and with nothing soloed it changes nothing. A folder's solo safe covers its members. A yellow bar under the S button marks it, and the solo button's tooltip says so.
+- Solo Safe and Not Solo Safe are undo steps, and the session file keeps the setting (nothing is written for tracks without it). It does not follow a track's group.
+- Measured by the tests, through the session mixer, against the same sums made by hand (worst difference 0.000000119, from adding in another order): with track A soloed, a solo-safe track B playing with its send into bus X, a solo-safe bus Y adding B's send, and a solo-safe Y on its own playing nothing, bit for bit the same as A soloed alone; a muted solo-safe track staying silent; and solo safe without a solo changing nothing, bit for bit. Also: the undo steps, a folder's solo safe covering its member, and the session file. The menu item and the bar were not checked by the tests, the mixer window does not show it yet, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 83: double-clicking to add markers**
 - Double-click an empty spot in the marker lane to add a marker there, named like the others ("Marker 01", ...), as an undo step ("Add Marker 01"). With snapping on, it lands on a nearby clip edge, marker, the cursor or the time range's edges, as dragged markers do. Double-clicking a marker or region still renames it.
 - Measured by the tests, through the real view: a double-click with snapping off adding a point marker 208 frames from the frame aimed at (99,792 for 100,000: the frame under that pixel at the test's zoom), and one 3 px past a clip's end with snapping on landing exactly on it, each its own undo step. A real double-click (two clicks through the mouse) was not sent by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
@@ -571,6 +576,7 @@ The tests run against the real machine:
 - Selecting the clips in the time range: overlapping, touching and hidden.
 - Audio load readout: percent, warnings, dropout counts, resets and new devices.
 - Double-clicking the marker lane: a marker where clicked, and snapped.
+- Solo safe: mixing beside a solo, mute, folders, undo and the session file.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -624,4 +630,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: solo safe, so a track or bus keeps playing when others are soloed (for reverb returns and the like)
+1. Mixer window: a right-click menu on each strip (solo safe, colour, hide), with solo safe shown on the strip
