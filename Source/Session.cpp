@@ -308,6 +308,40 @@ bool removeClip (SessionState& s, juce::uint32 clipId)
     return true;
 }
 
+bool crossfade (SessionState& s, juce::uint32 clipId)
+{
+    const auto where = s.findClip (clipId);
+
+    if (! where.has_value())
+        return false;
+
+    auto& clips = s.tracks[(size_t) where->first].clips;
+    auto& clip = clips[(size_t) where->second];
+    auto changed = false;
+
+    for (auto& other : clips)
+    {
+        if (other.id == clip.id)
+            continue;
+
+        if (other.position < clip.position && other.getEnd() > clip.position && other.getEnd() < clip.getEnd())
+        {
+            clip.fadeIn = other.fadeOut = other.getEnd() - clip.position;
+            limitFades (other);
+            changed = true;
+        }
+        else if (other.position > clip.position && other.position < clip.getEnd() && other.getEnd() > clip.getEnd())
+        {
+            clip.fadeOut = other.fadeIn = clip.getEnd() - other.position;
+            limitFades (other);
+            changed = true;
+        }
+    }
+
+    limitFades (clip);
+    return changed;
+}
+
 bool setClipFades (SessionState& s, juce::uint32 clipId, juce::int64 fadeIn, juce::int64 fadeOut)
 {
     auto* c = find (s, clipId);

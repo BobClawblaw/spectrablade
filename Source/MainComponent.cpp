@@ -15,6 +15,7 @@ namespace
     constexpr const char* inputCountKey   = "inputNumChannels";
     constexpr const char* displayKey      = "display";
     constexpr const char* snappingKey     = "snapping";
+    constexpr const char* crossfadingKey  = "crossfading";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -37,7 +38,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping, cmdMixDown
+        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -494,6 +495,7 @@ MainComponent::MainComponent()
 
     addChildComponent (multitrack);
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
+    multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
     multitrack.onOpenInEditor = [this] (const juce::File& f)
     {
         confirmDiscardChanges ([this, f]
@@ -631,7 +633,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdMixDown; ++id)
+    for (int id = cmdOpen; id <= cmdCrossfade; ++id)
         ids.add (id);
 }
 
@@ -727,6 +729,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('b', cmd | shift); info.setActive (multitrackMode); break;
         case cmdSnapping:   info.setInfo ("Snapping", "Line dragged clips, edges, fades and points up with clip edges, the cursor and the ruler", "Multitrack", 0);
                             info.addDefaultKeypress ('s', 0); info.setTicked (multitrack.isSnapping()); info.setActive (multitrackMode); break;
+        case cmdCrossfade:  info.setInfo ("Crossfade Overlaps", "Crossfade a clip moved or trimmed over part of another", "Multitrack", 0);
+                            info.addDefaultKeypress ('x', 0); info.setTicked (multitrack.isCrossfading()); info.setActive (multitrackMode); break;
         case cmdMixDown:    info.setInfo ("Mix Down...", "Mix the session, or its time range, to an audio file", "Multitrack", 0);
                             info.addDefaultKeypress ('e', cmd | shift);
                             info.setActive (multitrackMode && backgroundJob == nullptr
@@ -857,6 +861,11 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdSplitClip:  multitrack.splitSelectedClip(); break;
         case cmdMixDown:    chooseMixDownFile(); break;
+        case cmdCrossfade:
+            multitrack.setCrossfading (! multitrack.isCrossfading());
+            appProperties.getUserSettings()->setValue (crossfadingKey, multitrack.isCrossfading());
+            commands.commandStatusChanged();
+            break;
         case cmdSpectralAttenuate:
             askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
             break;
@@ -901,7 +910,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, 0, cmdMixDown }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;

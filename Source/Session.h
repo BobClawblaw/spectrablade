@@ -145,6 +145,12 @@ namespace SessionEdits
 
     bool removeClip (SessionState&, juce::uint32 clipId);
 
+    /** Crossfades a clip with the clips it partly overlaps on its track: where another clip ends
+        inside it, its fade in and the other's fade out both span the overlap; where another starts
+        inside it, its fade out and the other's fade in do. Clips inside another, or holding one,
+        are left alone. False when it overlaps nothing that way. */
+    bool crossfade (SessionState&, juce::uint32 clipId);
+
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
         (or split in two) and lose their fade on the cut side. False when nothing was there. */
     bool clearRange (SessionState&, int track, juce::int64 start, juce::int64 end);

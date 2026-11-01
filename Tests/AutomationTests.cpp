@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/AudioEdits.h"
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
 #include "TestPlugins.h"
@@ -317,6 +318,76 @@ namespace
         }
     }
 
+    void testCrossfades()
+    {
+        // A from 1000 to 5000, B from 4000 to 8000, and C inside B.
+        SessionState s;
+        s.sampleRate = rate;
+        auto& t = s.addTrack();
+        addClip (s, t, 1, 1000, 4000, 61);
+        addClip (s, t, 1, 4000, 4000, 62);
+        addClip (s, t, 1, 5000, 1000, 63);
+        const auto a = t.clips[0].id, b = t.clips[1].id, c = t.clips[2].id;
+        const auto clip = [&s] (juce::uint32 id) { const auto w = s.findClip (id); return s.tracks[(size_t) w->first].clips[(size_t) w->second]; };
+
+        check (SessionEdits::crossfade (s, b) && clip (b).fadeIn == 1000 && clip (a).fadeOut == 1000 && clip (b).fadeOut == 0
+                   && clip (c).fadeIn == 0 && clip (c).fadeOut == 0,
+               "crossfades: a clip over another's end fades in as the other fades out, across the overlap; a clip inside it is left alone");
+
+        SessionEdits::setClipFades (s, a, 0, 0);
+        SessionEdits::setClipFades (s, b, 0, 0);
+        check (SessionEdits::crossfade (s, a) && clip (a).fadeOut == 1000 && clip (b).fadeIn == 1000,
+               "crossfades: the same from the earlier clip");
+        check (! SessionEdits::crossfade (s, c) && clip (c).fadeIn == 0 && clip (c).fadeOut == 0,
+               "crossfades: a clip inside another has nothing to crossfade with");
+
+        // B moved between A and D, overlapping both: it crossfades with each.
+        SessionEdits::trimClip (s, c, 5000, 5001);
+        SessionEdits::moveClip (s, c, 0, 20000);
+        addClip (s, s.tracks[0], 1, 6000, 4000, 64);
+        const auto d = s.tracks[0].clips.back().id;
+        SessionEdits::moveClip (s, b, 0, 4500);
+        check (SessionEdits::crossfade (s, b) && clip (b).fadeIn == 500 && clip (b).fadeOut == 2500 && clip (d).fadeIn == 2500,
+               "crossfades: a clip overlapping clips on both sides crossfades with each");
+
+        // The mix through a crossfade: two clips of the same constant level stay at that level,
+        // to within the curves' half-frame offset (sin (pi / 2N) for an N-frame overlap).
+        for (const juce::int64 overlap : { 2, 7, 480, 4800 })
+        {
+            SessionState m;
+            m.sampleRate = rate;
+            auto& track = m.addTrack();
+
+            for (const juce::int64 start : { (juce::int64) 0, 6000 - overlap })
+            {
+                juce::AudioBuffer<float> level (2, 6000);
+
+                for (int ch = 0; ch < 2; ++ch)
+                    juce::FloatVectorOperations::fill (level.getWritePointer (ch), 0.25f, 6000);
+
+                SessionClip clipAtLevel;
+                clipAtLevel.id = m.nextId++;
+                clipAtLevel.audio = AudioEdits::fromBuffer (std::move (level));
+                clipAtLevel.position = start;
+                clipAtLevel.length = 6000;
+                track.clips.push_back (clipAtLevel);
+            }
+
+            SessionEdits::crossfade (m, m.tracks[0].clips[1].id);
+            const auto mix = play (m, 0, (int) (12000 - overlap), 512);
+            auto deviation = 0.0f;
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < mix.getNumSamples(); ++i)
+                    deviation = juce::jmax (deviation, std::abs (mix.getSample (ch, i) / 0.25f - 1.0f));
+
+            const auto bound = std::sin (juce::MathConstants<float>::pi / (2.0f * (float) overlap));
+            check (deviation <= bound + 1.0e-6f,
+                   "crossfades: through a " + juce::String (overlap) + "-frame crossfade the level stays within "
+                       + juce::String (bound, 6) + " of steady (worst " + juce::String (deviation, 6) + ")");
+        }
+    }
+
     void testFile (juce::AudioFormatManager& formats)
     {
         SessionState s;
@@ -346,6 +417,7 @@ void runAutomationTests (juce::AudioFormatManager& formats)
     testEnvelopes();
     testFades();
     testSnapping();
+    testCrossfades();
     testMixing();
     testFile (formats);
 }

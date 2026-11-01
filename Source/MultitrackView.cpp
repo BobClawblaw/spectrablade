@@ -11,6 +11,27 @@ namespace
 
     constexpr int edgeGrab = 6;   // pixels from a clip's edge that trim instead of move
 
+    /** A raised-cosine fade's curve, from silence at silentX (on the bottom) to full level at
+        fullX (on the top). */
+    juce::Path fadeCurve (float silentX, float fullX, float top, float bottom)
+    {
+        juce::Path curve;
+
+        for (int i = 0; i <= 32; ++i)
+        {
+            const auto t = (float) i / 32.0f;
+            const auto level = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t);
+            const auto point = juce::Point<float> (silentX + (fullX - silentX) * t, bottom - level * (bottom - top));
+
+            if (i == 0)
+                curve.startNewSubPath (point);
+            else
+                curve.lineTo (point);
+        }
+
+        return curve;
+    }
+
     juce::Colour trackColour (int index)
     {
         static const juce::uint32 colours[] = { 0xff4fc3a1, 0xff58a6ff, 0xffd98cff, 0xffffa657, 0xff7ee787, 0xffff7b72 };
@@ -990,24 +1011,9 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
     const auto drawFade = [&] (float silentX, float fullX)
     {
         const auto top = (float) r.getY() + 16.0f, bottom = (float) r.getBottom();
-        juce::Path curve;
-        juce::Path shade;
-        shade.startNewSubPath (silentX, top);
-
-        for (int i = 0; i <= 32; ++i)
-        {
-            const auto t = (float) i / 32.0f;
-            const auto level = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t);
-            const auto point = juce::Point<float> (silentX + (fullX - silentX) * t, bottom - level * (bottom - top));
-
-            if (i == 0)
-                curve.startNewSubPath (point);
-            else
-                curve.lineTo (point);
-
-            shade.lineTo (point);
-        }
-
+        const auto curve = fadeCurve (silentX, fullX, top, bottom);
+        auto shade = curve;
+        shade.lineTo (silentX, top);
         shade.closeSubPath();
         g.setColour (juce::Colours::black.withAlpha (0.25f));
         g.fillPath (shade);
@@ -1072,6 +1078,19 @@ void MultitrackView::paint (juce::Graphics& g)
 
             for (auto& c : track.clips)
                 drawClip (g, t, c);
+
+            // Where clips overlap, a later clip covers the fade out under it: draw the fade outs
+            // again on top, so a crossfade shows both its curves.
+            for (auto& c : track.clips)
+            {
+                if (c.fadeOut <= 0)
+                    continue;
+
+                const auto r = clipBounds (t, c);
+                g.setColour (juce::Colours::white.withAlpha (0.6f));
+                g.strokePath (fadeCurve ((float) r.getRight(), xForFrame (c.getEnd() - c.fadeOut), (float) r.getY() + 16.0f, (float) r.getBottom()),
+                              juce::PathStrokeType (1.0f));
+            }
 
             if (const auto parameter = getShownEnvelope (track.id))
                 drawEnvelope (g, t, *parameter);
@@ -1387,6 +1406,9 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         case Drag::range:
             break;
     }
+
+    if (crossfading && (drag == Drag::move || drag == Drag::trimStart || drag == Drag::trimEnd))
+        SessionEdits::crossfade (next, dragClip.id);
 
     preview = std::move (next);
     rebuildHeaders();

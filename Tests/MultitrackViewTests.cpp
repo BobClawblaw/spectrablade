@@ -115,6 +115,28 @@ void runMultitrackViewTests (AudioEngine& engine)
     check (clip (clipB).position != 144000 && std::abs (clip (clipB).position - 144000) < 4 * (juce::int64) framesPerPixel,
            "view: with snapping off it lands where it is dropped (start " + juce::String (clip (clipB).position) + ")");
     view.setSnapping (true);
+    engine.session.undo();
+    Mouse::settle();
+
+    // Move B over A's end, snapping its start to the cursor at 2.5 s: they crossfade over the
+    // 0.5 s they share. With crossfading off, the fades stay as they were.
+    auto noFadeOut = *engine.session.getState();
+    SessionEdits::setClipFades (noFadeOut, clipA, fadeIn, 0);
+    engine.session.apply (std::move (noFadeOut), "Clip Fade Out");
+    Mouse::settle();
+    const auto overlapOffset = x (120000) + 3.0f - x (240000);
+    mouse.drag (grab, grab.translated (overlapOffset, 0.0f));
+    check (clip (clipB).position == 120000 && clip (clipB).fadeIn == 24000 && clip (clipA).fadeOut == 24000
+               && clip (clipA).fadeIn == fadeIn && engine.session.getUndoDescription() == "Move Clip",
+           "view: a clip moved over another's end crossfades with it (fade in " + juce::String (clip (clipB).fadeIn) + ", 24000 wanted)");
+
+    engine.session.undo();
+    Mouse::settle();
+    view.setCrossfading (false);
+    mouse.drag (grab, grab.translated (overlapOffset, 0.0f));
+    check (clip (clipB).position == 120000 && clip (clipB).fadeIn == 0 && clip (clipA).fadeOut == 0,
+           "view: with crossfading off, overlapping clips keep their fades");
+    view.setCrossfading (true);
 
     // Envelopes: show the track's volume envelope, find its line by hovering down the lane.
     view.showEnvelope (trackId, AutomationParameter::volume);

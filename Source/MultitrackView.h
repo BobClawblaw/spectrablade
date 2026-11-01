@@ -13,7 +13,8 @@
     point, drag points to move them, Option-click one to delete it.
 
     With snapping on, whatever is dragged lines up with clip edges, the cursor, the time range
-    and the ruler's marks when it comes within a few pixels of one. */
+    and the ruler's marks when it comes within a few pixels of one. With crossfading on, a clip
+    moved or trimmed so that it partly overlaps another on its track crossfades with it. */
 class MultitrackView final : public juce::Component,
                              public juce::FileDragAndDropTarget,
                              private juce::ChangeListener,
@@ -56,6 +57,8 @@ public:
 
     bool isSnapping() const noexcept              { return snapping; }
     void setSnapping (bool on)                    { snapping = on; }
+    bool isCrossfading() const noexcept           { return crossfading; }
+    void setCrossfading (bool on)                 { crossfading = on; }
 
     /** The envelope shown over a track's lane, if any. */
     std::optional<AutomationParameter> getShownEnvelope (juce::uint32 trackId) const;
@@ -158,7 +161,7 @@ private:
     Envelope dragEnvelopeBase;             // its envelope, with the point, as the drag began
     juce::String dragDescription;          // the undo step a drag makes
 
-    bool snapping = true;
+    bool snapping = true, crossfading = true;
     std::map<juce::uint32, AutomationParameter> shownEnvelopes;
 
     juce::Component headerArea;
