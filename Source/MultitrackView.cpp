@@ -1928,13 +1928,11 @@ void MultitrackView::showMarkerMenu (int index)
     menu.addItem ("Rename...", [this, index] { renameMarker (index); });
     menu.addItem ("Delete " + old.name, [this, old]
     {
-        auto next = *engine.session.getState();
+        // Found again by value: the markers may have changed while the menu was open.
+        const auto& markers = engine.session.getState()->markers;
 
-        if (auto it = std::find (next.markers.begin(), next.markers.end(), old); it != next.markers.end())
-        {
-            next.markers.erase (it);
-            engine.session.apply (std::move (next), "Delete " + old.name);
-        }
+        if (auto it = std::find (markers.begin(), markers.end(), old); it != markers.end())
+            deleteMarker ((int) std::distance (markers.begin(), it));
     });
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
 }
@@ -2367,6 +2365,39 @@ void MultitrackView::setSelectedClipsLocked (bool locked)
 void MultitrackView::setSelectedClipsMuted (bool muted)
 {
     setSelectedClipsFlag (SessionEdits::setClipMuted, muted, muted ? "Mute " : "Unmute ");
+}
+
+bool MultitrackView::showMarker (int index)
+{
+    const auto& markers = shown().markers;
+
+    if (! juce::isPositiveAndBelow (index, (int) markers.size()))
+        return false;
+
+    const auto m = markers[(size_t) index];
+    setTimeSelection (m.isRegion() ? juce::Range<juce::int64> (m.start, m.getEnd()) : juce::Range<juce::int64>());
+    setCursor (m.start);
+
+    // A tenth of the way in unless it starts in view already.
+    const auto width = (double) juce::jmax (1, timelineArea().getWidth()) * framesPerPixel;
+
+    if ((double) m.start < viewStart || (double) m.start >= viewStart + width)
+        setView ((double) m.start - width * 0.1, framesPerPixel);
+
+    return true;
+}
+
+bool MultitrackView::deleteMarker (int index)
+{
+    auto next = *engine.session.getState();
+
+    if (! juce::isPositiveAndBelow (index, (int) next.markers.size()))
+        return false;
+
+    const auto name = next.markers[(size_t) index].name;
+    next.markers.erase (next.markers.begin() + index);
+    engine.session.apply (std::move (next), "Delete " + name);
+    return true;
 }
 
 bool MultitrackView::showClip (juce::uint32 clipId)

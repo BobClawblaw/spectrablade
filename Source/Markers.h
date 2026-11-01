@@ -41,6 +41,11 @@ namespace MarkerEdits
     /** A name not used yet: "Marker 01", "Region 01", ... */
     juce::String nextName (const Markers&, bool region);
 
+    /** The markers as CSV (RFC 4180, with a header line): name, start, end and length in seconds
+        (end and length empty for a point), then start and length in frames. Names holding a
+        comma, quote or line break are quoted, with quotes doubled. */
+    juce::String toCsv (const Markers&, double sampleRate);
+
     /** Reads WAV cue points with their labels and regions (cue + ltxt), or AIFF markers. */
     Markers fromMetadata (const juce::StringPairArray& metadata, juce::int64 numFrames);
 

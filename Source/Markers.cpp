@@ -146,6 +146,25 @@ Markers fromMetadata (const juce::StringPairArray& metadata, juce::int64 numFram
     return markers;
 }
 
+juce::String toCsv (const Markers& markers, double sampleRate)
+{
+    const auto seconds = [sampleRate] (juce::int64 frames) { return juce::String ((double) frames / sampleRate, 6); };
+    juce::String csv ("Name,Start (s),End (s),Length (s),Start (frames),Length (frames)\r\n");
+
+    for (auto& m : markers)
+    {
+        auto name = m.name;
+
+        if (name.containsAnyOf (",\"\r\n"))
+            name = "\"" + name.replace ("\"", "\"\"") + "\"";
+
+        csv << name << "," << seconds (m.start) << "," << (m.isRegion() ? seconds (m.getEnd()) : juce::String()) << ","
+            << (m.isRegion() ? seconds (m.length) : juce::String()) << "," << juce::String (m.start) << "," << juce::String (m.length) << "\r\n";
+    }
+
+    return csv;
+}
+
 std::unordered_map<juce::String, juce::String> toMetadata (const Markers& markers)
 {
     std::unordered_map<juce::String, juce::String> values;

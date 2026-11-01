@@ -2,6 +2,7 @@
 #include "AudioFileIO.h"
 #include "Bounce.h"
 #include "ClipList.h"
+#include "MarkerTable.h"
 #include "ClipProperties.h"
 #include "Metronome.h"
 #include "MixerView.h"
@@ -55,7 +56,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -132,6 +133,31 @@ public:
         setResizable (true, false);
         setResizeLimits (300, 150, 3000, 2000);
         centreWithSize (710, 320);
+        setVisible (true);
+    }
+
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
+/** The session's markers and regions, in a window beside the main one. */
+class MainComponent::MarkerListWindow final : public juce::DocumentWindow
+{
+public:
+    MarkerListWindow (Session& session, MultitrackView& view, std::function<void()> onClose)
+        : DocumentWindow ("Marker List", juce::Colours::darkgrey, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        setContentOwned (new MarkerTable (session, { [&view] (int i) { view.showMarker (i); },
+                                                    [&view] (int i) { view.renameMarker (i); },
+                                                    [&view] (int i) { view.deleteMarker (i); } }), false);
+        setResizable (true, false);
+        setResizeLimits (250, 150, 3000, 2000);
+        centreWithSize (470, 320);
         setVisible (true);
     }
 
@@ -754,7 +780,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdTempoChange; ++id)
+    for (int id = cmdOpen; id <= cmdExportMarkers; ++id)
         ids.add (id);
 }
 
@@ -946,6 +972,11 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
         case cmdInsertTime: info.setInfo ("Insert Time", "Put as much empty time as the range is long in at its start, moving what is after it on", "Multitrack", 0);
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
+        case cmdMarkerList: info.setInfo ("Marker List", "Show the session's markers and regions in a list", "Multitrack", 0);
+                            info.setActive (multitrackMode);
+                            info.setTicked (markerListWindow != nullptr); break;
+        case cmdExportMarkers: info.setInfo ("Export Markers as CSV...", "Write the markers and regions of the session or file to a CSV file", "File", 0);
+                            info.setActive (multitrackMode ? ! engine.session.getState()->markers.empty() : ! engine.document.getMarkers().empty()); break;
         case cmdCutTime:    info.setInfo ("Cut Time", "Copy the time range from every track, then take it out of the session", "Multitrack", 0);
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
         case cmdCopyTime:   info.setInfo ("Copy Time", "Copy the time range from every track: clips, envelopes and markers", "Multitrack", 0);
@@ -1125,6 +1156,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDeleteTime: multitrack.deleteTimeSelection(); break;
         case cmdInsertTime: multitrack.insertTimeAtSelection(); break;
         case cmdCutTime:    multitrack.cutTimeSelection(); break;
+        case cmdMarkerList: toggleMarkerList(); break;
+        case cmdExportMarkers: chooseMarkersCsv(); break;
         case cmdCopyTime:   multitrack.copyTimeSelection(); break;
         case cmdPasteTime:  multitrack.pasteTime(); break;
         case cmdStretchClip: askToStretchSelectedClip(); break;
@@ -1234,13 +1267,13 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
     switch (index)
     {
-        case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio }); break;
+        case 0: add ({ cmdOpen, 0, cmdSave, cmdSaveAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, 0, cmdSelectAll, cmdSelectTrackClips, cmdSelectClipsAfter, cmdCrop, 0, cmdConvertRate }); break;
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
                        0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdCloseGaps, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdMixDown, cmdExportStems }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;
@@ -1814,6 +1847,44 @@ void MainComponent::toggleUndoHistory()
         });
 
     commands.commandStatusChanged();
+}
+
+void MainComponent::toggleMarkerList()
+{
+    // Deleted later, not inside its own close button's callback.
+    if (markerListWindow != nullptr)
+        markerListWindow = nullptr;
+    else
+        markerListWindow = std::make_unique<MarkerListWindow> (engine.session, multitrack, [this]
+        {
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+            {
+                if (safe != nullptr)
+                    safe->toggleMarkerList();
+            });
+        });
+
+    commands.commandStatusChanged();
+}
+
+void MainComponent::chooseMarkersCsv()
+{
+    // Taken now: what is shown when the command is chosen.
+    const auto markers = multitrackMode ? engine.session.getState()->markers : engine.document.getMarkers();
+    const auto rate = multitrackMode ? engine.session.getState()->sampleRate : engine.document.getSampleRate();
+    const auto from = multitrackMode ? engine.session.getFile() : engine.document.getFile();
+    const auto start = from != juce::File() ? from.getSiblingFile (from.getFileNameWithoutExtension() + " Markers.csv")
+                                            : juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Markers.csv");
+    chooser = std::make_unique<juce::FileChooser> ("Export markers as CSV", start, "*.csv");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [markers, rate] (const juce::FileChooser& fc)
+                          {
+                              const auto file = fc.getResult();
+
+                              if (file != juce::File() && ! file.replaceWithText (MarkerEdits::toCsv (markers, rate)))
+                                  showError ("Export Markers", "Couldn't write " + file.getFullPathName() + ".");
+                          });
 }
 
 void MainComponent::toggleClipList()

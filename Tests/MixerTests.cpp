@@ -5,6 +5,7 @@
 #include "../Source/AudioFileIO.h"
 #include "../Source/ClipList.h"
 #include "../Source/ClipProperties.h"
+#include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/SessionCollect.h"
@@ -572,6 +573,54 @@ namespace
     }
 }
 
+namespace
+{
+    void testMarkerList (AudioEngine& engine)
+    {
+        // Markers as CSV: a quoted name with a comma, one with quotes, a region's end and length.
+        const Markers listed { { 0, 0, "Say \"hi\"" }, { 48000, 0, "Intro" }, { 96000, 72000, "Verse, 1" } };
+        check (MarkerEdits::toCsv (listed, rate)
+                   == "Name,Start (s),End (s),Length (s),Start (frames),Length (frames)\r\n"
+                      "\"Say \"\"hi\"\"\",0.000000,,,0,0\r\n"
+                      "Intro,1.000000,,,48000,0\r\n"
+                      "\"Verse, 1\",2.000000,3.500000,1.500000,96000,72000\r\n",
+               "markers as CSV: a header, seconds and frames, regions with their end and length, names quoted where needed");
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.markers = listed;
+        engine.session.reset (s, {});
+        MultitrackView view (engine);
+        view.setSize (1200, 400);
+        view.zoomToRange ({ 0, 48000 });
+        std::vector<int> chosen;
+        MarkerTable table (engine.session, { [&] (int i) { chosen.push_back (i); view.showMarker (i); }, {}, {} });
+        table.setSize (470, 320);
+        const auto settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
+        settle();
+
+        const auto texts = table.getNumRows() == 3 && table.getText (0, MarkerTable::name) == "Say \"hi\"" && table.getText (1, MarkerTable::start) == "1.000"
+                           && table.getText (1, MarkerTable::end).isEmpty() && table.getText (2, MarkerTable::end) == "3.500"
+                           && table.getText (2, MarkerTable::length) == "1.500" && table.getText (5, MarkerTable::name).isEmpty();
+        table.chooseRow (2);
+        const auto region = view.getTimeSelection() == juce::Range<juce::int64> (96000, 168000) && view.getCursor() == 96000
+                            && view.getVisibleFrames().contains (96.0e3);
+        table.chooseRow (1);
+        table.chooseRow (7);
+        check (texts && region && chosen == std::vector<int> { 2, 1 } && view.getTimeSelection().isEmpty() && view.getCursor() == 48000,
+               "marker list: name, start, end and length; choosing a region selects it and scrolls to it, a point moves the cursor");
+
+        const auto deleted = view.deleteMarker (1);
+        settle();
+        check (deleted && engine.session.getUndoDescription() == "Delete Intro" && table.getNumRows() == 2 && table.getText (1, MarkerTable::name) == "Verse, 1"
+                   && ! view.deleteMarker (5) && ! view.showMarker (-1),
+               "marker list: deleting a marker is an undo step and the list follows; a marker that isn't there does nothing");
+        engine.session.reset ({}, {});
+        settle();
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
     testClipProperties (engine);
@@ -583,4 +632,5 @@ void runMixerTests (AudioEngine& engine)
     testNotes (engine);
     testUndoHistory (engine);
     testCollect (engine);
+    testMarkerList (engine);
 }

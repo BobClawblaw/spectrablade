@@ -140,6 +140,16 @@ public:
         view, keeping the zoom. False when there is no such clip. */
     bool showClip (juce::uint32 clipId);
 
+    /** Puts the cursor at a marker (a region also becomes the time range, as clicking it in the
+        marker lane does) and scrolls it into view, keeping the zoom. False when there is none. */
+    bool showMarker (int index);
+
+    /** Asks for a marker's new name; renaming is an undo step. */
+    void renameMarker (int index);
+
+    /** Deletes a marker as an undo step ("Delete <name>"). False when there is none. */
+    bool deleteMarker (int index);
+
     /** The track lanes' scroll position, in pixels from the top. */
     int getScrollY() const noexcept    { return scrollY; }
     void deleteSelectedTrack();
@@ -368,7 +378,6 @@ private:
         shortest region, so nested regions stay reachable. */
     int markerAt (juce::Point<int>) const;
     void drawMarkers (juce::Graphics&, juce::Rectangle<int> area) const;
-    void renameMarker (int index);
     void askForTrackNote (juce::uint32 trackId);
     void showMarkerMenu (int index);
     void drawClip (juce::Graphics&, int track, const SessionClip&) const;

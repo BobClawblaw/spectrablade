@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 61: the marker list and exporting markers**
+- Multitrack > Marker List opens a window listing the session's markers and regions in time order, with their start, and for regions their end and length, in seconds. Clicking one puts the cursor there and scrolls it into view (a region also becomes the time range), as clicking it in the marker lane does; double-clicking or Return renames it, and Delete or Backspace deletes it, each an undo step. The list follows the session, undo included.
+- File > Export Markers as CSV... writes the markers and regions of the session (in multitrack mode) or of the open file to a CSV file: a header line, then each one's name, start, end and length in seconds and its start and length in frames. Names holding a comma, a quote or a line break are quoted, with quotes doubled (RFC 4180).
+- Measured by the tests: the CSV text, character for character, for a point, a region and names needing quotes; the list's cells; choosing a region selecting it and scrolling to it, and a point moving the cursor; deleting a marker as an undo step with the list following; and nothing done for a marker that isn't there. The window, its keys, renaming from it and the file dialog were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 60: a tempo map**
 - Multitrack > Tempo Change at Cursor... changes the tempo, the beats in a bar or both from the start of the bar the cursor is in, up to the next change; on a bar with a change it edits it, and Remove takes it out. Tempo... still sets the first bar's. Each is an undo step ("Tempo Change", "Remove Tempo Change") and is saved with the session.
 - The metronome, the count-in, the bars-and-beats ruler, the lane grid, snapping and nudging all follow the changes. Each beat is still rounded to the nearest frame from the start of the session, so with no changes everything is as before. The ruler marks a change with an amber line and its tempo and beats after the bar number; its label spacing is set by the shortest beat and bar in the session, so labels stay apart at every tempo. A count-in lasts as long as the bar the punch-in is in.
@@ -440,6 +445,7 @@ The tests run against the real machine:
 - Time edits: clearing, deleting and inserting time across every track, with envelopes, markers and locked clips.
 - Copying and pasting time: the mix, envelopes, markers, rates and tracks.
 - The tempo map: beats and bars across changes, the grid, snapping, nudging, the ruler, the click and the session file.
+- The marker list and markers as CSV.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -493,4 +499,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: a marker list window for the session's markers and regions (jump, rename, delete), and exporting them as a CSV file
+1. Multitrack, continued: exporting each region of the session as a file of its own (a mixdown per region, named after it)

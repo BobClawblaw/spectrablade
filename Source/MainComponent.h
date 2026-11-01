@@ -49,6 +49,7 @@ private:
     class MixerWindow;
     class ClipPropertiesWindow;
     class ClipListWindow;
+    class MarkerListWindow;
     class UndoHistoryWindow;
     class PluginListWindow;
     class RackRenderJob;
@@ -153,6 +154,10 @@ private:
     void toggleMixer();
     void toggleClipProperties();
     void toggleClipList();
+    void toggleMarkerList();
+
+    /** Writes the markers of the session (in multitrack mode) or the open file as CSV. */
+    void chooseMarkersCsv();
     void toggleUndoHistory();
     void showPluginList();
     void showEditor (int slotIndex);
@@ -194,6 +199,7 @@ private:
     std::unique_ptr<MixerWindow> mixerWindow;
     std::unique_ptr<ClipPropertiesWindow> clipPropertiesWindow;
     std::unique_ptr<ClipListWindow> clipListWindow;
+    std::unique_ptr<MarkerListWindow> markerListWindow;
     std::unique_ptr<UndoHistoryWindow> undoHistoryWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
