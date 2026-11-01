@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 89: tap tempo**
+- Multitrack > Tap Tempo (T) sets the session's tempo from taps: from the second tap on, the tempo is the average spacing of the last eight taps, rounded to hundredths of a beat a minute and kept to 20 to 400. A pause of 3 s or more starts a new run. Each run of taps is one undo step ("Tap Tempo"). It sets the tempo from the start of the session; tempo changes later on stay as they are.
+- Measured by the tests: taps half a second apart giving 120 from the second tap; uneven spacings averaged; a 0.7 s spacing giving 85.71; only the last 8 of 12 spacings counting; a 3 s pause or a tap earlier than the last starting again; very fast taps held at 400; and on a session, a run of taps undone in one step, a tap giving the tempo already set changing nothing, and a second run its own step. The key and menu item (which read the system clock) were not checked by the tests, and none of it was tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 88: polarity invert**
 - Each track and bus can have its polarity inverted: its output is turned upside down after its effects and before its volume, so what it sends to buses (before or after its volume) is inverted too. Use it to fix a microphone that is wired backwards, or to line up two microphones on one source.
 - In the mixer each strip has a Ø switch between M and S. In the track headers it is Invert Polarity in the right-click menu, and a yellow Ø before the name marks an inverted track. Both are undo steps ("Invert Polarity", "Restore Polarity"), and the session file keeps the setting.
@@ -599,6 +603,7 @@ The tests run against the real machine:
 - Clip list search: names, files, tracks, case and following edits.
 - Marker list search: names, case, rows mapped to markers and following edits.
 - Polarity: inverted tracks and buses through the mixer, freezing, the strip switch and the session file.
+- Tap tempo: averaging, rounding, the window of taps, restarts, limits and undo steps.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -652,4 +657,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: Tap Tempo, setting the session tempo from the spacing of taps on a key
+1. Go to Time: type a time, in seconds or as bars and beats, to move the cursor there

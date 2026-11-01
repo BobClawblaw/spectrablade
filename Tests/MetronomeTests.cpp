@@ -4,6 +4,7 @@
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
 #include "../Source/Metronome.h"
+#include "../Source/TapTempo.h"
 #include "TestUtils.h"
 #include "MetronomeTests.h"
 
@@ -381,6 +382,83 @@ namespace
     }
 }
 
+namespace
+{
+    void testTapTempo()
+    {
+        // Taps half a second apart: 120 beats a minute from the second tap.
+        TapTempo taps;
+        const auto first = taps.tap (10.0);
+        const auto second = taps.tap (10.5);
+        const auto third = taps.tap (11.0);
+        check (! first && second == 120.0 && third == 120.0 && taps.getNumIntervals() == 2,
+               "tap tempo: nothing from one tap, then the tempo of their spacing");
+
+        // Uneven taps average: 0.5, 0.6, 0.4 and 0.5 s give 0.5 s, 120. A 0.7 s spacing gives 85.71.
+        TapTempo uneven;
+        for (auto t : { 0.0, 0.5, 1.1, 1.5 })
+            uneven.tap (t);
+
+        TapTempo odd;
+        odd.tap (0.0);
+        const auto oddTempo = odd.tap (0.7);   // 85.714... beats a minute
+        check (uneven.tap (2.0) == 120.0 && oddTempo == 85.71,
+               "tap tempo: the spacings are averaged, and the tempo rounded to hundredths");
+
+        // Only the last 8 spacings count: 8 at 0.25 s after 4 at 1 s give 240.
+        TapTempo window;
+        auto at = 0.0;
+        window.tap (at);
+
+        for (int i = 0; i < 4; ++i)
+            window.tap (at += 1.0);
+
+        std::optional<double> last;
+
+        for (int i = 0; i < 8; ++i)
+            last = window.tap (at += 0.25);
+
+        check (last == 240.0 && window.getNumIntervals() == TapTempo::maxIntervals, "tap tempo: only the last 8 spacings are averaged");
+
+        // A pause of 3 s starts again; so does going back in time. Very fast taps stop at 400.
+        TapTempo paused;
+        paused.tap (0.0);
+        paused.tap (0.5);
+        const auto afterPause = paused.tap (3.5);
+        const auto resumed = paused.tap (4.5);
+        TapTempo backwards;
+        backwards.tap (5.0);
+        const auto back = backwards.tap (4.0);
+        TapTempo fast;
+        fast.tap (0.0);
+        check (! afterPause && resumed == 60.0 && ! back && fast.tap (0.05) == 400.0,
+               "tap tempo: a pause of 3 s or a step back starts again; the tempo stays at most 400");
+
+        // On a session: one undo step for a run, a new one for the next run; the same tempo again
+        // changes nothing.
+        Session session;
+        SessionState s;
+        s.tempo = 100.0;
+        session.reset (s, {});
+        TapTempo tapper;
+        const auto none = ! tapSessionTempo (session, tapper, 0.0) && juce::exactlyEqual (session.getState()->tempo, 100.0);
+        const auto set = tapSessionTempo (session, tapper, 0.5) && juce::exactlyEqual (session.getState()->tempo, 120.0)
+                         && session.getUndoDescription() == "Tap Tempo";
+        tapSessionTempo (session, tapper, 1.1);   // 0.5 and 0.6 s: 109.09
+        tapSessionTempo (session, tapper, 1.5);   // with 0.4 s: 120 again
+        const auto same = ! tapSessionTempo (session, tapper, 2.0) && juce::exactlyEqual (session.getState()->tempo, 120.0);
+        session.undo();
+        const auto oneStep = juce::exactlyEqual (session.getState()->tempo, 100.0) && ! session.canUndo();
+        session.redo();
+        tapSessionTempo (session, tapper, 10.0);
+        tapSessionTempo (session, tapper, 11.0);
+        session.undo();
+        const auto secondRun = juce::exactlyEqual (session.getState()->tempo, 120.0);
+        check (none && set && same && oneStep && secondRun,
+               "tap tempo: a run of taps sets the session's tempo as one undo step, and the next run is another");
+    }
+}
+
 void runMetronomeTests (juce::AudioFormatManager& formats)
 {
     testGrid();
@@ -389,4 +467,5 @@ void runMetronomeTests (juce::AudioFormatManager& formats)
     testClicks();
     testSnapping();
     testFile (formats);
+    testTapTempo();
 }
