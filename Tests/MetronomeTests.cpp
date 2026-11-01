@@ -186,6 +186,36 @@ namespace
                "metronome: with the device at another rate, it stays silent");
     }
 
+    void testSnapping()
+    {
+        // At 133.7 a minute and 44.1 kHz beats fall between frames; snapping lands on the frame
+        // each beat is rounded to, as the metronome clicks there.
+        SessionState s;
+        s.sampleRate = 44100.0;
+        s.tempo = 133.7;
+        s.beatsPerBar = 3;
+        s.addTrack();
+        const auto beat = [&] (juce::int64 b) { return Metronome::beatFrame (b, s.tempo, s.sampleRate); };
+
+        SessionSnap::Targets beats;
+        beats.gridBeats = 1;
+        check (SessionSnap::snap (s, beat (10) + 37, 100, beats) == beat (10) && SessionSnap::snap (s, beat (11) - 41, 100, beats) == beat (11)
+                   && SessionSnap::snap (s, beat (10) + 500, 100, beats) == beat (10) + 500,
+               "beat snapping: a frame near a beat lands on the beat's frame; one further than the tolerance stays put");
+
+        SessionSnap::Targets bars;
+        bars.gridBeats = 3;
+        check (SessionSnap::snap (s, beat (11) - 5, 20000, bars) == beat (12) && SessionSnap::snap (s, beat (10) + 5, 20000, bars) == beat (9)
+                   && SessionSnap::snap (s, beat (10) + 5, 100, bars) == beat (10) + 5,
+               "beat snapping: on a grid of bars, only bar starts are targets");
+
+        SessionSnap::Targets withCursor = beats;
+        withCursor.extra = { beat (10) + 30 };
+        check (SessionSnap::snap (s, beat (10) + 25, 100, withCursor) == beat (10) + 30
+                   && SessionSnap::snapSpan (s, { beat (4) + 60, beat (7) + 9 }, 100, beats) == -9,
+               "beat snapping: a nearer target still wins, and a moved span snaps by its nearer edge");
+    }
+
     void testFile (juce::AudioFormatManager& formats)
     {
         SessionState s;
@@ -210,5 +240,6 @@ void runMetronomeTests (juce::AudioFormatManager& formats)
 {
     testGrid();
     testClicks();
+    testSnapping();
     testFile (formats);
 }

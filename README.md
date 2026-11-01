@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 24: bars and beats**
+- Multitrack > Bars and Beats (B) counts the ruler in bars and beats of the session's tempo ("5" is bar 5, "5.3" its third beat), labelled every beat when zoomed in and every bar, or 2, 4, 8... bars, further out. The bar and beat lines over the tracks now come with this option rather than with the metronome.
+- With snapping on, anything dragged (a clip, its edges, a fade, an envelope point, the time range) snaps to the beats instead of the ruler's seconds while beats are at least 8 pixels apart, and to the labelled bars when zoomed out further. Beats are the frames the metronome clicks on, so a clip snapped to a beat starts with its click. Clip edges, the cursor and the time range stay targets too, and the nearest wins.
+- Measured by the tests: at 133.7 a minute and 44.1 kHz, frames near a beat snap to the beat's frame and ones further than the tolerance stay put; on a grid of three-beat bars only bar starts are targets; a nearer target still wins, and a moved span snaps by its nearer edge. Through the real view at 100 a minute, a clip dragged to about 57000 lands on beat 2 at 57600 in bars and beats, and at 57072 with seconds on the ruler. The ruler's labels and the lines were not checked by the tests or by hand.
+
 **Milestone 23: a metronome and count-in**
 - Multitrack > Tempo... sets the session's tempo (20 to 400 beats a minute) and beats in a bar (1 to 16); both are saved with the session, and a change is an undo step. A new session is 120 a minute in four.
 - Multitrack > Metronome (C) clicks on every beat while the session plays or records, with a higher, louder click on the first beat of each bar, and draws the bars (and the beats, when zoomed in enough) over the tracks. Beats fall on the tempo from the start of the session, each on the nearest frame, so the grid never drifts. Through a loop, the clicks follow the loop.
@@ -87,7 +92,7 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - The take is lined up with the round-trip latency, as in the editor, and saved as a 32-bit float WAV in a "<session> Recordings" folder beside the session file (in Music/SpectraBlade/Recordings while the session is unsaved). Past the end of the session the player plays silence, so a take there still lines up.
 - A session with no audio yet takes the interface's sample rate; otherwise the interface must run at the session's rate.
 - Measured by the tests: the session's own output, looped back with 731 frames of latency into the recorder during a punch-in through the real player, lands bit for bit equal to the session mix over the range. Also checked: clearing a range (clips inside, across each edge, and a split from one clip), placing a take onto an armed track, a bus or no track, and recording from past the end of an empty session.
-- Later milestones added loop recording into takes (20), input monitoring (21), recording several tracks at once (22) and a metronome with count-in (23).
+- Later milestones added loop recording into takes (20), input monitoring (21), recording several tracks at once (22), a metronome with count-in (23), and bars and beats (24).
 
 **Milestone 12: buses and sends**
 - Multitrack > Add Bus (Cmd+Shift+B) adds a bus: a row with no clips that plays what tracks send it, through its own effects (the FX button), volume and pan. Its lane lists the tracks feeding it.
@@ -226,7 +231,7 @@ The tests run against the real machine:
 - Mixing down: the mixdown against playback's mix bit for bit, from part way in with effect latency on tracks and a bus, fresh copies of a session's effects (bypass, offline mode, one that can't load), cancelling, and the written file.
 - Buses and sends: the routing sums, delay compensation through buses bit for bit, mute and solo, the edit rules, and session files.
 - Recording onto tracks: a punch-in and a three-pass loop recording through the real session player looped back into the recorder, bit for bit; clearing a range on a track; placing takes; recording past the end of an empty session; choosing takes, after a split and at the edges of their audio; takes in session files; input monitoring through the real player, stopped and playing, bit for bit; two recorders at once landing on several tracks; two tracks monitored at once; track inputs in session files.
-- The metronome: the beat grid and click, clicks through the real player (on, during a count-in, through a loop, at another device rate) bit for bit, and the tempo in session files.
+- The metronome: the beat grid and click, clicks through the real player (on, during a count-in, through a loop, at another device rate) bit for bit, snapping to beats and bars, and the tempo in session files.
 - Click repair on tones with planted clicks: every click found, none in clean audio or silence, only nearby samples changed, repair accuracy, a range, the length limit, a predictable tone burst left alone, cancelling, and speed.
 - Noise reduction on a tone in white noise: depth at 12 and 24 dB, the tone's level, noise under the tone, identity at 0 dB, untouched audio outside the range, a mono print on stereo, cancelling, and speed.
 - Loudness against the EBU Tech 3341 and 3342 signals at two rates, 5.1 channel weights, gating, true peak between samples, measuring part of a file, and cancelling.
@@ -268,4 +273,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Multitrack, continued: bars and beats on the ruler, and snapping clips and the cursor to the beat grid
+1. Multitrack, continued: a mixer window, with a strip for each track and bus (meters, volume, pan, mute, solo)

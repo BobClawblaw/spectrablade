@@ -15,7 +15,7 @@
     delete it.
 
     With snapping on, whatever is dragged lines up with clip edges, the cursor, the time range
-    and the ruler's marks when it comes within a few pixels of one. With crossfading on, a clip
+    and the ruler's marks (seconds, or bars and beats) when it comes within a few pixels of one. With crossfading on, a clip
     moved or trimmed so that it partly overlaps another on its track crossfades with it. */
 class MultitrackView final : public juce::Component,
                              public juce::FileDragAndDropTarget,
@@ -71,7 +71,9 @@ public:
     void setSnapping (bool on)                    { snapping = on; }
     bool isCrossfading() const noexcept           { return crossfading; }
 
-    /** Draws the bars and beats of the session's tempo (while the metronome is on). */
+    /** Bars and beats: the ruler counts bars and beats of the session's tempo, the lanes show
+        its grid, and snapping goes to its beats (or bars, zoomed out) instead of the ruler's
+        seconds. */
     void setShowBars (bool show)                  { showBars = show; repaint(); }
     bool isShowingBars() const noexcept           { return showBars; }
     void setCrossfading (bool on)                 { crossfading = on; }
@@ -177,6 +179,10 @@ private:
     /** A dragged frame, snapped when snapping is on. The cursor and time range count unless
         they are what is being dragged. */
     juce::int64 snapped (juce::int64 frame, juce::uint32 ignoreClip = 0, bool toCursorAndRange = true) const;
+
+    /** In bars and beats: beats between ruler labels, and between marks (the snap grid). */
+    std::pair<int, int> rulerBeats() const;
+    void drawBarsRuler (juce::Graphics&, juce::Rectangle<int> area) const;
     SessionSnap::Targets snapTargets (juce::uint32 ignoreClip, bool toCursorAndRange) const;
     juce::int64 snapTolerance() const;
 

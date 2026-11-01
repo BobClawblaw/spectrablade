@@ -1,5 +1,6 @@
 #include "Session.h"
 #include "AudioFileIO.h"
+#include "Metronome.h"
 #include "SampleRateConverter.h"
 
 //==============================================================================
@@ -650,8 +651,20 @@ namespace
             }
         }
 
-        if (targets.gridStep > 0)
+        if (targets.gridBeats > 0)
+        {
+            // The grid beats either side of the frame.
+            const auto beat = Metronome::beatAt (frame, s.tempo, s.sampleRate);
+            const auto below = (beat >= 0 ? beat : beat - targets.gridBeats + 1) / targets.gridBeats * targets.gridBeats;
+
+            for (auto b : { below, below + targets.gridBeats })
+                if (b >= 0)
+                    consider (Metronome::beatFrame (b, s.tempo, s.sampleRate));
+        }
+        else if (targets.gridStep > 0)
+        {
             consider (juce::jmax ((juce::int64) 0, (juce::int64) std::llround ((double) frame / (double) targets.gridStep) * targets.gridStep));
+        }
 
         return best;
     }

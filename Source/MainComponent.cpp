@@ -40,7 +40,7 @@ namespace
         cmdLoudnessStats, cmdMatchLoudness,
         cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair,
         cmdMultitrack, cmdNewSession, cmdOpenSession, cmdImportToSession, cmdAddTrack, cmdDeleteTrack, cmdSplitClip,
-        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo
+        cmdAddBus, cmdSnapping, cmdMixDown, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -635,7 +635,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdTempo; ++id)
+    for (int id = cmdOpen; id <= cmdBarsAndBeats; ++id)
         ids.add (id);
 }
 
@@ -735,6 +735,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.addDefaultKeypress ('c', 0); info.setTicked (engine.getPlayer().isMetronomeOn()); info.setActive (multitrackMode); break;
         case cmdCountIn:    info.setInfo ("Count-In", "Record after one bar of clicks instead of the preroll", "Multitrack", 0);
                             info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
+        case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
+                            info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
         case cmdTempo:      info.setInfo ("Tempo...", "The session's tempo and beats in a bar", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
         case cmdInputMonitoring: info.setInfo ("Input Monitoring", "Hear each armed track's input through its effects, volume and pan", "Multitrack", 0);
@@ -878,7 +880,6 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMixDown:    chooseMixDownFile(); break;
         case cmdMetronome:
             engine.getPlayer().setMetronome (! engine.getPlayer().isMetronomeOn());
-            multitrack.setShowBars (engine.getPlayer().isMetronomeOn());
             commands.commandStatusChanged();
             break;
         case cmdCountIn:
@@ -887,6 +888,10 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdTempo:
             showTempoDialog();
+            break;
+        case cmdBarsAndBeats:
+            multitrack.setShowBars (! multitrack.isShowingBars());
+            commands.commandStatusChanged();
             break;
         case cmdInputMonitoring:
             inputMonitoring = ! inputMonitoring;
@@ -950,7 +955,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 2: add ({ cmdGain, cmdNormalize, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, 0, cmdSilence, cmdInvert, cmdReverse, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack }); break;
         case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection }); break;
-        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, 0, cmdMixDown }); break;
+        case 4: add ({ cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdDeleteTrack, 0, cmdSplitClip, 0, cmdSnapping, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdBarsAndBeats, 0, cmdMixDown }); break;
         case 5: add ({ cmdPlayPause, cmdRecord, 0, cmdGoToStart, cmdGoToEnd }); break;
         case 6: add ({ cmdAddMarker, 0, cmdPreviousMarker, cmdNextMarker, 0, cmdDeleteAllMarkers }); break;
         case 7: add ({ cmdPlugins, cmdAudioSettings, 0, cmdSaveRack, cmdLoadRack }); break;

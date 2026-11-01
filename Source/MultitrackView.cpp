@@ -1194,7 +1194,11 @@ SessionSnap::Targets MultitrackView::snapTargets (juce::uint32 ignoreClip, bool 
 {
     SessionSnap::Targets targets;
     targets.ignoreClip = ignoreClip;
-    targets.gridStep = (juce::int64) std::llround (rulerTick() * shown().sampleRate);
+
+    if (showBars)
+        targets.gridBeats = rulerBeats().second;
+    else
+        targets.gridStep = (juce::int64) std::llround (rulerTick() * shown().sampleRate);
 
     if (toCursorAndRange)
     {
@@ -1224,10 +1228,60 @@ juce::int64 MultitrackView::snapped (juce::int64 frame, juce::uint32 ignoreClip,
     return SessionSnap::snap (*state, frame, snapTolerance(), snapTargets (ignoreClip, toCursorAndRange));
 }
 
+std::pair<int, int> MultitrackView::rulerBeats() const
+{
+    // Labels at least 50 pixels apart: every beat, or every 1, 2, 4... bars. Marks (and the snap
+    // grid) every beat while beats are 8 pixels apart, else on the labels.
+    const auto& s = shown();
+    const auto beatPixels = 60.0 * s.sampleRate / s.tempo / framesPerPixel;
+    const auto perBar = juce::jmax (1, s.beatsPerBar);
+    auto label = 1;
+
+    if (beatPixels < 50.0)
+        for (label = perBar; label * beatPixels < 50.0 && label < (1 << 24);)
+            label *= 2;
+
+    return { label, beatPixels >= 8.0 ? 1 : label };
+}
+
+void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area) const
+{
+    const auto& s = shown();
+    const auto perBar = juce::jmax (1, s.beatsPerBar);
+    const auto [labelBeats, markBeats] = rulerBeats();
+    const auto first = juce::jmax ((juce::int64) 0, Metronome::beatAt (frameForX ((float) area.getX()), s.tempo, s.sampleRate));
+    const auto last = Metronome::beatAt (frameForX ((float) area.getRight()), s.tempo, s.sampleRate);
+    g.setFont (11.0f);
+
+    for (auto beat = first / markBeats * markBeats; beat <= last; beat += markBeats)
+    {
+        const auto x = xForFrame (Metronome::beatFrame (beat, s.tempo, s.sampleRate));
+        const auto labelled = beat % labelBeats == 0;
+        g.setColour (juce::Colours::grey);
+        g.drawVerticalLine ((int) x, (float) area.getBottom() - (labelled ? 8.0f : 4.0f), (float) area.getBottom());
+
+        if (! labelled)
+            continue;
+
+        // Bars count from 1, and a beat within a bar from 1: "5" is bar 5, "5.3" its third beat.
+        const auto bar = beat / perBar + 1, inBar = beat % perBar + 1;
+        g.setColour (juce::Colours::lightgrey);
+        g.drawText (inBar == 1 ? juce::String (bar) : juce::String (bar) + "." + juce::String (inBar),
+                    juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 60.0f, (float) area.getHeight() - 4.0f),
+                    juce::Justification::centredLeft, false);
+    }
+}
+
 void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) const
 {
     g.setColour (juce::Colour (0xff1b1e23));
     g.fillRect (area);
+
+    if (showBars)
+    {
+        drawBarsRuler (g, area);
+        return;
+    }
 
     const auto rate = shown().sampleRate;
     const auto secondsPerPixel = framesPerPixel / rate;
@@ -1391,22 +1445,17 @@ void MultitrackView::paint (juce::Graphics& g)
             g.drawText ("Drop audio files here, or choose Multitrack > Import Audio", area, juce::Justification::centred);
         }
 
-        // With the metronome on, the bars (and beats, when there is room) of the session's tempo.
-        if (showBars && ! s.tracks.empty() && 60.0 * s.sampleRate / s.tempo * s.beatsPerBar / framesPerPixel >= 4.0)
+        // In bars and beats, the grid of the session's tempo.
+        if (showBars && ! s.tracks.empty())
         {
             const auto bottom = (float) juce::jmin (area.getBottom(), laneTop ((int) s.tracks.size()));
-            const auto beatPixels = 60.0 * s.sampleRate / s.tempo / framesPerPixel;
-            const auto first = Metronome::beatAt (frameForX ((float) area.getX()), s.tempo, s.sampleRate);
+            const auto markBeats = rulerBeats().second;
+            const auto first = juce::jmax ((juce::int64) 0, Metronome::beatAt (frameForX ((float) area.getX()), s.tempo, s.sampleRate));
             const auto last = Metronome::beatAt (frameForX ((float) area.getRight()), s.tempo, s.sampleRate);
 
-            for (auto beat = juce::jmax ((juce::int64) 0, first); beat <= last; ++beat)
+            for (auto beat = first / markBeats * markBeats; beat <= last; beat += markBeats)
             {
-                const auto bar = beat % juce::jmax (1, s.beatsPerBar) == 0;
-
-                if (! bar && beatPixels < 12.0)
-                    continue;
-
-                g.setColour (juce::Colours::white.withAlpha (bar ? 0.12f : 0.05f));
+                g.setColour (juce::Colours::white.withAlpha (beat % juce::jmax (1, s.beatsPerBar) == 0 ? 0.12f : 0.05f));
                 g.drawVerticalLine ((int) xForFrame (Metronome::beatFrame (beat, s.tempo, s.sampleRate)), (float) area.getY(), bottom);
             }
         }

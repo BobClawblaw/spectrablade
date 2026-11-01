@@ -362,6 +362,37 @@ void runMultitrackViewTests (AudioEngine& engine)
         view.setArmed (one, false);
     }
 
+    // Bars and beats at 100 a minute (a beat every 28800 frames): a clip dragged near beat 2
+    // lands on it; with seconds on the ruler it lands where it was dropped.
+    {
+        SessionState timed;
+        timed.sampleRate = rate;
+        timed.tempo = 100.0;
+        timed.addTrack();
+        SessionEdits::addClip (timed, 0, juce::File ("/tmp/beat.wav"), silence (48000), 48000);
+        const auto id = timed.tracks[0].clips[0].id;
+        engine.session.reset (timed, {});
+        view.setTimeSelection ({});
+        view.setCursor (0);
+        Mouse::settle();
+
+        view.setShowBars (true);
+        mouse.drag ({ x (48000) + 40.0f, bodyY }, { x (57000) + 40.0f, bodyY });
+        const auto onBeat = clip (id).position;
+        engine.session.undo();
+        Mouse::settle();
+
+        view.setShowBars (false);
+        mouse.drag ({ x (48000) + 40.0f, bodyY }, { x (57000) + 40.0f, bodyY });
+        const auto inSeconds = clip (id).position;
+        engine.session.undo();
+        Mouse::settle();
+
+        check (onBeat == 57600 && inSeconds != 57600 && view.isSnapping(),
+               "view: in bars and beats a dragged clip snaps to the beat (" + juce::String (onBeat) + "), not otherwise ("
+                   + juce::String (inSeconds) + ")");
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

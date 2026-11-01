@@ -265,13 +265,15 @@ namespace SessionEdits
 namespace SessionSnap
 {
     /** What a dragged edge can snap to: the session start, the extra frames given (the cursor,
-        a time range's edges), every clip's start and end but the ignored clip's, and with a grid
-        step, every multiple of it. */
+        a time range's edges), every clip's start and end but the ignored clip's, and a grid: with
+        gridBeats, every gridBeats-th beat of the session's tempo (the metronome's beats), else
+        with a grid step, every multiple of it. */
     struct Targets
     {
         std::vector<juce::int64> extra;
         juce::uint32 ignoreClip = 0;
         juce::int64 gridStep = 0;
+        int gridBeats = 0;
     };
 
     /** The target nearest frame, when one is within tolerance frames; otherwise frame. */
