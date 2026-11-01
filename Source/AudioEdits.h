@@ -48,6 +48,9 @@ namespace AudioEdits
 
     /** Flips the polarity of one channel only; nullptr when the audio has no such channel. */
     Snapshot invertChannel (const AudioSnapshot&, juce::int64 start, juce::int64 end, int channel);
+
+    /** Silences one channel only; nullptr when the audio has no such channel. */
+    Snapshot silenceChannel (const AudioSnapshot&, juce::int64 start, juce::int64 end, int channel);
     Snapshot reverse (const AudioSnapshot&, juce::int64 start, juce::int64 end);
 
     /** Takes each channel's average level over [start, end) out of it, so it sits centred on 0. */

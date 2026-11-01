@@ -360,6 +360,16 @@ namespace
         check (onlyRight && ! AudioEdits::invertChannel (*twoSnap, 0, 1000, 2) && ! AudioEdits::invertChannel (*rampSnap, 0, 1000, 1),
                "invert one channel: only that channel's polarity flipped, only in the range; a channel the audio lacks refused");
 
+        const auto leftQuiet = readAll (*AudioEdits::silenceChannel (*twoSnap, 300, 600, 0));
+        auto onlyLeft = leftQuiet.getNumSamples() == 1000;
+
+        for (int i = 0; i < 1000 && onlyLeft; ++i)
+            onlyLeft = juce::exactlyEqual (leftQuiet.getSample (0, i), i >= 300 && i < 600 ? 0.0f : twoRamps.getSample (0, i))
+                       && juce::exactlyEqual (leftQuiet.getSample (1, i), twoRamps.getSample (1, i));
+
+        check (onlyLeft && ! AudioEdits::silenceChannel (*twoSnap, 0, 1000, -1) && ! AudioEdits::silenceChannel (*rampSnap, 0, 1000, 1),
+               "silence one channel: only that channel zeroed, only in the range; a channel the audio lacks refused");
+
         // Quiet stretches: in a full-level tone with gaps of 100 frames (too short), 200 frames on the
         // left only (the right still sounds) and 70,000 frames across a block edge, only the last is quiet.
         juce::AudioBuffer<float> gaps (2, 200000);

@@ -6,6 +6,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 140: Silence One Channel**
+- Effects > Silence Left Channel and Silence Right Channel zero one channel of a stereo file over the selection, leaving the other channel as it was: for a click or a bump picked up on one side only. They need a selection and a stereo file, and each is one undo step.
+- Measured by the tests: silencing the left channel over frames 300 to 600 of a two-channel file zeroes exactly those left-channel samples and leaves every other sample bit for bit; a channel the audio lacks is refused. The menu items were not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 139: Invert One Channel**
 - Effects > Invert Left Channel and Invert Right Channel flip the polarity of one channel of a stereo file, in the selection or the whole file, leaving the other channel as it was: the fix for a stereo recording with one side wired backwards. They are offered only for stereo files, and each is one undo step.
 - Measured by the tests: inverting the right channel over frames 200 to 700 of a two-channel file negates exactly those right-channel samples and leaves every other sample bit for bit; a channel the audio lacks is refused. The menu items were not tried by hand. The whole suite passed, the default-device test included.
@@ -856,6 +860,7 @@ The tests run against the real machine:
 - Repeat selection: copies right after the range, bit for bit, empty requests refused.
 - Paste to fill: the clipboard repeated over the range, the last copy cut short.
 - Invert one channel: only that channel flipped, only in the range.
+- Silence one channel: only that channel zeroed, only in the range.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -909,4 +914,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Silence One Channel, muting only the left or the right channel of the selection
+1. Editor: Copy One Channel to the Other, replacing the right with the left or the left with the right
