@@ -2,7 +2,11 @@
 
 Each milestone as it was built, newest first, with what the tests measured on the development Mac. Releases are marked where they were cut.
 
-## Unreleased
+## Released
+
+**Release 0.9.1: the second alpha**
+- `SpectraBlade-0.9.1.dmg` on the repository's Releases page, with its SHA-256: Milestones 190 to 194 below, on top of 0.9.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (758 checks) passed with the signed app as the plug-in scan worker; the disk image's app verified (`codesign --verify --deep --strict`), reads 0.9.1, carries a licence identical to `LICENSE`, and launched from the mounted image and quit with no crash report. The app's Intel half was not launched, and no Intel Mac was tried.
 
 **Milestone 194: Windows stay where you put them**
 - The main window, the mixer, the Plug-ins, Keyboard Shortcuts, Marker List, Clip List, Clip Properties, Undo History, Session Notes and Parametric EQ windows, and each plug-in's editor (by plug-in) open where they were last left. A place is saved as the window moves or resizes, so a crash doesn't lose it. A plug-in's editor gets back only its position; its size stays the plug-in's own.
@@ -28,8 +32,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 **Milestone 193: Sizing the spectrogram**
 - In View > Waveform and Spectrogram, drag the line between a channel's waveform and its spectrogram to give either more room (the pointer changes over it). The waveform's share, 35% to start, is kept between 10% and 90%, applies to every channel, and is remembered.
 - Measured by the tests: dragging the second channel's line to 60% of its height sets the share to 0.600 and remembers it when the drag ends, without moving the cursor or the selection; the share is kept within 0.1 to 0.9; a drag elsewhere still selects. The line was not dragged by hand in the running app. The whole suite passed.
-
-## Released
 
 **Release 0.9.0: the alpha**
 - The first build offered for download, as an alpha to test before 1.0: `SpectraBlade-0.9.0.dmg` on the repository's Releases page, with its SHA-256. It holds the universal app (Apple silicon and Intel) and the licence as `LICENSE.txt`, signed ad hoc, not notarized (see [Installing](README.md#download-and-install)). Everything in [Features](README.md#features) through Milestone 189 is in it.
