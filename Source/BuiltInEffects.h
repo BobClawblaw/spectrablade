@@ -6,6 +6,7 @@
 #include "Convolver.h"
 #include "EffectPresets.h"
 #include "GraphicEq.h"
+#include "Multiband.h"
 #include "ParametricEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
@@ -25,6 +26,7 @@ namespace BuiltInEffects
     constexpr const char* convolutionId = "spectrablade:convolution-reverb";
     constexpr const char* graphicEq10Id = "spectrablade:graphic-eq-10";
     constexpr const char* graphicEq31Id = "spectrablade:graphic-eq-31";
+    constexpr const char* multibandId = "spectrablade:multiband-compressor";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -454,5 +456,83 @@ namespace BuiltInEffects
         std::vector<double> shown;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GraphicEqEditor)
+    };
+
+    /** The multiband compressor, live: the crossovers, each band's threshold, ratio, attack, release
+        and makeup, and the output as parameters (over Effects > Multiband Compressor's ranges; each
+        band's knee is 6 dB). Crossovers set closer than an octave, or past what the rate allows, are
+        moved apart as the offline effect would refuse them. It runs a frame at a time with
+        Multiband::CompressorCore, so over a whole file from its start it gives Multiband::compress's
+        samples. No latency. */
+    class MultibandProcessor final : public BuiltInEffect
+    {
+    public:
+        MultibandProcessor();
+
+        /** The settings as played: the parameters' with the crossovers moved apart if need be. */
+        Multiband::Compressor getSettings() const;
+
+        /** The settings exactly as the parameters hold them. */
+        Multiband::Compressor getParameterSettings() const;
+        void setSettings (const Multiband::Compressor&);
+
+        /** The parameters, and settings as their values, in one order: the crossovers, the output, then
+            each band's threshold, ratio, attack, release and makeup. */
+        std::vector<juce::AudioParameterFloat*> parameterOrder() const;
+        static std::vector<float> valuesOf (const Multiband::Compressor&);
+
+        /** Each band's reduction at the end of the last block, safe to read from the window. */
+        std::array<double, 3> getReductionDb() const noexcept;
+
+        juce::AudioProcessorEditor* createEditor() override;
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+        static const std::array<const char*, 3> bandNames;   // "low", "mid", "high", the parameter IDs' prefixes
+
+    private:
+        juce::AudioParameterFloat* lowCrossover = nullptr;
+        juce::AudioParameterFloat* highCrossover = nullptr;
+        juce::AudioParameterFloat* output = nullptr;
+        struct BandParameters { juce::AudioParameterFloat *threshold, *ratio, *attack, *release, *makeup; };
+        std::array<BandParameters, 3> bands {};
+
+        Multiband::CompressorCore core;
+        std::array<std::atomic<double>, 3> reductionDb {};   // the core's after the last block, for the window
+        std::vector<float> applied;   // the parameters' values the core was last set from
+        double rate = 48000.0;
+        int channelsPrepared = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultibandProcessor)
+    };
+
+    /** The live multiband compressor's window: its presets and the panel, each band's gain reduction
+        shown under its name as it plays. */
+    class MultibandEditor final : public juce::AudioProcessorEditor,
+                                  private juce::Timer
+    {
+    public:
+        explicit MultibandEditor (MultibandProcessor&);
+        ~MultibandEditor() override;
+
+        Multiband::Panel& getPanel() noexcept                         { return panel; }
+        void refresh();
+
+        void paint (juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        void timerCallback() override                                 { refresh(); }
+        void panelChanged();
+
+        MultibandProcessor& effect;
+        EffectPresets::Bar presets;
+        Multiband::Panel panel;
+        std::vector<float> shown;        // the parameters' values the panel was last set from
+        std::vector<float> panelValues;  // the panel's own values then (its sliders snap, the parameters round)
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultibandEditor)
     };
 }

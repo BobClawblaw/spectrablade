@@ -14,6 +14,7 @@
 #include "NoiseReduction.h"
 #include "ParametricEq.h"
 #include "Dynamics.h"
+#include "Multiband.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -147,6 +148,8 @@ private:
     void showCompressor();
     void showLimiter();
     Dynamics::Compressor compressorSettings;
+    Multiband::Compressor multibandSettings;
+    void showMultiband();
     Dynamics::Limiter limiterSettings;
     void showSweptDelay (bool flanger);
     void showPhaser();
@@ -374,7 +377,7 @@ private:
         before the rack, until stopPreview. A preview from another owner takes over, and the old
         one's ended callback is called (so it can untick its Preview button); stopPreview calls
         it too. An owner already previewing just has its effect swapped. Files only. */
-    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution, graphicEq };
+    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution, graphicEq, multiband };
     void startPreview (PreviewOwner, std::unique_ptr<juce::AudioPluginInstance>, std::function<void()> ended);
     void stopPreview();
     juce::AudioPluginInstance* previewEffectOf (PreviewOwner) const;
@@ -390,8 +393,8 @@ private:
         whenever the dialog closes. */
     struct EffectField
     {
-        const char* id;
-        const char* label;
+        juce::String id;      // its own copies, as the dialog's callbacks keep the fields after the call
+        juce::String label;
         double value;
         int decimals;
         juce::StringArray choices {};

@@ -63,7 +63,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -72,7 +72,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions;
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1046,7 +1046,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdShowRack; ++id)
+    for (int id = cmdOpen; id <= cmdMultiband; ++id)
         ids.add (id);
 }
 
@@ -1123,6 +1123,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdCompressor: info.setInfo ("Compressor...", "Turn down what goes over a threshold by a ratio, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdLimiter:    info.setInfo ("Limiter...", "Keep every sample under a ceiling, with gain before it to make the audio louder", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdChorus:     info.setInfo ("Chorus...", "Thicken the sound with a slowly swept copy of it, a few milliseconds late", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -1611,6 +1613,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdParametricEq: toggleParametricEq(); break;
         case cmdCompressor: showCompressor(); break;
         case cmdLimiter:    showLimiter(); break;
+        case cmdMultiband:  showMultiband(); break;
         case cmdChorus:     showSweptDelay (false); break;
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
@@ -1981,7 +1984,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -4630,6 +4633,85 @@ void MainComponent::showCompressor()
                           if (auto next = Dynamics::compress (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), compressorSettings))
                               applyEdit (std::move (next), "Compressor", waveform.getSelection());
                       });
+}
+
+void MainComponent::showMultiband()
+{
+    auto* box = new juce::AlertWindow ("Multiband Compressor",
+                                       "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), each band "
+                                       "compressed on its own as the Compressor does (6 dB knee), and the bands added back up: at a ratio of 1 "
+                                       "everywhere, every frequency keeps its level. The high crossover stays at least an octave above the low one.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    auto panel = std::make_shared<Multiband::Panel>();
+    panel->setSettings (multibandSettings);
+    box->addCustomComponent (panel.get());
+
+    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
+    preview->setSize (260, 24);
+    box->addCustomComponent (preview.get());
+
+    // The live multiband compressor with the panel's settings, on the selection over and over.
+    const auto update = [this, p = panel.get(), toggle = preview.get()]
+    {
+        if (! toggle->getToggleState())
+        {
+            if (previewOwner == PreviewOwner::multiband)
+                stopPreview();
+
+            return;
+        }
+
+        if (auto* live = dynamic_cast<BuiltInEffects::MultibandProcessor*> (previewEffectOf (PreviewOwner::multiband)))
+        {
+            live->setSettings (p->getSettings());
+            return;
+        }
+
+        auto made = std::make_unique<BuiltInEffects::MultibandProcessor>();
+        made->setSettings (p->getSettings());
+        startPreview (PreviewOwner::multiband, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
+
+        if (previewOwner != PreviewOwner::multiband)
+            toggle->setToggleState (false, juce::dontSendNotification);
+    };
+    preview->onClick = update;
+    panel->onChange = update;
+
+    // Presets under the live effect's parameter IDs, shared with it.
+    auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::multibandId,
+                                                         [p = panel.get()]
+                                                         {
+                                                             BuiltInEffects::MultibandProcessor holder;
+                                                             holder.setSettings (p->getSettings());
+                                                             return holder.getPresetValues();
+                                                         },
+                                                         [p = panel.get(), update] (const EffectPresets::Values& v)
+                                                         {
+                                                             BuiltInEffects::MultibandProcessor holder;
+                                                             holder.setSettings (p->getSettings());
+                                                             holder.setPresetValues (v);
+                                                             p->setSettings (holder.getSettings());
+                                                             update();
+                                                         });
+    box->addCustomComponent (presets.get());
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, panel, preview, presets] (int result)
+    {
+        if (previewOwner == PreviewOwner::multiband)
+            stopPreview();
+
+        if (result != 1)
+            return;
+
+        const auto rate = engine.document.getSampleRate();
+        multibandSettings = Multiband::spaced (panel->getSettings(), rate);
+        const auto r = selectionOrAll();
+
+        if (auto next = Multiband::compress (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), rate, multibandSettings))
+            applyEdit (std::move (next), "Multiband Compressor", waveform.getSelection());
+    }), true);
 }
 
 void MainComponent::showLimiter()

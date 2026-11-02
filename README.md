@@ -12,15 +12,21 @@ SpectraBlade is free software under the GNU Affero General Public License, versi
 
 - **Editing audio files:** waveform and spectrogram views; cut, copy, paste, paste mix and paste to fill; silence, insert and trim silence, crop, reverse, invert, swap, copy or silence one channel, mix to mono and make stereo; gain, normalize (each channel or each region on its own), fades with shapes, gain and pan ramps, balance and stereo width; markers and regions, with lists, CSV import and export, and saving regions or the pieces between markers as files; an undo history.
 - **Repair and analysis:** spectral selection and attenuation, noise reduction, click and pop repair, Repair Selection, DC offset removal, a noise gate; finding clipping, silences and sounds; EBU R128 loudness with Match Loudness and true-peak limiting; stereo correlation; sample-rate conversion.
-- **Effects:** parametric, graphic (10 and 31 bands) and single-band EQ, compressor, limiter, chorus, flanger, phaser, tremolo, echo, reverb and convolution reverb, each applied to the selection with a preview and presets, and most of them also live in the effects rack and on tracks; VST3 and Audio Unit plug-ins, each checked when it is scanned.
+- **Effects:** parametric, graphic (10 and 31 bands) and single-band EQ, compressor, multiband compressor, limiter, chorus, flanger, phaser, tremolo, echo, reverb and convolution reverb, each applied to the selection with a preview and presets, and most of them also live in the effects rack and on tracks; VST3 and Audio Unit plug-ins, each checked when it is scanned.
 - **Recording:** from the cursor, or punched in over a selection with pre-roll and post-roll; loop recording into takes; several tracks at once; input monitoring through a track's effects; a metronome and count-in.
 - **Multitrack sessions:** tracks, buses, sends, folders and groups; clip gain, fades, crossfades, stretching and pitch shifting; automation of volume, pan and effect parameters, drawn or written while playing; a tempo map with bars and beats and quantizing; a mixer; freezing, bouncing, mixdown and stems; recovery after a crash.
 - **Getting around:** a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import, recent files, and files opened from Finder.
 
 The notes below record each milestone as it was built, newest first, with what the tests measured.
 
+**Milestone 186: Multiband compressor**
+- Effects > Multiband Compressor: the sound split into lows, middle and highs at two crossovers (200 Hz and 2 kHz to start; the high one stays at least an octave above the low), each band compressed on its own as the Compressor does (threshold, ratio, attack, release, makeup; a 6 dB knee), then the bands added back up, with an output gain. The dialog is one panel: the crossovers and output along the top, a column a band with its frequencies named over it. Preview and presets as the other effects have.
+- It is a built-in live effect too, for the rack and tracks, every setting an automatable parameter. Its window is the same panel, with each band's gain reduction shown under its name as it plays.
+- The crossovers are Linkwitz-Riley (24 dB an octave), the low band passed through an all-pass matching the high split, so with nothing compressing the three bands add back up to the sound with every frequency at its level (its phase turned, as with any crossover).
+- Measured by the tests at 48 kHz: at a ratio of 1 everywhere, sines from 40 Hz to 15 kHz, the crossovers included, kept their level to 5e-8 dB; with only the low band compressing (-40 dB, 10:1), a loud 100 Hz tone came down 19.8 dB and a 5 kHz tone beside it moved 2e-5 dB, and with only the high band, 5 kHz came down 15.3 dB and 100 Hz moved 3e-6 dB. Crossovers less than an octave apart and an output past 24 dB are refused offline; live, they are moved an octave apart. Live, in blocks of 1, 7, 512 and 3,000 frames, it gives the offline samples bit for bit, state and presets restore every setting, and its window and its parameters follow each other. The window was rendered to an image to check its layout; the dialog and hearing it in the running app were not tried, and the reduction display was not watched while playing. The whole suite passed.
+
 **Release 1.0.0: the first release**
-- `dist/SpectraBlade-1.0.0.dmg` (10.4 MB) holds the universal app (Apple silicon and Intel) and the licence as `LICENSE.txt`. See [Installing](#installing); it is signed ad hoc, not notarized, so macOS asks once before opening it. Everything in [What it does](#what-it-does) is in it, through Milestone 185.
+- `dist/SpectraBlade-1.0.0.dmg` (10.4 MB) holds the universal app (Apple silicon and Intel) and the licence as `LICENSE.txt`. See [Installing](#installing); it is signed ad hoc, not notarized, so macOS asks once before opening it. Everything in [What it does](#what-it-does) through Milestone 185 is in it; the multiband compressor came after.
 - Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite passed with the signed app as the plug-in scan worker; the disk image's app verified (`codesign --verify --deep --strict`), reads 1.0.0 with its copyright line, carries a licence identical to `LICENSE`, and launched from the mounted image and quit with no crash report. The universal test build's Intel half also passed the whole suite under Rosetta (737 checks: the one that an Intel-only plug-in is reported as lacking Apple silicon code applies only natively). The app's own Intel half was not launched, and no Intel Mac was tried.
 
 **Milestone 185: Quiet scroll bars everywhere**
@@ -1133,6 +1139,7 @@ The tests run against the real machine:
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
+- Multiband compressor: the bands adding back up flat, each band acting only on its own frequencies, refused settings; live bit for bit with offline, state and presets, the window following its parameters and its reduction readings.
 - Empty editor: the recent files listed, a click opening one.
 - Opening from Finder: the types offered all read, the files picked out of an open request.
 - Transport bar: tooltips following the keys; the selection panel's cells.
@@ -1193,4 +1200,5 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: a multiband compressor and a de-esser, offline and live
+1. Effects: a de-esser, offline and live
+2. Keyboard shortcuts: an Audition-style key set, once Adobe's published list or an exported shortcut file is to hand

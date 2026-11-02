@@ -43,6 +43,8 @@ namespace
 
     juce::PluginDescription convolutionDescription()    { return describe ("Convolution Reverb", "Reverb", convolutionId, 0x5342434f); }  // "SBCO"
 
+    juce::PluginDescription multibandDescription()      { return describe ("Multiband Compressor", "Dynamics", multibandId, 0x53424d42); }   // "SBMB"
+
     juce::PluginDescription graphicEqDescription (int bands)
     {
         return bands == 31 ? describe ("Graphic EQ (31 Bands)", "EQ", graphicEq31Id, 0x53424733)    // "SBG3"
@@ -113,6 +115,8 @@ namespace
                 effect = std::make_unique<GraphicEqProcessor> (10);
             else if (d.fileOrIdentifier == graphicEq31Id)
                 effect = std::make_unique<GraphicEqProcessor> (31);
+            else if (d.fileOrIdentifier == multibandId)
+                effect = std::make_unique<MultibandProcessor>();
 
             if (effect == nullptr)
             {
@@ -134,7 +138,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31) };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -1190,6 +1194,191 @@ void GraphicEqEditor::paint (juce::Graphics& g)
 }
 
 void GraphicEqEditor::resized()
+{
+    auto r = getLocalBounds();
+    presets.setBounds (r.removeFromTop (40).reduced (8, 6));
+    panel.setBounds (r);
+}
+
+//==============================================================================
+const std::array<const char*, 3> MultibandProcessor::bandNames { "low", "mid", "high" };
+
+MultibandProcessor::MultibandProcessor()
+    : BuiltInEffect (multibandDescription(), "SPECTRABLADE_MULTIBAND")
+{
+    const Multiband::Compressor start;
+    const std::array<const char*, 3> titles { "Low", "Mid", "High" };
+    lowCrossover = addFloat ("lowCrossover", "Low Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.lowCrossover, "Hz");
+    highCrossover = addFloat ("highCrossover", "High Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.highCrossover, "Hz");
+
+    for (size_t b = 0; b < 3; ++b)
+    {
+        const juce::String id (bandNames[b]), name (titles[b]);
+        const auto& s = start.bands[b];
+        bands[b].threshold = addFloat (id + "Threshold", name + " Threshold", { -80.0f, 0.0f }, (float) s.thresholdDb, "dB");
+        bands[b].ratio = addFloat (id + "Ratio", name + " Ratio", { 1.0f, 100.0f, 0.0f, 0.25f }, (float) s.ratio, ":1");
+        bands[b].attack = addFloat (id + "Attack", name + " Attack", { 0.01f, 1000.0f, 0.0f, 0.2f }, (float) s.attackMs, "ms");
+        bands[b].release = addFloat (id + "Release", name + " Release", { 1.0f, 5000.0f, 0.0f, 0.25f }, (float) s.releaseMs, "ms");
+        bands[b].makeup = addFloat (id + "Makeup", name + " Makeup", { -48.0f, 48.0f }, (float) s.makeupDb, "dB");
+    }
+
+    output = addFloat ("output", "Output", { -24.0f, 24.0f }, (float) start.outputDb, "dB");
+}
+
+std::vector<juce::AudioParameterFloat*> MultibandProcessor::parameterOrder() const
+{
+    std::vector<juce::AudioParameterFloat*> order { lowCrossover, highCrossover, output };
+
+    for (auto& b : bands)
+        order.insert (order.end(), { b.threshold, b.ratio, b.attack, b.release, b.makeup });
+
+    return order;
+}
+
+std::vector<float> MultibandProcessor::valuesOf (const Multiband::Compressor& s)
+{
+    std::vector<float> v { (float) s.lowCrossover, (float) s.highCrossover, (float) s.outputDb };
+
+    for (auto& b : s.bands)
+        v.insert (v.end(), { (float) b.thresholdDb, (float) b.ratio, (float) b.attackMs, (float) b.releaseMs, (float) b.makeupDb });
+
+    return v;
+}
+
+Multiband::Compressor MultibandProcessor::getParameterSettings() const
+{
+    Multiband::Compressor s;
+    s.lowCrossover = lowCrossover->get();
+    s.highCrossover = highCrossover->get();
+    s.outputDb = output->get();
+
+    for (size_t b = 0; b < 3; ++b)
+        s.bands[b] = { (double) bands[b].threshold->get(), (double) bands[b].ratio->get(), Dynamics::Compressor().kneeDb,
+                       (double) bands[b].attack->get(), (double) bands[b].release->get(), (double) bands[b].makeup->get() };
+
+    return s;
+}
+
+Multiband::Compressor MultibandProcessor::getSettings() const
+{
+    return Multiband::spaced (getParameterSettings(), rate);
+}
+
+void MultibandProcessor::setSettings (const Multiband::Compressor& s)
+{
+    const auto order = parameterOrder();
+    const auto v = valuesOf (s);
+
+    for (size_t i = 0; i < order.size(); ++i)
+        setExactly (*order[i], v[i]);
+}
+
+juce::AudioProcessorEditor* MultibandProcessor::createEditor()
+{
+    return new MultibandEditor (*this);
+}
+
+void MultibandProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
+    core.prepare (channelsPrepared, rate);
+    applied = valuesOf (getParameterSettings());
+    core.set (getSettings());
+    core.reset();
+}
+
+void MultibandProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    if (auto now = valuesOf (getParameterSettings()); now != applied)
+    {
+        applied = now;
+        core.set (getSettings());
+    }
+
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
+    const auto now = core.getReductionDb();
+
+    for (size_t b = 0; b < 3; ++b)
+        reductionDb[b] = now[b];
+}
+
+std::array<double, 3> MultibandProcessor::getReductionDb() const noexcept
+{
+    return { reductionDb[0].load(), reductionDb[1].load(), reductionDb[2].load() };
+}
+
+void MultibandProcessor::reset()
+{
+    core.reset();
+
+    for (auto& r : reductionDb)
+        r = 0.0;
+}
+
+//==============================================================================
+MultibandEditor::MultibandEditor (MultibandProcessor& owner)
+    : AudioProcessorEditor (owner), effect (owner),
+      presets (EffectPresets::userStore(), owner.getPresetKey(), [&owner] { return owner.getPresetValues(); },
+               [this, &owner] (const EffectPresets::Values& v)
+               {
+                   owner.setPresetValues (v);
+                   refresh();
+               })
+{
+    shown = MultibandProcessor::valuesOf (effect.getParameterSettings());
+    panel.setSettings (effect.getParameterSettings());
+    panelValues = MultibandProcessor::valuesOf (panel.getSettings());
+    panel.onChange = [this] { panelChanged(); };
+    addAndMakeVisible (presets);
+    addAndMakeVisible (panel);
+    setSize (panel.getWidth(), panel.getHeight() + 40);
+    startTimerHz (20);
+}
+
+MultibandEditor::~MultibandEditor()
+{
+    stopTimer();
+}
+
+void MultibandEditor::panelChanged()
+{
+    // Only the sliders that moved, each as one gesture, so automation writing records just those.
+    const auto order = effect.parameterOrder();
+    const auto wanted = MultibandProcessor::valuesOf (panel.getSettings());
+
+    for (size_t i = 0; i < order.size(); ++i)
+    {
+        if (juce::exactlyEqual (wanted[i], panelValues[i]))
+            continue;
+
+        order[i]->beginChangeGesture();
+        setExactly (*order[i], wanted[i]);
+        order[i]->endChangeGesture();
+    }
+
+    panelValues = wanted;
+    shown = MultibandProcessor::valuesOf (effect.getParameterSettings());
+}
+
+void MultibandEditor::refresh()
+{
+    panel.setReductionDb (effect.getReductionDb());
+
+    if (auto now = MultibandProcessor::valuesOf (effect.getParameterSettings()); now != shown)
+    {
+        shown = std::move (now);
+        panel.setSettings (effect.getParameterSettings());
+        panelValues = MultibandProcessor::valuesOf (panel.getSettings());
+    }
+}
+
+void MultibandEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+}
+
+void MultibandEditor::resized()
 {
     auto r = getLocalBounds();
     presets.setBounds (r.removeFromTop (40).reduced (8, 6));
