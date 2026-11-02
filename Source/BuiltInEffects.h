@@ -538,7 +538,7 @@ namespace BuiltInEffects
     };
 
     /** The de-esser, live: frequency, threshold, reduction and what to turn down as parameters (over
-        Effects > De-esser's ranges). It runs a frame at a time with Multiband::DeEsserCore, so over a
+        Effects > De-esser's ranges), and Listen, which puts out only what it takes away. It runs a frame at a time with Multiband::DeEsserCore, so over a
         whole file from its start it gives Multiband::deEss's samples. No latency. */
     class DeEsserProcessor final : public BuiltInEffect
     {
@@ -564,6 +564,10 @@ namespace BuiltInEffects
         juce::AudioParameterFloat* reduction = nullptr;
         juce::AudioParameterChoice* mode = nullptr;
 
+    public:
+        juce::AudioParameterBool* listen = nullptr;
+
+    private:
         Multiband::DeEsserCore core;
         Multiband::DeEsser applied;
         double rate = 48000.0;

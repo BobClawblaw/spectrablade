@@ -409,6 +409,11 @@ void DeEsserCore::set (const DeEsser& d)
     release = Dynamics::smoothingCoefficient (releaseMs, rate);
 }
 
+void DeEsserCore::setListening (bool on) noexcept
+{
+    listening = on;
+}
+
 void DeEsserCore::process (float* const* channels, int numChannels, int numFrames) noexcept
 {
     const auto n = juce::jmin (numChannels, (int) crossovers.size());
@@ -434,7 +439,9 @@ void DeEsserCore::process (float* const* channels, int numChannels, int numFrame
         for (int ch = 0; ch < n; ++ch)
         {
             const auto& p = parts[(size_t) ch];
-            channels[ch][i] = (float) (settings.wholeSound ? (p[0] + p[1]) * factor : p[0] + p[1] * factor);
+            const auto turned = settings.wholeSound ? p[0] + p[1] : p[1];   // the part being turned down
+            const auto kept = settings.wholeSound ? 0.0 : p[0];
+            channels[ch][i] = (float) (listening ? turned * (1.0 - factor) : kept + turned * factor);
         }
     }
 }

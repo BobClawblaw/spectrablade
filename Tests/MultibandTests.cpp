@@ -212,6 +212,42 @@ void runMultibandTests()
         deEsser.setSettings (d);
         const auto deEsserSame = same (runLive (deEsser), readAll (*Multiband::deEss (*snap, 0, 96000, rate, deEsser.getSettings())));
 
+        // Listening: what it takes out and the result add up to the sound with nothing taken (0 dB of
+        // reduction: the split's phase turn only), on the band and on the whole sound; off again, the result.
+        auto addsUp = true;
+
+        for (auto whole : { false, true })
+        {
+            d.wholeSound = whole;
+            BuiltInEffects::DeEsserProcessor result, takenOut;
+            result.setSettings (d);
+            takenOut.setSettings (d);
+            *takenOut.listen = true;
+            const auto a = runLive (result), b = runLive (takenOut);
+            auto untouched = d;
+            untouched.maxReductionDb = 0.0;
+            const auto whole0 = readAll (*Multiband::deEss (*snap, 0, 96000, rate, untouched));
+            auto worst = 0.0f, taken = 0.0f;
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 96000; ++i)
+                {
+                    worst = juce::jmax (worst, std::abs (a.getSample (ch, i) + b.getSample (ch, i) - whole0.getSample (ch, i)));
+                    taken = juce::jmax (taken, std::abs (b.getSample (ch, i)));
+                }
+
+            std::cout << "      de-esser listening (" << (whole ? "whole sound" : "band") << "): taken out peaks at " << taken
+                      << ", result + taken out off the untouched sound by at most " << worst << std::endl;
+            addsUp = addsUp && worst < 1.0e-6f && taken > 0.01f;
+        }
+
+        d.wholeSound = false;
+        *deEsser.listen = false;
+        const auto listenOff = same (runLive (deEsser), readAll (*Multiband::deEss (*snap, 0, 96000, rate, deEsser.getSettings())));
+
+        check (addsUp && listenOff, "built-in de-esser: Listen puts out only what it takes away, which with the result adds up to the sound with "
+                                    "nothing taken (to 1e-6), on the band and on the whole sound; off again, it gives the offline samples");
+
         juce::MemoryBlock state;
         multiband.getStateInformation (state);
         BuiltInEffects::MultibandProcessor copy, fromPreset;

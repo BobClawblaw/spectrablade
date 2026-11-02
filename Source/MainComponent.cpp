@@ -4729,10 +4729,12 @@ void MainComponent::showDeEsser()
     showEffectDialog ("De-esser",
                       "Whenever the highs above the frequency are louder than the threshold, they are turned down by however far they are over, "
                       "up to the reduction, within a millisecond, coming back over 60 ms. Turn down the high band alone (the rest of the voice "
-                      "untouched) or the whole sound. Frequency 1 to 16 kHz, threshold -60 to 0 dB, reduction 0 to 24 dB.",
+                      "untouched) or the whole sound. Frequency 1 to 16 kHz, threshold -60 to 0 dB, reduction 0 to 24 dB. "
+                      "Listen plays only what it takes out, to set the frequency and threshold by ear; OK always applies the result.",
                       { { "frequency", "Frequency (Hz)", s.frequency, 0 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1 },
                         { "reduction", "Reduction (dB)", s.maxReductionDb, 1 },
-                        { "mode", "Turn down", s.wholeSound ? 1.0 : 0.0, 0, { "The high band", "The whole sound" } } },
+                        { "mode", "Turn down", s.wholeSound ? 1.0 : 0.0, 0, { "The high band", "The whole sound" } },
+                        { "listen", "Listen", 0.0, 0, { "To the result", "Only to what it takes out" } } },
                       BuiltInEffects::deEsserId, PreviewOwner::deEsser,
                       [toSettings, rate] (const EffectValues& v) { return Multiband::isValid (toSettings (v), rate); },
                       "A setting is out of range: frequency 1 to 16 kHz (below half the rate), threshold -60 to 0 dB, reduction 0 to 24 dB.",
@@ -4742,7 +4744,10 @@ void MainComponent::showDeEsser()
                           auto* live = dynamic_cast<BuiltInEffects::DeEsserProcessor*> (&p);
 
                           if (live != nullptr)
+                          {
                               live->setSettings (toSettings (v));
+                              *live->listen = juce::roundToInt (v.at ("listen")) == 1;
+                          }
 
                           return live != nullptr;
                       },

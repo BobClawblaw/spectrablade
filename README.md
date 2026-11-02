@@ -19,6 +19,10 @@ SpectraBlade is free software under the GNU Affero General Public License, versi
 
 The notes below record each milestone as it was built, newest first, with what the tests measured.
 
+**Milestone 188: Listening to what the de-esser takes out**
+- The de-esser's dialog has a Listen choice for its preview, "Only to what it takes out", to set the frequency and threshold by hearing exactly what they catch; OK always applies the result. The live effect has it as a Listen switch, for the rack and tracks.
+- Measured by the tests: on noise bursts, what it takes out and the result add up to the sound with nothing taken (the split's phase turn only) to 1.8e-7, on the band and on the whole sound, and with Listen off again it gives the offline samples bit for bit. It was not listened to. The whole suite passed.
+
 **Milestone 187: De-esser**
 - Effects > De-esser: whenever the highs above a frequency (1 to 16 kHz, 6 kHz to start) are louder than the threshold, they are turned down by however far they are over, up to the reduction (0 to 24 dB), within a millisecond, coming back over 60 ms. It turns down the high band alone, leaving the rest of the voice as it was, or the whole sound. Applied to the selection or the whole file, with a preview and presets; it is also a built-in live effect for the rack and tracks, its settings automatable parameters, its window showing by how much it is turning the sound down as it plays.
 - The split is a Linkwitz-Riley crossover (24 dB an octave) whose two halves add back up to the sound at every frequency's level; the level is the loudest channel's, so stereo stays put.
@@ -1144,7 +1148,7 @@ The tests run against the real machine:
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
-- Multiband compressor and de-esser: the bands adding back up flat, each band acting only on its own frequencies, the de-esser's reduction on the band and on the whole sound, refused settings; live bit for bit with offline, state and presets, the multiband window following its parameters, the windows' reduction readings.
+- Multiband compressor and de-esser: the bands adding back up flat, each band acting only on its own frequencies, the de-esser's reduction on the band and on the whole sound and what Listen plays, refused settings; live bit for bit with offline, state and presets, the multiband window following its parameters, the windows' reduction readings.
 - Empty editor: the recent files listed, a click opening one.
 - Opening from Finder: the types offered all read, the files picked out of an open request.
 - Transport bar: tooltips following the keys; the selection panel's cells.
@@ -1205,5 +1209,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. The de-esser: a switch to hear only what it takes out, to set the frequency by ear
-2. Keyboard shortcuts: an Audition-style key set, once Adobe's published list or an exported shortcut file is to hand
+1. Keyboard shortcuts: an Audition-style key set, once Adobe's published list or an exported shortcut file is to hand

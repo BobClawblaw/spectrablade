@@ -136,6 +136,10 @@ namespace Multiband
         void reset() noexcept;
         void set (const DeEsser&);
 
+        /** Puts out only what it takes away instead of the result (the two add up to the sound with
+            nothing taken), to hear what the frequency and threshold catch. Off to start. */
+        void setListening (bool) noexcept;
+
         void process (float* const* channels, int numChannels, int numFrames) noexcept;
 
         double getReductionDb() const noexcept               { return gainDb; }
@@ -146,6 +150,7 @@ namespace Multiband
         std::vector<Crossover> crossovers;
         std::vector<std::array<double, 2>> parts;
         double attack = 0.0, release = 0.0, gainDb = 0.0;
+        bool listening = false;
     };
 
     /** De-esses [start, end). Nullptr for settings that aren't valid or an empty range. */

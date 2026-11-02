@@ -1442,6 +1442,7 @@ DeEsserProcessor::DeEsserProcessor()
     threshold = addFloat ("threshold", "Threshold", { -60.0f, 0.0f }, (float) start.thresholdDb, "dB");
     reduction = addFloat ("reduction", "Reduction", { 0.0f, 24.0f }, (float) start.maxReductionDb, "dB");
     mode = addChoice ("mode", "Turn Down", { "The high band", "The whole sound" }, 0);   // the high band, as Multiband::DeEsser starts
+    listen = addBool ("listen", "Listen", false);
 }
 
 Multiband::DeEsser DeEsserProcessor::getSettings() const
@@ -1479,6 +1480,7 @@ void DeEsserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         core.set (applied);
     }
 
+    core.setListening (listen->get());
     core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
     reductionDb = core.getReductionDb();
 }
