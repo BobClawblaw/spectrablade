@@ -115,11 +115,14 @@ void AudioSnapshot::read (juce::AudioBuffer<float>& dest, int destStart, juce::i
         remaining -= silent;
     }
 
-    for (auto index = findSegment (frame); remaining > 0 && index >= 0 && index < (int) segments.size(); ++index)
+    // Past the end there is nothing to copy: the last segment is no place to start from (it would
+    // give a negative count and send the clear below in front of where it was asked to write).
+    for (auto index = findSegment (frame); remaining > 0 && frame < totalFrames && index >= 0 && index < (int) segments.size(); ++index)
     {
         const auto& seg = segments[(size_t) index];
         const auto within = frame - starts[(size_t) index];
         const auto count = (int) juce::jmin ((juce::int64) remaining, seg.length - within);
+        jassert (count > 0);
 
         for (int ch = 0; ch < channelsToCopy; ++ch)
             dest.copyFrom (ch, out, seg.block->getChannel (ch) + seg.offset + within, count);

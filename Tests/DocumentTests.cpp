@@ -978,6 +978,103 @@ namespace
         check (out.getMagnitude (0, 64) == 0.0f, "playback follows edits");
     }
 
+    void testReadPastEnd()
+    {
+        AudioDocument doc;
+        juce::AudioBuffer<float> stereo (2, 1000);
+
+        for (int i = 0; i < 1000; ++i)
+            for (int ch = 0; ch < 2; ++ch)
+                stereo.setSample (ch, i, (float) (i + 1));
+
+        doc.reset (AudioEdits::fromBuffer (std::move (stereo)), rate, {}, 24);
+        const auto snapshot = doc.getSnapshot();
+
+        // Only the frames asked for are written: the file's end, then silence; nothing before them.
+        const auto untouchedBefore = [] (const juce::AudioBuffer<float>& b, int end)
+        {
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                for (int i = 0; i < end; ++i)
+                    if (b.getSample (ch, i) != 7.0f)
+                        return false;
+            return true;
+        };
+
+        juce::AudioBuffer<float> out (2, 400);
+        for (int ch = 0; ch < 2; ++ch)
+            juce::FloatVectorOperations::fill (out.getWritePointer (ch), 7.0f, 400);
+        snapshot->read (out, 200, 1050, 100);
+        const auto pastEnd = untouchedBefore (out, 200) && out.getMagnitude (200, 100) == 0.0f && out.getSample (0, 300) == 7.0f;
+
+        for (int ch = 0; ch < 2; ++ch)
+            juce::FloatVectorOperations::fill (out.getWritePointer (ch), 7.0f, 400);
+        snapshot->read (out, 10, 950, 100);
+        const auto across = untouchedBefore (out, 10) && out.getSample (0, 10) == 951.0f && out.getSample (1, 59) == 1000.0f
+                            && out.getMagnitude (60, 50) == 0.0f && out.getSample (1, 110) == 7.0f;
+
+        DocumentSource source (doc);
+        source.setNextReadPosition (1200);
+        for (int ch = 0; ch < 2; ++ch)
+            juce::FloatVectorOperations::fill (out.getWritePointer (ch), 7.0f, 400);
+        source.getNextAudioBlock (juce::AudioSourceChannelInfo (&out, 100, 64));
+        const auto sourcePast = untouchedBefore (out, 100) && out.getMagnitude (100, 64) == 0.0f && out.getSample (0, 164) == 7.0f;
+
+        check (pastEnd && across && sourcePast,
+               "reading past a file's end writes silence only where asked: from past the end, across it, and from the playback source");
+
+        // Playing to the end through a transport that converts the rate, as the player does, its
+        // resampler asks for blocks that start past the end; they come back silent and in place.
+        struct Watched final : juce::PositionableAudioSource
+        {
+            explicit Watched (DocumentSource& s, juce::int64 total) : inner (s), length (total) {}
+            void prepareToPlay (int, double) override {}
+            void releaseResources() override {}
+            void getNextAudioBlock (const juce::AudioSourceChannelInfo& info) override
+            {
+                if (inner.getNextReadPosition() > length)
+                    ++pastEndReads;
+                inner.getNextAudioBlock (info);
+            }
+            void setNextReadPosition (juce::int64 p) override   { inner.setNextReadPosition (p); }
+            juce::int64 getNextReadPosition() const override     { return inner.getNextReadPosition(); }
+            juce::int64 getTotalLength() const override          { return inner.getTotalLength(); }
+            bool isLooping() const override                      { return false; }
+            DocumentSource& inner;
+            juce::int64 length;
+            int pastEndReads = 0;
+        };
+
+        int pastEndReads = 0, blocks = 0;
+        bool silentAfter = true;
+
+        for (const auto deviceRate : { 44100.0, 48000.0, 96000.0 })
+            for (const auto block : { 64, 100, 480, 512 })
+            {
+                DocumentSource played (doc);
+                Watched watched (played, 1000);
+                juce::AudioTransportSource transport;
+                transport.setSource (&watched, 0, nullptr, rate, 2);
+                transport.prepareToPlay (block, deviceRate);
+                transport.start();
+                juce::AudioBuffer<float> device (2, block);
+
+                for (int i = 0; i < 4000 / block + 8; ++i, ++blocks)
+                {
+                    transport.getNextAudioBlock (juce::AudioSourceChannelInfo (&device, 0, block));
+
+                    if (! transport.isPlaying() && device.getMagnitude (0, block) != 0.0f && i > 4000 / block)
+                        silentAfter = false;
+                }
+
+                pastEndReads += watched.pastEndReads;
+                transport.setSource (nullptr);
+            }
+
+        check (pastEndReads > 0 && silentAfter,
+               "playing a file to its end through the rate-converting transport reads past its end ("
+                   + juce::String (pastEndReads) + " of " + juce::String (blocks) + " blocks) and stays silent after");
+    }
+
     void testOfflineRender (AudioEngine& engine)
     {
         const auto signal = makeSignal (48000);
@@ -1048,5 +1145,6 @@ void runDocumentTests (AudioEngine& engine)
     testEffects();
     testFiles (engine);
     testPlaybackSource();
+    testReadPastEnd();
     testOfflineRender (engine);
 }
