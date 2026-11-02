@@ -57,6 +57,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Dynamics.cpp
     Source/Modulation.cpp
     Source/Reverb.cpp
+    Source/Convolver.cpp
     Source/BuiltInEffects.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
@@ -120,6 +121,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/DynamicsTests.cpp
     Tests/ModulationTests.cpp
     Tests/ReverbTests.cpp
+    Tests/ConvolverTests.cpp
     Tests/BuiltInEffectsTests.cpp
     Tests/NoiseTests.cpp
     Tests/ClickTests.cpp
@@ -153,6 +155,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Dynamics.cpp
     Source/Modulation.cpp
     Source/Reverb.cpp
+    Source/Convolver.cpp
     Source/BuiltInEffects.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp

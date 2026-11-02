@@ -41,6 +41,8 @@ namespace
 
     juce::PluginDescription reverbDescription()         { return describe ("Reverb", "Reverb", reverbId, 0x53425256); }         // "SBRV"
 
+    juce::PluginDescription convolutionDescription()    { return describe ("Convolution Reverb", "Reverb", convolutionId, 0x5342434f); }  // "SBCO"
+
     const juce::StringArray stageNames { "2", "4", "6", "8", "10", "12" };
 
     class Format final : public juce::AudioPluginFormat
@@ -99,6 +101,8 @@ namespace
                 effect = std::make_unique<PhaserProcessor>();
             else if (d.fileOrIdentifier == reverbId)
                 effect = std::make_unique<ReverbProcessor>();
+            else if (d.fileOrIdentifier == convolutionId)
+                effect = std::make_unique<ConvolutionProcessor>();
 
             if (effect == nullptr)
             {
@@ -119,7 +123,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 
 juce::Array<juce::PluginDescription> getDescriptions()
 {
-    return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription() };
+    return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -218,6 +222,7 @@ void BuiltInEffect::getStateInformation (juce::MemoryBlock& block)
             xml.setAttribute (b->paramID, b->get() ? 1 : 0);
     }
 
+    addToState (xml);
     copyXmlToBinary (xml, block);
 }
 
@@ -237,6 +242,8 @@ void BuiltInEffect::setStateInformation (const void* data, int size)
         else if (auto* b = dynamic_cast<juce::AudioParameterBool*> (p); b != nullptr && xml->hasAttribute (b->paramID))
             b->setValueNotifyingHost (xml->getIntAttribute (b->paramID) != 0 ? 1.0f : 0.0f);
     }
+
+    readFromState (*xml);
 }
 
 //==============================================================================
@@ -709,5 +716,182 @@ void ReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Midi
     }
 
     core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels()), buffer.getNumSamples());
+}
+
+//==============================================================================
+ConvolutionProcessor::ConvolutionProcessor()
+    : BuiltInEffect (convolutionDescription(), "SPECTRABLADE_CONVOLUTION_REVERB")
+{
+    mix = addFloat ("mix", "Mix", { 0.0f, 100.0f }, 30.0f, "%");
+    rebuild();
+}
+
+ConvolutionProcessor::~ConvolutionProcessor() = default;
+
+void ConvolutionProcessor::setImpulse (Convolver::Impulse i)
+{
+    impulse = std::move (i);
+    rebuild();
+}
+
+void ConvolutionProcessor::rebuild()
+{
+    // Built here, then swapped in, so the audio thread waits only for the swap.
+    auto next = std::make_unique<Convolver::Core>();
+    const auto usable = Convolver::problemWith (impulse).isEmpty();
+    next->prepare (usable ? Convolver::atRate (impulse, rate) : juce::AudioBuffer<float>(), juce::jmax (1, getTotalNumInputChannels()));
+    setLatencySamples (Convolver::blockSize);
+
+    {
+        const juce::SpinLock::ScopedLockType sl (coreLock);
+        std::swap (core, next);
+        coreHasImpulse = usable;
+    }
+}
+
+void ConvolutionProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    rebuild();
+}
+
+void ConvolutionProcessor::reset()
+{
+    const juce::SpinLock::ScopedLockType sl (coreLock);
+    core->reset();
+}
+
+void ConvolutionProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    const juce::SpinLock::ScopedLockType sl (coreLock);
+    core->setMix (coreHasImpulse ? (double) mix->get() : 0.0);
+    core->process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels()), buffer.getNumSamples());
+}
+
+double ConvolutionProcessor::getTailLengthSeconds() const
+{
+    return impulse.sampleRate > 0.0 ? impulse.samples.getNumSamples() / impulse.sampleRate : 0.0;
+}
+
+void ConvolutionProcessor::addToState (juce::XmlElement& xml) const
+{
+    // The impulse's samples as they were read, each channel's floats in base 64.
+    if (Convolver::problemWith (impulse).isNotEmpty())
+        return;
+
+    auto* e = xml.createNewChildElement ("IMPULSE");
+    e->setAttribute ("name", impulse.name);
+    e->setAttribute ("rate", impulse.sampleRate);
+    e->setAttribute ("frames", impulse.samples.getNumSamples());
+
+    for (int ch = 0; ch < impulse.samples.getNumChannels(); ++ch)
+        e->createNewChildElement ("CHANNEL")->addTextElement (
+            juce::MemoryBlock (impulse.samples.getReadPointer (ch), (size_t) impulse.samples.getNumSamples() * sizeof (float)).toBase64Encoding());
+}
+
+void ConvolutionProcessor::readFromState (const juce::XmlElement& xml)
+{
+    Convolver::Impulse i;
+
+    if (auto* e = xml.getChildByName ("IMPULSE"))
+    {
+        const auto frames = e->getIntAttribute ("frames");
+        const auto count = e->getNumChildElements();
+        i.name = e->getStringAttribute ("name");
+        i.sampleRate = e->getDoubleAttribute ("rate");
+
+        if (frames > 0 && count >= 1 && count <= 2)
+        {
+            i.samples.setSize (count, frames);
+
+            for (int ch = 0; ch < count; ++ch)
+            {
+                juce::MemoryBlock block;
+
+                if (! block.fromBase64Encoding (e->getChildElement (ch)->getAllSubText()) || block.getSize() != (size_t) frames * sizeof (float))
+                    return;
+
+                std::memcpy (i.samples.getWritePointer (ch), block.getData(), block.getSize());
+            }
+        }
+    }
+
+    if (Convolver::problemWith (i).isEmpty())
+        setImpulse (std::move (i));
+}
+
+juce::AudioProcessorEditor* ConvolutionProcessor::createEditor()
+{
+    return new ConvolutionEditor (*this);
+}
+
+//==============================================================================
+ConvolutionEditor::ConvolutionEditor (ConvolutionProcessor& owner)
+    : AudioProcessorEditor (owner), convolution (owner)
+{
+    addAndMakeVisible (impulseName);
+    addAndMakeVisible (load);
+    addAndMakeVisible (mix);
+    addAndMakeVisible (mixLabel);
+    mix.setTextValueSuffix (" %");
+    mixAttachment = std::make_unique<juce::SliderParameterAttachment> (*owner.mix, mix);
+    mix.setNumDecimalPlacesToDisplay (1);
+    load.onClick = [this] { chooseImpulse(); };
+    showImpulse();
+    setSize (420, 110);
+}
+
+ConvolutionEditor::~ConvolutionEditor() = default;
+
+void ConvolutionEditor::showImpulse()
+{
+    const auto& i = convolution.getImpulse();
+    impulseName.setText (Convolver::problemWith (i).isEmpty()
+                             ? i.name + " (" + juce::String (i.samples.getNumSamples() / i.sampleRate, 2) + " s, "
+                                   + (i.samples.getNumChannels() == 1 ? "mono" : "stereo") + ")"
+                             : juce::String ("No impulse response: the sound passes through."),
+                         juce::dontSendNotification);
+}
+
+void ConvolutionEditor::chooseImpulse()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Load impulse response", juce::File(), "*.wav;*.aif;*.aiff;*.flac");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [safe = juce::Component::SafePointer<ConvolutionEditor> (this)] (const juce::FileChooser& fc)
+                          {
+                              if (safe == nullptr || ! fc.getResult().existsAsFile())
+                                  return;
+
+                              juce::AudioFormatManager formats;
+                              formats.registerBasicFormats();
+                              juce::String error;
+                              auto impulse = Convolver::read (fc.getResult(), formats, error);
+
+                              if (error.isNotEmpty())
+                              {
+                                  juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Load Impulse", error);
+                                  return;
+                              }
+
+                              safe->convolution.setImpulse (std::move (impulse));
+                              safe->showImpulse();
+                          });
+}
+
+void ConvolutionEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+}
+
+void ConvolutionEditor::resized()
+{
+    auto r = getLocalBounds().reduced (10);
+    auto top = r.removeFromTop (28);
+    load.setBounds (top.removeFromRight (130));
+    impulseName.setBounds (top);
+    r.removeFromTop (16);
+    auto row = r.removeFromTop (28);
+    mixLabel.setBounds (row.removeFromLeft (50));
+    mix.setBounds (row);
 }
 }

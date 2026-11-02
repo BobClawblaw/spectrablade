@@ -79,7 +79,7 @@ void runBuiltInEffectsTests (AudioEngine& engine)
     // Created by description, through the app's own format manager.
     const auto descriptions = BuiltInEffects::getDescriptions();
     juce::String error;
-    auto instance = descriptions.size() == 7 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
+    auto instance = descriptions.size() == 8 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
     auto* eq = dynamic_cast<ParametricEqProcessor*> (instance.get());
     check (eq != nullptr && error.isEmpty() && eq->getPluginDescription().fileOrIdentifier == BuiltInEffects::parametricEqId
                && eq->getPluginDescription().pluginFormatName == BuiltInEffects::formatName && eq->getActiveBands (rate).empty(),
@@ -154,9 +154,9 @@ void runBuiltInEffectsTests (AudioEngine& engine)
 
         return (juce::AudioPluginFormat*) nullptr;
     }();
-    check (list.getNumTypes() == 7 && format != nullptr
+    check (list.getNumTypes() == 8 && format != nullptr
                && ! format->canScanForPlugins() && format->searchPathsForPlugins ({}, true, false).isEmpty(),
-           "built-in effects: the seven listed once each however often added; their format has nothing to scan");
+           "built-in effects: the eight listed once each however often added; their format has nothing to scan");
 
     // Its window: the EQ panel on the parameters, both ways.
     {
@@ -337,6 +337,59 @@ void runBuiltInEffectsTests (AudioEngine& engine)
                    && std::abs (reverb.getTailLengthSeconds() - (s.preDelayMs / 1000.0 + s.decaySeconds)) < 1.0e-12,
                "built-in reverb: played in blocks of 1, 7, 512 and 3,000 frames it gives the offline reverb's samples bit for bit; no latency; "
                "its tail is the pre-delay plus the decay");
+    }
+
+    // The convolution reverb, live: a block late, exactly the offline one; its impulse kept in its state.
+    {
+        const auto in = noise (2, 30000, 25);
+        Convolver::Impulse impulse { noise (2, 4000, 26), rate, "room" };
+        BuiltInEffects::ConvolutionProcessor conv;
+        conv.setPlayConfigDetails (2, 2, rate, 512);
+        conv.prepareToPlay (rate, 3000);
+        BuiltInEffects::setExactly (*conv.mix, 45.0f);
+        conv.setImpulse (impulse);
+        const auto convAhead = conv.getLatencySamples();
+        juce::AudioBuffer<float> padded (2, 30000 + convAhead);
+        padded.clear();
+
+        for (int ch = 0; ch < 2; ++ch)
+            padded.copyFrom (ch, 0, in, ch, 0, 30000);
+
+        const auto convLive = play (conv, padded);
+        const auto snap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (in));
+        const auto convOffline = readAll (*Convolver::apply (*snap, 0, 30000, rate, impulse, 45.0));
+        auto lateExactly = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 30000; ++i)
+                lateExactly = lateExactly && juce::exactlyEqual (convLive.getSample (ch, i + convAhead), convOffline.getSample (ch, i));
+
+        juce::MemoryBlock convState;
+        conv.getStateInformation (convState);
+        BuiltInEffects::ConvolutionProcessor convCopy;
+        convCopy.setStateInformation (convState.getData(), (int) convState.getSize());
+        const auto& restoredImpulse = convCopy.getImpulse();
+        auto samplesKept = restoredImpulse.samples.getNumChannels() == 2 && restoredImpulse.samples.getNumSamples() == 4000;
+
+        for (int ch = 0; ch < 2 && samplesKept; ++ch)
+            for (int i = 0; i < 4000; ++i)
+                samplesKept = samplesKept && juce::exactlyEqual (restoredImpulse.samples.getSample (ch, i), impulse.samples.getSample (ch, i));
+
+        // With no impulse, the sound passes through a block late.
+        BuiltInEffects::ConvolutionProcessor empty;
+        empty.setPlayConfigDetails (2, 2, rate, 512);
+        empty.prepareToPlay (rate, 512);
+        const auto emptyOut = play (empty, padded);
+        auto through = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 30000; ++i)
+                through = through && juce::exactlyEqual (emptyOut.getSample (ch, i + convAhead), in.getSample (ch, i));
+
+        check (convAhead == Convolver::blockSize && lateExactly && samplesKept && restoredImpulse.name == "room" && juce::exactlyEqual (convCopy.mix->get(), conv.mix->get())
+                   && through && std::abs (conv.getTailLengthSeconds() - 4000.0 / rate) < 1.0e-12,
+               "built-in convolution reverb: reports 512 frames of latency and, that late, gives Convolver's samples bit for bit; its state keeps the impulse's "
+               "samples and name and the mix exactly; with no impulse the sound passes through 512 frames late; its tail is the impulse's length");
     }
 
     // In the master rack: added by description, set, saved and restored with its bands.

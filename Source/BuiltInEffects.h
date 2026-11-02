@@ -3,6 +3,7 @@
 #include "Dynamics.h"
 #include "Modulation.h"
 #include "Reverb.h"
+#include "Convolver.h"
 #include "ParametricEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
@@ -19,6 +20,7 @@ namespace BuiltInEffects
     constexpr const char* flangerId = "spectrablade:flanger";
     constexpr const char* phaserId = "spectrablade:phaser";
     constexpr const char* reverbId = "spectrablade:reverb";
+    constexpr const char* convolutionId = "spectrablade:convolution-reverb";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -59,6 +61,10 @@ namespace BuiltInEffects
 
     protected:
         BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag);
+
+        /** What an effect keeps besides its parameters, written into and read back from its state. */
+        virtual void addToState (juce::XmlElement&) const          {}
+        virtual void readFromState (const juce::XmlElement&)       {}
 
         juce::AudioParameterFloat* addFloat (const juce::String& id, const juce::String& name, juce::NormalisableRange<float>,
                                              float start, const juce::String& label = {});
@@ -310,5 +316,67 @@ namespace BuiltInEffects
         RoomReverb::Settings applied;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ReverbProcessor)
+    };
+
+    /** The convolution reverb, live: an impulse response (kept in its state, samples and all, so a
+        session doesn't need the file) and the mix as a parameter, run with Convolver::Core, so its
+        output, Convolver::blockSize frames late (reported as latency), is exactly what
+        Convolver::apply gives. With no impulse it passes the sound through, as late. */
+    class ConvolutionProcessor final : public BuiltInEffect
+    {
+    public:
+        ConvolutionProcessor();
+        ~ConvolutionProcessor() override;
+
+        /** A usable impulse (Convolver::problemWith empty); on the message thread. */
+        void setImpulse (Convolver::Impulse);
+        const Convolver::Impulse& getImpulse() const noexcept         { return impulse; }
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+        double getTailLengthSeconds() const override;
+        juce::AudioProcessorEditor* createEditor() override;
+
+        juce::AudioParameterFloat* mix = nullptr;
+
+    private:
+        void addToState (juce::XmlElement&) const override;
+        void readFromState (const juce::XmlElement&) override;
+        void rebuild();
+
+        Convolver::Impulse impulse;
+        double rate = 48000.0;
+        juce::SpinLock coreLock;
+        std::unique_ptr<Convolver::Core> core;   // swapped under the lock
+        bool coreHasImpulse = false;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ConvolutionProcessor)
+    };
+
+    /** The convolution reverb's window: the impulse's name, a button to load another from an audio
+        file, and the mix. */
+    class ConvolutionEditor final : public juce::AudioProcessorEditor
+    {
+    public:
+        explicit ConvolutionEditor (ConvolutionProcessor&);
+        ~ConvolutionEditor() override;
+
+        void resized() override;
+        void paint (juce::Graphics&) override;
+
+    private:
+        void chooseImpulse();
+        void showImpulse();
+
+        ConvolutionProcessor& convolution;
+        juce::Label impulseName;
+        juce::TextButton load { "Load Impulse..." };
+        juce::Slider mix { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };
+        juce::Label mixLabel { {}, "Mix" };
+        std::unique_ptr<juce::SliderParameterAttachment> mixAttachment;
+        std::unique_ptr<juce::FileChooser> chooser;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ConvolutionEditor)
     };
 }

@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 175: Convolution reverb**
+- Effects > Convolution Reverb asks for an impulse response (a recording of a space's answer to a click: WAV, AIFF or FLAC, mono or stereo, up to 10 s), then for the mix, with a "Preview on the selection" switch. It is a built-in live effect for the rack and tracks too; its window shows the impulse and loads another, and its saved state holds the impulse's samples, so a session doesn't need the file.
+- The impulse is resampled to the file's (or the device's) rate and scaled so the energy of its loudest channel is 1, which brings the reverb of noise out about as loud as the noise. Each channel is convolved with the impulse's channel of the same side (a mono impulse serves both).
+- The convolution is uniformly partitioned, with the FFT, in blocks of 512 frames, so each frame comes out 512 frames late: the live effect reports that as latency (the rack and tracks line everything up with it), and the offline effect takes it off. Offline, the reverb rings on past the selection into the audio after it, added on top, for the impulse's length (or to the end of the file).
+- Measured by the tests at 48 kHz: all wet, a 3,000-frame stereo impulse on noise gives each channel within 2.5e-7 of direct convolution in double precision (against a peak of 1.28); a click 100 frames into the impulse gives the input 100 frames late, to 2.1e-7; no mix gives the input bit for bit; the tail runs the impulse's length past the range and the audio after it is kept bit for bit; an impulse at 24 kHz becomes twice as many frames at 48 kHz; a silent impulse, three channels or one over 10 s is refused. Live, the effect reports 512 frames of latency and, that late, gives the offline effect's samples bit for bit; its state keeps the impulse's samples exactly; with no impulse the sound passes through, 512 frames late. A minute of stereo through a 5 s impulse took 0.86 s offline on the development Mac (so about 1.4 % of a core live). Hearing it in the running app was not tried. The whole suite passed.
+
 **Milestone 174: Reverb**
 - Effects > Reverb adds a room's reverberation to the selection or the whole file, with a "Preview on the selection" switch, and it is a built-in live effect for the rack and tracks too.
 - It is a feedback delay network of SpectraBlade's own: after the pre-delay, the sound (the channels' average) is smeared by four all-pass filters and fed into eight delay lines (29.7 to 71.9 ms at 100 % size) whose outputs are mixed back into their inputs by a matrix that loses nothing. Each line loses just enough on each pass for the sound to fall 60 dB in the decay time, a low-pass in each takes the highs away faster as damping rises, and two different mixes of the lines make the left and right sides, narrowed toward their middle by the width.
@@ -1052,6 +1058,7 @@ The tests run against the real machine:
 - Preview: the live effects take the dialogs' settings; the engine's preview slot swaps and clears, and stays out of the rack.
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
+- Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1105,5 +1112,7 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: a convolution reverb from an impulse response file
-2. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+2. Effects: saved presets for every built-in effect's dialog and window, by name
+3. Effects: a graphic equalizer (10 and 31 bands), offline and live
+4. Effects: a multiband compressor and a de-esser, offline and live

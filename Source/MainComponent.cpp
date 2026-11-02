@@ -62,7 +62,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -71,7 +71,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdReverb);
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdConvolutionReverb);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1016,7 +1016,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdReverb; ++id)
+    for (int id = cmdOpen; id <= cmdConvolutionReverb; ++id)
         ids.add (id);
 }
 
@@ -1098,6 +1098,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdPhaser:     info.setInfo ("Phaser...", "Sweep notches through the sound with a chain of all-pass filters", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdReverb:     info.setInfo ("Reverb...", "Add a room's reverberation, ringing on past the selection", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdConvolutionReverb: info.setInfo ("Convolution Reverb...", "Add the reverberation of a recorded space from an impulse response file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdTremolo:    info.setInfo ("Tremolo...", "Make the level rise and fall at a chosen rate and depth, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -1571,6 +1573,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
         case cmdReverb:     showReverb(); break;
+        case cmdConvolutionReverb: showConvolutionReverb(); break;
         case cmdFadeRegions: showFadeEdges (true); break;
         case cmdNormalizeRegions:
             askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, [this] (float db)
@@ -1914,7 +1917,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -4891,6 +4894,64 @@ void MainComponent::showReverb()
 
                           if (auto next = RoomReverb::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), reverbSettings))
                               applyEdit (std::move (next), "Reverb", waveform.getSelection());
+                      });
+}
+
+void MainComponent::showConvolutionReverb()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Choose an impulse response", lastImpulseFile, "*.wav;*.aif;*.aiff;*.flac");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              const auto file = fc.getResult();
+
+                              if (! file.existsAsFile())
+                                  return;
+
+                              juce::String error;
+                              auto impulse = Convolver::read (file, engine.formatManager, error);
+
+                              if (error.isNotEmpty())
+                              {
+                                  showError ("Convolution Reverb", error);
+                                  return;
+                              }
+
+                              lastImpulseFile = file;
+                              showConvolutionDialog (std::make_shared<const Convolver::Impulse> (std::move (impulse)));
+                          });
+}
+
+void MainComponent::showConvolutionDialog (std::shared_ptr<const Convolver::Impulse> impulse)
+{
+    const auto seconds = impulse->samples.getNumSamples() / impulse->sampleRate;
+
+    showEffectDialog ("Convolution Reverb",
+                      "The sound convolved with " + impulse->name.quoted() + " (" + juce::String (seconds, 2) + " s, "
+                          + (impulse->samples.getNumChannels() == 1 ? "mono" : "stereo") + "), scaled so noise comes out about as loud, "
+                          "ringing on past the selection (added to what follows) for the impulse's length. Mix 0 to 100 %.",
+                      { { "mix", "Mix (%)", convolutionMix, 0 } },
+                      PreviewOwner::convolution,
+                      [] (const EffectValues& v) { return v.at ("mix") >= 0.0 && v.at ("mix") <= 100.0; },
+                      "The mix must be from 0 to 100 %.",
+                      [impulse]
+                      {
+                          auto c = std::make_unique<BuiltInEffects::ConvolutionProcessor>();
+                          c->setImpulse (*impulse);
+                          return c;
+                      },
+                      [] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          if (auto* c = dynamic_cast<BuiltInEffects::ConvolutionProcessor*> (&p))
+                              BuiltInEffects::setExactly (*c->mix, (float) v.at ("mix"));
+                      },
+                      [this, impulse] (const EffectValues& v)
+                      {
+                          convolutionMix = v.at ("mix");
+                          const auto r = selectionOrAll();
+
+                          if (auto next = Convolver::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), *impulse, convolutionMix))
+                              applyEdit (std::move (next), "Convolution Reverb", waveform.getSelection());
                       });
 }
 
