@@ -6,6 +6,14 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 173: Chorus, flanger and phaser**
+- Effects > Chorus, Flanger and Phaser, each applied to the selection or the whole file, each with a "Preview on the selection" switch, and each a built-in live effect for the rack and tracks (category Modulation).
+- Chorus and Flanger are one swept delay: a copy of the sound whose delay moves smoothly between the shortest delay and that plus the depth at the rate, fed back by the feedback and mixed in by the mix. The chorus starts at a 15 ms delay, 5 ms depth, 0.8 Hz and no feedback; the flanger at 1 ms, 3 ms, 0.25 Hz and 0.6 feedback. Fractional delays are read by linear interpolation, and the delay is never under one frame.
+- The Phaser is a chain of 2 to 12 first-order all-pass filters, their frequency swept evenly in octaves between a low and a high frequency, with feedback around the chain, mixed with the sound: half wet, each two stages make a notch.
+- The sweep starts at the top of its cycle (the shortest delay, the lowest frequency); the second channel runs it the stereo spread behind (90 degrees by default), which widens the image. Offline, the effect starts from silence at the start of the range, as the live effect does when it starts, and nothing rings on past the range.
+- The offline effects and the live ones run the same per-frame cores, so played over a whole file from its start, the live effect gives the offline effect's samples.
+- Measured by the tests at 48 kHz: with no depth, all wet and no feedback, the output is the input exactly 48 frames (1 ms) late, and with no mix the input bit for bit; that delay half wet cancels a 500 Hz sine to 1.4e-13 and passes 1 kHz at its full 0.5; identical channels stay identical with no spread and part with 90 degrees; the delay output differs from the fixed delay at both ends of the sweep; feedback of +0.95 and -0.95 on noise peaking at 0.5 peaks at 1.39 and 1.27. All wet, two all-passes keep a 300 Hz sine at 0.49995 (of 0.5); half wet, two at 1 kHz cancel 1 kHz to 1.8e-8 and leave 100 Hz at 0.49; 12 stages with 0.95 feedback stay bounded. Bad settings (an odd stage count, a high frequency under the low one, feedback of 1) and empty ranges are refused, and frames outside the range are kept bit for bit. Live, in blocks of 1, 7, 512 and 3,000 frames, each of the three gives the offline effect's samples bit for bit, the phaser's state restores exactly, and none has latency. Hearing them in the running app was not tried. The whole suite passed.
+
 **Milestone 172: Previewing an effect on the selection**
 - The Parametric EQ window, Effects > Compressor and Effects > Limiter have a "Preview on the selection" switch. While it is on, the selection (or the whole file, with none) plays over and over through the live built-in effect, ahead of the rack, and every change to a band or a field is heard as it is made. A field being typed is heard at its last valid setting.
 - The preview ends when it is switched off, the dialog closes (OK, which then applies the effect offline, or Cancel) or the EQ window closes, and whenever an edit is applied, a file opened or recording started, or the multitrack view shown. Starting a preview from another window ends the first one and unticks its switch.
@@ -1035,6 +1043,7 @@ The tests run against the real machine:
 - Its window: the EQ panel setting the parameters as gestures, and showing changes made from outside.
 - Live compressor and limiter: bit for bit with the offline effects (the limiter a look-ahead late), the limiter's latency reported and counted on a track.
 - Preview: the live effects take the dialogs' settings; the engine's preview slot swaps and clears, and stays out of the rack.
+- Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1088,5 +1097,6 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
-2. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Effects: an algorithmic reverb, offline, live and previewed
+2. Effects: a convolution reverb from an impulse response file
+3. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection

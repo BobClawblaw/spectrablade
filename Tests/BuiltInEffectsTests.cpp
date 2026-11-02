@@ -79,7 +79,7 @@ void runBuiltInEffectsTests (AudioEngine& engine)
     // Created by description, through the app's own format manager.
     const auto descriptions = BuiltInEffects::getDescriptions();
     juce::String error;
-    auto instance = descriptions.size() == 3 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
+    auto instance = descriptions.size() == 6 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
     auto* eq = dynamic_cast<ParametricEqProcessor*> (instance.get());
     check (eq != nullptr && error.isEmpty() && eq->getPluginDescription().fileOrIdentifier == BuiltInEffects::parametricEqId
                && eq->getPluginDescription().pluginFormatName == BuiltInEffects::formatName && eq->getActiveBands (rate).empty(),
@@ -154,9 +154,9 @@ void runBuiltInEffectsTests (AudioEngine& engine)
 
         return (juce::AudioPluginFormat*) nullptr;
     }();
-    check (list.getNumTypes() == 3 && format != nullptr
+    check (list.getNumTypes() == 6 && format != nullptr
                && ! format->canScanForPlugins() && format->searchPathsForPlugins ({}, true, false).isEmpty(),
-           "built-in effects: the three listed once each however often added; their format has nothing to scan");
+           "built-in effects: the six listed once each however often added; their format has nothing to scan");
 
     // Its window: the EQ panel on the parameters, both ways.
     {
@@ -273,6 +273,53 @@ void runBuiltInEffectsTests (AudioEngine& engine)
         effects.add (7, std::make_unique<BuiltInEffects::LimiterProcessor>());
         effects.add (7, std::make_unique<BuiltInEffects::CompressorProcessor>());
         check (effects.getChainLatency (7) == 240, "built-in limiter on a track: the chain reports its 240 frames of latency (the compressor adds none)");
+    }
+
+    // Chorus, flanger and phaser, live, against the offline effects, with settings away from the defaults.
+    {
+        const auto in = noise (2, 96000, 21);
+        const auto offlineOf = [&in] (const auto& settings)
+        {
+            const auto snap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (in));
+
+            if constexpr (std::is_same_v<std::decay_t<decltype (settings)>, Modulation::Phaser>)
+                return readAll (*Modulation::phaser (*snap, 0, 96000, rate, settings));
+            else
+                return readAll (*Modulation::sweptDelay (*snap, 0, 96000, rate, settings));
+        };
+        const auto prepared = [] (juce::AudioProcessor& p)
+        {
+            p.setPlayConfigDetails (2, 2, rate, 512);
+            p.prepareToPlay (rate, 3000);
+        };
+
+        BuiltInEffects::SweptDelayProcessor chorus (BuiltInEffects::SweptDelayProcessor::Kind::chorus);
+        chorus.setSettings ({ 1.5, 12.0, 7.0, 0.2, 40.0, 120.0 });
+        prepared (chorus);
+        BuiltInEffects::SweptDelayProcessor flanger (BuiltInEffects::SweptDelayProcessor::Kind::flanger);
+        prepared (flanger);
+        BuiltInEffects::PhaserProcessor phaser;
+        phaser.setSettings ({ 0.7, 200.0, 4000.0, 8, -0.5, 60.0, 45.0 });
+        prepared (phaser);
+
+        const auto chorusLive = play (chorus, in), flangerLive = play (flanger, in), phaserLive = play (phaser, in);
+        const auto f = flanger.getSettings(), fd = Modulation::flangerDefaults();
+        const auto flangerStarts = std::abs (f.delayMs - fd.delayMs) < 1.0e-5 && std::abs (f.feedback - fd.feedback) < 1.0e-6;
+
+        juce::MemoryBlock phaserState;
+        phaser.getStateInformation (phaserState);
+        BuiltInEffects::PhaserProcessor phaserCopy;
+        phaserCopy.setStateInformation (phaserState.getData(), (int) phaserState.getSize());
+        const auto a = phaser.getSettings(), b = phaserCopy.getSettings();
+        const auto restored = juce::exactlyEqual (a.rateHz, b.rateHz) && juce::exactlyEqual (a.lowHz, b.lowHz) && juce::exactlyEqual (a.highHz, b.highHz)
+                           && a.stages == b.stages && a.stages == 8 && juce::exactlyEqual (a.feedback, b.feedback)
+                           && juce::exactlyEqual (a.mixPercent, b.mixPercent) && juce::exactlyEqual (a.spreadDegrees, b.spreadDegrees);
+
+        check (identical (chorusLive, offlineOf (chorus.getSettings())) && identical (flangerLive, offlineOf (flanger.getSettings()))
+                   && identical (phaserLive, offlineOf (phaser.getSettings())) && ! identical (chorusLive, in) && flangerStarts && restored
+                   && chorus.getLatencySamples() == 0 && phaser.getLatencySamples() == 0,
+               "built-in chorus, flanger and phaser: played in blocks of 1, 7, 512 and 3,000 frames, each gives the offline effect's samples bit for bit; "
+               "the flanger starts at its own defaults; the phaser's state (8 stages) restores exactly; no latency");
     }
 
     // In the master rack: added by description, set, saved and restored with its bands.

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Dynamics.h"
+#include "Modulation.h"
 #include "ParametricEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
@@ -13,6 +14,9 @@ namespace BuiltInEffects
     constexpr const char* parametricEqId = "spectrablade:parametric-eq";
     constexpr const char* compressorId = "spectrablade:compressor";
     constexpr const char* limiterId = "spectrablade:limiter";
+    constexpr const char* chorusId = "spectrablade:chorus";
+    constexpr const char* flangerId = "spectrablade:flanger";
+    constexpr const char* phaserId = "spectrablade:phaser";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -218,5 +222,61 @@ namespace BuiltInEffects
         int delayPosition = 0;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LimiterProcessor)
+    };
+
+    /** Chorus or flanger, live: Effects > Chorus's or Flanger's settings as parameters over the
+        same ranges, run with Modulation::DelayCore, so played over a whole file from its start it
+        gives exactly the samples Modulation::sweptDelay gives. No latency. */
+    class SweptDelayProcessor final : public BuiltInEffect
+    {
+    public:
+        enum class Kind { chorus, flanger };
+        explicit SweptDelayProcessor (Kind);
+
+        Modulation::Delay getSettings() const;
+        void setSettings (const Modulation::Delay&);
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override                                         { core.reset(); }
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+        juce::AudioParameterFloat* rate = nullptr;
+        juce::AudioParameterFloat* delay = nullptr;
+        juce::AudioParameterFloat* depth = nullptr;
+        juce::AudioParameterFloat* feedback = nullptr;
+        juce::AudioParameterFloat* mix = nullptr;
+        juce::AudioParameterFloat* spread = nullptr;
+
+    private:
+        Modulation::DelayCore core;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SweptDelayProcessor)
+    };
+
+    /** The phaser, live, with Modulation::PhaserCore: exactly Modulation::phaser's samples. No latency. */
+    class PhaserProcessor final : public BuiltInEffect
+    {
+    public:
+        PhaserProcessor();
+
+        Modulation::Phaser getSettings() const;
+        void setSettings (const Modulation::Phaser&);
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override                                         { core.reset(); }
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+        juce::AudioParameterFloat* rate = nullptr;
+        juce::AudioParameterFloat* low = nullptr;
+        juce::AudioParameterFloat* high = nullptr;
+        juce::AudioParameterChoice* stages = nullptr;   // 2, 4, ... 12
+        juce::AudioParameterFloat* feedback = nullptr;
+        juce::AudioParameterFloat* mix = nullptr;
+        juce::AudioParameterFloat* spread = nullptr;
+
+    private:
+        Modulation::PhaserCore core;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PhaserProcessor)
     };
 }

@@ -13,6 +13,7 @@
 #include "NoiseReduction.h"
 #include "ParametricEq.h"
 #include "Dynamics.h"
+#include "Modulation.h"
 #include "RackView.h"
 #include "SessionOverview.h"
 #include "SessionRecording.h"
@@ -139,6 +140,11 @@ private:
     void showLimiter();
     Dynamics::Compressor compressorSettings;
     Dynamics::Limiter limiterSettings;
+    void showSweptDelay (bool flanger);
+    void showPhaser();
+    Modulation::Delay chorusSettings = Modulation::chorusDefaults(), flangerSettings = Modulation::flangerDefaults();
+    Modulation::Phaser phaserSettings;
+
     void applyParametricEq (const std::vector<Equalizer::Band>&);
     void previewParametricEq (const ParametricEq*);   // nullptr: stop
     ParametricEq::Settings eqSettings = ParametricEq::defaultSettings();
@@ -348,12 +354,30 @@ private:
         before the rack, until stopPreview. A preview from another owner takes over, and the old
         one's ended callback is called (so it can untick its Preview button); stopPreview calls
         it too. An owner already previewing just has its effect swapped. Files only. */
-    enum class PreviewOwner { none, parametricEq, compressor, limiter };
+    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser };
     void startPreview (PreviewOwner, std::unique_ptr<juce::AudioPluginInstance>, std::function<void()> ended);
     void stopPreview();
     juce::AudioPluginInstance* previewEffectOf (PreviewOwner) const;
     PreviewOwner previewOwner = PreviewOwner::none;
     std::function<void()> previewEnded;
+
+    /** An effect's dialog: a text field for each setting, and a Preview switch that plays the
+        selection through the live effect (made by `make`, set by `setLive` as the fields change;
+        the last valid settings while one is being typed). OK applies the effect when the values
+        are valid (else shows invalidText); the preview ends whenever the dialog closes. */
+    struct EffectField
+    {
+        const char* id;
+        const char* label;
+        double value;
+        int decimals;
+    };
+    using EffectValues = std::map<juce::String, double>;
+    void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&, PreviewOwner,
+                           std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
+                           std::function<std::unique_ptr<juce::AudioPluginInstance>()> make,
+                           std::function<void (juce::AudioPluginInstance&, const EffectValues&)> setLive,
+                           std::function<void (const EffectValues&)> apply);
     bool inputMonitoring = false;                        // the armed tracks play their inputs
     bool countIn = false;                                // record after a bar of clicks
     SessionRecording::Rolls rolls;                       // pre-roll and post-roll, kept in the settings

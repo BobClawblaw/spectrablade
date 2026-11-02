@@ -35,6 +35,11 @@ namespace
     juce::PluginDescription parametricEqDescription()   { return describe ("Parametric EQ", "EQ", parametricEqId, 0x53425051); }  // "SBPQ"
     juce::PluginDescription compressorDescription()     { return describe ("Compressor", "Dynamics", compressorId, 0x53424350); }  // "SBCP"
     juce::PluginDescription limiterDescription()        { return describe ("Limiter", "Dynamics", limiterId, 0x53424c4d); }       // "SBLM"
+    juce::PluginDescription chorusDescription()         { return describe ("Chorus", "Modulation", chorusId, 0x53424348); }       // "SBCH"
+    juce::PluginDescription flangerDescription()        { return describe ("Flanger", "Modulation", flangerId, 0x5342464c); }     // "SBFL"
+    juce::PluginDescription phaserDescription()         { return describe ("Phaser", "Modulation", phaserId, 0x53425048); }       // "SBPH"
+
+    const juce::StringArray stageNames { "2", "4", "6", "8", "10", "12" };
 
     class Format final : public juce::AudioPluginFormat
     {
@@ -84,6 +89,12 @@ namespace
                 effect = std::make_unique<CompressorProcessor>();
             else if (d.fileOrIdentifier == limiterId)
                 effect = std::make_unique<LimiterProcessor>();
+            else if (d.fileOrIdentifier == chorusId)
+                effect = std::make_unique<SweptDelayProcessor> (SweptDelayProcessor::Kind::chorus);
+            else if (d.fileOrIdentifier == flangerId)
+                effect = std::make_unique<SweptDelayProcessor> (SweptDelayProcessor::Kind::flanger);
+            else if (d.fileOrIdentifier == phaserId)
+                effect = std::make_unique<PhaserProcessor>();
 
             if (effect == nullptr)
             {
@@ -104,7 +115,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 
 juce::Array<juce::PluginDescription> getDescriptions()
 {
-    return { parametricEqDescription(), compressorDescription(), limiterDescription() };
+    return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -559,5 +570,89 @@ void LimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
         delayPosition = (delayPosition + 1) % delay.getNumSamples();
     }
+}
+
+//==============================================================================
+SweptDelayProcessor::SweptDelayProcessor (Kind kind)
+    : BuiltInEffect (kind == Kind::chorus ? chorusDescription() : flangerDescription(),
+                     kind == Kind::chorus ? "SPECTRABLADE_CHORUS" : "SPECTRABLADE_FLANGER")
+{
+    // Modulation::Delay's ranges; each kind starts at its own defaults.
+    const auto start = kind == Kind::chorus ? Modulation::chorusDefaults() : Modulation::flangerDefaults();
+    rate = addFloat ("rate", "Rate", { 0.01f, 10.0f, 0.0f, 0.3f }, (float) start.rateHz, "Hz");
+    delay = addFloat ("delay", "Delay", { 0.0f, 50.0f, 0.0f, 0.4f }, (float) start.delayMs, "ms");
+    depth = addFloat ("depth", "Depth", { 0.0f, 50.0f, 0.0f, 0.4f }, (float) start.depthMs, "ms");
+    feedback = addFloat ("feedback", "Feedback", { -0.95f, 0.95f }, (float) start.feedback);
+    mix = addFloat ("mix", "Mix", { 0.0f, 100.0f }, (float) start.mixPercent, "%");
+    spread = addFloat ("spread", "Stereo Spread", { 0.0f, 180.0f }, (float) start.spreadDegrees, "deg");
+}
+
+Modulation::Delay SweptDelayProcessor::getSettings() const
+{
+    return { (double) rate->get(), (double) delay->get(), (double) depth->get(), (double) feedback->get(), (double) mix->get(), (double) spread->get() };
+}
+
+void SweptDelayProcessor::setSettings (const Modulation::Delay& s)
+{
+    setExactly (*rate, (float) s.rateHz);
+    setExactly (*delay, (float) s.delayMs);
+    setExactly (*depth, (float) s.depthMs);
+    setExactly (*feedback, (float) s.feedback);
+    setExactly (*mix, (float) s.mixPercent);
+    setExactly (*spread, (float) s.spreadDegrees);
+}
+
+void SweptDelayProcessor::prepareToPlay (double sampleRate, int)
+{
+    core.prepare (sampleRate, juce::jmax (1, getTotalNumInputChannels()));
+}
+
+void SweptDelayProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    core.set (getSettings());
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels()), buffer.getNumSamples());
+}
+
+//==============================================================================
+PhaserProcessor::PhaserProcessor()
+    : BuiltInEffect (phaserDescription(), "SPECTRABLADE_PHASER")
+{
+    const Modulation::Phaser start;
+    const juce::NormalisableRange<float> hz (20.0f, 20000.0f, 0.0f, 0.2f);
+    rate = addFloat ("rate", "Rate", { 0.01f, 10.0f, 0.0f, 0.3f }, (float) start.rateHz, "Hz");
+    low = addFloat ("low", "Low Frequency", hz, (float) start.lowHz, "Hz");
+    high = addFloat ("high", "High Frequency", hz, (float) start.highHz, "Hz");
+    stages = addChoice ("stages", "Stages", stageNames, start.stages / 2 - 1);
+    feedback = addFloat ("feedback", "Feedback", { -0.95f, 0.95f }, (float) start.feedback);
+    mix = addFloat ("mix", "Mix", { 0.0f, 100.0f }, (float) start.mixPercent, "%");
+    spread = addFloat ("spread", "Stereo Spread", { 0.0f, 180.0f }, (float) start.spreadDegrees, "deg");
+}
+
+Modulation::Phaser PhaserProcessor::getSettings() const
+{
+    return { (double) rate->get(), (double) low->get(), (double) high->get(), 2 * (stages->getIndex() + 1),
+             (double) feedback->get(), (double) mix->get(), (double) spread->get() };
+}
+
+void PhaserProcessor::setSettings (const Modulation::Phaser& s)
+{
+    setExactly (*rate, (float) s.rateHz);
+    setExactly (*low, (float) s.lowHz);
+    setExactly (*high, (float) s.highHz);
+    stages->setValueNotifyingHost (stages->convertTo0to1 ((float) juce::jlimit (0, stageNames.size() - 1, s.stages / 2 - 1)));
+    setExactly (*feedback, (float) s.feedback);
+    setExactly (*mix, (float) s.mixPercent);
+    setExactly (*spread, (float) s.spreadDegrees);
+}
+
+void PhaserProcessor::prepareToPlay (double sampleRate, int)
+{
+    core.prepare (sampleRate, juce::jmax (1, getTotalNumInputChannels()));
+}
+
+void PhaserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    core.set (getSettings());   // a high frequency below the low one sweeps the other way
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels()), buffer.getNumSamples());
 }
 }

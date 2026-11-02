@@ -62,7 +62,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -71,7 +71,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdLimiter);
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdPhaser);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1016,7 +1016,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdLimiter; ++id)
+    for (int id = cmdOpen; id <= cmdPhaser; ++id)
         ids.add (id);
 }
 
@@ -1090,6 +1090,12 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdCompressor: info.setInfo ("Compressor...", "Turn down what goes over a threshold by a ratio, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdLimiter:    info.setInfo ("Limiter...", "Keep every sample under a ceiling, with gain before it to make the audio louder", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdChorus:     info.setInfo ("Chorus...", "Thicken the sound with a slowly swept copy of it, a few milliseconds late", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdFlanger:    info.setInfo ("Flanger...", "Sweep a comb of notches through the sound with a very short swept delay fed back on itself", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdPhaser:     info.setInfo ("Phaser...", "Sweep notches through the sound with a chain of all-pass filters", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdTremolo:    info.setInfo ("Tremolo...", "Make the level rise and fall at a chosen rate and depth, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -1559,6 +1565,9 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdParametricEq: toggleParametricEq(); break;
         case cmdCompressor: showCompressor(); break;
         case cmdLimiter:    showLimiter(); break;
+        case cmdChorus:     showSweptDelay (false); break;
+        case cmdFlanger:    showSweptDelay (true); break;
+        case cmdPhaser:     showPhaser(); break;
         case cmdFadeRegions: showFadeEdges (true); break;
         case cmdNormalizeRegions:
             askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, [this] (float db)
@@ -1902,7 +1911,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, 0, cmdChorus, cmdFlanger, cmdPhaser });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -4684,6 +4693,168 @@ void MainComponent::showLimiter()
         if (auto next = Dynamics::limit (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), settings))
             applyEdit (std::move (next), "Limiter", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>& fields, PreviewOwner owner,
+                                      std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
+                                      std::function<std::unique_ptr<juce::AudioPluginInstance>()> make,
+                                      std::function<void (juce::AudioPluginInstance&, const EffectValues&)> setLive,
+                                      std::function<void (const EffectValues&)> apply)
+{
+    auto* box = new juce::AlertWindow (title, message, juce::MessageBoxIconType::NoIcon, this);
+    juce::StringArray ids;
+
+    for (auto& f : fields)
+    {
+        box->addTextEditor (f.id, juce::String (f.value, f.decimals), f.label);
+        box->getTextEditor (f.id)->setInputRestrictions (9, "-.0123456789");
+        ids.add (f.id);
+    }
+
+    const auto read = [box, ids]
+    {
+        EffectValues v;
+
+        for (auto& id : ids)
+            v[id] = box->getTextEditorContents (id).getDoubleValue();
+
+        return v;
+    };
+
+    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
+    preview->setSize (260, 24);
+    box->addCustomComponent (preview.get());
+    const auto update = [this, owner, read, valid, make, setLive, toggle = preview.get()]
+    {
+        if (! toggle->getToggleState())
+        {
+            if (previewOwner == owner)
+                stopPreview();
+
+            return;
+        }
+
+        const auto values = read();
+
+        if (! valid (values))
+            return;
+
+        if (auto* live = previewEffectOf (owner))
+        {
+            setLive (*live, values);
+            return;
+        }
+
+        auto made = make();
+        setLive (*made, values);
+        startPreview (owner, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
+
+        if (previewOwner != owner)
+            toggle->setToggleState (false, juce::dontSendNotification);
+    };
+    preview->onClick = update;
+
+    for (auto& id : ids)
+        box->getTextEditor (id)->onTextChange = update;
+
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, owner, read, valid, invalidText, apply, title, preview] (int result)
+    {
+        if (previewOwner == owner)
+            stopPreview();
+
+        if (result != 1)
+            return;
+
+        const auto values = read();
+
+        if (! valid (values))
+        {
+            showError (title, invalidText);
+            return;
+        }
+
+        apply (values);
+    }), true);
+}
+
+void MainComponent::showSweptDelay (bool flanger)
+{
+    const auto& s = flanger ? flangerSettings : chorusSettings;
+    const auto title = flanger ? juce::String ("Flanger") : juce::String ("Chorus");
+    const auto toDelay = [] (const EffectValues& v)
+    {
+        return Modulation::Delay { v.at ("rate"), v.at ("delay"), v.at ("depth"), v.at ("feedback"), v.at ("mix"), v.at ("spread") };
+    };
+    const auto kind = flanger ? BuiltInEffects::SweptDelayProcessor::Kind::flanger : BuiltInEffects::SweptDelayProcessor::Kind::chorus;
+
+    showEffectDialog (title,
+                      juce::String (flanger ? "A very short delay, fed back on itself, sweeps a comb of notches through the sound. "
+                                            : "A copy of the sound a few milliseconds late, its delay slowly swept, thickens it. ")
+                          + "The delay moves between its shortest and that plus the depth at the rate; the second channel's sweep runs the spread behind. "
+                            "Rate 0.01 to 10 Hz, delay and depth 0 to 50 ms, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
+                      { { "rate", "Rate (Hz)", s.rateHz, 2 }, { "delay", "Delay (ms)", s.delayMs, 1 }, { "depth", "Depth (ms)", s.depthMs, 1 },
+                        { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2 }, { "mix", "Mix (%)", s.mixPercent, 0 },
+                        { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0 } },
+                      flanger ? PreviewOwner::flanger : PreviewOwner::chorus,
+                      [toDelay] (const EffectValues& v) { return Modulation::isValid (toDelay (v)); },
+                      "A setting is out of range: rate 0.01 to 10 Hz, delay and depth 0 to 50 ms, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
+                      [kind] { return std::make_unique<BuiltInEffects::SweptDelayProcessor> (kind); },
+                      [toDelay] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          if (auto* d = dynamic_cast<BuiltInEffects::SweptDelayProcessor*> (&p))
+                              d->setSettings (toDelay (v));
+                      },
+                      [this, flanger, toDelay, title] (const EffectValues& v)
+                      {
+                          const auto settings = toDelay (v);
+                          (flanger ? flangerSettings : chorusSettings) = settings;
+                          const auto r = selectionOrAll();
+
+                          if (auto next = Modulation::sweptDelay (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), settings))
+                              applyEdit (std::move (next), title, waveform.getSelection());
+                      });
+}
+
+void MainComponent::showPhaser()
+{
+    const auto& s = phaserSettings;
+    const auto toPhaser = [] (const EffectValues& v)
+    {
+        return Modulation::Phaser { v.at ("rate"), v.at ("low"), v.at ("high"), (int) std::lround (v.at ("stages")),
+                                    v.at ("feedback"), v.at ("mix"), v.at ("spread") };
+    };
+
+    showEffectDialog ("Phaser",
+                      "A chain of all-pass filters, swept between the low and high frequencies at the rate and mixed with the sound, "
+                      "sweeps notches through it (one for every two stages; deepest at a 50 % mix). The second channel's sweep runs the spread behind. "
+                      "Rate 0.01 to 10 Hz, frequencies 20 Hz to 20 kHz (low up to high), stages 2 to 12 (even), feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
+                      { { "rate", "Rate (Hz)", s.rateHz, 2 }, { "low", "Low frequency (Hz)", s.lowHz, 0 }, { "high", "High frequency (Hz)", s.highHz, 0 },
+                        { "stages", "Stages (2 to 12, even)", (double) s.stages, 0 }, { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2 },
+                        { "mix", "Mix (%)", s.mixPercent, 0 }, { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0 } },
+                      PreviewOwner::phaser,
+                      [toPhaser] (const EffectValues& v)
+                      {
+                          return juce::exactlyEqual (v.at ("stages"), std::round (v.at ("stages"))) && Modulation::isValid (toPhaser (v));
+                      },
+                      "A setting is out of range: rate 0.01 to 10 Hz, frequencies 20 Hz to 20 kHz with the low one no higher than the high, "
+                      "an even number of stages from 2 to 12, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
+                      [] { return std::make_unique<BuiltInEffects::PhaserProcessor>(); },
+                      [toPhaser] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          if (auto* ph = dynamic_cast<BuiltInEffects::PhaserProcessor*> (&p))
+                              ph->setSettings (toPhaser (v));
+                      },
+                      [this, toPhaser] (const EffectValues& v)
+                      {
+                          phaserSettings = toPhaser (v);
+                          const auto r = selectionOrAll();
+
+                          if (auto next = Modulation::phaser (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), phaserSettings))
+                              applyEdit (std::move (next), "Phaser", waveform.getSelection());
+                      });
 }
 
 void MainComponent::showTremolo()
