@@ -373,4 +373,80 @@ void Panel::resized()
             bands[b][row]->setBounds (line.removeFromLeft (width).reduced (4, 4));
     }
 }
+
+//==============================================================================
+bool isValid (const DeEsser& d, double sampleRate)
+{
+    return sampleRate > 0.0 && inRange (d.frequency, 1000.0, 16000.0) && d.frequency < sampleRate / 2.0 && inRange (d.thresholdDb, -60.0, 0.0)
+        && inRange (d.maxReductionDb, 0.0, 24.0);
+}
+
+void DeEsserCore::prepare (int numChannels, double sampleRate)
+{
+    rate = sampleRate;
+    crossovers.assign ((size_t) juce::jmax (0, numChannels), {});
+    parts.assign (crossovers.size(), {});
+    set (settings);
+    reset();
+}
+
+void DeEsserCore::reset() noexcept
+{
+    for (auto& c : crossovers)
+        c.reset();
+
+    gainDb = 0.0;
+}
+
+void DeEsserCore::set (const DeEsser& d)
+{
+    settings = d;
+
+    for (auto& c : crossovers)
+        c.set (d.frequency, rate);
+
+    attack = Dynamics::smoothingCoefficient (attackMs, rate);
+    release = Dynamics::smoothingCoefficient (releaseMs, rate);
+}
+
+void DeEsserCore::process (float* const* channels, int numChannels, int numFrames) noexcept
+{
+    const auto n = juce::jmin (numChannels, (int) crossovers.size());
+
+    for (int i = 0; i < numFrames; ++i)
+    {
+        double level = 0.0;
+
+        for (int ch = 0; ch < n; ++ch)
+        {
+            auto& p = parts[(size_t) ch];
+            crossovers[(size_t) ch].split (channels[ch][i], p[0], p[1]);
+            level = juce::jmax (level, std::abs (p[1]));
+        }
+
+        // Down by however far the band is over the threshold, up to the reduction.
+        const auto overDb = level > 0.0 ? 20.0 * std::log10 (level) - settings.thresholdDb : -1.0;
+        const auto target = -juce::jlimit (0.0, settings.maxReductionDb, overDb);
+        const auto coefficient = target < gainDb ? attack : release;
+        gainDb = target + coefficient * (gainDb - target);
+        const auto factor = std::pow (10.0, gainDb / 20.0);
+
+        for (int ch = 0; ch < n; ++ch)
+        {
+            const auto& p = parts[(size_t) ch];
+            channels[ch][i] = (float) (settings.wholeSound ? (p[0] + p[1]) * factor : p[0] + p[1] * factor);
+        }
+    }
+}
+
+AudioEdits::Snapshot deEss (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, const DeEsser& d)
+{
+    if (! isValid (d, sampleRate))
+        return nullptr;
+
+    DeEsserCore core;
+    core.prepare (s.getNumChannels(), sampleRate);
+    core.set (d);
+    return runPrimed (s, start, end, sampleRate, core);
+}
 }

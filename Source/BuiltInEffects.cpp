@@ -44,6 +44,7 @@ namespace
     juce::PluginDescription convolutionDescription()    { return describe ("Convolution Reverb", "Reverb", convolutionId, 0x5342434f); }  // "SBCO"
 
     juce::PluginDescription multibandDescription()      { return describe ("Multiband Compressor", "Dynamics", multibandId, 0x53424d42); }   // "SBMB"
+    juce::PluginDescription deEsserDescription()        { return describe ("De-esser", "Dynamics", deEsserId, 0x53424445); }                 // "SBDE"
 
     juce::PluginDescription graphicEqDescription (int bands)
     {
@@ -117,6 +118,8 @@ namespace
                 effect = std::make_unique<GraphicEqProcessor> (31);
             else if (d.fileOrIdentifier == multibandId)
                 effect = std::make_unique<MultibandProcessor>();
+            else if (d.fileOrIdentifier == deEsserId)
+                effect = std::make_unique<DeEsserProcessor>();
 
             if (effect == nullptr)
             {
@@ -138,7 +141,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31), multibandDescription() };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -267,36 +270,81 @@ void BuiltInEffect::setPresetValues (const EffectPresets::Values& values)
 
 namespace
 {
-    /** A built-in effect's plain window: its presets above the list of its parameters. */
-    class PresetsAndParameters final : public juce::AudioProcessorEditor
+    /** A built-in effect's plain window: its presets above the list of its parameters, and, for an
+        effect that turns the sound down, a strip under them showing by how much as it plays. */
+    class PresetsAndParameters final : public juce::AudioProcessorEditor,
+                                       private juce::Timer
     {
     public:
-        explicit PresetsAndParameters (BuiltInEffect& e)
+        explicit PresetsAndParameters (BuiltInEffect& e, std::function<double()> reductionDb = {})
             : AudioProcessorEditor (e),
               presets (EffectPresets::userStore(), e.getPresetKey(), [&e] { return e.getPresetValues(); },
                        [&e] (const EffectPresets::Values& v) { e.setPresetValues (v); }),
-              parameters (e)
+              parameters (e), reading (std::move (reductionDb))
         {
             addAndMakeVisible (presets);
             addAndMakeVisible (parameters);
-            setSize (juce::jmax (400, parameters.getWidth()), parameters.getHeight() + 40);
+            setSize (juce::jmax (400, parameters.getWidth()), parameters.getHeight() + 40 + (reading != nullptr ? stripHeight : 0));
+
+            if (reading != nullptr)
+                startTimerHz (20);
+        }
+
+        ~PresetsAndParameters() override
+        {
+            stopTimer();
         }
 
         void paint (juce::Graphics& g) override
         {
             g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+
+            if (reading == nullptr)
+                return;
+
+            // "Reduction", the dB, and a bar growing from the right as the sound is turned down (24 dB full).
+            auto strip = getLocalBounds().removeFromBottom (stripHeight).reduced (12, 8);
+            g.setColour (juce::Colours::grey);
+            g.setFont (juce::FontOptions (12.0f));
+            g.drawText ("Reduction", strip.removeFromLeft (80), juce::Justification::centredLeft);
+            g.drawText (juce::String (shownDb, 1) + " dB", strip.removeFromRight (64), juce::Justification::centredRight);
+            auto bar = strip.reduced (8, 0).withSizeKeepingCentre (strip.getWidth() - 16, 6);
+            g.setColour (juce::Colour (0xff1a1f24));
+            g.fillRect (bar);
+            g.setColour (juce::Colour (0xffe0a040));
+            g.fillRect (bar.removeFromRight (juce::roundToInt (bar.getWidth() * juce::jlimit (0.0, 1.0, -shownDb / 24.0))));
         }
 
         void resized() override
         {
             auto r = getLocalBounds();
             presets.setBounds (r.removeFromTop (40).reduced (8, 6));
+
+            if (reading != nullptr)
+                r.removeFromBottom (stripHeight);
+
             parameters.setBounds (r);
         }
 
+        double getShownReductionDb() const noexcept                   { return shownDb; }
+
     private:
+        static constexpr int stripHeight = 32;
+
+        void timerCallback() override
+        {
+            // Rounded to a tenth of a dB, so a steady signal doesn't repaint.
+            if (const auto now = std::round (reading() * 10.0) / 10.0; ! juce::exactlyEqual (now, shownDb))
+            {
+                shownDb = now;
+                repaint (getLocalBounds().removeFromBottom (stripHeight));
+            }
+        }
+
         EffectPresets::Bar presets;
         juce::GenericAudioProcessorEditor parameters;
+        std::function<double()> reading;
+        double shownDb = 0.0;
     };
 }
 
@@ -1383,5 +1431,66 @@ void MultibandEditor::resized()
     auto r = getLocalBounds();
     presets.setBounds (r.removeFromTop (40).reduced (8, 6));
     panel.setBounds (r);
+}
+
+//==============================================================================
+DeEsserProcessor::DeEsserProcessor()
+    : BuiltInEffect (deEsserDescription(), "SPECTRABLADE_DE_ESSER")
+{
+    const Multiband::DeEsser start;
+    frequency = addFloat ("frequency", "Frequency", { 1000.0f, 16000.0f, 0.0f, 0.4f }, (float) start.frequency, "Hz");
+    threshold = addFloat ("threshold", "Threshold", { -60.0f, 0.0f }, (float) start.thresholdDb, "dB");
+    reduction = addFloat ("reduction", "Reduction", { 0.0f, 24.0f }, (float) start.maxReductionDb, "dB");
+    mode = addChoice ("mode", "Turn Down", { "The high band", "The whole sound" }, 0);   // the high band, as Multiband::DeEsser starts
+}
+
+Multiband::DeEsser DeEsserProcessor::getSettings() const
+{
+    // Below 0.45 of the rate, as the offline effect needs it under half.
+    return { juce::jmin ((double) frequency->get(), 0.45 * rate), (double) threshold->get(), (double) reduction->get(), mode->getIndex() == 1 };
+}
+
+void DeEsserProcessor::setSettings (const Multiband::DeEsser& s)
+{
+    setExactly (*frequency, (float) s.frequency);
+    setExactly (*threshold, (float) s.thresholdDb);
+    setExactly (*reduction, (float) s.maxReductionDb);
+    *mode = s.wholeSound ? 1 : 0;
+}
+
+void DeEsserProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
+    core.prepare (channelsPrepared, rate);
+    applied = getSettings();
+    core.set (applied);
+    core.reset();
+}
+
+void DeEsserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    const auto now = getSettings();
+
+    if (! juce::exactlyEqual (now.frequency, applied.frequency) || ! juce::exactlyEqual (now.thresholdDb, applied.thresholdDb)
+        || ! juce::exactlyEqual (now.maxReductionDb, applied.maxReductionDb) || now.wholeSound != applied.wholeSound)
+    {
+        applied = now;
+        core.set (applied);
+    }
+
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
+    reductionDb = core.getReductionDb();
+}
+
+void DeEsserProcessor::reset()
+{
+    core.reset();
+    reductionDb = 0.0;
+}
+
+juce::AudioProcessorEditor* DeEsserProcessor::createEditor()
+{
+    return new PresetsAndParameters (*this, [this] { return getReductionDb(); });
 }
 }

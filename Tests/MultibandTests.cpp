@@ -112,6 +112,34 @@ void runMultibandTests()
                "5 kHz within 0.1 dB, and the high band the reverse");
     }
 
+    // The de-esser: a loud 10 kHz tone turned down by up to the reduction, a 500 Hz tone beside it left alone (or not, for the whole sound).
+    {
+        Multiband::DeEsser d;
+        d.frequency = 4000.0;
+        d.thresholdDb = -40.0;
+        d.maxReductionDb = 10.0;
+        const auto in = sines ({ { 500.0, 0.3 }, { 10000.0, 0.3 } });
+        const auto snap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (in));
+        const auto split = readAll (*Multiband::deEss (*snap, 0, 48000, rate, d));
+        d.wholeSound = true;
+        const auto whole = readAll (*Multiband::deEss (*snap, 0, 48000, rate, d));
+        const auto ess = db (amplitude (split, 10000.0, 24000, 24000) / amplitude (in, 10000.0, 24000, 24000));
+        const auto voice = db (amplitude (split, 500.0, 24000, 24000) / amplitude (in, 500.0, 24000, 24000));
+        const auto wholeVoice = db (amplitude (whole, 500.0, 24000, 24000) / amplitude (in, 500.0, 24000, 24000));
+
+        // Quiet: below the threshold nothing is turned down.
+        d.wholeSound = false;
+        const auto quietIn = sines ({ { 10000.0, 0.005 } });
+        const auto quiet = readAll (*Multiband::deEss (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (quietIn)), 0, 48000, rate, d));
+        const auto quietChange = db (amplitude (quiet, 10000.0, 24000, 24000) / amplitude (quietIn, 10000.0, 24000, 24000));
+
+        std::cout << "      de-esser: 10 kHz " << ess << " dB, 500 Hz " << voice << " dB; whole sound: 500 Hz " << wholeVoice
+                  << " dB; a quiet 10 kHz " << quietChange << " dB" << std::endl;
+        check (std::abs (ess + 10.0) < 0.5 && std::abs (voice) < 0.1 && std::abs (wholeVoice + 10.0) < 0.2 && std::abs (quietChange) < 0.05,
+               "de-esser at 4 kHz: a loud 10 kHz tone is turned down by the full 10 dB (to 0.5 dB, the split's overlap) while 500 Hz beside it stays within "
+               "0.1 dB; turning the whole sound down takes 500 Hz down 10 dB too; a 10 kHz tone below the threshold is left within 0.05 dB");
+    }
+
     // Refused settings.
     {
         const auto snap = AudioEdits::fromBuffer (sines ({ { 1000.0, 0.5 } }, 1000));
@@ -119,12 +147,18 @@ void runMultibandTests()
         close.highCrossover = 300.0;   // under an octave above 200 Hz
         auto loud = unity();
         loud.outputDb = 30.0;
+        Multiband::DeEsser tooHigh;
+        tooHigh.frequency = 20000.0;
+        Multiband::DeEsser atRate;
+        atRate.frequency = 12000.0;
         check (Multiband::compress (*snap, 0, 1000, rate, close) == nullptr && Multiband::compress (*snap, 0, 1000, rate, loud) == nullptr
-                   && Multiband::compress (*snap, 500, 500, rate, unity()) == nullptr,
-               "multiband compressor: crossovers under an octave apart, an output past 24 dB, an empty range refused");
+                   && Multiband::compress (*snap, 500, 500, rate, unity()) == nullptr && Multiband::deEss (*snap, 0, 1000, rate, tooHigh) == nullptr
+                   && Multiband::deEss (*snap, 0, 1000, 22050.0, atRate) == nullptr && Multiband::deEss (*snap, 0, 1000, rate, atRate) != nullptr,
+               "multiband and de-esser: crossovers under an octave apart, an output past 24 dB, an empty range, a de-esser above 16 kHz or at "
+               "half the rate refused");
     }
 
-    // Live: in blocks of 1, 7, 512 and 3,000 frames give the offline samples bit for bit; state and presets keep the settings.
+    // Live: both in blocks of 1, 7, 512 and 3,000 frames give the offline samples bit for bit; state and presets keep the settings.
     {
         juce::Random r (17);
         juce::AudioBuffer<float> in (2, 96000);
@@ -172,6 +206,11 @@ void runMultibandTests()
         multiband.setSettings (m);
         const auto snap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (in));
         const auto multibandSame = same (runLive (multiband), readAll (*Multiband::compress (*snap, 0, 96000, rate, multiband.getSettings())));
+
+        Multiband::DeEsser d { 5500.0, -35.0, 8.0, false };
+        BuiltInEffects::DeEsserProcessor deEsser;
+        deEsser.setSettings (d);
+        const auto deEsserSame = same (runLive (deEsser), readAll (*Multiband::deEss (*snap, 0, 96000, rate, deEsser.getSettings())));
 
         juce::MemoryBlock state;
         multiband.getStateInformation (state);
@@ -239,7 +278,7 @@ void runMultibandTests()
         check (windowWorks, "built-in multiband compressor: its window shows the effect's settings, a change on it reaches the effect (and "
                             "no change leaves every parameter as it was), and one made at the effect (automation, a preset) shows in it");
 
-        // The window's readings: what the core ended on, the same input run through them offline-style.
+        // The windows' readings: what the cores ended on, the same input run through them offline-style.
         auto readingsRight = false;
         {
             Multiband::CompressorCore mc;
@@ -249,16 +288,26 @@ void runMultibandTests()
             mc.process (a.getArrayOfWritePointers(), 2, a.getNumSamples());
             runLive (multiband);
 
-            readingsRight = multiband.getReductionDb() == mc.getReductionDb() && mc.getReductionDb()[2] < 0.0;
+            Multiband::DeEsserCore dc;
+            dc.prepare (2, rate);
+            deEsser.setSettings (d);
+            dc.set (deEsser.getSettings());
+            juce::AudioBuffer<float> b (in);
+            dc.process (b.getArrayOfWritePointers(), 2, b.getNumSamples());
+            runLive (deEsser);
+
+            readingsRight = multiband.getReductionDb() == mc.getReductionDb() && juce::exactlyEqual (deEsser.getReductionDb(), dc.getReductionDb())
+                            && dc.getReductionDb() < 0.0;
             multiband.reset();
-            readingsRight = readingsRight && multiband.getReductionDb() == std::array<double, 3> {};
+            deEsser.reset();
+            readingsRight = readingsRight && juce::exactlyEqual (deEsser.getReductionDb(), 0.0) && multiband.getReductionDb() == std::array<double, 3> {};
         }
 
-        check (readingsRight, "built-in multiband compressor: the reductions its window shows are what the core ended the last block on, "
-                              "and zero after a reset");
+        check (readingsRight, "built-in multiband compressor and de-esser: the reductions their windows show are what the cores ended the "
+                              "last block on, and zero after a reset");
 
-        check (multibandSame && kept && apart && multiband.getLatencySamples() == 0,
-               "built-in multiband compressor: played in blocks of 1, 7, 512 and 3,000 frames it gives the offline samples bit for bit; state "
-               "and preset values restore every setting; crossovers set too close are moved an octave apart; no latency");
+        check (multibandSame && deEsserSame && kept && apart && multiband.getLatencySamples() == 0 && deEsser.getLatencySamples() == 0,
+               "built-in multiband compressor and de-esser: played in blocks of 1, 7, 512 and 3,000 frames they give the offline samples bit for "
+               "bit; state and preset values restore every setting; crossovers set too close are moved an octave apart; no latency");
     }
 }

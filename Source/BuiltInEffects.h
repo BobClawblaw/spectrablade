@@ -27,6 +27,7 @@ namespace BuiltInEffects
     constexpr const char* graphicEq10Id = "spectrablade:graphic-eq-10";
     constexpr const char* graphicEq31Id = "spectrablade:graphic-eq-31";
     constexpr const char* multibandId = "spectrablade:multiband-compressor";
+    constexpr const char* deEsserId = "spectrablade:de-esser";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -534,5 +535,40 @@ namespace BuiltInEffects
         std::vector<float> panelValues;  // the panel's own values then (its sliders snap, the parameters round)
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultibandEditor)
+    };
+
+    /** The de-esser, live: frequency, threshold, reduction and what to turn down as parameters (over
+        Effects > De-esser's ranges). It runs a frame at a time with Multiband::DeEsserCore, so over a
+        whole file from its start it gives Multiband::deEss's samples. No latency. */
+    class DeEsserProcessor final : public BuiltInEffect
+    {
+    public:
+        DeEsserProcessor();
+
+        Multiband::DeEsser getSettings() const;
+        void setSettings (const Multiband::DeEsser&);
+
+        double getReductionDb() const noexcept                        { return reductionDb.load(); }
+
+        /** The plain window, with the reduction shown under the parameters as it plays. */
+        juce::AudioProcessorEditor* createEditor() override;
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    private:
+        std::atomic<double> reductionDb { 0.0 };   // the core's at the end of the last block, for the window
+        juce::AudioParameterFloat* frequency = nullptr;
+        juce::AudioParameterFloat* threshold = nullptr;
+        juce::AudioParameterFloat* reduction = nullptr;
+        juce::AudioParameterChoice* mode = nullptr;
+
+        Multiband::DeEsserCore core;
+        Multiband::DeEsser applied;
+        double rate = 48000.0;
+        int channelsPrepared = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeEsserProcessor)
     };
 }

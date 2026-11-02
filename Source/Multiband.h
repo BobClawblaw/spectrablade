@@ -2,8 +2,8 @@
 
 #include "Dynamics.h"
 
-/** Band-split dynamics: a three-band compressor. It splits the sound with Linkwitz-Riley
-    crossovers (two second-order Butterworth filters in a row, 24 dB an octave), whose
+/** Band-split dynamics: a three-band compressor and a de-esser. Both split the sound with
+    Linkwitz-Riley crossovers (two second-order Butterworth filters in a row, 24 dB an octave), whose
     bands add back up to the sound with every frequency at its level, only its phase turned. */
 namespace Multiband
 {
@@ -110,4 +110,44 @@ namespace Multiband
         std::array<std::array<juce::Slider*, 5>, 3> bands {};
         std::optional<std::array<double, 3>> reductionDb;   // shown once set
     };
+
+    //==============================================================================
+    struct DeEsser
+    {
+        double frequency = 6000.0;       // Hz: the sibilance band starts here
+        double thresholdDb = -30.0;      // the band's level where it starts being turned down
+        double maxReductionDb = 12.0;    // the most it is turned down
+        bool wholeSound = false;         // turn the whole sound down, not just the band above the frequency
+    };
+
+    /** Whether the settings can be used at this rate: a frequency from 1 to 16 kHz below half the
+        rate, a threshold from -60 to 0 dB, a reduction from 0 to 24 dB. */
+    bool isValid (const DeEsser&, double sampleRate);
+
+    /** The de-esser a frame at a time: the loudest channel's part above the frequency is the level;
+        above the threshold, the band (or the whole sound) is turned down by the excess, up to the
+        reduction, moving down in 1 ms and back up in 60 ms. */
+    class DeEsserCore
+    {
+    public:
+        static constexpr double attackMs = 1.0, releaseMs = 60.0;
+
+        void prepare (int numChannels, double sampleRate);
+        void reset() noexcept;
+        void set (const DeEsser&);
+
+        void process (float* const* channels, int numChannels, int numFrames) noexcept;
+
+        double getReductionDb() const noexcept               { return gainDb; }
+
+    private:
+        double rate = 48000.0;
+        DeEsser settings;
+        std::vector<Crossover> crossovers;
+        std::vector<std::array<double, 2>> parts;
+        double attack = 0.0, release = 0.0, gainDb = 0.0;
+    };
+
+    /** De-esses [start, end). Nullptr for settings that aren't valid or an empty range. */
+    AudioEdits::Snapshot deEss (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const DeEsser&);
 }

@@ -149,7 +149,9 @@ private:
     void showLimiter();
     Dynamics::Compressor compressorSettings;
     Multiband::Compressor multibandSettings;
+    Multiband::DeEsser deEsserSettings;
     void showMultiband();
+    void showDeEsser();
     Dynamics::Limiter limiterSettings;
     void showSweptDelay (bool flanger);
     void showPhaser();
@@ -377,7 +379,7 @@ private:
         before the rack, until stopPreview. A preview from another owner takes over, and the old
         one's ended callback is called (so it can untick its Preview button); stopPreview calls
         it too. An owner already previewing just has its effect swapped. Files only. */
-    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution, graphicEq, multiband };
+    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution, graphicEq, multiband, deEsser };
     void startPreview (PreviewOwner, std::unique_ptr<juce::AudioPluginInstance>, std::function<void()> ended);
     void stopPreview();
     juce::AudioPluginInstance* previewEffectOf (PreviewOwner) const;
