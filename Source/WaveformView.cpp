@@ -528,7 +528,7 @@ void WaveformView::drawEmpty (juce::Graphics& g, juce::Rectangle<int> area)
 
     if (getRecentFiles != nullptr)
         for (auto& f : getRecentFiles())
-            if (f.existsAsFile() && recent.size() < 8)
+            if (recent.size() < 8)
                 recent.add (f);
 
     const auto lineHeight = 24;

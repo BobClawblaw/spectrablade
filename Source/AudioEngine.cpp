@@ -581,8 +581,11 @@ bool AudioEngine::auditionFile (const juce::File& file)
 
 juce::String AudioEngine::openFile (const juce::File& file)
 {
-    auto loaded = AudioFileIO::load (file, formatManager);
+    return adoptFile (file, AudioFileIO::load (file, formatManager));
+}
 
+juce::String AudioEngine::adoptFile (const juce::File& file, AudioFileIO::Loaded loaded)
+{
     if (loaded.error.isNotEmpty())
         return loaded.error;
 

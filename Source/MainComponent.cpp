@@ -877,9 +877,15 @@ MainComponent::MainComponent()
         juce::Array<juce::File> files;
 
         for (int i = 0; i < recentFiles.getNumFiles(); ++i)
-            files.add (recentFiles.getFile (i));
+            if (isThere (recentFiles.getFile (i)))
+                files.add (recentFiles.getFile (i));
 
         return files;
+    };
+    fileChecks.onChange = [this]
+    {
+        waveform.repaint();
+        menuItemsChanged();
     };
     waveform.onRecentFileClicked = [this] (const juce::File& f) { openDocument (f); };
     rackView.onEditSlot = [this] (int index) { showEditor (index); };
@@ -902,15 +908,27 @@ MainComponent::MainComponent()
 
     RecentFiles::restore (recentFiles, *settings);
 
-    // Reopening the last file is quiet: one that can no longer be read is logged and forgotten.
-    if (const juce::File last (settings->getValue (lastFileKey)); last.existsAsFile())
-    {
-        if (const auto error = engine.openFile (last); error.isNotEmpty())
+    // Reopening the last file is quiet, and read off the message thread, so a slow or absent volume
+    // doesn't hold up the window: it comes in when read, unless something else was opened, recorded
+    // or edited first. One that can no longer be read is logged and forgotten; one that isn't there
+    // (its volume not mounted) is kept for next time.
+    if (const juce::File last (settings->getValue (lastFileKey)); last != juce::File())
+        BackgroundLoad::start (last, [safe = juce::Component::SafePointer<MainComponent> (this), last] (AudioFileIO::Loaded loaded)
         {
-            juce::Logger::writeToLog ("Could not reopen " + last.getFullPathName() + ": " + error);
-            settings->removeValue (lastFileKey);
-        }
-    }
+            if (safe == nullptr || (loaded.snapshot == nullptr && loaded.error.isEmpty()))
+                return;
+
+            auto& doc = safe->engine.document;
+
+            if (doc.getFile() != juce::File() || doc.canUndo() || safe->isRecording())
+                return;
+
+            if (const auto error = safe->engine.adoptFile (last, std::move (loaded)); error.isNotEmpty())
+            {
+                juce::Logger::writeToLog ("Could not reopen " + last.getFullPathName() + ": " + error);
+                safe->appProperties.getUserSettings()->removeValue (lastFileKey);
+            }
+        });
 
     refreshOutputChoices();
     refreshInputChoices();
@@ -2038,7 +2056,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     {
         case 0:
             add ({ cmdOpen });
-            menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId), recentFiles.getNumFiles() > 0 && ! isRecording());
+            menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:

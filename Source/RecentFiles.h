@@ -31,12 +31,15 @@ namespace RecentFiles
         settings.setValue (settingsKey, list.toString());
     }
 
-    /** The Open Recent submenu: an item for each file that still exists, with the id baseId plus
-        its place in the list, then Clear Menu (baseId + maxFiles). */
-    inline juce::PopupMenu createMenu (juce::RecentlyOpenedFilesList& list, int baseId)
+    /** The Open Recent submenu: an item for each file shown (those known to be there), with the
+        id baseId plus its place in the list, then Clear Menu (baseId + maxFiles). */
+    inline juce::PopupMenu createMenu (juce::RecentlyOpenedFilesList& list, int baseId, const std::function<bool (const juce::File&)>& shown)
     {
         juce::PopupMenu menu;
-        list.createPopupMenuItems (menu, baseId, false, true);
+
+        for (int i = 0; i < list.getNumFiles(); ++i)
+            if (const auto f = list.getFile (i); shown (f))
+                menu.addItem (baseId + i, f.getFileName());
 
         if (list.getNumFiles() > 0)
         {

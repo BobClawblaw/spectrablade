@@ -2,6 +2,13 @@
 
 Each milestone as it was built, newest first, with what the tests measured on the development Mac. Releases are marked where they were cut.
 
+## Unreleased
+
+**Milestone 196: A quick launch with a network volume down**
+- The window no longer waits for a volume that doesn't answer. The last file is reopened on a thread of its own and comes into the editor when read, unless something else was opened, recorded or edited first; one whose volume isn't there is kept for next time, and one that can't be read is forgotten as before. The recent files under the empty editor, and in File > Open Recent, are checked off the message thread too, and a file shows once it is found there; the empty editor used to check every recent file each time it painted, and the menu each time it was built.
+- Measured by the tests: a file check that never returns leaves the caller within 50 ms with no answer, runs once per file at a time, reports when it ends, and is made again once its answer is a few seconds old; checks still running when their owner goes end quietly; a file read on its own thread is handed to the message thread, and one that isn't there gives nothing and no error; the empty editor lists the recent files once checked. The whole suite passed.
+- Measured on a WebDAV share mounted from a server that was then paused (a `stat` on it waited more than 15 seconds), with the last file and the first recent file on it: 0.9.2 showed no window in 30 seconds, then opened with the file 0.6 seconds after the server came back. This build showed its window in 0.8, 3.9, 0.9 and 1.0 seconds over four launches (0.6 seconds with no share mounted); a sample of the last launch's message thread found no file calls. When the file's read waited on the share, it came into the editor after the server came back (2.9 seconds after, in the one run timed). What held the 3.9-second launch up was not found.
+
 ## Released
 
 **Release 0.9.2: the third alpha**

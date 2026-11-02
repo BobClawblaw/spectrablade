@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "AudioDocument.h"
+#include "AudioFileIO.h"
 #include "Recorder.h"
 #include "Session.h"
 #include "TrackEffects.h"
@@ -253,6 +254,10 @@ public:
 
     /** Loads a file into the document. Returns an error message, or empty on success. */
     juce::String openFile (const juce::File& file);
+
+    /** Takes a file already read (by openFile, or on another thread) into the document. Returns
+        its error, or empty on success. */
+    juce::String adoptFile (const juce::File& file, AudioFileIO::Loaded);
 
     /** Plays a file once from its start without opening it (see DocumentPlayerProcessor::audition).
         Returns false, with nothing playing, when it can't be read; an empty File stops it. */

@@ -4,6 +4,7 @@
 #include "AudioEngine.h"
 #include "AuditionPreview.h"
 #include "WindowPlaces.h"
+#include "FileChecks.h"
 #include "ClickRepair.h"
 #include "LevelMeter.h"
 #include "TransportBar.h"
@@ -332,6 +333,8 @@ private:
     juce::Label fileLabel, deviceLabel, selectionLabel;   // selectionLabel: the selected clip, in the multitrack
     TapTempo tapper;
     juce::RecentlyOpenedFilesList recentFiles;
+    FileChecks fileChecks;   // whether the recent files are there, found out off the message thread
+    bool isThere (const juce::File& f)            { return fileChecks.check (f) == FileChecks::Known::exists; }
     static constexpr int recentBaseId = 0x7000;   // menu ids for File > Open Recent, clear of the command ids
     static constexpr int fadeShapeBaseId = 0x7100;   // menu ids for Effects > Fade Shape
     void noteRecent (const juce::File&);

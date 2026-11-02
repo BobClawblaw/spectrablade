@@ -70,7 +70,7 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
     /** With no audio open, the view lists these files (the recent ones), each opened with a click. */
-    std::function<juce::Array<juce::File>()> getRecentFiles;
+    std::function<juce::Array<juce::File>()> getRecentFiles;   // those known to be there, newest first
     std::function<void (const juce::File&)> onRecentFileClicked;
 
     /** Where the empty view drew each recent file, for clicks (and the tests). */

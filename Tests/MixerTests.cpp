@@ -14,6 +14,7 @@
 #include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
 #include "../Source/RecentFiles.h"
+#include "../Source/FileChecks.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/SessionCollect.h"
 #include "../Source/SessionNotes.h"
@@ -1244,14 +1245,28 @@ namespace
         a.getFile().replaceWithText ("x");
         b.getFile().replaceWithText ("x");
         const auto missing = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("no-such-recent-file.wav");
-        view.getRecentFiles = [&] { return juce::Array<juce::File> { a.getFile(), missing, b.getFile() }; };
+        // As the app gives them: only the files its checks, off the message thread, have found.
+        FileChecks checks;
+        bool checked = false;
+        checks.onChange = [&] { checked = checks.getNumRunning() == 0; };
+        view.getRecentFiles = [&]
+        {
+            juce::Array<juce::File> found;
+            for (auto& f : { a.getFile(), missing, b.getFile() })
+                if (checks.check (f) == FileChecks::Known::exists)
+                    found.add (f);
+            return found;
+        };
         juce::File clicked;
         view.onRecentFileClicked = [&] (const juce::File& f) { clicked = f; };
         view.setBounds (0, 0, 900, 500);
         view.createComponentSnapshot (view.getLocalBounds());   // paints, which lays out the list
+        const auto noneYet = view.getRecentLinks().empty();
+        TestUtils::runUntil ([&] { return checked; }, 3000);
+        view.createComponentSnapshot (view.getLocalBounds());
 
         const auto& links = view.getRecentLinks();
-        const auto listed = links.size() == 2 && links[0].second == a.getFile() && links[1].second == b.getFile();
+        const auto listed = noneYet && links.size() == 2 && links[0].second == a.getFile() && links[1].second == b.getFile();
 
         if (listed)
         {
@@ -1261,7 +1276,7 @@ namespace
         }
 
         check (listed && clicked == b.getFile(),
-               "empty editor: the recent files that still exist are listed under the hint, and clicking one asks to open that file");
+               "empty editor: the recent files found to exist are listed under the hint once checked, and clicking one asks to open that file");
     }
 
     void testWaveformDivider()
@@ -1622,7 +1637,7 @@ namespace
 
         // The menu leaves out files that have gone, keeping each item's id at its place in the list.
         files[11].deleteFile();
-        const auto menu = RecentFiles::createMenu (list, 100);
+        const auto menu = RecentFiles::createMenu (list, 100, [] (const juce::File& f) { return f.existsAsFile(); });
         std::vector<std::pair<int, juce::String>> items;
 
         for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
@@ -1636,10 +1651,100 @@ namespace
         RecentFiles::clear (list, settings);
         juce::RecentlyOpenedFilesList cleared;
         RecentFiles::restore (cleared, settings);
-        const auto emptied = list.getNumFiles() == 0 && cleared.getNumFiles() == 0 && RecentFiles::createMenu (list, 100).getNumItems() == 0;
+        const auto emptied = list.getNumFiles() == 0 && cleared.getNumFiles() == 0 && RecentFiles::createMenu (list, 100, [] (const juce::File&) { return true; }).getNumItems() == 0;
         folder.deleteRecursively();
         check (capped && moved && same && listed && kinds && emptied,
                "open recent: newest first, ten kept, reopening moves to the top, kept in the settings, gone files left off the menu, and cleared");
+    }
+
+    void testSlowVolumes()
+    {
+        using Known = FileChecks::Known;
+        const juce::File here ("/Volumes/Share/here.wav"), gone ("/Volumes/Share/gone.wav");
+
+        // A volume that doesn't answer: each check waits until let go.
+        juce::WaitableEvent letGo (true);
+        std::atomic<int> calls { 0 };
+        int changes = 0;
+        bool first = false, again = false, fast = false, oneAtATime = false, found = false, stale = false;
+
+        {
+            FileChecks checks ([&] (const juce::File& f) { ++calls; letGo.wait (5000); return f == here; }, 200);
+            checks.onChange = [&] { ++changes; };
+            const auto t0 = juce::Time::getMillisecondCounterHiRes();
+            first = checks.check (here) == Known::unknown;
+            again = checks.check (here) == Known::unknown && checks.check (gone) == Known::unknown;
+            fast = juce::Time::getMillisecondCounterHiRes() - t0 < 50.0;
+            juce::Thread::sleep (50);
+            oneAtATime = calls == 2 && checks.getNumRunning() == 2;
+            letGo.signal();
+            found = TestUtils::runUntil ([&] { return changes >= 2; }, 3000)
+                    && checks.check (here) == Known::exists && checks.check (gone) == Known::missing;
+
+            // A result goes stale: asked for again, the old answer comes back and a new check starts.
+            juce::Thread::sleep (250);
+            stale = checks.check (here) == Known::exists && TestUtils::runUntil ([&] { return calls == 3 && checks.getNumRunning() == 0; }, 3000);
+        }
+
+        check (first && again && fast && oneAtATime && found && stale,
+               "slow volumes: a file check that hangs leaves the caller at once (unknown), runs once per file at a time, "
+               "reports when it ends, and is made again once the answer is old");
+
+        // Gone before its check ends: the late answer is dropped.
+        juce::WaitableEvent hold (true);
+        std::atomic<bool> ended { false };
+        bool lateChange = false;
+        {
+            FileChecks checks ([&] (const juce::File&) { hold.wait (5000); ended = true; return true; });
+            checks.onChange = [&] { lateChange = true; };
+            checks.check (here);
+        }
+        hold.signal();
+        TestUtils::runUntil ([&] { return ended.load(); }, 3000);
+        TestUtils::runUntil ([] { return false; }, 100);
+        check (ended && ! lateChange, "slow volumes: checks still running when their owner goes end quietly");
+
+        // Reading a file on its own thread: start returns at once; the result comes on the message thread.
+        juce::WaitableEvent loadGo (true);
+        bool arrived = false, onMessageThread = false, loadFast = false;
+        int frames = 0;
+        const auto t0 = juce::Time::getMillisecondCounterHiRes();
+        BackgroundLoad::start (here, [&] (AudioFileIO::Loaded l)
+        {
+            arrived = true;
+            onMessageThread = juce::MessageManager::getInstance()->isThisTheMessageThread();
+            frames = l.snapshot != nullptr ? (int) l.snapshot->getNumFrames() : -1;
+        },
+        [&] (const juce::File&)
+        {
+            loadGo.wait (5000);
+            juce::AudioBuffer<float> b (1, 300);
+            b.clear();
+            return AudioFileIO::Loaded { AudioEdits::fromBuffer (std::move (b)), 48000.0, 24, {}, {} };
+        });
+        loadFast = juce::Time::getMillisecondCounterHiRes() - t0 < 50.0;
+        const auto notYet = ! arrived;
+        loadGo.signal();
+        TestUtils::runUntil ([&] { return arrived; }, 3000);
+
+        // The real reader: a file that isn't there gives nothing and no error; one that is, its audio.
+        const auto missing = BackgroundLoad::readIfThere (gone);
+        const juce::TemporaryFile wav (".wav");
+        {
+            juce::AudioBuffer<float> b (2, 1234);
+            for (int i = 0; i < 1234; ++i)
+                for (int ch = 0; ch < 2; ++ch)
+                    b.setSample (ch, i, (float) (i % 100) / 200.0f);
+            juce::AudioFormatManager formats;
+            formats.registerBasicFormats();
+            AudioFileIO::save (*AudioEdits::fromBuffer (std::move (b)), 44100.0, wav.getFile(), 32, formats);
+        }
+        const auto real = BackgroundLoad::readIfThere (wav.getFile());
+
+        check (loadFast && notYet && arrived && onMessageThread && frames == 300
+                   && missing.snapshot == nullptr && missing.error.isEmpty()
+                   && real.snapshot != nullptr && real.snapshot->getNumFrames() == 1234 && real.snapshot->getNumChannels() == 2 && real.sampleRate == 44100.0,
+               "slow volumes: a file is read on its own thread and handed to the message thread; a missing one gives nothing, no error");
     }
 
     void testClipsCsv()
@@ -1731,6 +1836,7 @@ void runMixerTests (AudioEngine& engine)
     testSoloSafe (engine);
     testStripMenu (engine);
     testRecentFiles();
+    testSlowVolumes();
     testWaveformDivider();
     testWindowPlaces();
     testClipsCsv();
