@@ -8,6 +8,7 @@
 #include "../Source/ClipProperties.h"
 #include "../Source/KeyShortcuts.h"
 #include "../Source/TransportBar.h"
+#include "../Source/WaveformView.h"
 #include "../Source/LoadReadout.h"
 #include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
@@ -1234,6 +1235,34 @@ namespace
                                 "dashes without a selection");
     }
 
+    void testEmptyEditorRecentFiles()
+    {
+        AudioEngine engine;
+        WaveformView view (engine);
+        const juce::TemporaryFile a ("first.wav"), b ("second.wav");
+        a.getFile().replaceWithText ("x");
+        b.getFile().replaceWithText ("x");
+        const auto missing = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("no-such-recent-file.wav");
+        view.getRecentFiles = [&] { return juce::Array<juce::File> { a.getFile(), missing, b.getFile() }; };
+        juce::File clicked;
+        view.onRecentFileClicked = [&] (const juce::File& f) { clicked = f; };
+        view.setBounds (0, 0, 900, 500);
+        view.createComponentSnapshot (view.getLocalBounds());   // paints, which lays out the list
+
+        const auto& links = view.getRecentLinks();
+        const auto listed = links.size() == 2 && links[0].second == a.getFile() && links[1].second == b.getFile();
+
+        if (listed)
+        {
+            const auto centre = links[1].first.getCentre().toFloat();
+            view.mouseDown (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), centre, {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &view, &view,
+                                              juce::Time::getCurrentTime(), centre, juce::Time::getCurrentTime(), 1, false));
+        }
+
+        check (listed && clicked == b.getFile(),
+               "empty editor: the recent files that still exist are listed under the hint, and clicking one asks to open that file");
+    }
+
     void testShortcutEditing()
     {
         ThreeCommands target;
@@ -1549,6 +1578,7 @@ void runMixerTests (AudioEngine& engine)
     testKeyShortcuts();
     testShortcutEditing();
     testTransportBar();
+    testEmptyEditorRecentFiles();
     testFrozenFile (engine);
     testClipGroups (engine);
     testClipGainFile (engine);

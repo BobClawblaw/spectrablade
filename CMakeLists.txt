@@ -180,6 +180,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
     Source/TransportBar.cpp
+    Source/WaveformView.cpp
     Source/SessionOverview.cpp
     Source/SessionRecording.cpp
     Source/Bounce.cpp

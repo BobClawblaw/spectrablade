@@ -329,6 +329,7 @@ private:
     MultitrackView multitrack { engine };
     SessionOverview overview { engine, multitrack };
     bool multitrackMode = false;
+    bool rackShown = true;   // the effects rack beside the editor (View > Effects Rack)
     FadeShape fadeShape = FadeShape::sCurve;   // the editor's Fade In and Fade Out
     bool normalizeChannelsApart = false;   // the Normalize dialog's last choice
     float silenceThresholdDb = -60.0f;   // Trim Silence's last level, also used by Select Audible Span and Find Next Silence

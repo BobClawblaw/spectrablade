@@ -29,6 +29,8 @@ WaveformView::WaveformView (AudioEngine& e) : engine (e)
     addAndMakeVisible (scrollBar);
     scrollBar.addListener (this);
     scrollBar.setAutoHide (false);
+    scrollBar.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a525c));
+    scrollBar.setColour (juce::ScrollBar::trackColourId, juce::Colour (0xff1c2026));
     engine.document.addChangeListener (this);
     startTimerHz (30);
     setWantsKeyboardFocus (false);
@@ -427,9 +429,7 @@ void WaveformView::paint (juce::Graphics& g)
         drawMarkers (g);
         g.setColour (background);
         g.fillRect (area);
-        g.setColour (juce::Colours::grey);
-        g.setFont (16.0f);
-        g.drawText ("Drop an audio file here, or use File > Open", area, juce::Justification::centred);
+        drawEmpty (g, area);
         return;
     }
 
@@ -490,11 +490,74 @@ void WaveformView::resized()
     setView (viewStart, framesPerPixel);
 }
 
+void WaveformView::drawEmpty (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    // The hint, and under it the recent files to open with a click, their folders dimmed beside them.
+    std::vector<std::pair<juce::Rectangle<int>, juce::File>> links;
+    juce::Array<juce::File> recent;
+
+    if (getRecentFiles != nullptr)
+        for (auto& f : getRecentFiles())
+            if (f.existsAsFile() && recent.size() < 8)
+                recent.add (f);
+
+    const auto lineHeight = 24;
+    const auto listHeight = recent.isEmpty() ? 0 : 34 + recent.size() * lineHeight;
+    auto block = area.withSizeKeepingCentre (juce::jmin (area.getWidth() - 40, 560), 30 + listHeight);
+    g.setColour (juce::Colours::grey);
+    g.setFont (juce::FontOptions (16.0f));
+    g.drawText ("Drop an audio file here, or use File > Open", block.removeFromTop (30), juce::Justification::centred);
+
+    if (! recent.isEmpty())
+    {
+        block.removeFromTop (14);
+        g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
+        g.setColour (juce::Colour (0xff7d8794));
+        g.drawText ("RECENT", block.removeFromTop (20), juce::Justification::centredLeft);
+
+        for (int i = 0; i < recent.size(); ++i)
+        {
+            auto line = block.removeFromTop (lineHeight);
+            const auto hovered = i == hoveredRecent;
+
+            if (hovered)
+            {
+                g.setColour (juce::Colour (0xff2a2f36));
+                g.fillRoundedRectangle (line.toFloat(), 4.0f);
+            }
+
+            auto text = line.reduced (8, 0);
+            const auto name = recent[i].getFileName();
+            g.setFont (juce::FontOptions (14.0f));
+            const auto nameWidth = juce::jmin (text.getWidth(), juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), name) + 16);
+            g.setColour (hovered ? juce::Colour (0xff8fd3ff) : juce::Colour (0xffd8dde3));
+            g.drawText (name, text.removeFromLeft (nameWidth), juce::Justification::centredLeft, true);
+            g.setFont (juce::FontOptions (12.0f));
+            g.setColour (juce::Colour (0xff6b737d));
+            g.drawText (recent[i].getParentDirectory().getFullPathName().replace (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(), "~"),
+                        text, juce::Justification::centredLeft, true);
+            links.emplace_back (line, recent[i]);
+        }
+    }
+
+    recentLinks = std::move (links);
+}
+
 //==============================================================================
 void WaveformView::mouseDown (const juce::MouseEvent& e)
 {
     if (! engine.document.hasAudio())
+    {
+        for (auto& [area, file] : recentLinks)
+            if (area.contains (e.getPosition()) && onRecentFileClicked != nullptr)
+            {
+                const auto chosen = file;   // the click may open it, which repaints the list
+                onRecentFileClicked (chosen);
+                return;
+            }
+
         return;
+    }
 
     if (const auto index = markerAt (e.position); index >= 0)
     {
@@ -628,6 +691,24 @@ void WaveformView::mouseUp (const juce::MouseEvent&)
 
 void WaveformView::mouseMove (const juce::MouseEvent& e)
 {
+    if (! engine.document.hasAudio())
+    {
+        auto over = -1;
+
+        for (size_t i = 0; i < recentLinks.size(); ++i)
+            if (recentLinks[i].first.contains (e.getPosition()))
+                over = (int) i;
+
+        if (over != hoveredRecent)
+        {
+            hoveredRecent = over;
+            repaint();
+        }
+
+        setMouseCursor (over >= 0 ? juce::MouseCursor::PointingHandCursor : juce::MouseCursor::NormalCursor);
+        return;
+    }
+
     setMouseCursor (markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
 }
 

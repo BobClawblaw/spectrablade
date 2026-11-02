@@ -8,6 +8,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
 
+**Milestone 183: More room, and recent files at hand**
+- View > Effects Rack (Option-Cmd-E) hides the effects rack beside the editor and the multitrack, giving the audio the whole width, and shows it again; the choice is remembered. The rack keeps running while hidden.
+- With no file open, the editor lists up to eight recent files that still exist under its hint, each with its folder, and a click opens one (a session opens in the multitrack), asking about unsaved changes first.
+- The scroll bar under the waveform is now a quiet grey instead of a bright bar the width of the window.
+- Measured by the tests: the empty editor listing the recent files that exist, leaving out a missing one, and a click on one asking to open that file. The window was captured on the development Mac with the list showing. Hiding the rack was not tried in the running app (its menus can't be driven by script there). The whole suite passed.
+
 **Milestone 182: Opening files from Finder**
 - SpectraBlade is now an editor for WAV, AIFF (`.aif`, `.aiff`, `.aifc`), FLAC, Ogg Vorbis, MP3, M4A and CAF files and for its own sessions (`.sbsession`), so Finder's Open With lists it, and a file dropped on its Dock icon, double-clicked once it is the default, or named to `open` opens in it. An audio file opens in the editor and a session in the multitrack, each after asking about unsaved changes; a file arriving while recording is refused with a note. Files named on the command line open the same way.
 - Checked: launching the app with `open -a` on a WAV file opened it, and sending a second WAV file to the running app opened that one in the same window, with no second copy started. The tests check that every audio type offered has a reader, and that an open request keeps only existing files named by full path (quoted, with spaces), once each. Opening a session this way, the unsaved-changes question and the Dock were not tried. The whole suite passed.
@@ -1103,6 +1109,7 @@ The tests run against the real machine:
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
+- Empty editor: the recent files listed, a click opening one.
 - Opening from Finder: the types offered all read, the files picked out of an open request.
 - Transport bar: tooltips following the keys; the selection panel's cells.
 - Keyboard shortcuts window: search, keys taken and reset, sets exported and imported.

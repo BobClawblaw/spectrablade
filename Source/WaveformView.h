@@ -60,7 +60,18 @@ public:
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
+    /** With no audio open, the view lists these files (the recent ones), each opened with a click. */
+    std::function<juce::Array<juce::File>()> getRecentFiles;
+    std::function<void (const juce::File&)> onRecentFileClicked;
+
+    /** Where the empty view drew each recent file, for clicks (and the tests). */
+    const std::vector<std::pair<juce::Rectangle<int>, juce::File>>& getRecentLinks() const noexcept  { return recentLinks; }
+
 private:
+    void drawEmpty (juce::Graphics&, juce::Rectangle<int> area);
+    std::vector<std::pair<juce::Rectangle<int>, juce::File>> recentLinks;
+    int hoveredRecent = -1;
+
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void scrollBarMoved (juce::ScrollBar*, double newRangeStart) override;
     void timerCallback() override;
