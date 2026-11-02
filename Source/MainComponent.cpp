@@ -3443,6 +3443,23 @@ void MainComponent::addFilesToSession (const juce::StringArray& files, int track
         showError ("Import Audio", errors.joinIntoString ("\n"));
 }
 
+void MainComponent::openDocument (const juce::File& file)
+{
+    if (! file.existsAsFile())
+        return;
+
+    if (isRecording())
+    {
+        showError ("Can't open " + file.getFileName(), "Stop recording first.");
+        return;
+    }
+
+    if (file.hasFileExtension ("sbsession"))
+        confirmDiscardSession ([this, file] { openSession (file); });
+    else
+        confirmDiscardChanges ([this, file] { openFile (file); });
+}
+
 void MainComponent::openFile (const juce::File& file)
 {
     stopPreview();

@@ -138,4 +138,21 @@ juce::String saveRange (const AudioSnapshot& snapshot, double sampleRate, juce::
 {
     return save (*AudioEdits::crop (snapshot, start, end), sampleRate, target, bitDepth, formats, MarkerEdits::afterCrop (markers, start, end));
 }
+
+juce::Array<juce::File> filesIn (const juce::String& commandLine)
+{
+    juce::StringArray tokens;
+    tokens.addTokens (commandLine, true);
+    juce::Array<juce::File> files;
+
+    for (auto token : tokens)
+    {
+        token = token.unquoted();
+
+        if (juce::File::isAbsolutePath (token) && juce::File (token).existsAsFile())
+            files.addIfNotAlreadyThere (juce::File (token));
+    }
+
+    return files;
+}
 }

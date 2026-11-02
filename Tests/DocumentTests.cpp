@@ -921,6 +921,22 @@ namespace
         check (AudioFileIO::save (*snap, rate, wav16.getFile().withFileExtension ("xyz"), 16, engine.formatManager).isNotEmpty(),
                "saving to an unknown extension reports an error");
 
+        // Files from Finder or a command line: every type offered has a reader, and only existing files by full path are taken.
+        {
+            auto everyTypeRead = true;
+
+            for (auto& ext : AudioFileIO::openedFromFinder)
+                everyTypeRead = everyTypeRead && engine.formatManager.findFormatForFileExtension (ext) != nullptr;
+
+            const juce::TemporaryFile spaced ("with space.wav");
+            spaced.getFile().replaceWithText ("x");
+            const auto path = spaced.getFile().getFullPathName();
+            const auto files = AudioFileIO::filesIn ("-psn_0_12345 \"" + path + "\" relative.wav /no/such/file.wav \"" + path + "\"");
+            check (everyTypeRead && files.size() == 1 && files[0] == spaced.getFile(),
+                   "opening from Finder: every audio type the app offers to open has a reader; an open request keeps only existing files named by "
+                   "full path (quoted, with spaces), once each");
+        }
+
         // Saving a selection: only its frames, bit for bit as float, and its markers moved to start from 0.
         const juce::TemporaryFile part (".wav");
         const Markers marks { { 500, 0, "before" }, { 1500, 0, "inside" }, { 1800, 400, "across" } };

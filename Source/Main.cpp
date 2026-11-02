@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include "MainComponent.h"
 #include "PluginScanner.h"
+#include "AudioFileIO.h"
 
 class SpectraBladeApplication final : public juce::JUCEApplication
 {
@@ -27,6 +28,7 @@ public:
         juce::Logger::setCurrentLogger (logger.get());
 
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
+        anotherInstanceStarted (commandLine);
     }
 
     void shutdown() override
@@ -43,7 +45,16 @@ public:
         else
             quit();
     }
-    void anotherInstanceStarted (const juce::String&) override {}
+    // Files opened from Finder or the Dock arrive here on macOS, as do any named on the command line.
+    // Only the last one stays open, so they open one after another, each asking about unsaved changes.
+    void anotherInstanceStarted (const juce::String& commandLine) override
+    {
+        if (mainWindow == nullptr)
+            return;
+
+        for (auto& file : AudioFileIO::filesIn (commandLine))
+            mainWindow->getMainComponent().openDocument (file);
+    }
 
 private:
     class MainWindow final : public juce::DocumentWindow

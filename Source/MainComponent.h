@@ -39,6 +39,10 @@ public:
     /** Asks about unsaved changes to the file and then the session, then calls proceed. */
     void confirmQuit (std::function<void()> proceed);
 
+    /** A file Finder, the Dock or the command line asked to open: a session in the multitrack, any
+        other file in the editor, each after asking about unsaved changes. */
+    void openDocument (const juce::File&);
+
     std::function<void (const juce::String& title)> onTitleChanged;
 
     void paint (juce::Graphics&) override;

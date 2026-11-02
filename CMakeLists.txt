@@ -33,6 +33,8 @@ juce_add_gui_app(SpectraBlade
     # Third-party plug-ins are signed by other teams, so library validation must be off to load them.
     HARDENED_RUNTIME_OPTIONS     com.apple.security.cs.disable-library-validation
                                  com.apple.security.device.audio-input
+    # Finder's Open With and double-clicks: the audio types AudioFileIO::openedFromFinder names, and sessions.
+    DOCUMENT_EXTENSIONS          wav aif aiff aifc flac ogg mp3 m4a caf sbsession
     NEEDS_WEB_BROWSER            FALSE
     NEEDS_CURL                   FALSE)
 

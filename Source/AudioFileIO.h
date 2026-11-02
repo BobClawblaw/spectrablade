@@ -4,6 +4,14 @@
 
 namespace AudioFileIO
 {
+    /** The audio file types Finder offers to open with the app: keep in step with DOCUMENT_EXTENSIONS
+        in CMakeLists.txt, which also names sessions (.sbsession). */
+    inline const juce::StringArray openedFromFinder { "wav", "aif", "aiff", "aifc", "flac", "ogg", "mp3", "m4a", "caf" };
+
+    /** The files in a command line or an open-files request: each token, quoted or not, naming an
+        existing file by its full path. Anything else (options, missing files) is left out. */
+    juce::Array<juce::File> filesIn (const juce::String& commandLine);
+
     struct Loaded
     {
         AudioDocument::Snapshot snapshot;
