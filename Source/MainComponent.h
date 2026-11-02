@@ -14,6 +14,7 @@
 #include "ParametricEq.h"
 #include "Dynamics.h"
 #include "Modulation.h"
+#include "Reverb.h"
 #include "RackView.h"
 #include "SessionOverview.h"
 #include "SessionRecording.h"
@@ -144,6 +145,8 @@ private:
     void showPhaser();
     Modulation::Delay chorusSettings = Modulation::chorusDefaults(), flangerSettings = Modulation::flangerDefaults();
     Modulation::Phaser phaserSettings;
+    void showReverb();
+    RoomReverb::Settings reverbSettings;
 
     void applyParametricEq (const std::vector<Equalizer::Band>&);
     void previewParametricEq (const ParametricEq*);   // nullptr: stop
@@ -354,7 +357,7 @@ private:
         before the rack, until stopPreview. A preview from another owner takes over, and the old
         one's ended callback is called (so it can untick its Preview button); stopPreview calls
         it too. An owner already previewing just has its effect swapped. Files only. */
-    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser };
+    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb };
     void startPreview (PreviewOwner, std::unique_ptr<juce::AudioPluginInstance>, std::function<void()> ended);
     void stopPreview();
     juce::AudioPluginInstance* previewEffectOf (PreviewOwner) const;

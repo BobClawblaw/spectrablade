@@ -79,7 +79,7 @@ void runBuiltInEffectsTests (AudioEngine& engine)
     // Created by description, through the app's own format manager.
     const auto descriptions = BuiltInEffects::getDescriptions();
     juce::String error;
-    auto instance = descriptions.size() == 6 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
+    auto instance = descriptions.size() == 7 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
     auto* eq = dynamic_cast<ParametricEqProcessor*> (instance.get());
     check (eq != nullptr && error.isEmpty() && eq->getPluginDescription().fileOrIdentifier == BuiltInEffects::parametricEqId
                && eq->getPluginDescription().pluginFormatName == BuiltInEffects::formatName && eq->getActiveBands (rate).empty(),
@@ -154,9 +154,9 @@ void runBuiltInEffectsTests (AudioEngine& engine)
 
         return (juce::AudioPluginFormat*) nullptr;
     }();
-    check (list.getNumTypes() == 6 && format != nullptr
+    check (list.getNumTypes() == 7 && format != nullptr
                && ! format->canScanForPlugins() && format->searchPathsForPlugins ({}, true, false).isEmpty(),
-           "built-in effects: the six listed once each however often added; their format has nothing to scan");
+           "built-in effects: the seven listed once each however often added; their format has nothing to scan");
 
     // Its window: the EQ panel on the parameters, both ways.
     {
@@ -320,6 +320,23 @@ void runBuiltInEffectsTests (AudioEngine& engine)
                    && chorus.getLatencySamples() == 0 && phaser.getLatencySamples() == 0,
                "built-in chorus, flanger and phaser: played in blocks of 1, 7, 512 and 3,000 frames, each gives the offline effect's samples bit for bit; "
                "the flanger starts at its own defaults; the phaser's state (8 stages) restores exactly; no latency");
+    }
+
+    // The reverb, live, against the offline one over the whole file.
+    {
+        const auto in = noise (2, 96000, 23);
+        BuiltInEffects::ReverbProcessor reverb;
+        reverb.setSettings ({ 35.0, 1.5, 80.0, 45.0, 70.0, 40.0 });
+        reverb.setPlayConfigDetails (2, 2, rate, 512);
+        reverb.prepareToPlay (rate, 3000);
+        const auto reverbLive = play (reverb, in);
+        const auto snap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (in));
+        const auto reverbOffline = readAll (*RoomReverb::apply (*snap, 0, 96000, rate, reverb.getSettings()));
+        const auto s = reverb.getSettings();
+        check (identical (reverbLive, reverbOffline) && ! identical (reverbLive, in) && reverb.getLatencySamples() == 0
+                   && std::abs (reverb.getTailLengthSeconds() - (s.preDelayMs / 1000.0 + s.decaySeconds)) < 1.0e-12,
+               "built-in reverb: played in blocks of 1, 7, 512 and 3,000 frames it gives the offline reverb's samples bit for bit; no latency; "
+               "its tail is the pre-delay plus the decay");
     }
 
     // In the master rack: added by description, set, saved and restored with its bands.

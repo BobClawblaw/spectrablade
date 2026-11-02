@@ -39,6 +39,8 @@ namespace
     juce::PluginDescription flangerDescription()        { return describe ("Flanger", "Modulation", flangerId, 0x5342464c); }     // "SBFL"
     juce::PluginDescription phaserDescription()         { return describe ("Phaser", "Modulation", phaserId, 0x53425048); }       // "SBPH"
 
+    juce::PluginDescription reverbDescription()         { return describe ("Reverb", "Reverb", reverbId, 0x53425256); }         // "SBRV"
+
     const juce::StringArray stageNames { "2", "4", "6", "8", "10", "12" };
 
     class Format final : public juce::AudioPluginFormat
@@ -95,6 +97,8 @@ namespace
                 effect = std::make_unique<SweptDelayProcessor> (SweptDelayProcessor::Kind::flanger);
             else if (d.fileOrIdentifier == phaserId)
                 effect = std::make_unique<PhaserProcessor>();
+            else if (d.fileOrIdentifier == reverbId)
+                effect = std::make_unique<ReverbProcessor>();
 
             if (effect == nullptr)
             {
@@ -115,7 +119,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 
 juce::Array<juce::PluginDescription> getDescriptions()
 {
-    return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription() };
+    return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -653,6 +657,57 @@ void PhaserProcessor::prepareToPlay (double sampleRate, int)
 void PhaserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     core.set (getSettings());   // a high frequency below the low one sweeps the other way
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels()), buffer.getNumSamples());
+}
+
+//==============================================================================
+ReverbProcessor::ReverbProcessor()
+    : BuiltInEffect (reverbDescription(), "SPECTRABLADE_REVERB")
+{
+    const RoomReverb::Settings start;
+    preDelay = addFloat ("preDelay", "Pre-Delay", { 0.0f, 200.0f, 0.0f, 0.5f }, (float) start.preDelayMs, "ms");
+    decay = addFloat ("decay", "Decay", { 0.1f, 20.0f, 0.0f, 0.35f }, (float) start.decaySeconds, "s");
+    size = addFloat ("size", "Size", { 50.0f, 150.0f }, (float) start.sizePercent, "%");
+    damping = addFloat ("damping", "Damping", { 0.0f, 100.0f }, (float) start.dampingPercent, "%");
+    width = addFloat ("width", "Width", { 0.0f, 100.0f }, (float) start.widthPercent, "%");
+    mix = addFloat ("mix", "Mix", { 0.0f, 100.0f }, (float) start.mixPercent, "%");
+}
+
+RoomReverb::Settings ReverbProcessor::getSettings() const
+{
+    return { (double) preDelay->get(), (double) decay->get(), (double) size->get(), (double) damping->get(), (double) width->get(), (double) mix->get() };
+}
+
+void ReverbProcessor::setSettings (const RoomReverb::Settings& s)
+{
+    setExactly (*preDelay, (float) s.preDelayMs);
+    setExactly (*decay, (float) s.decaySeconds);
+    setExactly (*size, (float) s.sizePercent);
+    setExactly (*damping, (float) s.dampingPercent);
+    setExactly (*width, (float) s.widthPercent);
+    setExactly (*mix, (float) s.mixPercent);
+}
+
+void ReverbProcessor::prepareToPlay (double sampleRate, int)
+{
+    core.prepare (sampleRate);
+    applied = getSettings();
+    core.set (applied);
+}
+
+void ReverbProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    // Set again only on a change: setting works out the lines' lengths and losses.
+    const auto now = getSettings();
+
+    if (! juce::exactlyEqual (now.preDelayMs, applied.preDelayMs) || ! juce::exactlyEqual (now.decaySeconds, applied.decaySeconds)
+        || ! juce::exactlyEqual (now.sizePercent, applied.sizePercent) || ! juce::exactlyEqual (now.dampingPercent, applied.dampingPercent)
+        || ! juce::exactlyEqual (now.widthPercent, applied.widthPercent) || ! juce::exactlyEqual (now.mixPercent, applied.mixPercent))
+    {
+        applied = now;
+        core.set (applied);
+    }
+
     core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels()), buffer.getNumSamples());
 }
 }

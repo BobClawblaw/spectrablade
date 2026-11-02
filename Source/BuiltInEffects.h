@@ -2,6 +2,7 @@
 
 #include "Dynamics.h"
 #include "Modulation.h"
+#include "Reverb.h"
 #include "ParametricEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
@@ -17,6 +18,7 @@ namespace BuiltInEffects
     constexpr const char* chorusId = "spectrablade:chorus";
     constexpr const char* flangerId = "spectrablade:flanger";
     constexpr const char* phaserId = "spectrablade:phaser";
+    constexpr const char* reverbId = "spectrablade:reverb";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -278,5 +280,35 @@ namespace BuiltInEffects
         Modulation::PhaserCore core;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PhaserProcessor)
+    };
+
+    /** The reverb, live: Effects > Reverb's settings as parameters over the same ranges, run with
+        RoomReverb::Core, so over a whole file from its start it gives exactly the samples
+        RoomReverb::apply gives. No latency; its tail is the pre-delay plus the decay. */
+    class ReverbProcessor final : public BuiltInEffect
+    {
+    public:
+        ReverbProcessor();
+
+        RoomReverb::Settings getSettings() const;
+        void setSettings (const RoomReverb::Settings&);
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override                                         { core.reset(); }
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+        double getTailLengthSeconds() const override                  { return RoomReverb::tailSeconds (getSettings()); }
+
+        juce::AudioParameterFloat* preDelay = nullptr;
+        juce::AudioParameterFloat* decay = nullptr;
+        juce::AudioParameterFloat* size = nullptr;
+        juce::AudioParameterFloat* damping = nullptr;
+        juce::AudioParameterFloat* width = nullptr;
+        juce::AudioParameterFloat* mix = nullptr;
+
+    private:
+        RoomReverb::Core core;
+        RoomReverb::Settings applied;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ReverbProcessor)
     };
 }

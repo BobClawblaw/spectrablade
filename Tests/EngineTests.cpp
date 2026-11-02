@@ -15,6 +15,7 @@
 #include "EqTests.h"
 #include "DynamicsTests.h"
 #include "ModulationTests.h"
+#include "ReverbTests.h"
 #include "BuiltInEffectsTests.h"
 #include "NoiseTests.h"
 #include "ClickTests.h"
@@ -340,6 +341,7 @@ int main (int argc, char* argv[])
         runEqTests();
         runDynamicsTests();
         runModulationTests();
+        runReverbTests();
         runBuiltInEffectsTests (engine);
         runNoiseTests();
         runClickTests();

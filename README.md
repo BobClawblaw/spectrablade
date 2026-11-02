@@ -6,6 +6,13 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 174: Reverb**
+- Effects > Reverb adds a room's reverberation to the selection or the whole file, with a "Preview on the selection" switch, and it is a built-in live effect for the rack and tracks too.
+- It is a feedback delay network of SpectraBlade's own: after the pre-delay, the sound (the channels' average) is smeared by four all-pass filters and fed into eight delay lines (29.7 to 71.9 ms at 100 % size) whose outputs are mixed back into their inputs by a matrix that loses nothing. Each line loses just enough on each pass for the sound to fall 60 dB in the decay time, a low-pass in each takes the highs away faster as damping rises, and two different mixes of the lines make the left and right sides, narrowed toward their middle by the width.
+- Settings: pre-delay 0 to 200 ms, decay 0.1 to 20 s, size 50 to 150 %, damping, width and mix 0 to 100 % (20 ms, 2 s, 100 %, 30 %, 100 % and 30 % to start).
+- Offline, the reverb rings on past the selection into the audio after it, added on top, for the pre-delay plus the decay (or to the end of the file); the file's length doesn't change. Live, the effect reports the same tail.
+- Measured by the tests at 48 kHz: an impulse's reverb, undamped, falls 60 dB in 0.999, 1.994 and 3.976 s with the decay set to 1, 2 and 4 s; with a 100 ms pre-delay nothing comes out until 129.7 ms (the pre-delay plus the shortest line); 80 % damping leaves the tail with under 1 % of the high-frequency share it has undamped (0.012 against 2.0); no mix gives the input bit for bit; no width gives the same reverb on both sides; a 20 s decay on noise peaking at 0.5 peaks at 1.17; a range ending mid-file has its tail added after it for the pre-delay plus the decay, and the audio after that is kept bit for bit. Live, in blocks of 1, 7, 512 and 3,000 frames, the reverb gives the offline reverb's samples bit for bit over a whole file. Hearing it in the running app was not tried. The whole suite passed.
+
 **Milestone 173: Chorus, flanger and phaser**
 - Effects > Chorus, Flanger and Phaser, each applied to the selection or the whole file, each with a "Preview on the selection" switch, and each a built-in live effect for the rack and tracks (category Modulation).
 - Chorus and Flanger are one swept delay: a copy of the sound whose delay moves smoothly between the shortest delay and that plus the depth at the rate, fed back by the feedback and mixed in by the mix. The chorus starts at a 15 ms delay, 5 ms depth, 0.8 Hz and no feedback; the flanger at 1 ms, 3 ms, 0.25 Hz and 0.6 feedback. Fractional delays are read by linear interpolation, and the delay is never under one frame.
@@ -1044,6 +1051,7 @@ The tests run against the real machine:
 - Live compressor and limiter: bit for bit with the offline effects (the limiter a look-ahead late), the limiter's latency reported and counted on a track.
 - Preview: the live effects take the dialogs' settings; the engine's preview slot swaps and clears, and stays out of the rack.
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
+- Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1097,6 +1105,5 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: an algorithmic reverb, offline, live and previewed
-2. Effects: a convolution reverb from an impulse response file
-3. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Effects: a convolution reverb from an impulse response file
+2. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
