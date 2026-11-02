@@ -29,8 +29,6 @@ WaveformView::WaveformView (AudioEngine& e) : engine (e)
     addAndMakeVisible (scrollBar);
     scrollBar.addListener (this);
     scrollBar.setAutoHide (false);
-    scrollBar.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a525c));
-    scrollBar.setColour (juce::ScrollBar::trackColourId, juce::Colour (0xff1c2026));
     engine.document.addChangeListener (this);
     startTimerHz (30);
     setWantsKeyboardFocus (false);

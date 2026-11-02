@@ -27,6 +27,11 @@ public:
                                                                getApplicationName() + " " + getApplicationVersion()));
         juce::Logger::setCurrentLogger (logger.get());
 
+        // Every scroll bar a quiet grey, so none outshines the audio.
+        auto& lookAndFeel = juce::LookAndFeel::getDefaultLookAndFeel();
+        lookAndFeel.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a525c));
+        lookAndFeel.setColour (juce::ScrollBar::trackColourId, juce::Colour (0xff1c2026));
+
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
         anotherInstanceStarted (commandLine);
     }

@@ -8,6 +8,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
 
+**Milestone 185: Quiet scroll bars everywhere**
+- Every scroll bar in the app (the multitrack's, the lists', the windows') is now the quiet grey Milestone 183 gave the editor's, set once for the whole app instead of view by view.
+- Checked in a capture of the window on the development Mac; the whole suite passed.
+
 **Milestone 184: An output meter**
 - The main window now meters what goes to the outputs, after the effects rack, beside the output choice: a bar a channel with a falling peak hold and a clip light (click to clear it), as the input meter has.
 - The mixer's master meter and this one each read the output's peaks for themselves, so with the mixer open neither takes the other's.
