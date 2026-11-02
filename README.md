@@ -19,6 +19,11 @@ SpectraBlade is free software under the GNU Affero General Public License, versi
 
 The notes below record each milestone as it was built, newest first, with what the tests measured.
 
+**Release 0.9.0: the alpha**
+- The first build offered for download, as an alpha to test before 1.0: `SpectraBlade-0.9.0.dmg` on the repository's Releases page, with its SHA-256. It holds the universal app (Apple silicon and Intel) and the licence as `LICENSE.txt`, signed ad hoc, not notarized (see [Installing](#installing)). Everything in [What it does](#what-it-does) through Milestone 189 is in it.
+- The version steps back from 1.0.0 to 0.9.0: the 1.0.0 disk image below was built on the development Mac but never published, and 1.0 now waits until the alpha has been tried.
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (747 checks) passed with the signed app as the plug-in scan worker; the disk image's app verified (`codesign --verify --deep --strict`), reads 0.9.0 with its copyright line, carries a licence identical to `LICENSE`, and launched from the mounted image and quit with no crash report. The app's Intel half was not launched, and no Intel Mac was tried.
+
 **Milestone 189: Audition-style keys**
 - The keyboard shortcuts window has Key Sets... with Audition-Style Keys, for people coming from Adobe Audition. After asking (it starts from the defaults, so your own changes go; export them first), it gives these commands Audition's default keys: 1 switches between the file and the multitrack session, = and - zoom in and out, Option-Cmd-Left and Right go to the previous and next marker, Option-comma and Option-period nudge, and Shift-T opens Convert Sample Rate. Space, Home, End, M, Shift-P, Cmd-K, Cmd-T and S already matched. Each command keeps its own keys too, and any key taken from another command is listed afterwards.
 - Where the keys come from: Adobe's own list of default shortcuts (helpx.adobe.com, updated June 2026), which Adobe calls partial; and, where it says nothing, keys two published cheat sheets (pie-menu.com and prismmultimedia.com) agree on. Keys only one cheat sheet gives, or that contradict Adobe's list, are left out.
@@ -996,7 +1001,7 @@ This builds a universal Release app in `build-release/`, signs it ad hoc, runs t
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 1.0.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.9.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Integration tests
