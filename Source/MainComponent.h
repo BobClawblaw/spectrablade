@@ -186,7 +186,7 @@ private:
     void measureLoudness (std::function<void (const Loudness::Result&, juce::Range<juce::int64>)> done);
     void showLoudness();
     void askForLoudnessTarget();
-    void matchLoudness (double target, double ceiling);
+    void matchLoudness (double target, double ceiling, bool limitToTarget);
 
     // Noise reduction
     void captureNoisePrint();

@@ -1,4 +1,6 @@
 #include "Dynamics.h"
+#include "SampleRateConverter.h"
+#include "Loudness.h"
 
 #include <deque>
 
@@ -84,58 +86,99 @@ bool isValid (const Limiter& l)
         && l.lookaheadMs >= 0.1 && l.lookaheadMs <= 50.0;
 }
 
-AudioEdits::Snapshot limit (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, const Limiter& l)
+namespace
 {
-    if (! isValid (l) || sampleRate <= 0.0 || ! rangeOk (s, start, end))
-        return nullptr;
+    constexpr int oversampling = 4, chunk = 1 << 16, context = 256;
 
-    const auto input = std::pow (10.0, l.inputGainDb / 20.0);
-    const auto ceiling = (double) (float) std::pow (10.0, l.ceilingDb / 20.0);
-    const auto release = smoothing (l.releaseMs, sampleRate);
-    const auto ahead = juce::jmax (1, (int) std::lround (l.lookaheadMs / 1000.0 * sampleRate));
+    /** Calls use (frame, peak) for every frame of b, where peak is the largest magnitude of any
+        channel within half a frame of it after 4x oversampling (or of the frame itself), with silence
+        outside b. Works through b in chunks, each with context either side for the filter. */
+    void forEachTruePeak (const juce::AudioBuffer<float>& b, double sampleRate, const std::function<void (int, float)>& use)
+    {
+        const auto n = b.getNumSamples(), channels = b.getNumChannels();
+        juce::AudioBuffer<float> span (channels, chunk + 2 * context), up;
 
-    return AudioEdits::processRange (s, start, end, [input, ceiling, release, ahead, unity = juce::exactlyEqual (l.inputGainDb, 0.0)] (juce::AudioBuffer<float>& b)
+        for (int pos = 0; pos < n; pos += chunk)
+        {
+            const auto count = juce::jmin (chunk, n - pos);
+            const auto before = juce::jmin (context, pos), after = juce::jmin (context, n - pos - count);
+            span.clear();
+
+            for (int ch = 0; ch < channels; ++ch)
+                span.copyFrom (ch, context - before, b, ch, pos - before, before + count + after);
+
+            SampleRateConverter::convert (span, sampleRate, sampleRate * oversampling, up);
+
+            for (int i = 0; i < count; ++i)
+            {
+                // The oversampled points from half a frame before this frame to half a frame after.
+                const auto centre = (context + i) * oversampling;
+                float peak = 0.0f;
+
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    peak = juce::jmax (peak, std::abs (b.getSample (ch, pos + i)));
+
+                    for (int k = centre - oversampling / 2; k <= centre + oversampling / 2; ++k)
+                        if (juce::isPositiveAndBelow (k, up.getNumSamples()))
+                            peak = juce::jmax (peak, std::abs (up.getSample (ch, k)));
+                }
+
+                use (pos + i, peak);
+            }
+        }
+    }
+
+    void limitBuffer (juce::AudioBuffer<float>& b, double sampleRate, const Limiter& l, double ceilingDb)
     {
         const auto n = b.getNumSamples();
+        const auto input = std::pow (10.0, l.inputGainDb / 20.0);
+        const auto ceiling = (double) (float) std::pow (10.0, ceilingDb / 20.0);
+        const auto release = smoothing (l.releaseMs, sampleRate);
+        const auto ahead = juce::jmax (1, (int) std::lround (l.lookaheadMs / 1000.0 * sampleRate));
+        const auto unity = juce::exactlyEqual (l.inputGainDb, 0.0);
 
-        // The gain each frame needs on its own.
-        std::vector<double> need ((size_t) n);
+        // The gain each frame needs on its own; one float a frame, reused for the look-ahead minimum.
+        std::vector<float> need ((size_t) n);
+        const auto needFor = [input, ceiling] (double peak) { return peak * input > ceiling ? (float) (ceiling / (peak * input)) : 1.0f; };
 
-        for (int i = 0; i < n; ++i)
-        {
-            const auto peak = loudest (b, i) * input;
-            need[(size_t) i] = peak > ceiling ? ceiling / peak : 1.0;
-        }
+        if (l.truePeak)
+            forEachTruePeak (b, sampleRate, [&need, &needFor] (int i, float peak) { need[(size_t) i] = needFor (peak); });
+        else
+            for (int i = 0; i < n; ++i)
+                need[(size_t) i] = needFor (loudest (b, i));
 
-        // The smallest need over each frame's look-ahead [i, i + ahead], with a monotonic queue.
-        std::vector<double> least ((size_t) n);
-        std::deque<int> queue;
+        // The smallest need over each frame's look-ahead [i, i + ahead], with a monotonic queue that
+        // keeps its own copies of the values, so the minimum can be written over the need in place.
+        std::deque<std::pair<int, float>> queue;
 
         for (int i = n - 1; i >= 0; --i)
         {
-            while (! queue.empty() && need[(size_t) queue.back()] >= need[(size_t) i])
+            const auto value = need[(size_t) i];
+
+            while (! queue.empty() && queue.back().second >= value)
                 queue.pop_back();
 
-            queue.push_back (i);
+            queue.emplace_back (i, value);
 
-            while (queue.front() > i + ahead)
+            while (queue.front().first > i + ahead)
                 queue.pop_front();
 
-            least[(size_t) i] = need[(size_t) queue.front()];
+            need[(size_t) i] = queue.front().second;
         }
 
         // Averaged over the frames [i - ahead, i]: each of their windows holds frame i, so the
-        // average is never above what frame i needs. Frames before the range count as needing 1.
+        // average is never above what frame i needs (only rounding could put it above, and the
+        // clamp below catches that). Frames before the range count as needing 1.
         double sum = 0.0, gain = 1.0;
 
         for (int i = 0; i < n; ++i)
         {
-            sum += least[(size_t) i] - (i >= ahead + 1 ? least[(size_t) (i - ahead - 1)] : 1.0);
+            sum += (double) need[(size_t) i] - (i >= ahead + 1 ? (double) need[(size_t) (i - ahead - 1)] : 1.0);
             const auto average = juce::jmin (1.0, (sum + (double) (ahead + 1)) / (double) (ahead + 1));
-            const auto exact = juce::jmin (average, need[(size_t) i]);  // equal or above only by rounding
 
             // Down at once to the averaged gain, up with the release; never above the average.
-            gain = exact < gain ? exact : exact + release * (gain - exact);
+            gain = average < gain ? average : average + release * (gain - average);
 
             if (unity && juce::exactlyEqual (gain, 1.0))
                 continue;
@@ -146,6 +189,91 @@ AudioEdits::Snapshot limit (const AudioSnapshot& s, juce::int64 start, juce::int
                 b.setSample (ch, i, (float) juce::jlimit (-ceiling, ceiling, y));  // only float rounding can reach past it
             }
         }
+    }
+
+    double truePeakOf (const juce::AudioBuffer<float>& b, double sampleRate)
+    {
+        float peak = 0.0f;
+        forEachTruePeak (b, sampleRate, [&peak] (int, float p) { peak = juce::jmax (peak, p); });
+        return peak > 0.0f ? 20.0 * std::log10 ((double) peak) : -HUGE_VAL;
+    }
+}
+
+AudioEdits::Snapshot limit (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, const Limiter& l)
+{
+    if (! isValid (l) || sampleRate <= 0.0 || ! rangeOk (s, start, end))
+        return nullptr;
+
+    return AudioEdits::processRange (s, start, end, [sampleRate, &l] (juce::AudioBuffer<float>& b)
+    {
+        if (! l.truePeak)
+        {
+            limitBuffer (b, sampleRate, l, l.ceilingDb);
+            return;
+        }
+
+        const juce::AudioBuffer<float> original (b);
+        auto ceiling = l.ceilingDb;
+
+        for (int pass = 0; pass < 4; ++pass)
+        {
+            if (pass > 0)
+                b.makeCopyOf (original, true);
+
+            limitBuffer (b, sampleRate, l, ceiling);
+            const auto over = truePeakOf (b, sampleRate) - l.ceilingDb;
+
+            if (over <= 0.001)
+                break;
+
+            ceiling -= over;
+        }
     });
+}
+
+double truePeakDb (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate)
+{
+    if (sampleRate <= 0.0 || ! rangeOk (s, start, end))
+        return -HUGE_VAL;
+
+    juce::AudioBuffer<float> b (s.getNumChannels(), (int) (end - start));
+    s.read (b, 0, start, b.getNumSamples());
+    return truePeakOf (b, sampleRate);
+}
+
+Matched matchLoudness (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate,
+                       double integrated, double targetLufs, double ceilingDbtp)
+{
+    Matched m;
+
+    if (! std::isfinite (integrated) || ! std::isfinite (targetLufs) || ! std::isfinite (ceilingDbtp) || ! rangeOk (s, start, end))
+        return m;
+
+    m.gainDb = juce::jlimit (-48.0, 48.0, targetLufs - integrated);
+
+    for (int pass = 0; pass < 4; ++pass)
+    {
+        auto next = limit (s, start, end, sampleRate, Limiter { m.gainDb, juce::jlimit (-48.0, 0.0, ceilingDbtp), 50.0, 5.0, true });
+
+        if (next == nullptr)
+            return {};
+
+        const auto r = Loudness::measure (*next, start, end, sampleRate);
+
+        if (! r.has_value())
+            return {};
+
+        m.snapshot = std::move (next);
+        m.integrated = r->integrated;
+        m.truePeak = r->truePeak;
+        const auto shortfall = targetLufs - r->integrated;
+
+        if (std::abs (shortfall) <= 0.05 || ! std::isfinite (shortfall) || m.gainDb >= 48.0)
+            break;
+
+        m.gainDb = juce::jmin (48.0, m.gainDb + shortfall);
+    }
+
+    return m;
 }
 }

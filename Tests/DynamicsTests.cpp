@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../Source/Dynamics.h"
+#include "../Source/Loudness.h"
 #include "TestUtils.h"
 #include "DynamicsTests.h"
 
@@ -132,4 +133,50 @@ void runDynamicsTests()
     check (pushedLow && pushedHigh && ! Dynamics::limit (*hotSnap, 0, 100, rate, Dynamics::Limiter { 0.0, 1.0, 50.0, 5.0 })
                && ! Dynamics::limit (*hotSnap, 0, 100, rate, Dynamics::Limiter { 0.0, -1.0, 0.0, 5.0 }),
            "limiter with 30 dB of input gain: a -40 dB stretch comes up 30 dB, falling only in the look-ahead before the loud part, a -6 dB stretch sits exactly at a -3 dBFS ceiling; a ceiling above 0 or no release refused");
+
+    // True peak: a quarter-rate sine with its crests between samples, so the samples sit 3 dB below
+    // the waveform's 0 dBTP peak (its abrupt start and end ring a little above that).
+    constexpr int quarterLength = 96000;
+    juce::AudioBuffer<float> between (2, quarterLength);
+
+    for (int i = 0; i < quarterLength; ++i)
+        for (int ch = 0; ch < 2; ++ch)
+            between.setSample (ch, i, (float) std::sin (juce::MathConstants<double>::halfPi * i + juce::MathConstants<double>::pi / 4.0));
+
+    const auto betweenSnap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (between));
+    const auto measuredBefore = Loudness::measure (*betweenSnap, 0, quarterLength, rate)->truePeak;
+    const auto sampleOnly = readAll (*Dynamics::limit (*betweenSnap, 0, quarterLength, rate, Dynamics::Limiter { 0.0, -1.0, 50.0, 5.0, false }));
+    auto sampleUntouched = true;
+
+    for (int i = 0; i < quarterLength && sampleUntouched; ++i)
+        sampleUntouched = juce::exactlyEqual (sampleOnly.getSample (0, i), between.getSample (0, i));
+
+    const auto truePeakSnap = Dynamics::limit (*betweenSnap, 0, quarterLength, rate, Dynamics::Limiter { 0.0, -1.0, 50.0, 5.0, true });
+    const auto measuredAfter = Loudness::measure (*truePeakSnap, 0, quarterLength, rate)->truePeak;
+    const auto ownAfter = Dynamics::truePeakDb (*truePeakSnap, 0, quarterLength, rate);
+    std::cout << "      true peak: before " << measuredBefore << " dBTP, after " << measuredAfter << " dBTP (the limiter's own reading " << ownAfter << ")" << std::endl;
+    check (measuredBefore > -0.1 && sampleUntouched && measuredAfter <= -1.0 + 1.0e-3 && measuredAfter > -1.1 && near (ownAfter, measuredAfter, 1.0e-6),
+           "true-peak limiter: a quarter-rate sine at about 0 dBTP with samples at -3 dBFS is left alone by sample-peak limiting at -1, and held at -1 dBTP by true-peak limiting (within 0.1 dB below, at most 0.001 dB above), as Loudness measures it");
+
+    // Matching loudness through the limiter: noise with a click every half second up to -3 dBFS, so
+    // plain gain to -14 LUFS would stop short at the -1 dBTP ceiling.
+    constexpr int tenSeconds = 480000;
+    juce::AudioBuffer<float> peaky (2, tenSeconds);
+    juce::Random noise (99);
+
+    for (int i = 0; i < tenSeconds; ++i)
+        for (int ch = 0; ch < 2; ++ch)
+            peaky.setSample (ch, i, 0.05f * (noise.nextFloat() * 2.0f - 1.0f) + (i % 24000 == 100 ? 0.65f : 0.0f));
+
+    const auto peakySnap = AudioEdits::fromBuffer (std::move (peaky));
+    const auto before = *Loudness::measure (*peakySnap, 0, tenSeconds, rate);
+    const auto started = juce::Time::getMillisecondCounterHiRes();
+    const auto matched = Dynamics::matchLoudness (*peakySnap, 0, tenSeconds, rate, before.integrated, -14.0, -1.0);
+    const auto seconds = (juce::Time::getMillisecondCounterHiRes() - started) / 1000.0;
+    const auto after = *Loudness::measure (*matched.snapshot, 0, tenSeconds, rate);
+    std::cout << "      match through the limiter: " << before.integrated << " LUFS and " << before.truePeak << " dBTP before; "
+              << after.integrated << " LUFS and " << after.truePeak << " dBTP after, with " << matched.gainDb << " dB of gain, in " << seconds << " s for 10 s of stereo" << std::endl;
+    check (before.truePeak > -1.0 - (-14.0 - before.integrated) && near (after.integrated, -14.0, 0.05) && after.truePeak <= -1.0 + 1.0e-3
+               && near (matched.integrated, after.integrated, 1.0e-9) && ! Dynamics::matchLoudness (*peakySnap, 5, 5, rate, before.integrated, -14.0, -1.0).snapshot,
+           "match loudness through the limiter: peaky audio that plain gain could raise only part of the way reaches -14 LUFS (to 0.05 LU) with its true peak at or under -1 dBTP; an empty range refused");
 }

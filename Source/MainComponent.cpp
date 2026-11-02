@@ -4474,7 +4474,8 @@ void MainComponent::showCompressor()
 
 void MainComponent::showLimiter()
 {
-    auto* box = new juce::AlertWindow ("Limiter", "No sample comes out above the ceiling. Gain before the limiter makes the audio louder into it. "
+    auto* box = new juce::AlertWindow ("Limiter", "No sample comes out above the ceiling, or with true peaks, nothing between samples either. "
+                                       "Gain before the limiter makes the audio louder into it. "
                                        "The gain starts falling the look-ahead time before each peak and recovers with the release time. "
                                        "Gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms.",
                                        juce::MessageBoxIconType::NoIcon, this);
@@ -4487,6 +4488,8 @@ void MainComponent::showLimiter()
     field ("ceiling", limiterSettings.ceilingDb, 1, "Ceiling (dBFS)");
     field ("release", limiterSettings.releaseMs, 0, "Release (ms)");
     field ("lookahead", limiterSettings.lookaheadMs, 1, "Look-ahead (ms)");
+    box->addComboBox ("peaks", { "Sample peaks", "True peaks (between samples)" }, "Hold under the ceiling");
+    box->getComboBoxComponent ("peaks")->setSelectedItemIndex (limiterSettings.truePeak ? 1 : 0);
     box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
@@ -4496,7 +4499,8 @@ void MainComponent::showLimiter()
             return;
 
         const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
-        const Dynamics::Limiter settings { value ("gain"), value ("ceiling"), value ("release"), value ("lookahead") };
+        const Dynamics::Limiter settings { value ("gain"), value ("ceiling"), value ("release"), value ("lookahead"),
+                                           box->getComboBoxComponent ("peaks")->getSelectedItemIndex() == 1 };
 
         if (! Dynamics::isValid (settings))
         {
@@ -5099,10 +5103,13 @@ void MainComponent::askForLoudnessTarget()
     auto* settings = appProperties.getUserSettings();
     auto* box = new juce::AlertWindow ("Match Loudness",
                                        "Common targets: EBU R128 -23, ATSC A/85 -24, podcasts -16, streaming -14 LUFS.\n"
-                                       "Gain stops short of the target if the true peak would pass the ceiling.",
+                                       "When the true peak would pass the ceiling, the gain either stops short of the target, or goes all "
+                                       "the way with a true-peak limiter holding the peaks at the ceiling.",
                                        juce::MessageBoxIconType::NoIcon, this);
     box->addTextEditor ("target", juce::String (settings->getDoubleValue ("loudnessTarget", -23.0), 1), "Target (LUFS)");
     box->addTextEditor ("ceiling", juce::String (settings->getDoubleValue ("truePeakCeiling", -1.0), 1), "True peak ceiling (dBTP)");
+    box->addComboBox ("limit", { "Stop short of the target", "Limit to reach the target" }, "When the ceiling stops the gain");
+    box->getComboBoxComponent ("limit")->setSelectedItemIndex (settings->getBoolValue ("loudnessLimit", false) ? 1 : 0);
 
     for (auto* name : { "target", "ceiling" })
         box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
@@ -5117,14 +5124,16 @@ void MainComponent::askForLoudnessTarget()
         const auto target = juce::jlimit (-70.0, 0.0, box->getTextEditorContents ("target").getDoubleValue());
         const auto ceiling = juce::jlimit (-30.0, 0.0, box->getTextEditorContents ("ceiling").getDoubleValue());
         settings->setValue ("loudnessTarget", target);
+        const auto limitToTarget = box->getComboBoxComponent ("limit")->getSelectedItemIndex() == 1;
         settings->setValue ("truePeakCeiling", ceiling);
-        matchLoudness (target, ceiling);
+        settings->setValue ("loudnessLimit", limitToTarget);
+        matchLoudness (target, ceiling, limitToTarget);
     }), true);
 }
 
-void MainComponent::matchLoudness (double target, double ceiling)
+void MainComponent::matchLoudness (double target, double ceiling, bool limitToTarget)
 {
-    measureLoudness ([this, target, ceiling] (const Loudness::Result& r, juce::Range<juce::int64> range)
+    measureLoudness ([this, target, ceiling, limitToTarget] (const Loudness::Result& r, juce::Range<juce::int64> range)
     {
         if (! std::isfinite (r.integrated))
         {
@@ -5134,6 +5143,23 @@ void MainComponent::matchLoudness (double target, double ceiling)
 
         const auto wanted = target - r.integrated;
         const auto gain = juce::jmin (wanted, ceiling - r.truePeak);
+
+        if (limitToTarget && gain < wanted)
+        {
+            auto& doc = engine.document;
+            auto matched = Dynamics::matchLoudness (*doc.getSnapshot(), range.getStart(), range.getEnd(), doc.getSampleRate(), r.integrated, target, ceiling);
+
+            if (matched.snapshot == nullptr)
+                return;
+
+            applyEdit (std::move (matched.snapshot), "Match Loudness " + Loudness::format (target, "LUFS"), waveform.getSelection());
+
+            if (std::abs (matched.integrated - target) > 0.05)
+                showError ("Match Loudness", "With " + juce::String (matched.gainDb, 1) + " dB of gain into the limiter, the result is "
+                                                 + Loudness::format (matched.integrated, "LUFS") + " instead of " + Loudness::format (target, "LUFS") + ".");
+
+            return;
+        }
 
         applyEdit (AudioEdits::gain (*engine.document.getSnapshot(), range.getStart(), range.getEnd(), (float) gain),
                    "Match Loudness " + Loudness::format (target, "LUFS"), waveform.getSelection());

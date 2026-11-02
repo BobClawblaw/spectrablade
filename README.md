@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 168: True-peak limiting, and Match Loudness through the limiter**
+- The Limiter can hold true peaks under its ceiling as well as samples: choose "True peaks (between samples)" in its dialog. Each frame's need then counts the waveform between it and its neighbours, read after 4x oversampling with the sample-rate converter, as Loudness Statistics reads true peak. The gain only approximates the waveform between samples, so the limiter measures what it made and, while the true peak is still more than 0.001 dB over, limits again from the original with the ceiling lowered by the overshoot, up to four passes.
+- Match Loudness asks what to do when the true-peak ceiling would stop the gain: stop short of the target, as before, or limit to reach it. Limiting puts the full gain in front of a true-peak limiter at the ceiling (50 ms release, 5 ms look-ahead), measures the result, and raises the gain by any shortfall, up to four passes, until it is within 0.05 LU of the target; it says so if it isn't. The choice is remembered. It is one undo step.
+- The limiter now keeps one float a frame while it works instead of two doubles, a quarter of the memory.
+- Measured by the tests at 48 kHz: a quarter-rate sine whose samples sit at -3 dBFS reads 0.10 dBTP (its abrupt ends ring a little above its 0 dBTP crests); sample-peak limiting at -1 dBFS leaves it bit for bit, and true-peak limiting brings it to -1.00004 dBTP as Loudness measures it (the limiter's own reading agrees to 1e-6 dB). Ten seconds of stereo noise with a click every half second, at -24.56 LUFS and -3.15 dBTP, which plain gain could raise only 2.15 dB toward -14 LUFS under a -1 dBTP ceiling, comes out at -14.02 LUFS and -1.00 dBTP with 11.14 dB of gain into the limiter, in 0.09 s. The earlier limiter and compressor checks still pass on the rewritten limiter. How either sounds was not listened to, and the dialogs were not tried by hand. The whole suite passed, the default-device test included.
+
 **Milestone 167: Compressor and Limiter**
 - Effects > Compressor asks for a threshold, a ratio, a knee, an attack, a release and a makeup gain (-20 dB, 4:1, 6 dB, 10 ms, 100 ms and 0 dB to start, all remembered while the app runs) and compresses the selection, or the whole file. Above the threshold, each ratio dB in comes out as 1 dB, eased in over the knee's width centred on the threshold. At each frame the level is the loudest channel's sample magnitude, and the gain in dB moves toward the curve's gain for it, falling with the attack time and rising with the release time (each the time to go 63 % of the way), the same on every channel so a stereo image stays put. It is one undo step.
 - Effects > Limiter asks for a gain before it, a ceiling, a release and a look-ahead (0 dB, -1 dBFS, 50 ms and 5 ms to start, remembered while the app runs) and keeps every sample of the selection, or the whole file, at or below the ceiling. The gain each frame needs is the least needed anywhere in the look-ahead after it, averaged over the look-ahead, so the gain eases down before a peak and is already down when it arrives; it recovers with the release time. The ceiling holds for samples, not for the waveform between them. With no gain before it, audio more than the look-ahead before anything that needs limiting is kept bit for bit. It is one undo step.
@@ -998,6 +1004,7 @@ The tests run against the real machine:
 - Parametric EQ: bands read from the panel's controls, the curve the sum of the active bands, its scales, no band at Nyquist.
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
+- True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1051,7 +1058,6 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: Match Loudness reaching its target through the limiter when the peak ceiling stops it, with true-peak limiting
-2. Effects: the built-in effects in the rack and on tracks, played live, with a preview before applying
-3. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
-4. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Effects: the built-in effects in the rack and on tracks, played live, with a preview before applying
+2. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
+3. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
