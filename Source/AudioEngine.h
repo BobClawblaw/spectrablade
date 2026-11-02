@@ -139,6 +139,12 @@ public:
     /** A count-in: clicks before this session frame even with the metronome off (-1: none). */
     void setCountIn (juce::int64 endFrame)        { countInEnd = endFrame; }
 
+    /** Auditioning a file before it is opened: plays it once from its start, as it is (at its own
+        rate, converted to the device's), on the second output with the click, so it skips the
+        effects rack and leaves the document or session where it was. nullptr stops it. */
+    void audition (std::unique_ptr<juce::AudioFormatReader>);
+    bool isAuditioning() const                    { return auditioner.isPlaying(); }
+
     /** The session's tracks' and buses' levels as they play, by their place in the session. */
     SessionMixer::Levels& getLevels() noexcept    { return levels; }
 
@@ -196,6 +202,10 @@ private:
     juce::int64 stopAt = -1;
     double sourceRate = 0.0;
     std::atomic<juce::int64> playedFrame { 0 };
+    juce::TimeSliceThread auditionThread { "Audition" };
+    std::unique_ptr<juce::AudioFormatReaderSource> auditionSource;   // before the transport playing it
+    juce::AudioTransportSource auditioner;
+    juce::AudioBuffer<float> auditionBuffer;
     SessionMixer::Levels levels;
     std::atomic<bool> metronome { false };
     std::atomic<juce::int64> countInEnd { -1 };
@@ -243,6 +253,10 @@ public:
 
     /** Loads a file into the document. Returns an error message, or empty on success. */
     juce::String openFile (const juce::File& file);
+
+    /** Plays a file once from its start without opening it (see DocumentPlayerProcessor::audition).
+        Returns false, with nothing playing, when it can't be read; an empty File stops it. */
+    bool auditionFile (const juce::File&);
 
     //==============================================================================
     /** Output routing: the rack's stereo output goes to device output channels

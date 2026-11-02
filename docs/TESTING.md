@@ -54,6 +54,7 @@ What they check:
 - Clip groups: the edits, the session file, and selecting and dragging a group in the view.
 - Clip gain lines: the mix, the line following edits, the session file, and editing points in the view.
 - Folders: mute, solo and volume through them, the edits, the session file, and adding and collapsing them in the view.
+- Auditioning in the open panel: a file through the player's audition output, sample for sample and past the rack; stopping it; the Preview strip's choices.
 - Folder stems: what each one renders, and which folders get one.
 - Folder strips in the mixer: in place, showing and setting the folder, the strips after it showing their own tracks.
 - Dropping a header on a folder: going in from below and above, and plain moves.

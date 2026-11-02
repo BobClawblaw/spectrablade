@@ -34,6 +34,7 @@
 #include "MetronomeTests.h"
 #include "MixerTests.h"
 #include "BounceTests.h"
+#include "AuditionTests.h"
 #include "PluginTests.h"
 #include "TestUtils.h"
 
@@ -364,6 +365,7 @@ int main (int argc, char* argv[])
         runMetronomeTests (engine.formatManager);
         runMixerTests (engine);
         runBounceTests();
+        runAuditionTests (engine);
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

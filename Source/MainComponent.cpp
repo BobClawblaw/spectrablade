@@ -38,6 +38,7 @@ namespace
     constexpr const char* laneHeightKey   = "laneHeight";
     constexpr const char* loopPlaybackKey = "loopPlayback";
     constexpr const char* rackShownKey    = "rackShown";
+    constexpr const char* openPreviewKey  = "previewInOpenPanel";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -3469,12 +3470,14 @@ void MainComponent::saveSessionAs (std::function<void (bool)> done)
 
 void MainComponent::chooseFilesForSession()
 {
+    auto* preview = makeOpenPreview();
     chooser = std::make_unique<juce::FileChooser> ("Import audio", engine.document.getFile().getParentDirectory(),
                                                    engine.formatManager.getWildcardForAllFormats());
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::canSelectMultipleItems,
                           [this] (const juce::FileChooser& fc)
                           {
+                              engine.auditionFile ({});
                               juce::StringArray paths;
 
                               for (auto& f : fc.getResults())
@@ -3482,7 +3485,8 @@ void MainComponent::chooseFilesForSession()
 
                               if (! paths.isEmpty())
                                   addFilesToSession (paths, -1, multitrack.getCursor());
-                          });
+                          },
+                          preview);
 }
 
 void MainComponent::addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame)
@@ -3592,16 +3596,32 @@ void MainComponent::menuItemSelected (int menuItemId, int)
         confirmDiscardChanges ([this, file] { openFile (file); });
 }
 
+AuditionPreview* MainComponent::makeOpenPreview()
+{
+    chooser.reset();   // the last panel lets go of its preview first
+    auto* settings = appProperties.getUserSettings();
+    openPreview = std::make_unique<AuditionPreview> (engine.formatManager,
+                                                     AuditionPreview::Player { [this] (const juce::File& f) { return engine.auditionFile (f); },
+                                                                               [this] { return engine.getPlayer().isAuditioning(); } },
+                                                     settings->getBoolValue (openPreviewKey, false));
+    openPreview->onPreviewChanged = [settings] (bool on) { settings->setValue (openPreviewKey, on); };
+    return openPreview.get();
+}
+
 void MainComponent::chooseFile()
 {
+    auto* preview = makeOpenPreview();
     chooser = std::make_unique<juce::FileChooser> ("Open audio file", engine.document.getFile().getParentDirectory(),
                                                    engine.formatManager.getWildcardForAllFormats());
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
                           [this] (const juce::FileChooser& fc)
                           {
+                              engine.auditionFile ({});
+
                               if (fc.getResult().existsAsFile())
                                   openFile (fc.getResult());
-                          });
+                          },
+                          preview);
 }
 
 void MainComponent::save()

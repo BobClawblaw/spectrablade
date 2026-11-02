@@ -77,6 +77,7 @@ target_sources(SpectraBlade PRIVATE
     Source/LoadReadout.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
+    Source/AuditionPreview.cpp
     Source/TransportBar.cpp
     Source/SessionOverview.cpp
     Source/SessionRecording.cpp
@@ -133,6 +134,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/ConvolverTests.cpp
     Tests/EffectPresetsTests.cpp
     Tests/BuiltInEffectsTests.cpp
+    Tests/AuditionTests.cpp
     Tests/NoiseTests.cpp
     Tests/ClickTests.cpp
     Tests/SessionTests.cpp
@@ -182,6 +184,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/LoadReadout.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
+    Source/AuditionPreview.cpp
     Source/TransportBar.cpp
     Source/WaveformView.cpp
     Source/SessionOverview.cpp

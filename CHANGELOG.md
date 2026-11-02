@@ -2,6 +2,13 @@
 
 Each milestone as it was built, newest first, with what the tests measured on the development Mac. Releases are marked where they were cut.
 
+## Unreleased
+
+**Milestone 190: Auditioning files before opening them**
+- File > Open and Multitrack > Import Audio have a strip under the file list: a Preview checkbox that plays each audio file as you select it, a Play/Stop button for the selected file, and a line describing it (format, rate, channels, depth, length). The checkbox is remembered.
+- The file plays once from its start, as it is, converted to the device's rate; it goes out with the metronome's click, past the effects rack, and leaves the open file or session where it was. Closing the panel stops it.
+- Measured by the tests: a stereo float file comes out of the player's second output equal to the file (within 0.000000001), left and right apart, nothing on the main output, stopping by itself at its end and at once when stopped; the engine refuses a file that isn't audio; the strip plays nothing unticked, plays each audio file when ticked, stops on a file that isn't audio, and Play and Stop work either way. The strip was not seen in the real open panel (its menus can't be driven by script on the development Mac). The whole suite passed.
+
 ## Released
 
 **Release 0.9.0: the alpha**

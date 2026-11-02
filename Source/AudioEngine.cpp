@@ -231,6 +231,25 @@ DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s
 DocumentPlayerProcessor::~DocumentPlayerProcessor()
 {
     transport.setSource (nullptr);
+    auditioner.setSource (nullptr);
+}
+
+void DocumentPlayerProcessor::audition (std::unique_ptr<juce::AudioFormatReader> reader)
+{
+    auditioner.stop();
+    auditioner.setSource (nullptr);
+    auditionSource.reset();
+
+    if (reader == nullptr)
+        return;
+
+    if (! auditionThread.isThreadRunning())
+        auditionThread.startThread();
+
+    const auto fileRate = reader->sampleRate;
+    auditionSource = std::make_unique<juce::AudioFormatReaderSource> (reader.release(), true);
+    auditioner.setSource (auditionSource.get(), 32768, &auditionThread, fileRate, 2);
+    auditioner.start();
 }
 
 double DocumentPlayerProcessor::modeRate() const
@@ -289,6 +308,8 @@ void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
     monitorInput.setSize (2 * SessionMixer::Live::maxTracks, juce::jmax (8192, 4 * blockSize));
     monitorFrames = 0;
     transport.prepareToPlay (blockSize, sampleRate);
+    auditioner.prepareToPlay (blockSize, sampleRate);
+    auditionBuffer.setSize (2, juce::jmax (8192, 4 * blockSize));
 }
 
 void DocumentPlayerProcessor::setMonitoredTracks (const std::vector<MonitoredTrack>& tracks)
@@ -335,6 +356,7 @@ void DocumentPlayerProcessor::setMonitorInput (const float* const* inputs, int n
 void DocumentPlayerProcessor::releaseResources()
 {
     transport.releaseResources();
+    auditioner.releaseResources();
 }
 
 void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -361,6 +383,14 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 
         if (playing && mode == Mode::session && juce::exactlyEqual (sourceRate, deviceRate))
             addClicks (buffer, playedFrame.load(), numFrames);
+
+        if (auditioner.isPlaying() && numFrames <= auditionBuffer.getNumSamples())
+        {
+            juce::AudioSourceChannelInfo heard (&auditionBuffer, 0, numFrames);
+            auditioner.getNextAudioBlock (heard);
+            buffer.addFrom (2, 0, auditionBuffer, 0, 0, numFrames);
+            buffer.addFrom (3, 0, auditionBuffer, 1, 0, numFrames);
+        }
     }
 
     if (playing)
@@ -535,6 +565,18 @@ juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
     deviceOpen = true;
     rebuildConnections();
     return error;
+}
+
+bool AudioEngine::auditionFile (const juce::File& file)
+{
+    std::unique_ptr<juce::AudioFormatReader> reader;
+
+    if (file.existsAsFile())
+        reader = std::unique_ptr<juce::AudioFormatReader> (formatManager.createReaderFor (file));
+
+    const auto readable = reader != nullptr && reader->lengthInSamples > 0 && reader->sampleRate > 0.0;
+    player->audition (readable ? std::move (reader) : nullptr);
+    return readable;
 }
 
 juce::String AudioEngine::openFile (const juce::File& file)

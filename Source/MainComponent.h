@@ -2,6 +2,7 @@
 
 #include "AudioEdits.h"
 #include "AudioEngine.h"
+#include "AuditionPreview.h"
 #include "ClickRepair.h"
 #include "LevelMeter.h"
 #include "TransportBar.h"
@@ -342,7 +343,9 @@ private:
     double silenceMinSeconds = 0.5;      // Find Next Silence's last time
     RackView rackView { engine };
 
+    std::unique_ptr<AuditionPreview> openPreview;   // before the chooser showing it, which outlives its callback
     std::unique_ptr<juce::FileChooser> chooser;
+    AuditionPreview* makeOpenPreview();
     juce::OwnedArray<PluginEditorWindow> editorWindows;
     std::unique_ptr<PluginListWindow> pluginListWindow;
     std::unique_ptr<MixerWindow> mixerWindow;
