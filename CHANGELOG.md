@@ -2,15 +2,17 @@
 
 Each milestone as it was built, newest first, with what the tests measured on the development Mac. Releases are marked where they were cut.
 
-## Unreleased
+## Released
+
+**Release 0.9.4: the fifth alpha**
+- `SpectraBlade-0.9.4.dmg` on the repository's Releases page, with its SHA-256: Milestone 197 below (a loading screen, and the audio device opened without holding it up) on top of 0.9.3. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (766 checks) passed with the signed app as the plug-in scan worker; the disk image's app verified (`codesign --verify --deep --strict`), reads 0.9.4, carries a licence identical to `LICENSE`, and launched from the mounted image (the loading screen in 1.06 seconds and the main window in 3.79 seconds on that first launch; later launches of the built app took about 1.1 seconds) and quit with no crash report, with `afplay` playing normally before and after. The app's Intel half was not launched, and no Intel Mac was tried.
 
 **Milestone 197: A loading screen, and the audio device opened without holding it up**
 - At launch a small window (600 by 380, a quarter of the main window's room) shows the SpectraBlade logo where the main window will be, and under it what is loading: the plug-in list, the audio device (by name when one is saved) and the last file. The main window shows when they are done, after the logo has been up at least 0.7 seconds. If loading takes more than 3 seconds a Continue button comes up, with a note for a step that has one (a device or a volume that isn't answering, and what clears it); Continue shows the main window at once, and what is still loading carries on behind.
 - The audio device is first asked for on a thread of its own, with a device object of its own: making the device and asking what it offers, the calls a stuck audio service was seen to wait in. Once that answers, the device opens on the message thread as before. Until it is open, Play, Record and Audio Settings do nothing and are greyed out; while loading, every command but About is.
 - Measured by the tests: the loading screen shows the logo and the newest step, stays up its least time, finishes once when the steps end, brings up Continue and the step's note for a long step, and ignores steps after it has finished; the probe, run off the message thread, finds the device the engine opens, a saved one, and the default for a saved one that has gone. The whole suite passed.
 - Measured in the app: over three launches the loading screen appeared in 0.51 to 0.65 seconds and the main window in 1.07 to 1.11 seconds (the first launch after a build took 2.68 seconds); the build before showed its window in about 0.6 seconds, so the logo's least time adds about half a second. With the last file on a share that had stopped answering, the loading screen showed "Reopening take.wav", its note and Continue at 4 seconds, and the main window came up with the file once the share answered again (seen in captures of the loading screen). Not tried: an audio service that doesn't answer (it can't be brought about on purpose), and pressing Continue by hand.
-
-## Released
 
 **Release 0.9.3: the fourth alpha**
 - `SpectraBlade-0.9.3.dmg` on the repository's Releases page, with its SHA-256: Milestone 196 below (a quick launch with a network volume down) on top of 0.9.2. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).

@@ -4,7 +4,7 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
-**Status:** 0.9.3, an alpha for testing before 1.0. See the [changelog](CHANGELOG.md) for what each version holds and the [roadmap](ROADMAP.md) for what comes next.
+**Status:** 0.9.4, an alpha for testing before 1.0. See the [changelog](CHANGELOG.md) for what each version holds and the [roadmap](ROADMAP.md) for what comes next.
 
 SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026. On first launch it copies the settings of whichever earlier version you ran (audio device, inputs and outputs, plug-in list), and it still opens `.wdrack` and `.wlrack` rack files.
 
@@ -67,7 +67,7 @@ This builds a universal Release app in `build-release/`, signs it ad hoc, runs t
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.9.3/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.9.4/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Tests
