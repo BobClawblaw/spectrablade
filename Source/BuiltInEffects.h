@@ -151,7 +151,7 @@ namespace BuiltInEffects
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEqEditor)
     };
 
-    /** The compressor, live: Effects > Compressor's settings as parameters, run a frame at a time
+    /** The compressor, live: Effects > Compressor's settings as parameters, over the same ranges, run a frame at a time
         with Dynamics::CompressorCore, so played over a whole file from its start it gives exactly
         the samples Dynamics::compress gives. A change of settings carries the gain on. No latency. */
     class CompressorProcessor final : public BuiltInEffect
@@ -161,6 +161,9 @@ namespace BuiltInEffects
 
         /** The settings as the parameters hold them. */
         Dynamics::Compressor getSettings() const;
+
+        /** Sets every parameter (as host changes) to the settings, as near as each holds them. */
+        void setSettings (const Dynamics::Compressor&);
 
         void prepareToPlay (double sampleRate, int maximumBlockSize) override;
         void reset() override                                         { core.reset(); }
@@ -181,20 +184,23 @@ namespace BuiltInEffects
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CompressorProcessor)
     };
 
-    /** The limiter, live: gain before it, a ceiling and a release as parameters, and a fixed 5 ms
-        look-ahead, which it reports as its latency (the host lines everything else up with it). It
+    /** The limiter, live: gain before it, a ceiling and a release as parameters (over Effects >
+        Limiter's ranges), and a look-ahead set when it is made (5 ms in a rack or on a track), which
+        it reports as its latency (the host lines everything else up with it). It
         runs a frame at a time with Dynamics::LimiterCore on sample peaks, so its output, a
         look-ahead late, is exactly what Dynamics::limit gives for the same settings. No sample
         comes out above the ceiling. */
     class LimiterProcessor final : public BuiltInEffect
     {
     public:
-        static constexpr double lookaheadMs = 5.0;
+        /** A look-ahead from 0.1 to 50 ms. */
+        explicit LimiterProcessor (double lookaheadMs = 5.0);
 
-        LimiterProcessor();
-
-        /** The settings as the parameters hold them (sample peaks, the fixed look-ahead). */
+        /** The settings as the parameters hold them (sample peaks, its look-ahead). */
         Dynamics::Limiter getSettings() const;
+
+        /** Sets the gain, ceiling and release (as host changes); the look-ahead and true peaks are ignored. */
+        void setSettings (const Dynamics::Limiter&);
 
         void prepareToPlay (double sampleRate, int maximumBlockSize) override;
         void reset() override;
@@ -206,6 +212,7 @@ namespace BuiltInEffects
 
     private:
         Dynamics::LimiterCore core;
+        double lookaheadMs;
         double rate = 48000.0;
         juce::AudioBuffer<float> delay;   // the last look-ahead's frames, a ring
         int delayPosition = 0;

@@ -251,12 +251,14 @@ class MainComponent::EqWindow final : public juce::DocumentWindow
 {
 public:
     EqWindow (const ParametricEq::Settings& settings, double sampleRate, std::function<void (const ParametricEq&)> onApply,
-              std::function<void (const ParametricEq::Settings&)> onSettings, std::function<void()> onClose)
+              std::function<void (const ParametricEq::Settings&)> onSettings, std::function<void (const ParametricEq*)> onPreview,
+              std::function<void()> onClose)
         : DocumentWindow ("Parametric EQ", juce::Colours::darkgrey, DocumentWindow::closeButton),
           closeCallback (std::move (onClose))
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new Content (settings, sampleRate, std::move (onApply), std::move (onSettings)), true);
+        content = new Content (settings, sampleRate, std::move (onApply), std::move (onSettings), std::move (onPreview));
+        setContentOwned (content, true);
         setResizable (true, false);
         setResizeLimits (520, 320, 3000, 2000);
         centreWithSize (getWidth(), getHeight());
@@ -265,15 +267,19 @@ public:
 
     void closeButtonPressed() override              { closeCallback(); }
 
+    /** Unticks Preview without asking for anything (the preview has ended elsewhere). */
+    void previewEnded()                             { content->preview.setToggleState (false, juce::dontSendNotification); }
+
 private:
     struct Content final : public juce::Component
     {
         Content (const ParametricEq::Settings& settings, double sampleRate, std::function<void (const ParametricEq&)> onApply,
-                 std::function<void (const ParametricEq::Settings&)> onSettings)
-            : rate (sampleRate), remember (std::move (onSettings))
+                 std::function<void (const ParametricEq::Settings&)> onSettings, std::function<void (const ParametricEq*)> onPreview)
+            : rate (sampleRate), remember (std::move (onSettings)), previewBands (std::move (onPreview))
         {
             makePanel (settings);
-            apply.onClick = [this, applyBands = std::move (onApply)] { applyBands (*panel); };
+            apply.onClick = [this, applyBands = std::move (onApply)] { applyBands (*panel); };   // applying ends the preview
+            preview.onClick = [this] { previewBands (preview.getToggleState() ? panel.get() : nullptr); };
             flat.onClick = [this]
             {
                 auto s = panel->getSettings();
@@ -283,18 +289,30 @@ private:
 
                 makePanel (s);
                 remember (s);
+                changed();
                 resized();
             };
             addAndMakeVisible (apply);
             addAndMakeVisible (flat);
+            addAndMakeVisible (preview);
             setSize (panel->getWidth(), panel->getHeight() + 40);
         }
 
         void makePanel (const ParametricEq::Settings& settings)
         {
             panel = std::make_unique<ParametricEq> (settings, rate);
-            panel->onChange = [this] { remember (panel->getSettings()); };
+            panel->onChange = [this]
+            {
+                remember (panel->getSettings());
+                changed();
+            };
             addAndMakeVisible (*panel);
+        }
+
+        void changed()
+        {
+            if (preview.getToggleState())
+                previewBands (panel.get());
         }
 
         void resized() override
@@ -304,15 +322,19 @@ private:
             apply.setBounds (buttons.removeFromRight (90));
             buttons.removeFromRight (8);
             flat.setBounds (buttons.removeFromRight (90));
+            preview.setBounds (buttons.removeFromLeft (200));
             panel->setBounds (r);
         }
 
         double rate;
         std::function<void (const ParametricEq::Settings&)> remember;
+        std::function<void (const ParametricEq*)> previewBands;
         std::unique_ptr<ParametricEq> panel;
         juce::TextButton apply { "Apply" }, flat { "Flat" };
+        juce::ToggleButton preview { "Preview on the selection" };
     };
 
+    Content* content = nullptr;
     std::function<void()> closeCallback;
 };
 
@@ -2173,6 +2195,7 @@ void MainComponent::setMultitrack (bool on)
     if (on == multitrackMode || isRecording())
         return;
 
+    stopPreview();
     engine.getPlayer().pause();
     multitrackMode = on;
     engine.getPlayer().setMode (on ? DocumentPlayerProcessor::Mode::session : DocumentPlayerProcessor::Mode::document);
@@ -3371,6 +3394,7 @@ void MainComponent::addFilesToSession (const juce::StringArray& files, int track
 
 void MainComponent::openFile (const juce::File& file)
 {
+    stopPreview();
     const auto error = engine.openFile (file);
 
     if (error.isNotEmpty())
@@ -3623,6 +3647,7 @@ void MainComponent::applyEdit (AudioDocument::Snapshot next, const juce::String&
     if (next == nullptr)
         return;
 
+    stopPreview();   // an edit ends any preview, so it isn't heard through the effect twice
     engine.document.apply (std::move (next), description);
     waveform.setSelection (newSelection);
 }
@@ -3633,6 +3658,7 @@ void MainComponent::applyEdit (AudioDocument::Snapshot next, const juce::String&
     if (next == nullptr)
         return;
 
+    stopPreview();   // an edit ends any preview, so it isn't heard through the effect twice
     engine.document.apply (std::move (next), description, std::move (markers));
     waveform.setSelection (newSelection);
 }
@@ -4392,6 +4418,9 @@ void MainComponent::toggleParametricEq()
     // Deleted later, not inside its own close button's callback.
     if (eqWindow != nullptr)
     {
+        if (previewOwner == PreviewOwner::parametricEq)
+            stopPreview();
+
         eqWindow = nullptr;
         return;
     }
@@ -4399,6 +4428,7 @@ void MainComponent::toggleParametricEq()
     const auto rate = engine.document.hasAudio() ? engine.document.getSampleRate() : 48000.0;
     eqWindow = std::make_unique<EqWindow> (eqSettings, rate, [this] (const ParametricEq& eq) { applyParametricEq (eq.getActiveBands()); },
                                            [this] (const ParametricEq::Settings& s) { eqSettings = s; },
+                                           [this] (const ParametricEq* eq) { previewParametricEq (eq); },
                                            [this]
     {
         juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
@@ -4407,6 +4437,43 @@ void MainComponent::toggleParametricEq()
                 safe->toggleParametricEq();
         });
     });
+}
+
+void MainComponent::previewParametricEq (const ParametricEq* eq)
+{
+    if (eq == nullptr)
+    {
+        if (previewOwner == PreviewOwner::parametricEq)
+            stopPreview();
+
+        return;
+    }
+
+    // The live EQ with the window's bands: a new one to start, else the one playing, set again.
+    const auto settings = eq->getSettings();
+    auto* live = dynamic_cast<BuiltInEffects::ParametricEqProcessor*> (previewEffectOf (PreviewOwner::parametricEq));
+    std::unique_ptr<BuiltInEffects::ParametricEqProcessor> made;
+
+    if (live == nullptr)
+    {
+        made = std::make_unique<BuiltInEffects::ParametricEqProcessor>();
+        live = made.get();
+    }
+
+    for (int i = 0; i < BuiltInEffects::ParametricEqProcessor::numBands; ++i)
+        live->setBand (i, settings[(size_t) i].on, settings[(size_t) i].band);
+
+    if (made != nullptr)
+    {
+        startPreview (PreviewOwner::parametricEq, std::move (made), [this]
+        {
+            if (eqWindow != nullptr)
+                eqWindow->previewEnded();
+        });
+
+        if (previewOwner != PreviewOwner::parametricEq && eqWindow != nullptr)
+            eqWindow->previewEnded();   // nothing to preview (no file, or the session showing)
+    }
 }
 
 void MainComponent::applyParametricEq (const std::vector<Equalizer::Band>& bands)
@@ -4453,16 +4520,63 @@ void MainComponent::showCompressor()
     field ("attack", compressorSettings.attackMs, 2, "Attack (ms)");
     field ("release", compressorSettings.releaseMs, 0, "Release (ms)");
     field ("makeup", compressorSettings.makeupDb, 1, "Makeup gain (dB)");
+
+    const auto read = [box]
+    {
+        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
+        return Dynamics::Compressor { value ("threshold"), value ("ratio"), value ("knee"), value ("attack"), value ("release"), value ("makeup") };
+    };
+
+    // Preview: the live compressor with the fields' settings (the last valid ones while a field is
+    // being typed), on the selection over and over.
+    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
+    preview->setSize (260, 24);
+    box->addCustomComponent (preview.get());
+    const auto update = [this, read, toggle = preview.get()]
+    {
+        if (! toggle->getToggleState())
+        {
+            if (previewOwner == PreviewOwner::compressor)
+                stopPreview();
+
+            return;
+        }
+
+        const auto settings = read();
+
+        if (! Dynamics::isValid (settings))
+            return;
+
+        if (auto* live = dynamic_cast<BuiltInEffects::CompressorProcessor*> (previewEffectOf (PreviewOwner::compressor)))
+        {
+            live->setSettings (settings);
+            return;
+        }
+
+        auto made = std::make_unique<BuiltInEffects::CompressorProcessor>();
+        made->setSettings (settings);
+        startPreview (PreviewOwner::compressor, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
+
+        if (previewOwner != PreviewOwner::compressor)
+            toggle->setToggleState (false, juce::dontSendNotification);
+    };
+    preview->onClick = update;
+
+    for (auto* id : { "threshold", "ratio", "knee", "attack", "release", "makeup" })
+        box->getTextEditor (id)->onTextChange = update;
+
     box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, read, preview] (int result)
     {
+        if (previewOwner == PreviewOwner::compressor)
+            stopPreview();
+
         if (result != 1)
             return;
 
-        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
-        const Dynamics::Compressor settings { value ("threshold"), value ("ratio"), value ("knee"), value ("attack"), value ("release"), value ("makeup") };
+        const auto settings = read();
 
         if (! Dynamics::isValid (settings))
         {
@@ -4497,17 +4611,66 @@ void MainComponent::showLimiter()
     field ("lookahead", limiterSettings.lookaheadMs, 1, "Look-ahead (ms)");
     box->addComboBox ("peaks", { "Sample peaks", "True peaks (between samples)" }, "Hold under the ceiling");
     box->getComboBoxComponent ("peaks")->setSelectedItemIndex (limiterSettings.truePeak ? 1 : 0);
+
+    const auto read = [box]
+    {
+        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
+        return Dynamics::Limiter { value ("gain"), value ("ceiling"), value ("release"), value ("lookahead"),
+                                   box->getComboBoxComponent ("peaks")->getSelectedItemIndex() == 1 };
+    };
+
+    // Preview: the live limiter with the fields' settings, holding sample peaks; a new look-ahead
+    // needs a new one, swapped in as it plays.
+    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection (sample peaks)");
+    preview->setSize (300, 24);
+    box->addCustomComponent (preview.get());
+    const auto update = [this, read, toggle = preview.get()]
+    {
+        if (! toggle->getToggleState())
+        {
+            if (previewOwner == PreviewOwner::limiter)
+                stopPreview();
+
+            return;
+        }
+
+        const auto settings = read();
+
+        if (! Dynamics::isValid (settings))
+            return;
+
+        auto* live = dynamic_cast<BuiltInEffects::LimiterProcessor*> (previewEffectOf (PreviewOwner::limiter));
+
+        if (live != nullptr && juce::exactlyEqual (live->getSettings().lookaheadMs, settings.lookaheadMs))
+        {
+            live->setSettings (settings);
+            return;
+        }
+
+        auto made = std::make_unique<BuiltInEffects::LimiterProcessor> (settings.lookaheadMs);
+        made->setSettings (settings);
+        startPreview (PreviewOwner::limiter, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
+
+        if (previewOwner != PreviewOwner::limiter)
+            toggle->setToggleState (false, juce::dontSendNotification);
+    };
+    preview->onClick = update;
+
+    for (auto* id : { "gain", "ceiling", "release", "lookahead" })
+        box->getTextEditor (id)->onTextChange = update;
+
     box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, read, preview] (int result)
     {
+        if (previewOwner == PreviewOwner::limiter)
+            stopPreview();
+
         if (result != 1)
             return;
 
-        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
-        const Dynamics::Limiter settings { value ("gain"), value ("ceiling"), value ("release"), value ("lookahead"),
-                                           box->getComboBoxComponent ("peaks")->getSelectedItemIndex() == 1 };
+        const auto settings = read();
 
         if (! Dynamics::isValid (settings))
         {
@@ -5409,8 +5572,8 @@ void MainComponent::updatePlaybackLoop()
 {
     auto& player = engine.getPlayer();
 
-    // Loop recording keeps its own loop.
-    if (isRecording())
+    // Loop recording keeps its own loop, and a preview its own.
+    if (isRecording() || previewOwner != PreviewOwner::none)
         return;
 
     const auto wanted = loopPlayback && player.isPlaying() ? playRange() : juce::Range<juce::int64>();
@@ -5424,6 +5587,52 @@ void MainComponent::updatePlaybackLoop()
         player.clearLoop();
     else
         player.setLoop (wanted.getStart(), wanted.getEnd());
+}
+
+void MainComponent::startPreview (PreviewOwner owner, std::unique_ptr<juce::AudioPluginInstance> effect, std::function<void()> ended)
+{
+    if (multitrackMode || isRecording() || ! engine.document.hasAudio() || owner == PreviewOwner::none)
+        return;
+
+    const auto already = previewOwner != PreviewOwner::none;
+
+    if (already && owner != previewOwner)
+        if (auto old = std::exchange (previewEnded, {}))
+            old();
+
+    previewOwner = owner;
+    previewEnded = std::move (ended);
+    engine.setPreviewEffect (std::move (effect));
+
+    if (already)
+        return;
+
+    auto r = selectionOrAll();
+    auto& player = engine.getPlayer();
+    player.setLoop (r.getStart(), r.getEnd());
+    player.play (r.getStart(), -1);
+    playingLoop = r;
+}
+
+void MainComponent::stopPreview()
+{
+    if (previewOwner == PreviewOwner::none)
+        return;
+
+    auto& player = engine.getPlayer();
+    player.pause();
+    player.clearLoop();
+    playingLoop = {};
+    engine.setPreviewEffect (nullptr);
+    previewOwner = PreviewOwner::none;
+
+    if (auto ended = std::exchange (previewEnded, {}))
+        ended();
+}
+
+juce::AudioPluginInstance* MainComponent::previewEffectOf (PreviewOwner owner) const
+{
+    return owner != PreviewOwner::none && owner == previewOwner ? engine.getPreviewEffect() : nullptr;
 }
 
 void MainComponent::chooseSampleRate()
@@ -5510,6 +5719,7 @@ void MainComponent::toggleRecord()
 
 void MainComponent::startRecording()
 {
+    stopPreview();
     auto& recorder = engine.getRecorder();
     auto& player = engine.getPlayer();
     auto& doc = engine.document;

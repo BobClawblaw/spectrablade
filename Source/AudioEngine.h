@@ -304,6 +304,11 @@ public:
     void clearRack();
 
     std::unique_ptr<juce::XmlElement> createRackXml() const;
+
+    /** Previewing an effect: the player goes through this one before the rack, until it is
+        replaced or cleared (nullptr). It is prepared at the device's rate. Not saved with the rack. */
+    void setPreviewEffect (std::unique_ptr<juce::AudioPluginInstance>);
+    juce::AudioPluginInstance* getPreviewEffect() const;
     void loadRackXml (const juce::XmlElement& xml, AddCallback onDone);
 
     //==============================================================================
@@ -347,7 +352,7 @@ private:
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer graphPlayer;
     DocumentPlayerProcessor* player = nullptr;
-    Node::Ptr playerNode, outputNode, meterNode;
+    Node::Ptr playerNode, outputNode, meterNode, previewNode;
     class MasterMeter;
     std::vector<Node::Ptr> rack;
     int outputPairFirstChannel = 0;

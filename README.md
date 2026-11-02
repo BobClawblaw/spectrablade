@@ -6,6 +6,14 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 172: Previewing an effect on the selection**
+- The Parametric EQ window, Effects > Compressor and Effects > Limiter have a "Preview on the selection" switch. While it is on, the selection (or the whole file, with none) plays over and over through the live built-in effect, ahead of the rack, and every change to a band or a field is heard as it is made. A field being typed is heard at its last valid setting.
+- The preview ends when it is switched off, the dialog closes (OK, which then applies the effect offline, or Cancel) or the EQ window closes, and whenever an edit is applied, a file opened or recording started, or the multitrack view shown. Starting a preview from another window ends the first one and unticks its switch.
+- The Limiter's preview holds sample peaks even with true peaks chosen (the switch says so), with the dialog's look-ahead: a new look-ahead swaps in a new limiter as it plays.
+- The live Compressor's and Limiter's parameters now cover the dialogs' whole ranges (threshold to -80 dB, ratio to 100, attack from 0.01 ms, release to 5,000 ms, makeup and gain within 48 dB), and a limiter can be made with any look-ahead from 0.1 to 50 ms (5 ms in a rack or on a track).
+- The effects run at the device's rate; when that differs from the file's, the preview is heard resampled, as playback always is.
+- Measured by the tests: the live Compressor and Limiter take the dialogs' default, extreme and typical settings to within a millionth (the nearest their skewed ranges hold); the Limiter takes each look-ahead as given and reports as many frames of latency as Limiter uses; the engine's preview slot takes an effect, swaps it for the next and clears it, and it never becomes a rack slot or goes into the saved rack. Hearing the previews in the running app was not tried (the app's UI can't be driven here). The whole suite passed.
+
 **Milestone 171: The compressor and limiter as live effects**
 - The Compressor and Limiter are now built-in effects too, beside the Parametric EQ in the rack's and tracks' effect menus under SpectraBlade. Their windows are, for now, the generic list of their parameters.
 - The live Compressor has the threshold, ratio, knee, attack, release and makeup of Effects > Compressor as automatable parameters, runs with no latency, and carries its gain on through a change of settings. The live Limiter has the gain before it, the ceiling and the release; its look-ahead is fixed at 5 ms, which it reports as latency, so the rack and the track chains line everything else up with it.
@@ -1026,6 +1034,7 @@ The tests run against the real machine:
 - Built-in parametric EQ as a plug-in: created by description, bit for bit with the offline EQ in any blocks, its state exact, saved and restored in the rack.
 - Its window: the EQ panel setting the parameters as gestures, and showing changes made from outside.
 - Live compressor and limiter: bit for bit with the offline effects (the limiter a look-ahead late), the limiter's latency reported and counted on a track.
+- Preview: the live effects take the dialogs' settings; the engine's preview slot swaps and clears, and stays out of the rack.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1079,6 +1088,5 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: a preview of an effect on the selection before applying it
-2. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
-3. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
+2. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection

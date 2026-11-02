@@ -140,6 +140,7 @@ private:
     Dynamics::Compressor compressorSettings;
     Dynamics::Limiter limiterSettings;
     void applyParametricEq (const std::vector<Equalizer::Band>&);
+    void previewParametricEq (const ParametricEq*);   // nullptr: stop
     ParametricEq::Settings eqSettings = ParametricEq::defaultSettings();
     int eqBandType = 0;
     double eqBandHz = 1000.0, eqBandGainDb = 6.0, eqBandQ = 1.0;
@@ -342,6 +343,17 @@ private:
 
     /** Loops the player over the play range while looping is on and something plays; else none. */
     void updatePlaybackLoop();
+
+    /** Previewing an effect: the selection (or the whole file) plays over and over through it,
+        before the rack, until stopPreview. A preview from another owner takes over, and the old
+        one's ended callback is called (so it can untick its Preview button); stopPreview calls
+        it too. An owner already previewing just has its effect swapped. Files only. */
+    enum class PreviewOwner { none, parametricEq, compressor, limiter };
+    void startPreview (PreviewOwner, std::unique_ptr<juce::AudioPluginInstance>, std::function<void()> ended);
+    void stopPreview();
+    juce::AudioPluginInstance* previewEffectOf (PreviewOwner) const;
+    PreviewOwner previewOwner = PreviewOwner::none;
+    std::function<void()> previewEnded;
     bool inputMonitoring = false;                        // the armed tracks play their inputs
     bool countIn = false;                                // record after a bar of clicks
     SessionRecording::Rolls rolls;                       // pre-roll and post-roll, kept in the settings

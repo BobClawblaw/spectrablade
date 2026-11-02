@@ -295,4 +295,56 @@ void runBuiltInEffectsTests (AudioEngine& engine)
                && juce::exactlyEqual (restored->getBands()[2].second.gainDb, 6.0),
            "built-in parametric eq in the rack: added by description, and saved and restored with its bands");
     engine.clearRack();
+
+    // Preview: the dialogs' settings, set on the live effects, read back exactly, at the ends of
+    // the offline ranges as well as the defaults.
+    {
+        // A skewed range can't give every float, so each is held to the nearest it gives.
+        const auto near = [] (double held, double wanted) { return std::abs (held - wanted) <= 1.0e-6 * juce::jmax (1.0, std::abs (wanted)); };
+        auto exactCompressor = true;
+
+        for (const auto& s : { Dynamics::Compressor {}, Dynamics::Compressor { -80.0, 100.0, 0.0, 0.01, 5000.0, -48.0 },
+                               Dynamics::Compressor { -12.5, 2.5, 24.0, 1000.0, 1.0, 48.0 }, Dynamics::Compressor { -30.0, 6.0, 3.0, 5.0, 80.0, 3.0 } })
+        {
+            BuiltInEffects::CompressorProcessor c;
+            c.setSettings (s);
+            const auto g = c.getSettings();
+            exactCompressor = exactCompressor && near (g.thresholdDb, s.thresholdDb) && near (g.ratio, s.ratio) && near (g.kneeDb, s.kneeDb)
+                           && near (g.attackMs, s.attackMs) && near (g.releaseMs, s.releaseMs) && near (g.makeupDb, s.makeupDb);
+        }
+
+        auto exactLimiter = true;
+
+        for (const auto& s : { Dynamics::Limiter {}, Dynamics::Limiter { -48.0, -48.0, 1.0, 0.1, false }, Dynamics::Limiter { 48.0, 0.0, 5000.0, 50.0, false },
+                               Dynamics::Limiter { 6.0, -0.5, 120.0, 20.0, false } })
+        {
+            BuiltInEffects::LimiterProcessor l (s.lookaheadMs);
+            l.setSettings (s);
+            l.setPlayConfigDetails (2, 2, rate, 512);
+            l.prepareToPlay (rate, 512);
+            const auto g = l.getSettings();
+            exactLimiter = exactLimiter && near (g.inputGainDb, s.inputGainDb) && near (g.ceilingDb, s.ceilingDb) && near (g.releaseMs, s.releaseMs)
+                        && juce::exactlyEqual (g.lookaheadMs, s.lookaheadMs)
+                        && l.getLatencySamples() == Dynamics::lookaheadFrames (s, rate);
+        }
+
+        check (exactCompressor && exactLimiter,
+               "built-in effects for preview: the compressor and limiter take the default, extreme and typical dialog settings to within a millionth "
+               "(the nearest their ranges hold); the limiter takes each look-ahead (0.1 to 50 ms) as given, its latency as many frames as Limiter's");
+    }
+
+    {
+        const auto slotsBefore = engine.getNumRackSlots();
+        engine.setPreviewEffect (std::make_unique<BuiltInEffects::CompressorProcessor>());
+        const auto first = dynamic_cast<BuiltInEffects::CompressorProcessor*> (engine.getPreviewEffect()) != nullptr;
+        engine.setPreviewEffect (std::make_unique<BuiltInEffects::LimiterProcessor> (20.0));
+        auto* lim = dynamic_cast<BuiltInEffects::LimiterProcessor*> (engine.getPreviewEffect());
+        const auto swapped = lim != nullptr && lim->getSampleRate() > 0.0;
+        const auto savedRack = engine.createRackXml();
+        const auto notInRack = engine.getNumRackSlots() == slotsBefore && savedRack != nullptr && savedRack->getNumChildElements() == slotsBefore;
+        engine.setPreviewEffect (nullptr);
+        check (first && swapped && notInRack && engine.getPreviewEffect() == nullptr,
+               "preview slot: an effect put in front of the rack is replaced by the next (given the engine's rate) and cleared; "
+               "it is never a rack slot or saved with the rack");
+    }
 }

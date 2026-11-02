@@ -427,17 +427,28 @@ CompressorProcessor::CompressorProcessor()
     : BuiltInEffect (compressorDescription(), "SPECTRABLADE_COMPRESSOR")
 {
     const Dynamics::Compressor start;
-    threshold = addFloat ("threshold", "Threshold", { -60.0f, 0.0f }, (float) start.thresholdDb, "dB");
-    ratio = addFloat ("ratio", "Ratio", { 1.0f, 20.0f, 0.0f, 0.4f }, (float) start.ratio, ":1");
+    // The offline Compressor's ranges, so any setting it takes can be heard live.
+    threshold = addFloat ("threshold", "Threshold", { -80.0f, 0.0f }, (float) start.thresholdDb, "dB");
+    ratio = addFloat ("ratio", "Ratio", { 1.0f, 100.0f, 0.0f, 0.25f }, (float) start.ratio, ":1");
     knee = addFloat ("knee", "Knee", { 0.0f, 24.0f }, (float) start.kneeDb, "dB");
-    attack = addFloat ("attack", "Attack", { 0.1f, 300.0f, 0.0f, 0.3f }, (float) start.attackMs, "ms");
-    release = addFloat ("release", "Release", { 5.0f, 2000.0f, 0.0f, 0.3f }, (float) start.releaseMs, "ms");
-    makeup = addFloat ("makeup", "Makeup Gain", { 0.0f, 24.0f }, (float) start.makeupDb, "dB");
+    attack = addFloat ("attack", "Attack", { 0.01f, 1000.0f, 0.0f, 0.2f }, (float) start.attackMs, "ms");
+    release = addFloat ("release", "Release", { 1.0f, 5000.0f, 0.0f, 0.25f }, (float) start.releaseMs, "ms");
+    makeup = addFloat ("makeup", "Makeup Gain", { -48.0f, 48.0f }, (float) start.makeupDb, "dB");
 }
 
 Dynamics::Compressor CompressorProcessor::getSettings() const
 {
     return { (double) threshold->get(), (double) ratio->get(), (double) knee->get(), (double) attack->get(), (double) release->get(), (double) makeup->get() };
+}
+
+void CompressorProcessor::setSettings (const Dynamics::Compressor& s)
+{
+    setExactly (*threshold, (float) s.thresholdDb);
+    setExactly (*ratio, (float) s.ratio);
+    setExactly (*knee, (float) s.kneeDb);
+    setExactly (*attack, (float) s.attackMs);
+    setExactly (*release, (float) s.releaseMs);
+    setExactly (*makeup, (float) s.makeupDb);
 }
 
 void CompressorProcessor::prepareToPlay (double sampleRate, int)
@@ -477,18 +488,26 @@ void CompressorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 }
 
 //==============================================================================
-LimiterProcessor::LimiterProcessor()
-    : BuiltInEffect (limiterDescription(), "SPECTRABLADE_LIMITER")
+LimiterProcessor::LimiterProcessor (double lookahead)
+    : BuiltInEffect (limiterDescription(), "SPECTRABLADE_LIMITER"), lookaheadMs (juce::jlimit (0.1, 50.0, lookahead))
 {
+    // The offline Limiter's ranges.
     const Dynamics::Limiter start;
-    gain = addFloat ("gain", "Gain", { -24.0f, 48.0f }, (float) start.inputGainDb, "dB");
+    gain = addFloat ("gain", "Gain", { -48.0f, 48.0f }, (float) start.inputGainDb, "dB");
     ceiling = addFloat ("ceiling", "Ceiling", { -48.0f, 0.0f }, (float) start.ceilingDb, "dBFS");
-    release = addFloat ("release", "Release", { 1.0f, 2000.0f, 0.0f, 0.3f }, (float) start.releaseMs, "ms");
+    release = addFloat ("release", "Release", { 1.0f, 5000.0f, 0.0f, 0.25f }, (float) start.releaseMs, "ms");
 }
 
 Dynamics::Limiter LimiterProcessor::getSettings() const
 {
     return { (double) gain->get(), (double) ceiling->get(), (double) release->get(), lookaheadMs, false };
+}
+
+void LimiterProcessor::setSettings (const Dynamics::Limiter& s)
+{
+    setExactly (*gain, (float) s.inputGainDb);
+    setExactly (*ceiling, (float) s.ceilingDb);
+    setExactly (*release, (float) s.releaseMs);
 }
 
 void LimiterProcessor::prepareToPlay (double sampleRate, int)

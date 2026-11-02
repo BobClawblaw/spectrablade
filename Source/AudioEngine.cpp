@@ -806,8 +806,9 @@ void AudioEngine::rebuildConnections()
     for (auto& c : graph.getConnections())
         graph.removeConnection (c, juce::AudioProcessorGraph::UpdateKind::none);
 
-    // Chain: player -> each rack slot in order -> master meter -> output. Bypassed slots stay in
-    // the chain; the graph calls their bypass processing so latency compensation keeps working.
+    // Chain: player -> the effect being previewed, if any -> each rack slot in order -> master
+    // meter -> output. Bypassed slots stay in the chain; the graph calls their bypass processing
+    // so latency compensation keeps working.
     auto* source = playerNode.get();
 
     auto connectStereo = [this] (Node* from, Node* to, int toFirstChannel)
@@ -825,6 +826,12 @@ void AudioEngine::rebuildConnections()
                                      juce::AudioProcessorGraph::UpdateKind::none);
         }
     };
+
+    if (previewNode != nullptr)
+    {
+        connectStereo (source, previewNode.get(), 0);
+        source = previewNode.get();
+    }
 
     for (auto& slot : rack)
     {
@@ -870,6 +877,32 @@ void AudioEngine::rebuildConnections()
     }
 
     graph.rebuild();
+}
+
+//==============================================================================
+void AudioEngine::setPreviewEffect (std::unique_ptr<juce::AudioPluginInstance> effect)
+{
+    if (previewNode != nullptr)
+    {
+        if (onPluginAboutToBeRemoved != nullptr)
+            onPluginAboutToBeRemoved (previewNode->getProcessor());
+
+        graph.removeNode (previewNode.get());
+        previewNode = nullptr;
+    }
+
+    if (effect != nullptr)
+    {
+        effect->setRateAndBufferSizeDetails (currentSampleRate(), currentBlockSize());
+        previewNode = graph.addNode (std::move (effect));
+    }
+
+    rebuildConnections();
+}
+
+juce::AudioPluginInstance* AudioEngine::getPreviewEffect() const
+{
+    return previewNode != nullptr ? dynamic_cast<juce::AudioPluginInstance*> (previewNode->getProcessor()) : nullptr;
 }
 
 //==============================================================================
