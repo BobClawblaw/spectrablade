@@ -1186,6 +1186,96 @@ namespace
                    && playKeys[0] == juce::KeyPress (juce::KeyPress::spaceKey) && backToNone,
                "keyboard shortcuts: only changes are stored, they come back over the defaults in a fresh start, and resetting stores nothing");
     }
+
+    /** Three commands in two menus, one hidden from key editors. */
+    struct ThreeCommands final : public juce::ApplicationCommandTarget
+    {
+        juce::ApplicationCommandTarget* getNextCommandTarget() override     { return nullptr; }
+        void getAllCommands (juce::Array<juce::CommandID>& ids) override   { ids.addArray ({ 1, 2, 3, 4 }); }
+        bool perform (const InvocationInfo&) override                       { return true; }
+
+        void getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& info) override
+        {
+            const auto cmd = juce::ModifierKeys::commandModifier;
+
+            switch (id)
+            {
+                case 1: info.setInfo ("Save", "Save the file", "File", 0); info.addDefaultKeypress ('s', cmd); break;
+                case 2: info.setInfo ("Play", "Start playing", "Transport", 0); info.addDefaultKeypress (juce::KeyPress::spaceKey, 0); break;
+                case 3: info.setInfo ("Loop Playback", "Play over and over", "Transport", 0); info.addDefaultKeypress ('l', cmd); break;
+                default: info.setInfo ("Secret", {}, "Transport", juce::ApplicationCommandInfo::hiddenFromKeyEditor); break;
+            }
+        }
+    };
+
+    void testShortcutEditing()
+    {
+        ThreeCommands target;
+        juce::ApplicationCommandManager commands;
+        commands.registerAllCommandsForTarget (&target);
+        auto& keys = *commands.getKeyMappings();
+        const auto cmd = juce::ModifierKeys::commandModifier;
+        const juce::KeyPress cmdS ('s', cmd, 0), cmdL ('l', cmd, 0), cmdK ('k', cmd, 0), space (juce::KeyPress::spaceKey);
+
+        // Listing and searching.
+        const auto all = KeyShortcuts::rows (commands, {}, false);
+        const auto byWords = KeyShortcuts::rows (commands, "transport OVER", false);
+        const auto byKey = KeyShortcuts::rows (commands, "space", false);
+        const auto listed = all.size() == 3 && all[0].name == "Save" && all[1].name == "Loop Playback" && all[2].name == "Play"
+                            && byWords.size() == 1 && byWords[0].id == 3 && byKey.size() == 1 && byKey[0].id == 2
+                            && KeyShortcuts::rows (commands, {}, true).empty();
+
+        // Taking a key from another command, replacing in place, and the changed-only list.
+        const auto takenFrom = KeyShortcuts::assign (keys, 3, cmdS, 0);
+        const auto took = takenFrom == 1 && keys.getKeyPressesAssignedToCommand (3) == juce::Array<juce::KeyPress> { cmdS }
+                          && keys.getKeyPressesAssignedToCommand (1).isEmpty();
+        const auto changed = KeyShortcuts::rows (commands, {}, true);
+        const auto changedListed = changed.size() == 2 && changed[0].id == 1 && changed[1].id == 3;
+        const auto added = KeyShortcuts::assign (keys, 2, cmdK) == 0 && keys.getKeyPressesAssignedToCommand (2) == juce::Array<juce::KeyPress> { space, cmdK };
+        const auto own = KeyShortcuts::assign (keys, 2, space, 1) == 0 && keys.getKeyPressesAssignedToCommand (2) == juce::Array<juce::KeyPress> { space };
+
+        // Resetting Save while Loop Playback holds its key: the key stays with Loop Playback.
+        const auto kept = KeyShortcuts::resetCommand (commands, 1);
+        const auto resetKept = kept == juce::Array<juce::KeyPress> { cmdS } && keys.getKeyPressesAssignedToCommand (1).isEmpty();
+        KeyShortcuts::resetCommand (commands, 3);
+        const auto resetBoth = KeyShortcuts::resetCommand (commands, 1).isEmpty() && keys.getKeyPressesAssignedToCommand (1) == juce::Array<juce::KeyPress> { cmdS }
+                               && keys.getKeyPressesAssignedToCommand (3) == juce::Array<juce::KeyPress> { cmdL };
+
+        // A set exported and imported into a fresh start; a file that isn't one refused.
+        KeyShortcuts::assign (keys, 3, cmdK);
+        keys.removeKeyPress (2, 0);
+        const auto file = juce::File::createTempFile (KeyShortcuts::fileSuffix), junk = juce::File::createTempFile (".txt");
+        const auto exported = KeyShortcuts::exportTo (keys, file).wasOk();
+        junk.replaceWithText ("<NOT_KEYS/>");
+
+        juce::ApplicationCommandManager fresh;
+        fresh.registerAllCommandsForTarget (&target);
+        auto& freshKeys = *fresh.getKeyMappings();
+        KeyShortcuts::assign (freshKeys, 1, cmdK);   // changed before the import, which starts from the defaults
+        const auto imported = KeyShortcuts::importFrom (freshKeys, file).wasOk();
+        const auto same = freshKeys.getKeyPressesAssignedToCommand (1) == juce::Array<juce::KeyPress> { cmdS }
+                          && freshKeys.getKeyPressesAssignedToCommand (2).isEmpty()
+                          && freshKeys.getKeyPressesAssignedToCommand (3) == juce::Array<juce::KeyPress> { cmdL, cmdK };
+        const auto refused = KeyShortcuts::importFrom (freshKeys, junk).failed() && freshKeys.getKeyPressesAssignedToCommand (3).size() == 2;
+        file.deleteFile();
+        junk.deleteFile();
+
+        // The window: searching narrows its list; choosing a command shows its keys.
+        KeyShortcuts::Editor editor (fresh);
+        editor.getSearchBox().setText ("loop", false);   // the box tells its listener later, so list again now
+        editor.refresh();
+        const auto narrowed = editor.getNumShown() == 1;
+        editor.choose (3);
+
+        check (listed, "shortcut editor: commands listed by menu then name, hidden ones left out, every search word matched in name, menu, "
+                       "description or key");
+        check (took && changedListed && added && own,
+               "shortcut editor: a key given to one command is taken from the one that had it, replacing in place or added; both then listed as changed");
+        check (resetKept && resetBoth, "shortcut editor: resetting a command gives back its defaults, except one another command holds now");
+        check (exported && imported && same && refused && narrowed && editor.getChosen() == 3,
+               "shortcut editor: a set exported and imported over a changed fresh start gives the same keys; a file that isn't a set changes nothing; "
+               "the window's search narrows its list");
+    }
 }
 
 namespace
@@ -1431,6 +1521,7 @@ void runMixerTests (AudioEngine& engine)
     testRecovery (engine);
     testFadeShapeFile (engine);
     testKeyShortcuts();
+    testShortcutEditing();
     testFrozenFile (engine);
     testClipGroups (engine);
     testClipGainFile (engine);

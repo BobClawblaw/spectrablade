@@ -155,15 +155,15 @@ private:
 class MainComponent::KeyShortcutsWindow final : public juce::DocumentWindow
 {
 public:
-    KeyShortcutsWindow (juce::KeyPressMappingSet& mappings, std::function<void()> onClose)
+    KeyShortcutsWindow (juce::ApplicationCommandManager& commandManager, std::function<void()> onClose)
         : DocumentWindow ("Keyboard Shortcuts", juce::Colours::darkgrey, DocumentWindow::closeButton),
           closeCallback (std::move (onClose))
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new juce::KeyMappingEditorComponent (mappings, true), false);
+        setContentOwned (new KeyShortcuts::Editor (commandManager), true);
         setResizable (true, false);
-        setResizeLimits (400, 300, 3000, 3000);
-        centreWithSize (560, 640);
+        setResizeLimits (520, 420, 3000, 3000);
+        centreWithSize (680, 640);
         setVisible (true);
     }
 
@@ -6375,7 +6375,7 @@ void MainComponent::showKeyShortcuts()
 {
     // Deleted later, not inside its own close button's callback.
     if (keyShortcutsWindow == nullptr)
-        keyShortcutsWindow = std::make_unique<KeyShortcutsWindow> (*commands.getKeyMappings(), [this]
+        keyShortcutsWindow = std::make_unique<KeyShortcutsWindow> (commands, [this]
         {
             juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
             {

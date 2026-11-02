@@ -8,6 +8,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
 
+**Milestone 180: The keyboard shortcuts window**
+- Window > Keyboard Shortcuts... is now a window of its own instead of JUCE's stock one. A search box finds commands by every word typed, in their names, menus and descriptions or their keys ("transport loop", "cmd l"), and Changed only lists just the commands whose keys differ from the defaults, those keys shown in amber.
+- Choosing a command shows its description and its keys. Add Key... asks for the keys to press and says which command has them now; assigning takes them from that command. A key's button changes or removes it, and Reset puts back the command's own defaults, except any another command holds now, which it names.
+- Export... writes the changes from the defaults to a `.sbkeys` file, and Import... reads one: the defaults with the file's changes over them, whatever was changed before. A file that isn't a shortcut set is refused and changes nothing. Changes are still saved as they are made.
+- Measured by the tests: listing by menu then name with hidden commands left out; search words matched in names, menus, descriptions and keys; a key taken from the command that had it, in place or added; resetting with a key held elsewhere; an exported set imported over a changed fresh start giving the same keys; a file that isn't a set refused; and the window's search narrowing its list. The window was rendered to an image to check its layout; the key entry, the file choosers and using it in the running app were not tried. The whole suite passed.
+
 **Milestone 179: Reverse Each Region**
 - Effects > Reverse Each Region plays every region backwards in place, as Reverse does to the selection, in one undoable step; the audio between regions is untouched. Like Normalize and Fade Each Region, it goes through the regions in time order and skips one that overlaps a region before it, and it also skips a one-frame region (nothing to turn round), saying how many it left. A region running past the end is reversed up to the end.
 - Checked by the tests: two regions turned round sample for sample with everything else unchanged, the overlapping and one-frame regions and a point skipped, and a region past the end; the whole suite passed. The menu command was not tried in the running app.
@@ -1086,6 +1092,7 @@ The tests run against the real machine:
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
+- Keyboard shortcuts window: search, keys taken and reset, sets exported and imported.
 - Reverse Each Region: regions turned round in place, the rest untouched, overlapping and one-frame regions skipped.
 - Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.
 - Graphic EQ: the bands, a band's gain at and off its centre, the cascade against the bands' responses, refused settings; live bit for bit with offline.
