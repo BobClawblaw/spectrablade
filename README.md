@@ -8,6 +8,10 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
 
+**Milestone 179: Reverse Each Region**
+- Effects > Reverse Each Region plays every region backwards in place, as Reverse does to the selection, in one undoable step; the audio between regions is untouched. Like Normalize and Fade Each Region, it goes through the regions in time order and skips one that overlaps a region before it, and it also skips a one-frame region (nothing to turn round), saying how many it left. A region running past the end is reversed up to the end.
+- Checked by the tests: two regions turned round sample for sample with everything else unchanged, the overlapping and one-frame regions and a point skipped, and a region past the end; the whole suite passed. The menu command was not tried in the running app.
+
 **Milestone 178: The AGPLv3 licence**
 - SpectraBlade is released under the GNU AGPLv3, the licence under which it uses JUCE. `LICENSE` holds the licence's text exactly as the Free Software Foundation publishes it.
 - About SpectraBlade, at the top of the application menu, shows the version, the copyright, the licence and its warranty disclaimer, and where the source code is. The app's Info.plist carries the copyright line too.
@@ -1082,6 +1086,7 @@ The tests run against the real machine:
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
+- Reverse Each Region: regions turned round in place, the rest untouched, overlapping and one-frame regions skipped.
 - Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.
 - Graphic EQ: the bands, a band's gain at and off its centre, the cascade against the bands' responses, refused settings; live bit for bit with offline.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
@@ -1137,5 +1142,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
-2. Effects: a multiband compressor and a de-esser, offline and live
+1. Effects: a multiband compressor and a de-esser, offline and live

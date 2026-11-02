@@ -581,6 +581,34 @@ namespace
         check (regionFadesRight && fadeSkipped == 2,
                "fade each region: each region as Fade Selection Edges fades it, the rest untouched; overlapping and one-frame ones skipped");
 
+        // Reverse each region: 100..300 and 500..800 turned round in place; the overlapping one, the
+        // one-frame one and a point skipped; a region running past the end reversed up to the end.
+        auto reverseSkipped = 0;
+        const auto reversedRegions = readAll (*AudioEdits::reverseRegions (*rampSnap, { { 100, 200, "A" }, { 250, 100, "Over" }, { 500, 300, "B" },
+                                                                                         { 900, 1, "Tiny" }, { 950, 0, "Point" } },
+                                                                           reverseSkipped));
+        const auto rampIn = readAll (*rampSnap);
+        auto reversedRight = reversedRegions.getNumSamples() == rampIn.getNumSamples();
+
+        for (int i = 0; i < rampIn.getNumSamples() && reversedRight; ++i)
+        {
+            const auto from = i >= 100 && i < 300 ? 399 - i : (i >= 500 && i < 800 ? 1299 - i : i);
+            reversedRight = juce::exactlyEqual (reversedRegions.getSample (0, i), rampIn.getSample (0, from));
+        }
+
+        auto pastEndSkipped = 0, onlyOneSkipped = 0;
+        const auto total = (int) rampSnap->getNumFrames();
+        const auto pastEnd = readAll (*AudioEdits::reverseRegions (*rampSnap, { { total - 10, 50, "Tail" } }, pastEndSkipped));
+        auto tailRight = pastEnd.getNumSamples() == total;
+
+        for (int i = 0; i < total && tailRight; ++i)
+            tailRight = juce::exactlyEqual (pastEnd.getSample (0, i), rampIn.getSample (0, i >= total - 10 ? 2 * total - 11 - i : i));
+
+        check (reversedRight && reverseSkipped == 2 && tailRight && pastEndSkipped == 0
+                   && AudioEdits::reverseRegions (*rampSnap, { { 900, 1, "Tiny" } }, onlyOneSkipped) == nullptr && onlyOneSkipped == 1,
+               "reverse each region: each region turned round in place sample for sample, the rest untouched; overlapping and one-frame regions "
+               "skipped; a region running past the end reversed up to the end");
+
         const auto panned = readAll (*AudioEdits::balanceRamp (*twoSnap, 100, 121, -1.0f, 1.0f));
         const auto allLeft = readAll (*AudioEdits::balance (*twoSnap, 100, 121, -1.0f));
         const auto panMiddle = readAll (*AudioEdits::balance (*twoSnap, 100, 121, 0.0f));

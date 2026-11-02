@@ -228,6 +228,10 @@ namespace AudioEdits
         last, each at most half the region. */
     Snapshot fadeRegions (const AudioSnapshot&, const Markers&, juce::int64 fadeFrames, FadeShape, int& skipped);
 
+    /** The same with reverse on each region: every region played backwards in place, the audio
+        between them untouched. A one-frame region (nothing to turn round) is skipped too. */
+    Snapshot reverseRegions (const AudioSnapshot&, const Markers&, int& skipped);
+
     /** Scales each channel of [start, end) on its own so its peak sits at targetDecibels; silent
         channels are left as they are. Returns nullptr when every channel is silent. */
     Snapshot normalizeChannels (const AudioSnapshot&, juce::int64 start, juce::int64 end, float targetDecibels);

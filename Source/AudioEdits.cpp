@@ -1037,4 +1037,10 @@ Snapshot fadeRegions (const AudioSnapshot& s, const Markers& markers, juce::int6
     return editEachRegion (s, markers, skipped, [fadeFrames, shape] (const AudioSnapshot& a, juce::int64 start, juce::int64 end)
                            { return fadeEdges (a, start, end, fadeFrames, shape); });
 }
+
+Snapshot reverseRegions (const AudioSnapshot& s, const Markers& markers, int& skipped)
+{
+    return editEachRegion (s, markers, skipped, [] (const AudioSnapshot& a, juce::int64 start, juce::int64 end)
+                           { return juce::jmin (end, a.getNumFrames()) - start < 2 ? nullptr : reverse (a, start, end); });
+}
 }
