@@ -8,12 +8,6 @@ namespace Dynamics
 {
 namespace
 {
-    /** The coefficient of a one-pole smoother that moves 63 % of the way in `ms`. */
-    double smoothing (double ms, double sampleRate)
-    {
-        return std::exp (-1.0 / (ms / 1000.0 * sampleRate));
-    }
-
     bool rangeOk (const AudioSnapshot& s, juce::int64& start, juce::int64& end)
     {
         start = juce::jlimit ((juce::int64) 0, s.getNumFrames(), start);
@@ -59,20 +53,14 @@ AudioEdits::Snapshot compress (const AudioSnapshot& s, juce::int64 start, juce::
     if (! isValid (c) || sampleRate <= 0.0 || ! rangeOk (s, start, end))
         return nullptr;
 
-    const auto attack = smoothing (c.attackMs, sampleRate);
-    const auto release = smoothing (c.releaseMs, sampleRate);
-
-    return AudioEdits::processRange (s, start, end, [&c, attack, release] (juce::AudioBuffer<float>& b)
+    return AudioEdits::processRange (s, start, end, [&c, sampleRate] (juce::AudioBuffer<float>& b)
     {
-        double gainDb = 0.0;
+        CompressorCore core;
+        core.set (c, sampleRate);
 
         for (int i = 0; i < b.getNumSamples(); ++i)
         {
-            const auto level = loudest (b, i);
-            const auto target = level > 0.0 ? staticGainDb (c, 20.0 * std::log10 (level)) : 0.0;
-            const auto coefficient = target < gainDb ? attack : release;
-            gainDb = target + coefficient * (gainDb - target);
-            const auto factor = std::pow (10.0, (gainDb + c.makeupDb) / 20.0);
+            const auto factor = core.next (loudest (b, i));
 
             for (int ch = 0; ch < b.getNumChannels(); ++ch)
                 b.setSample (ch, i, (float) (b.getSample (ch, i) * factor));
@@ -80,10 +68,87 @@ AudioEdits::Snapshot compress (const AudioSnapshot& s, juce::int64 start, juce::
     });
 }
 
+void CompressorCore::set (const Compressor& c, double sampleRate)
+{
+    settings = c;
+    attack = smoothingCoefficient (c.attackMs, sampleRate);
+    release = smoothingCoefficient (c.releaseMs, sampleRate);
+}
+
+double CompressorCore::next (double level) noexcept
+{
+    const auto target = level > 0.0 ? staticGainDb (settings, 20.0 * std::log10 (level)) : 0.0;
+    const auto coefficient = target < gainDb ? attack : release;
+    gainDb = target + coefficient * (gainDb - target);
+    return std::pow (10.0, (gainDb + settings.makeupDb) / 20.0);
+}
+
 bool isValid (const Limiter& l)
 {
     return std::abs (l.inputGainDb) <= 48.0 && l.ceilingDb >= -48.0 && l.ceilingDb <= 0.0 && l.releaseMs >= 1.0 && l.releaseMs <= 5000.0
         && l.lookaheadMs >= 0.1 && l.lookaheadMs <= 50.0;
+}
+
+double smoothingCoefficient (double ms, double sampleRate)
+{
+    return std::exp (-1.0 / (ms / 1000.0 * sampleRate));
+}
+
+double ceilingGain (double ceilingDb)
+{
+    return (double) (float) std::pow (10.0, ceilingDb / 20.0);
+}
+
+float limiterNeed (double peak, double inputGain, double ceiling)
+{
+    return peak * inputGain > ceiling ? (float) (ceiling / (peak * inputGain)) : 1.0f;
+}
+
+int lookaheadFrames (const Limiter& l, double sampleRate)
+{
+    return juce::jmax (1, (int) std::lround (l.lookaheadMs / 1000.0 * sampleRate));
+}
+
+void LimiterCore::prepare (int lookahead, double releaseCoefficient)
+{
+    ahead = juce::jmax (1, lookahead);
+    release = releaseCoefficient;
+    sum = 0.0;
+    gain = 1.0;
+    pushed = 0;
+    window.clear();
+    leasts.assign ((size_t) ahead + 1, 1.0f);
+    oldest = 0;
+}
+
+std::optional<double> LimiterCore::push (float need)
+{
+    const auto j = pushed++;
+
+    // The least need over [j - ahead, j], which is frame (j - ahead)'s look-ahead.
+    while (! window.empty() && window.back().second >= need)
+        window.pop_back();
+
+    window.emplace_back (j, need);
+
+    while (window.front().first < j - ahead)
+        window.pop_front();
+
+    if (j < ahead)
+        return std::nullopt;
+
+    // Averaged over that frame and the ahead frames before it: each of their look-aheads holds the
+    // frame, so the average is never above what it needs (only rounding could put it above). Frames
+    // before the first count as needing 1.
+    const auto least = window.front().second;
+    sum += (double) least - (double) leasts[oldest];
+    leasts[oldest] = least;
+    oldest = (oldest + 1) % leasts.size();
+    const auto average = juce::jmin (1.0, (sum + (double) (ahead + 1)) / (double) (ahead + 1));
+
+    // Down at once to the averaged gain, up with the release; never above the average.
+    gain = average < gain ? average : average + release * (gain - average);
+    return gain;
 }
 
 namespace
@@ -133,14 +198,12 @@ namespace
     {
         const auto n = b.getNumSamples();
         const auto input = std::pow (10.0, l.inputGainDb / 20.0);
-        const auto ceiling = (double) (float) std::pow (10.0, ceilingDb / 20.0);
-        const auto release = smoothing (l.releaseMs, sampleRate);
-        const auto ahead = juce::jmax (1, (int) std::lround (l.lookaheadMs / 1000.0 * sampleRate));
+        const auto ceiling = ceilingGain (ceilingDb);
         const auto unity = juce::exactlyEqual (l.inputGainDb, 0.0);
 
-        // The gain each frame needs on its own; one float a frame, reused for the look-ahead minimum.
+        // The gain each frame needs on its own, one float a frame.
         std::vector<float> need ((size_t) n);
-        const auto needFor = [input, ceiling] (double peak) { return peak * input > ceiling ? (float) (ceiling / (peak * input)) : 1.0f; };
+        const auto needFor = [input, ceiling] (double peak) { return limiterNeed (peak, input, ceiling); };
 
         if (l.truePeak)
             forEachTruePeak (b, sampleRate, [&need, &needFor] (int i, float peak) { need[(size_t) i] = needFor (peak); });
@@ -148,44 +211,23 @@ namespace
             for (int i = 0; i < n; ++i)
                 need[(size_t) i] = needFor (loudest (b, i));
 
-        // The smallest need over each frame's look-ahead [i, i + ahead], with a monotonic queue that
-        // keeps its own copies of the values, so the minimum can be written over the need in place.
-        std::deque<std::pair<int, float>> queue;
+        // Each frame's gain from the core, a look-ahead behind; then a look-ahead of frames needing
+        // nothing, so the last frames' look-aheads end with the range.
+        LimiterCore core;
+        core.prepare (lookaheadFrames (l, sampleRate), smoothingCoefficient (l.releaseMs, sampleRate));
+        const auto ahead = core.getLookahead();
 
-        for (int i = n - 1; i >= 0; --i)
+        for (int j = 0; j < n + ahead; ++j)
         {
-            const auto value = need[(size_t) i];
+            const auto gain = core.push (j < n ? need[(size_t) j] : 1.0f);
+            const auto i = j - ahead;
 
-            while (! queue.empty() && queue.back().second >= value)
-                queue.pop_back();
-
-            queue.emplace_back (i, value);
-
-            while (queue.front().first > i + ahead)
-                queue.pop_front();
-
-            need[(size_t) i] = queue.front().second;
-        }
-
-        // Averaged over the frames [i - ahead, i]: each of their windows holds frame i, so the
-        // average is never above what frame i needs (only rounding could put it above, and the
-        // clamp below catches that). Frames before the range count as needing 1.
-        double sum = 0.0, gain = 1.0;
-
-        for (int i = 0; i < n; ++i)
-        {
-            sum += (double) need[(size_t) i] - (i >= ahead + 1 ? (double) need[(size_t) (i - ahead - 1)] : 1.0);
-            const auto average = juce::jmin (1.0, (sum + (double) (ahead + 1)) / (double) (ahead + 1));
-
-            // Down at once to the averaged gain, up with the release; never above the average.
-            gain = average < gain ? average : average + release * (gain - average);
-
-            if (unity && juce::exactlyEqual (gain, 1.0))
+            if (! gain.has_value() || (unity && juce::exactlyEqual (*gain, 1.0)))
                 continue;
 
             for (int ch = 0; ch < b.getNumChannels(); ++ch)
             {
-                const auto y = (double) b.getSample (ch, i) * input * gain;
+                const auto y = (double) b.getSample (ch, i) * input * *gain;
                 b.setSample (ch, i, (float) juce::jlimit (-ceiling, ceiling, y));  // only float rounding can reach past it
             }
         }

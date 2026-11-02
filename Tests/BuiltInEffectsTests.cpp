@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
 #include "../Source/BuiltInEffects.h"
+#include "../Source/TrackEffects.h"
 #include "TestUtils.h"
 #include "BuiltInEffectsTests.h"
 
@@ -78,7 +79,7 @@ void runBuiltInEffectsTests (AudioEngine& engine)
     // Created by description, through the app's own format manager.
     const auto descriptions = BuiltInEffects::getDescriptions();
     juce::String error;
-    auto instance = descriptions.size() == 1 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
+    auto instance = descriptions.size() == 3 ? engine.pluginFormatManager.createPluginInstance (descriptions[0], rate, 512, error) : nullptr;
     auto* eq = dynamic_cast<ParametricEqProcessor*> (instance.get());
     check (eq != nullptr && error.isEmpty() && eq->getPluginDescription().fileOrIdentifier == BuiltInEffects::parametricEqId
                && eq->getPluginDescription().pluginFormatName == BuiltInEffects::formatName && eq->getActiveBands (rate).empty(),
@@ -153,9 +154,9 @@ void runBuiltInEffectsTests (AudioEngine& engine)
 
         return (juce::AudioPluginFormat*) nullptr;
     }();
-    check (list.getNumTypes() == 1 && list.getTypes()[0].fileOrIdentifier == BuiltInEffects::parametricEqId && format != nullptr
+    check (list.getNumTypes() == 3 && format != nullptr
                && ! format->canScanForPlugins() && format->searchPathsForPlugins ({}, true, false).isEmpty(),
-           "built-in effects: listed once however often added; their format has nothing to scan");
+           "built-in effects: the three listed once each however often added; their format has nothing to scan");
 
     // Its window: the EQ panel on the parameters, both ways.
     {
@@ -198,6 +199,80 @@ void runBuiltInEffectsTests (AudioEngine& engine)
         check (editor != nullptr && panelToEq && untouched && eqToPanel,
                "built-in parametric eq window: the EQ panel; its controls set that band's parameters, each move one gesture, and leave the other bands; a band changed from outside shows on the panel");
         made.reset();
+    }
+
+    // The compressor, live, against the offline one: noise stepping between -30 and -6 dB.
+    {
+        auto steps = noise (2, 96000, 11);
+
+        for (int i = 0; i < steps.getNumSamples(); ++i)
+            for (int ch = 0; ch < 2; ++ch)
+                steps.setSample (ch, i, steps.getSample (ch, i) * ((i / 12000) % 2 == 0 ? 0.06f : 1.0f));
+
+        BuiltInEffects::CompressorProcessor comp;
+        BuiltInEffects::setExactly (*comp.threshold, -30.0f);
+        BuiltInEffects::setExactly (*comp.ratio, 6.0f);
+        BuiltInEffects::setExactly (*comp.attack, 5.0f);
+        BuiltInEffects::setExactly (*comp.release, 80.0f);
+        BuiltInEffects::setExactly (*comp.makeup, 3.0f);
+        comp.setPlayConfigDetails (2, 2, rate, 512);
+        comp.prepareToPlay (rate, 3000);
+        const auto liveComp = play (comp, steps);
+        const auto offlineComp = readAll (*Dynamics::compress (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (steps)), 0, 96000, rate, comp.getSettings()));
+
+        juce::MemoryBlock compState;
+        comp.getStateInformation (compState);
+        BuiltInEffects::CompressorProcessor compCopy;
+        compCopy.setStateInformation (compState.getData(), (int) compState.getSize());
+        const auto a = comp.getSettings(), b = compCopy.getSettings();
+        const auto compRestored = juce::exactlyEqual (a.thresholdDb, b.thresholdDb) && juce::exactlyEqual (a.ratio, b.ratio) && juce::exactlyEqual (a.kneeDb, b.kneeDb)
+                               && juce::exactlyEqual (a.attackMs, b.attackMs) && juce::exactlyEqual (a.releaseMs, b.releaseMs) && juce::exactlyEqual (a.makeupDb, b.makeupDb);
+        check (identical (liveComp, offlineComp) && ! identical (liveComp, steps) && compRestored && comp.getLatencySamples() == 0,
+               "built-in compressor: played in blocks of 1, 7, 512 and 3,000 frames it gives Compressor's samples bit for bit; its state restores every setting exactly; no latency");
+    }
+
+    // The limiter, live: a look-ahead late, exactly the offline limiter.
+    {
+        auto hot = noise (2, 48000, 5);
+        hot.applyGain (6.0f);   // peaks up to about +9.5 dBFS
+
+        BuiltInEffects::LimiterProcessor lim;
+        BuiltInEffects::setExactly (*lim.ceiling, -1.0f);
+        BuiltInEffects::setExactly (*lim.gain, 2.0f);
+        lim.setPlayConfigDetails (2, 2, rate, 512);
+        lim.prepareToPlay (rate, 3000);
+        const auto ahead = lim.getLatencySamples();
+        juce::AudioBuffer<float> padded (2, 48000 + ahead);
+        padded.clear();
+
+        for (int ch = 0; ch < 2; ++ch)
+            padded.copyFrom (ch, 0, hot, ch, 0, 48000);
+
+        const auto liveLim = play (lim, padded);
+        const auto offlineLim = readAll (*Dynamics::limit (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (hot)), 0, 48000, rate, lim.getSettings()));
+        auto lateExactly = true, leadingSilence = true;
+        float loudest = 0.0f;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < padded.getNumSamples(); ++i)
+            {
+                loudest = juce::jmax (loudest, std::abs (liveLim.getSample (ch, i)));
+
+                if (i < ahead)
+                    leadingSilence = leadingSilence && juce::exactlyEqual (liveLim.getSample (ch, i), 0.0f);
+                else
+                    lateExactly = lateExactly && juce::exactlyEqual (liveLim.getSample (ch, i), offlineLim.getSample (ch, i - ahead));
+            }
+
+        check (ahead == 240 && leadingSilence && lateExactly && (double) loudest <= Dynamics::ceilingGain (lim.getSettings().ceilingDb) && std::abs (lim.getSettings().ceilingDb + 1.0) < 1.0e-5,
+               "built-in limiter: reports its 5 ms look-ahead (240 frames at 48 kHz) as latency, and its output that late is Limiter's bit for bit, never above the ceiling it holds (-1 dB to 1e-5)");
+
+        // On a track, the chain's latency counts it, so the track is read ahead by that much.
+        TrackEffects effects;
+        effects.prepare (rate);
+        effects.add (7, std::make_unique<BuiltInEffects::LimiterProcessor>());
+        effects.add (7, std::make_unique<BuiltInEffects::CompressorProcessor>());
+        check (effects.getChainLatency (7) == 240, "built-in limiter on a track: the chain reports its 240 frames of latency (the compressor adds none)");
     }
 
     // In the master rack: added by description, set, saved and restored with its bands.

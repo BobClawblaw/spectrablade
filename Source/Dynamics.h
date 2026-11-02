@@ -2,6 +2,8 @@
 
 #include "AudioEdits.h"
 
+#include <deque>
+
 /** Dynamics: a compressor and a limiter, run offline over a range of a file. Both work out one
     gain for every channel at each frame, from the loudest channel, so a stereo image stays put. */
 namespace Dynamics
@@ -28,6 +30,23 @@ namespace Dynamics
         falls and the release time when it rises. Nullptr for settings that aren't valid or an empty range. */
     AudioEdits::Snapshot compress (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Compressor&);
 
+    /** The compressor run a frame at a time, its gain carried from frame to frame: compress runs
+        through it, and so does the live effect, so they give the same samples. */
+    class CompressorCore
+    {
+    public:
+        /** New settings (valid) at this rate; the gain carries on from where it is. */
+        void set (const Compressor&, double sampleRate);
+        void reset() noexcept                       { gainDb = 0.0; }
+
+        /** The factor for a frame whose loudest channel has this magnitude. */
+        double next (double level) noexcept;
+
+    private:
+        Compressor settings;
+        double attack = 0.0, release = 0.0, gainDb = 0.0;
+    };
+
     struct Limiter
     {
         double inputGainDb = 0.0;   // applied first, to make the audio louder into the ceiling
@@ -40,6 +59,45 @@ namespace Dynamics
     /** Whether the settings can be used: input gain within 48 dB, a ceiling from -48 to 0 dBFS, release
         from 1 to 5,000 ms and look-ahead from 0.1 to 50 ms. */
     bool isValid (const Limiter&);
+
+    /** The look-ahead in frames at this rate (at least 1). */
+    int lookaheadFrames (const Limiter&, double sampleRate);
+
+    /** The coefficient of a one-pole smoother that goes 63 % of the way in `ms`. */
+    double smoothingCoefficient (double ms, double sampleRate);
+
+    /** The ceiling as a gain, rounded to a float, so a clamped float sample never passes it. */
+    double ceilingGain (double ceilingDb);
+
+    /** The gain a frame needs to stay under the ceiling: its peak times the input gain, over the ceiling. */
+    float limiterNeed (double peak, double inputGain, double ceiling);
+
+    /** The limiter's gain, a frame at a time: push each frame's need (the gain that frame needs on its
+        own to stay under the ceiling) and, once the look-ahead's worth of frames has come in, it gives
+        the gain for the frame that many behind: the least need over that frame's look-ahead, averaged
+        over the look-ahead before it, falling at once and recovering with the release. Frames before
+        the first count as needing nothing. limit runs through it (then pushes a look-ahead of frames
+        needing nothing to finish), and so does the live effect, a look-ahead behind. */
+    class LimiterCore
+    {
+    public:
+        void prepare (int lookahead, double releaseCoefficient);
+        void setRelease (double releaseCoefficient) noexcept   { release = releaseCoefficient; }
+
+        /** The gain for frame (pushed - lookahead), or nothing while fewer than lookahead + 1 frames
+            have come in. */
+        std::optional<double> push (float need);
+
+        int getLookahead() const noexcept                       { return ahead; }
+
+    private:
+        int ahead = 1;
+        double release = 0.0, sum = 0.0, gain = 1.0;
+        juce::int64 pushed = 0;
+        std::deque<std::pair<juce::int64, float>> window;   // a monotonic queue of (frame, need)
+        std::vector<float> leasts;                          // the last ahead + 1 frames' least needs
+        size_t oldest = 0;
+    };
 
     /** Limits [start, end) so that no sample is above the ceiling. The gain each frame needs is the
         smallest needed anywhere in the look-ahead after it; that is averaged over the look-ahead, so

@@ -6,6 +6,13 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 171: The compressor and limiter as live effects**
+- The Compressor and Limiter are now built-in effects too, beside the Parametric EQ in the rack's and tracks' effect menus under SpectraBlade. Their windows are, for now, the generic list of their parameters.
+- The live Compressor has the threshold, ratio, knee, attack, release and makeup of Effects > Compressor as automatable parameters, runs with no latency, and carries its gain on through a change of settings. The live Limiter has the gain before it, the ceiling and the release; its look-ahead is fixed at 5 ms, which it reports as latency, so the rack and the track chains line everything else up with it.
+- Both now run on a small core shared with the offline effects: the compressor's gain, carried frame to frame, and the limiter's gain, given a look-ahead behind as each frame's need comes in. The offline Compressor and Limiter (sample and true peak) run through the same cores, so the live effects give the same samples: the compressor's exactly, the limiter's exactly, a look-ahead late. Every number the earlier compressor, limiter and Match Loudness tests print came out the same after the change.
+- What every built-in effect shares (its description, mono or stereo, hosted parameters, a state of plain values that restores exactly) is now one base class; the Parametric EQ's saved state keeps its format.
+- Measured by the tests at 48 kHz: the live Compressor, played in blocks of 1, 7, 512 and 3,000 frames over noise stepping between two levels, gives Compressor's samples bit for bit, restores every setting exactly from its state, and reports no latency; the live Limiter reports 240 frames of latency (5 ms), puts out that much silence first, then Limiter's samples bit for bit, none above its ceiling (which the parameter holds as -1 dB to 1e-5); on a track with a compressor after it, the chain reports the 240 frames. Opening them in the running app and hearing them live were not tried. The whole suite passed, the default-device test included.
+
 **Milestone 170: The parametric EQ in the rack and on tracks**
 - The built-in Parametric EQ is now offered wherever effects are: the master rack's add menu and each track's FX menu list it under SpectraBlade, beside the scanned plug-ins. It is in the plug-in list from the first launch, needs no scan, and comes back at once if the Plug-ins window clears the list.
 - Its window is the Parametric EQ panel, its five bands over their curve, on the effect's parameters: moving a control or dragging a point sets that band's parameters, as one gesture a control, so writing a track's effect automation records it, and the other bands are left alone. A band changed from outside, by automation or a restored state, shows on the panel within a tenth of a second.
@@ -1018,6 +1025,7 @@ The tests run against the real machine:
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.
 - Built-in parametric EQ as a plug-in: created by description, bit for bit with the offline EQ in any blocks, its state exact, saved and restored in the rack.
 - Its window: the EQ panel setting the parameters as gestures, and showing changes made from outside.
+- Live compressor and limiter: bit for bit with the offline effects (the limiter a look-ahead late), the limiter's latency reported and counted on a track.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1071,7 +1079,6 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: the compressor and limiter as live effects, the limiter's look-ahead reported as latency
-2. Effects: a preview of an effect on the selection before applying it
-3. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
-4. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Effects: a preview of an effect on the selection before applying it
+2. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
+3. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
