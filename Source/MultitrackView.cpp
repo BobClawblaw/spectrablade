@@ -1,4 +1,5 @@
 #include "MultitrackView.h"
+#include "PluginMenu.h"
 #include "Metronome.h"
 #include "TrackColours.h"
 
@@ -935,7 +936,7 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
         if (! type.isInstrument)
             types.add (type);
 
-    // Plug-in choices take ids from 1 (KnownPluginList); each slot's actions sit above them.
+    // Plug-in choices take ids from 1 (PluginMenu); each slot's actions sit above them.
     enum { slotBase = 1000000, editSlot = 0, bypassSlot, moveSlotUp, moveSlotDown, removeSlot, actions };
     juce::PopupMenu menu;
 
@@ -967,7 +968,7 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
     else
     {
         juce::PopupMenu add;
-        juce::KnownPluginList::addToMenu (add, types, juce::KnownPluginList::sortByManufacturer);
+        PluginMenu::add (add, types);
         menu.addSubMenu ("Add Effect", add);
     }
 
@@ -998,7 +999,7 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
                 return;
             }
 
-            const auto chosen = juce::KnownPluginList::getIndexChosenByMenu (types, result);
+            const auto chosen = PluginMenu::chosen (types, result);
 
             if (! juce::isPositiveAndBelow (chosen, types.size()))
                 return;

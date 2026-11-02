@@ -6,6 +6,7 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/PluginScanner.h"
 #include "../Source/AudioEdits.h"
+#include "../Source/PluginMenu.h"
 #include "../Source/RackView.h"
 #include "DocumentTests.h"
 #include "RecorderTests.h"
@@ -186,6 +187,66 @@ namespace
         check (! engine.getRecorder().isInputActive()
                    && engine.deviceManager.getCurrentAudioDevice()->getActiveInputChannels().isZero(),
                "inputs turn off again");
+    }
+
+    /** The plug-ins to add, as the rack and the tracks offer them: a submenu a format, then a maker. */
+    void testPluginMenu (const juce::Array<juce::PluginDescription>& found)
+    {
+        juce::Array<juce::PluginDescription> types;
+
+        for (auto& d : found)
+            if (! d.isInstrument)
+                types.add (d);
+
+        juce::PopupMenu menu;
+        PluginMenu::add (menu, types);
+        juce::StringArray formats;
+        std::vector<int> seen ((size_t) types.size(), 0);
+        auto placed = true, sorted = true;
+        int maxId = 0;
+
+        for (juce::PopupMenu::MenuItemIterator top (menu); top.next();)
+        {
+            const auto& format = top.getItem();
+            formats.add (format.text);
+            juce::String lastMaker;
+
+            for (juce::PopupMenu::MenuItemIterator makers (*format.subMenu); makers.next();)
+            {
+                const auto& maker = makers.getItem();
+                sorted = sorted && lastMaker.compareIgnoreCase (maker.text) < 0;
+                lastMaker = maker.text;
+                juce::String lastName;
+
+                for (juce::PopupMenu::MenuItemIterator items (*maker.subMenu); items.next();)
+                {
+                    const auto& item = items.getItem();
+                    const auto index = PluginMenu::chosen (types, item.itemID);
+
+                    if (index < 0)
+                    {
+                        placed = false;
+                        continue;
+                    }
+
+                    const auto& d = types.getReference (index);
+                    seen[(size_t) index]++;
+                    maxId = juce::jmax (maxId, item.itemID);
+                    placed = placed && d.name == item.text && PluginMenu::formatTitle (d.pluginFormatName) == format.text
+                             && (d.manufacturerName.trim().isEmpty() ? juce::String ("Unknown maker") : d.manufacturerName.trim()) == maker.text;
+                    sorted = sorted && lastName.compareIgnoreCase (item.text) <= 0;
+                    lastName = item.text;
+                }
+            }
+        }
+
+        const auto once = std::all_of (seen.begin(), seen.end(), [] (int n) { return n == 1; });
+        const auto auFirst = ! formats.contains ("Audio Units") || formats[0] == "Audio Units";
+        const auto vst3Next = ! formats.contains ("VST3") || formats.indexOf ("VST3") == (formats.contains ("Audio Units") ? 1 : 0);
+        check (! types.isEmpty() && once && placed && sorted && auFirst && vst3Next && maxId < 1000000 && PluginMenu::chosen (types, 0) == -1
+                   && PluginMenu::chosen (types, types.size() + 1) == -1,
+               "plug-in menu: " + juce::String (types.size()) + " effects under " + formats.joinIntoString (", ")
+                   + ", each once, under its maker, sorted; its ids stay below the track menu's slot actions");
     }
 
     void testRack (AudioEngine& engine, const juce::Array<juce::PluginDescription>& found)
@@ -419,6 +480,7 @@ int main (int argc, char* argv[])
         runUntil ([&] { return scanned.load(); }, 600000);
         scanThread.join();
         runPluginTests (engine);
+        testPluginMenu (found);
 
         testDevice (engine);
         if (liveInput)

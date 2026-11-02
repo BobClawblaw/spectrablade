@@ -1,4 +1,5 @@
 #include "RackView.h"
+#include "PluginMenu.h"
 
 //==============================================================================
 class RackView::SlotRow final : public juce::Component
@@ -147,12 +148,12 @@ void RackView::showAddMenu()
     }
 
     juce::PopupMenu menu;
-    juce::KnownPluginList::addToMenu (menu, effects, juce::KnownPluginList::sortByManufacturer);
+    PluginMenu::add (menu, effects);
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (addButton),
         [this, effects] (int result)
         {
-            const auto chosen = juce::KnownPluginList::getIndexChosenByMenu (effects, result);
+            const auto chosen = PluginMenu::chosen (effects, result);
 
             if (! juce::isPositiveAndBelow (chosen, effects.size()))
                 return;

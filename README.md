@@ -30,7 +30,7 @@ Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a larg
 - **Open a file:** File > Open (Cmd-O), drop it on the window, or click one of the recent files listed in the empty editor. Tick Preview in the open panel to hear files as you select them.
 - **Look at it:** View > Waveform (Cmd-1), Spectrogram (Cmd-2), or Waveform and Spectrogram (Cmd-3).
 - **Edit:** select by dragging, Option-drag in the spectrogram to select a band of frequencies, and use the Edit and Effects menus. Space plays the selection, or from the cursor.
-- **Use plug-ins on a file:** add effects to the effects rack beside the editor (+ Add Effect), set them up with Edit while you listen, then Effects > Apply Effects Rack (Cmd-R) writes them into the selection or the whole file. View > Effects Rack (Option-Cmd-E) hides or shows the rack.
+- **Use plug-ins on a file:** add effects to the effects rack beside the editor (+ Add Effect, by format and maker), set them up with Edit while you listen, then Effects > Apply Effects Rack (Cmd-R) writes them into the selection or the whole file. View > Effects Rack (Option-Cmd-E) hides or shows the rack.
 - **Multitrack:** View > Multitrack Session (Cmd-4) switches to the session; each track's FX button holds its own effects.
 - **Keys:** Window > Keyboard Shortcuts... lists every command's keys; change them, export and import them, or pick Key Sets... > Audition-Style Keys.
 

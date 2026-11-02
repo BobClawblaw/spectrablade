@@ -14,6 +14,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - The engine now passes on a device change only when the device in use, its rate, block size or channels changed, and the rack rebuilds its rows only when its plug-ins or their on/off states change.
 - Measured by the tests: twenty device announcements reach none of the engine's listeners, an engine change that leaves the rack alone keeps its rows, and turning a slot off rebuilds them. The whole suite passed.
 
+**Milestone 192: Plug-ins by format**
+- Adding an effect, to the rack or to a track (its FX button), now offers Audio Units and VST3 as separate submenus, each with a submenu a maker and the plug-ins sorted by name.
+- This also fixes adding an effect from a track's FX menu, which had done nothing: the menu took any choice numbered above 1,000,000 for one of the track's own slots, and JUCE 9 numbers plug-in choices far above that. The new menus number them from 1.
+- Measured by the tests: each of the 6 effects the test scan found (Audio Units and VST3) appears once, under its format and maker, sorted, Audio Units first, with ids below the track menu's own. The track menu's fault was found by reading its code; adding an effect from it was not tried by hand, before or after. The whole suite passed.
+
 ## Released
 
 **Release 0.9.0: the alpha**
