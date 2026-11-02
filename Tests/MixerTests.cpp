@@ -7,6 +7,7 @@
 #include "../Source/ClipList.h"
 #include "../Source/ClipProperties.h"
 #include "../Source/KeyShortcuts.h"
+#include "../Source/TransportBar.h"
 #include "../Source/LoadReadout.h"
 #include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
@@ -1208,6 +1209,31 @@ namespace
         }
     };
 
+    void testTransportBar()
+    {
+        ThreeCommands target;
+        juce::ApplicationCommandManager commands;
+        commands.registerAllCommandsForTarget (&target);
+        const auto before = TransportBar::tooltipFor (commands, 3);
+        KeyShortcuts::assign (*commands.getKeyMappings(), 3, juce::KeyPress ('k', juce::ModifierKeys::commandModifier, 0), 0);
+        const auto after = TransportBar::tooltipFor (commands, 3);
+        commands.getKeyMappings()->clearAllKeyPresses (3);
+        const auto none = TransportBar::tooltipFor (commands, 3);
+
+        TransportBar::SelectionPanel panel;
+        panel.set ({ 48000, 120000 }, { 0, 48000 * 3725 }, 48000.0);
+        const auto shown = panel.getCell (0, 0) == "0:01.000" && panel.getCell (0, 1) == "0:02.500" && panel.getCell (0, 2) == "0:01.500"
+                           && panel.getCell (1, 1) == "1:02:05.000" && panel.getCell (1, 2) == "1:02:05.000";
+        panel.set ({}, { 0, 480 }, 48000.0);
+        const auto dashes = panel.getCell (0, 0) == "-" && panel.getCell (0, 2) == "-" && panel.getCell (1, 2) == "0:00.010";
+
+        check (before.startsWith ("Loop Playback (") && before.containsIgnoreCase ("L") && after.startsWith ("Loop Playback (") && after.contains ("K")
+                   && ! after.contains ("L)") && none == "Loop Playback",
+               "transport bar: a button's tooltip names its command with the keys as set now, following a remapped key or none");
+        check (shown && dashes, "transport bar: the selection panel shows start, end and duration of the selection and the view, hours past an hour, "
+                                "dashes without a selection");
+    }
+
     void testShortcutEditing()
     {
         ThreeCommands target;
@@ -1522,6 +1548,7 @@ void runMixerTests (AudioEngine& engine)
     testFadeShapeFile (engine);
     testKeyShortcuts();
     testShortcutEditing();
+    testTransportBar();
     testFrozenFile (engine);
     testClipGroups (engine);
     testClipGainFile (engine);

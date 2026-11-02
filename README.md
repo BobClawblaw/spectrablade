@@ -8,6 +8,13 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
 
+**Milestone 181: The transport bar and the selection panel**
+- The text buttons along the top are now a transport bar in the middle of the window: Go to Start, Play/Pause, Stop, Record, Loop and Go to End as drawn buttons, the time large between them and four zoom buttons (In, Out, to Selection, to Fit). Each button runs its menu command, so it does exactly what the menu item and its keys do, and dims when that command can't run. Its tooltip names the command with its keys as they are set now, so a remapped key shows at once. Play turns into Pause while playing, Record and Loop light up while on, and the time turns red while recording.
+- Transport > Stop is a new command (no key by default; give it one in Keyboard Shortcuts), the one the Stop button runs.
+- Along the bottom, a panel shows the Selection's and the View's start, end and duration, in both the editor and the multitrack (where the selection is the time range); clicking it opens Set Selection. The device choices sit above the file's details, and the selected clip's times move down there too.
+- Save Rack and Load Rack left the top of the window; they stay in the Window menu.
+- Measured by the tests: the tooltips following a remapped key and a removed one, and the panel's cells (with hours past an hour, and dashes without a selection). The window was captured on the development Mac to check the layout; the buttons were not clicked there, and none of it was heard. The whole suite passed.
+
 **Milestone 180: The keyboard shortcuts window**
 - Window > Keyboard Shortcuts... is now a window of its own instead of JUCE's stock one. A search box finds commands by every word typed, in their names, menus and descriptions or their keys ("transport loop", "cmd l"), and Changed only lists just the commands whose keys differ from the defaults, those keys shown in amber.
 - Choosing a command shows its description and its keys. Add Key... asks for the keys to press and says which command has them now; assigning takes them from that command. A key's button changes or removes it, and Reset puts back the command's own defaults, except any another command holds now, which it names.
@@ -1092,6 +1099,7 @@ The tests run against the real machine:
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
+- Transport bar: tooltips following the keys; the selection panel's cells.
 - Keyboard shortcuts window: search, keys taken and reset, sets exported and imported.
 - Reverse Each Region: regions turned round in place, the rest untouched, overlapping and one-frame regions skipped.
 - Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.

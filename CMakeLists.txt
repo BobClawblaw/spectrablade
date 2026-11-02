@@ -74,6 +74,7 @@ target_sources(SpectraBlade PRIVATE
     Source/LoadReadout.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
+    Source/TransportBar.cpp
     Source/SessionOverview.cpp
     Source/SessionRecording.cpp
     Source/Bounce.cpp
@@ -176,6 +177,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/LoadReadout.cpp
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
+    Source/TransportBar.cpp
     Source/SessionOverview.cpp
     Source/SessionRecording.cpp
     Source/Bounce.cpp

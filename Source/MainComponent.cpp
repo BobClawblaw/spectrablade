@@ -62,7 +62,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -720,7 +720,7 @@ MainComponent::MainComponent()
         if (const auto error = engine.setInput (settings->getIntValue (inputFirstKey, 0), count); error.isNotEmpty())
             showError ("Recording input", error);
 
-    for (auto* b : { &multitrackButton, &openButton, &playButton, &stopButton, &recordButton, &pluginsButton, &audioButton, &saveRackButton, &loadRackButton })
+    for (auto* b : { &multitrackButton, &openButton, &pluginsButton, &audioButton })
         addAndMakeVisible (b);
 
     multitrackButton.setTooltip ("Switch between the file and the multitrack session (Cmd+4)");
@@ -728,26 +728,10 @@ MainComponent::MainComponent()
     multitrackButton.onClick = [this] { setMultitrack (! multitrackMode); };
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
-    playButton.onClick     = [this] { togglePlay(); };
-    stopButton.onClick     = [this]
-    {
-        if (isRecording())
-            stopRecording();
-        else
-            engine.getPlayer().pause();
-
-        waveform.repaint();
-        multitrack.repaint();
-    };
-    recordButton.onClick   = [this] { toggleRecord(); };
-    recordButton.setColour (juce::TextButton::buttonOnColourId, juce::Colours::darkred);
-    recordButton.setTooltip ("Record from the input (Shift+Space). Over a selection it punches in and out after a "
-                             "pre-roll (Transport > Recording Options); otherwise it records from the cursor. "
-                             "In the multitrack, the take goes onto the armed track (R), or a new track.");
     pluginsButton.onClick  = [this] { showPluginList(); };
     audioButton.onClick    = [this] { showAudioSettings(); };
-    saveRackButton.onClick = [this] { saveRack(); };
-    loadRackButton.onClick = [this] { loadRack(); };
+    addAndMakeVisible (selectionPanel);
+    selectionPanel.onClick = [this] { commands.invokeDirectly (cmdSetSelection, true); };
 
     addAndMakeVisible (outputLabel);
     addAndMakeVisible (outputPair);
@@ -779,15 +763,14 @@ MainComponent::MainComponent()
         saveSettings();
     };
 
-    for (auto* l : { &fileLabel, &deviceLabel, &timeLabel, &selectionLabel })
+    for (auto* l : { &fileLabel, &deviceLabel, &selectionLabel })
         addAndMakeVisible (l);
 
     addAndMakeVisible (loadReadout);
 
     deviceLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
     selectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
-    timeLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 15.0f, juce::Font::plain));
-    selectionLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+    selectionLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
 
     addAndMakeVisible (waveform);
     waveform.setDisplay ((WaveformView::Display) juce::jlimit (0, 2, settings->getIntValue (displayKey, 0)));
@@ -830,6 +813,9 @@ MainComponent::MainComponent()
 
     commands.registerAllCommandsForTarget (this);
     commands.setFirstCommandTarget (this);
+    transportBar = std::make_unique<TransportBar::Bar> (commands, TransportBar::Commands { cmdGoToStart, cmdPlayPause, cmdStop, cmdRecord, cmdLoopPlayback, cmdGoToEnd,
+                                                                                         cmdZoomIn, cmdZoomOut, cmdZoomSelection, cmdZoomFit });
+    addAndMakeVisible (*transportBar);
     KeyShortcuts::restore (*commands.getKeyMappings(), *settings);
     commands.getKeyMappings()->addChangeListener (this);
     addKeyListener (commands.getKeyMappings());
@@ -987,37 +973,36 @@ void MainComponent::resized()
 {
     auto r = getLocalBounds().reduced (10);
 
-    auto toolbar = r.removeFromTop (30);
+    // Top: the mode and Open, the transport with the time and zoom in the middle, then the setup buttons.
+    auto toolbar = r.removeFromTop (34);
+    multitrackButton.setBounds (toolbar.removeFromLeft (96).reduced (0, 2));
+    toolbar.removeFromLeft (6);
+    openButton.setBounds (toolbar.removeFromLeft (76).reduced (0, 2));
+    audioButton.setBounds (toolbar.removeFromRight (124).reduced (0, 2));
+    toolbar.removeFromRight (6);
+    pluginsButton.setBounds (toolbar.removeFromRight (96).reduced (0, 2));
+    toolbar.removeFromRight (12);
+    toolbar.removeFromLeft (12);
+    const auto barWidth = juce::jmin (toolbar.getWidth(), transportBar->getIdealWidth());
+    transportBar->setBounds (toolbar.withSizeKeepingCentre (barWidth, toolbar.getHeight()));
 
-    for (auto* b : { &multitrackButton, &openButton, &playButton, &stopButton, &recordButton })
-    {
-        b->setBounds (toolbar.removeFromLeft (b == &multitrackButton ? 96 : b == &openButton || b == &recordButton ? 80 : 64));
-        toolbar.removeFromLeft (b == &multitrackButton ? 14 : 6);
-    }
-
-    toolbar.removeFromLeft (10);
-    timeLabel.setBounds (toolbar.removeFromLeft (120));
-
-    for (auto* b : { &audioButton, &pluginsButton, &loadRackButton, &saveRackButton })
-    {
-        b->setBounds (toolbar.removeFromRight (b == &audioButton ? 130 : 100));
-        toolbar.removeFromRight (6);
-    }
-
-    selectionLabel.setBounds (toolbar);
-
+    // Bottom: the devices and the file over its status line, the selection and view beside them.
     r.removeFromTop (8);
-    auto status = r.removeFromBottom (24);
-    outputLabel.setBounds (status.removeFromLeft (52));
-    outputPair.setBounds (status.removeFromLeft (240));
-    status.removeFromLeft (12);
-    inputLabel.setBounds (status.removeFromLeft (42));
-    inputChoice.setBounds (status.removeFromLeft (200));
-    status.removeFromLeft (6);
-    inputMeter.setBounds (status.removeFromLeft (160).reduced (0, 3));
-    status.removeFromLeft (12);
-    loadReadout.setBounds (status.removeFromRight (180));
-    deviceLabel.setBounds (status.removeFromRight (status.getWidth() / 2));
+    auto bottom = r.removeFromBottom (52);
+    selectionPanel.setBounds (bottom.removeFromRight (juce::jmin (400, bottom.getWidth() / 2)));
+    bottom.removeFromRight (12);
+    auto devices = bottom.removeFromTop (26).reduced (0, 1);
+    outputLabel.setBounds (devices.removeFromLeft (52));
+    outputPair.setBounds (devices.removeFromLeft (juce::jmin (220, devices.getWidth() / 3)));
+    devices.removeFromLeft (12);
+    inputLabel.setBounds (devices.removeFromLeft (42));
+    inputChoice.setBounds (devices.removeFromLeft (juce::jmin (180, devices.getWidth() / 2)));
+    devices.removeFromLeft (6);
+    inputMeter.setBounds (devices.reduced (0, 3));
+    auto status = bottom;
+    loadReadout.setBounds (status.removeFromRight (150));
+    deviceLabel.setBounds (status.removeFromRight (status.getWidth() / 3));
+    selectionLabel.setBounds (status.removeFromRight (status.getWidth() / 2));
     fileLabel.setBounds (status);
     r.removeFromBottom (8);
 
@@ -1032,7 +1017,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdReverseRegions; ++id)
+    for (int id = cmdOpen; id <= cmdStop; ++id)
         ids.add (id);
 }
 
@@ -1230,6 +1215,8 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (! isRecording() && std::any_of (shown.begin(), shown.end(), [] (const Marker& m) { return m.isRegion(); }));
                             break;
                         }
+        case cmdStop:       info.setInfo ("Stop", "Stop playing or recording", "Transport", 0);
+                            info.setActive (engine.getPlayer().isPlaying() || isRecording()); break;
         case cmdGoToStart:  info.setInfo ("Go to Start", "Move the cursor to the start", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::homeKey, 0); info.setActive (hasAudio); break;
         case cmdGoToEnd:    info.setInfo ("Go to End", "Move the cursor to the end", "Transport", 0);
@@ -1745,6 +1732,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveRack:   saveRack(); break;
         case cmdLoadRack:   loadRack(); break;
         case cmdRecord:     toggleRecord(); break;
+        case cmdStop:       stopTransport(); break;
         case cmdAddMarker:  addMarker(); break;
         case cmdConvertRate: chooseSampleRate(); break;
         case cmdShowWaveform: setMultitrack (false); setDisplay (WaveformView::Display::waveform); break;
@@ -2061,8 +2049,6 @@ void MainComponent::timerCallback()
     if (multitrackMode)
     {
         const auto rate = engine.session.getSampleRate();
-        recordButton.setToggleState (isRecording(), juce::dontSendNotification);
-
         if (isRecording() && recordingSession)
         {
             // The take so far, as it will land: what has come back through the input by now.
@@ -2079,8 +2065,9 @@ void MainComponent::timerCallback()
         }
 
         const auto pos = player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor();
-        timeLabel.setText ((isRecording() ? "REC " : "") + formatTime (pos, rate), juce::dontSendNotification);
-        playButton.setButtonText (player.isPlaying() ? "Pause" : "Play");
+        transportBar->update (player.isPlaying(), isRecording(), loopPlayback, (isRecording() ? "REC " : "") + formatTime (pos, rate));
+        const auto visible = multitrack.getVisibleFrames();
+        selectionPanel.set (multitrack.getTimeSelection(), { (juce::int64) juce::jmax (0.0, visible.getStart()), (juce::int64) visible.getEnd() }, rate);
 
         const auto state = engine.session.getState();
         juce::String clipText;
@@ -2107,22 +2094,32 @@ void MainComponent::timerCallback()
             return;
         }
 
-        timeLabel.setText ("REC " + formatTime (recorder.getRecordedFrames(), rate), juce::dontSendNotification);
+        transportBar->update (player.isPlaying(), true, loopPlayback, "REC " + formatTime (recorder.getRecordedFrames(), rate));
     }
     else
     {
         const auto pos = player.isPlaying() ? player.getPositionFrames() : waveform.getCursor();
-        timeLabel.setText (formatTime (pos, rate), juce::dontSendNotification);
+        transportBar->update (player.isPlaying(), false, loopPlayback, formatTime (pos, rate));
     }
 
-    playButton.setButtonText (player.isPlaying() ? "Pause" : "Play");
-    recordButton.setToggleState (recorder.isRecording(), juce::dontSendNotification);
+    // The view as far as the file goes; nothing to show without audio.
+    const auto visible = waveform.getVisibleFrames();
+    const auto length = engine.document.hasAudio() ? engine.document.getNumFrames() : (juce::int64) 0;
+    selectionPanel.set (waveform.getSelection(),
+                        { juce::jlimit ((juce::int64) 0, length, (juce::int64) visible.getStart()), juce::jlimit ((juce::int64) 0, length, (juce::int64) visible.getEnd()) },
+                        rate);
+    selectionLabel.setText ({}, juce::dontSendNotification);
+}
 
-    const auto sel = waveform.getSelection();
-    selectionLabel.setText (sel.isEmpty() ? juce::String()
-                                          : "Selection  " + formatTime (sel.getStart(), rate) + " - " + formatTime (sel.getEnd(), rate)
-                                              + "  (" + formatTime (sel.getLength(), rate) + ")",
-                            juce::dontSendNotification);
+void MainComponent::stopTransport()
+{
+    if (isRecording())
+        stopRecording();
+    else
+        engine.getPlayer().pause();
+
+    waveform.repaint();
+    multitrack.repaint();
 }
 
 void MainComponent::refreshTitle()

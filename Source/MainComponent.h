@@ -4,6 +4,7 @@
 #include "AudioEngine.h"
 #include "ClickRepair.h"
 #include "LevelMeter.h"
+#include "TransportBar.h"
 #include "LoadReadout.h"
 #include "TapTempo.h"
 #include "TimeEntry.h"
@@ -303,15 +304,16 @@ private:
     AudioClip clipboard;
 
     juce::TextButton multitrackButton { "Multitrack" };
-    juce::TextButton openButton { "Open..." }, playButton { "Play" }, stopButton { "Stop" }, recordButton { "Record" },
-                     pluginsButton { "Plug-ins..." }, audioButton { "Audio Settings..." },
-                     saveRackButton { "Save Rack..." }, loadRackButton { "Load Rack..." };
+    juce::TextButton openButton { "Open..." }, pluginsButton { "Plug-ins..." }, audioButton { "Audio Settings..." };
+    std::unique_ptr<TransportBar::Bar> transportBar;   // made once the commands are registered
+    TransportBar::SelectionPanel selectionPanel;
+    void stopTransport();
     juce::Label outputLabel { {}, "Output" };
     juce::ComboBox outputPair;
     juce::Label inputLabel { {}, "Input" };
     juce::ComboBox inputChoice;
     LevelMeter inputMeter;
-    juce::Label fileLabel, deviceLabel, timeLabel, selectionLabel;
+    juce::Label fileLabel, deviceLabel, selectionLabel;   // selectionLabel: the selected clip, in the multitrack
     TapTempo tapper;
     juce::RecentlyOpenedFilesList recentFiles;
     static constexpr int recentBaseId = 0x7000;   // menu ids for File > Open Recent, clear of the command ids
