@@ -4,6 +4,7 @@
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
+#include "EffectPresets.h"
 #include "ParametricEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
@@ -49,7 +50,7 @@ namespace BuiltInEffects
         double getTailLengthSeconds() const override                  { return 0.0; }
         bool acceptsMidi() const override                             { return false; }
         bool producesMidi() const override                            { return false; }
-        juce::AudioProcessorEditor* createEditor() override           { return new juce::GenericAudioProcessorEditor (*this); }
+        juce::AudioProcessorEditor* createEditor() override;
         bool hasEditor() const override                               { return true; }
         int getNumPrograms() override                                 { return 1; }
         int getCurrentProgram() override                              { return 0; }
@@ -58,6 +59,15 @@ namespace BuiltInEffects
         void changeProgramName (int, const juce::String&) override    {}
         void getStateInformation (juce::MemoryBlock&) override;
         void setStateInformation (const void*, int) override;
+
+        /** Its parameters as a preset: each one's plain value (a choice's index, 1 or 0 for on or
+            off) under its ID; the presets' key is the effect's identifier. */
+        EffectPresets::Values getPresetValues() const;
+        juce::String getPresetKey() const                             { return description.fileOrIdentifier; }
+
+        /** Sets the parameters a preset names (as host changes, each as near as it holds the
+            value); ones it doesn't name, and names that aren't parameters, are left alone. */
+        void setPresetValues (const EffectPresets::Values&);
 
     protected:
         BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag);
@@ -134,6 +144,13 @@ namespace BuiltInEffects
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEqProcessor)
     };
 
+    /** The Parametric EQ panel's bands as a preset, under the live EQ's parameter IDs (band1On,
+        band1Type, band1Frequency, band1Gain, band1Q, ...), so the window and the live EQ share them. */
+    EffectPresets::Values eqPresetValues (const ParametricEq::Settings&);
+
+    /** The bands a preset sets, over `start` (bands or values it doesn't name stay as they are). */
+    ParametricEq::Settings eqSettingsFrom (const EffectPresets::Values&, ParametricEq::Settings start);
+
     /** The live EQ's window: the Parametric EQ panel, its bands and curve, on the processor's
         parameters. Moving a control sets the parameters as a gesture, so a track's automation
         writing records it; changes from elsewhere (automation, a restored state) show within a
@@ -158,6 +175,7 @@ namespace BuiltInEffects
 
         ParametricEqProcessor& eq;
         std::unique_ptr<ParametricEq> panel;
+        EffectPresets::Bar presets;
         ParametricEq::Settings shown;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEqEditor)
@@ -354,8 +372,8 @@ namespace BuiltInEffects
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ConvolutionProcessor)
     };
 
-    /** The convolution reverb's window: the impulse's name, a button to load another from an audio
-        file, and the mix. */
+    /** The convolution reverb's window: its presets (the mix), the impulse's name, a button to load
+        another from an audio file, and the mix. */
     class ConvolutionEditor final : public juce::AudioProcessorEditor
     {
     public:
@@ -370,6 +388,7 @@ namespace BuiltInEffects
         void showImpulse();
 
         ConvolutionProcessor& convolution;
+        EffectPresets::Bar presets;
         juce::Label impulseName;
         juce::TextButton load { "Load Impulse..." };
         juce::Slider mix { juce::Slider::LinearHorizontal, juce::Slider::TextBoxRight };

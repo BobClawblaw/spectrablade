@@ -16,6 +16,7 @@
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
+#include "EffectPresets.h"
 #include "RackView.h"
 #include "SessionOverview.h"
 #include "SessionRecording.h"
@@ -369,22 +370,27 @@ private:
     PreviewOwner previewOwner = PreviewOwner::none;
     std::function<void()> previewEnded;
 
-    /** An effect's dialog: a text field for each setting, and a Preview switch that plays the
-        selection through the live effect (made by `make`, set by `setLive` as the fields change;
-        the last valid settings while one is being typed). OK applies the effect when the values
-        are valid (else shows invalidText); the preview ends whenever the dialog closes. */
+    /** An effect's dialog: a text field (or a menu, for a field with choices, its value the
+        choice's index) for each setting, the effect's presets (under presetKey, the fields' IDs
+        naming the values), and, when `make` is given, a Preview switch that plays the selection
+        through the live effect (made by `make` for the values, set by `setLive` as the fields change,
+        the last valid settings while one is being typed; setLive returns false when it needs a new one).
+        OK applies the effect when the values are valid (else shows invalidText); the preview ends
+        whenever the dialog closes. */
     struct EffectField
     {
         const char* id;
         const char* label;
         double value;
         int decimals;
+        juce::StringArray choices {};
     };
-    using EffectValues = std::map<juce::String, double>;
-    void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&, PreviewOwner,
+    using EffectValues = EffectPresets::Values;
+    void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&,
+                           const juce::String& presetKey, PreviewOwner,
                            std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
-                           std::function<std::unique_ptr<juce::AudioPluginInstance>()> make,
-                           std::function<void (juce::AudioPluginInstance&, const EffectValues&)> setLive,
+                           std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
+                           std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
                            std::function<void (const EffectValues&)> apply);
     bool inputMonitoring = false;                        // the armed tracks play their inputs
     bool countIn = false;                                // record after a bar of clicks

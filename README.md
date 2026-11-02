@@ -6,6 +6,14 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 176: Effect presets**
+- Every effect dialog (EQ Band, Compressor, Limiter, Chorus, Flanger, Phaser, Reverb, Convolution Reverb), the Parametric EQ window, and every built-in live effect's window has a presets row: a menu of the effect's saved presets (choosing one fills in its settings, and a preview playing follows it), Save... (asks for a name; an existing name is replaced) and Delete (asks first).
+- A dialog and its live effect share their presets: the dialog's settings are named as the live effect's parameters, so a compressor preset saved in Effects > Compressor loads in a track's Compressor and the other way round. Settings a preset doesn't name (the Limiter dialog's look-ahead and true-peak choice, in a preset saved from the live Limiter) are left as they are. The convolution reverb's presets hold the mix, not the impulse.
+- Presets are kept in Application Support/SpectraBlade/Presets, one XML file an effect, each value written with 17 significant digits so it reads back exactly. A damaged file reads as no presets.
+- The EQ Band, Compressor and Limiter dialogs now run on the same dialog as the newer effects (the Limiter's and EQ Band's choices are menus in it, the Phaser's stages too); their settings, checks and results are as before. The live Limiter previewed from the dialog is made with the dialog's look-ahead.
+- The built-in live effects' parameter lists show values to two decimals (one from 100, none from 1,000) instead of a float's digits, so a ratio of 4 reads 4.00, not 3.9999998.
+- Measured by the tests: values such as 0.1, 1e-7, 1/3 and a float's double come back exactly from the files, and from a new store reading the same folder; names sort, take any characters, replace by name and are removed; each effect has its own file; a blank name is refused; a built-in effect's values set another to the same settings exactly; names it doesn't have are ignored and settings not named are kept; the Phaser's stages go by index; the Parametric EQ window's bands go to values and back exactly and set the live EQ. The windows were rendered to images to check their layout; the dialogs' presets rows and saving from the running app were not tried. The whole suite passed.
+
 **Milestone 175: Convolution reverb**
 - Effects > Convolution Reverb asks for an impulse response (a recording of a space's answer to a click: WAV, AIFF or FLAC, mono or stereo, up to 10 s), then for the mix, with a "Preview on the selection" switch. It is a built-in live effect for the rack and tracks too; its window shows the impulse and loads another, and its saved state holds the impulse's samples, so a session doesn't need the file.
 - The impulse is resampled to the file's (or the device's) rate and scaled so the energy of its loudest channel is 1, which brings the reverb of noise out about as loud as the noise. Each channel is convolved with the impulse's channel of the same side (a mono impulse serves both).
@@ -1059,6 +1067,7 @@ The tests run against the real machine:
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
+- Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1113,6 +1122,5 @@ This codebase is written from functional specs and public documentation only:
 ## Next milestones
 
 1. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
-2. Effects: saved presets for every built-in effect's dialog and window, by name
-3. Effects: a graphic equalizer (10 and 31 bands), offline and live
-4. Effects: a multiband compressor and a de-esser, offline and live
+2. Effects: a graphic equalizer (10 and 31 bands), offline and live
+3. Effects: a multiband compressor and a de-esser, offline and live

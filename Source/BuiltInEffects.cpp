@@ -180,8 +180,15 @@ bool BuiltInEffect::isBusesLayoutSupported (const BusesLayout& layout) const
 juce::AudioParameterFloat* BuiltInEffect::addFloat (const juce::String& id, const juce::String& name, juce::NormalisableRange<float> range,
                                                     float start, const juce::String& label)
 {
+    // Shown to two decimals under 100, one under 1,000 and none above, so a value a skewed range
+    // holds a float off (3.9999998) reads as what was set (4.00).
+    const auto text = [] (float v, int)
+    {
+        const auto size = std::abs (v);
+        return juce::String (v, size >= 1000.0f ? 0 : size >= 100.0f ? 1 : 2);
+    };
     auto p = std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { id, 1 }, name, range, start,
-                                                          juce::AudioParameterFloatAttributes().withLabel (label));
+                                                          juce::AudioParameterFloatAttributes().withLabel (label).withStringFromValueFunction (text));
     auto* raw = p.get();
     addHostedParameter (std::move (p));
 
@@ -205,6 +212,82 @@ juce::AudioParameterBool* BuiltInEffect::addBool (const juce::String& id, const 
     auto* raw = p.get();
     addHostedParameter (std::move (p));
     return raw;
+}
+
+EffectPresets::Values BuiltInEffect::getPresetValues() const
+{
+    EffectPresets::Values v;
+
+    for (auto* p : getParameters())
+    {
+        if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+            v[f->paramID] = (double) f->get();
+        else if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+            v[c->paramID] = c->getIndex();
+        else if (auto* b = dynamic_cast<juce::AudioParameterBool*> (p))
+            v[b->paramID] = b->get() ? 1.0 : 0.0;
+    }
+
+    return v;
+}
+
+void BuiltInEffect::setPresetValues (const EffectPresets::Values& values)
+{
+    for (auto* p : getParameters())
+    {
+        auto* ranged = dynamic_cast<juce::RangedAudioParameter*> (p);
+        const auto found = ranged != nullptr ? values.find (ranged->paramID) : values.end();
+
+        if (found == values.end() || ! std::isfinite (found->second))
+            continue;
+
+        if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (p))
+            setExactly (*f, (float) found->second);
+        else if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (p))
+            c->setValueNotifyingHost (c->convertTo0to1 ((float) juce::jlimit (0, c->choices.size() - 1, (int) std::lround (found->second))));
+        else if (auto* b = dynamic_cast<juce::AudioParameterBool*> (p))
+            b->setValueNotifyingHost (found->second != 0.0 ? 1.0f : 0.0f);
+    }
+}
+
+namespace
+{
+    /** A built-in effect's plain window: its presets above the list of its parameters. */
+    class PresetsAndParameters final : public juce::AudioProcessorEditor
+    {
+    public:
+        explicit PresetsAndParameters (BuiltInEffect& e)
+            : AudioProcessorEditor (e),
+              presets (EffectPresets::userStore(), e.getPresetKey(), [&e] { return e.getPresetValues(); },
+                       [&e] (const EffectPresets::Values& v) { e.setPresetValues (v); }),
+              parameters (e)
+        {
+            addAndMakeVisible (presets);
+            addAndMakeVisible (parameters);
+            setSize (juce::jmax (400, parameters.getWidth()), parameters.getHeight() + 40);
+        }
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds();
+            presets.setBounds (r.removeFromTop (40).reduced (8, 6));
+            parameters.setBounds (r);
+        }
+
+    private:
+        EffectPresets::Bar presets;
+        juce::GenericAudioProcessorEditor parameters;
+    };
+}
+
+juce::AudioProcessorEditor* BuiltInEffect::createEditor()
+{
+    return new PresetsAndParameters (*this);
 }
 
 void BuiltInEffect::getStateInformation (juce::MemoryBlock& block)
@@ -378,17 +461,67 @@ namespace
     }
 }
 
+EffectPresets::Values eqPresetValues (const ParametricEq::Settings& s)
+{
+    EffectPresets::Values v;
+
+    for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
+    {
+        const auto n = "band" + juce::String (i + 1);
+        const auto& b = s[(size_t) i];
+        v[n + "On"] = b.on ? 1.0 : 0.0;
+        v[n + "Type"] = (double) (int) b.band.type;
+        v[n + "Frequency"] = b.band.frequency;
+        v[n + "Gain"] = b.band.gainDb;
+        v[n + "Q"] = b.band.q;
+    }
+
+    return v;
+}
+
+ParametricEq::Settings eqSettingsFrom (const EffectPresets::Values& v, ParametricEq::Settings s)
+{
+    const auto take = [&v] (const juce::String& id, double& into)
+    {
+        if (const auto f = v.find (id); f != v.end() && std::isfinite (f->second))
+            into = f->second;
+    };
+
+    for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
+    {
+        const auto n = "band" + juce::String (i + 1);
+        auto& b = s[(size_t) i];
+        auto on = b.on ? 1.0 : 0.0, type = (double) (int) b.band.type;
+        take (n + "On", on);
+        take (n + "Type", type);
+        take (n + "Frequency", b.band.frequency);
+        take (n + "Gain", b.band.gainDb);
+        take (n + "Q", b.band.q);
+        b.on = on != 0.0;
+        b.band.type = (Equalizer::BandType) juce::jlimit (0, typeNames.size() - 1, (int) std::lround (type));
+    }
+
+    return s;
+}
+
 ParametricEqEditor::ParametricEqEditor (ParametricEqProcessor& owner)
-    : AudioProcessorEditor (owner), eq (owner)
+    : AudioProcessorEditor (owner), eq (owner),
+      presets (EffectPresets::userStore(), owner.getPresetKey(), [&owner] { return owner.getPresetValues(); },
+               [this, &owner] (const EffectPresets::Values& v)
+               {
+                   owner.setPresetValues (v);
+                   refresh();
+               })
 {
     const auto rate = owner.getSampleRate() > 0.0 ? owner.getSampleRate() : 48000.0;
     shown = settingsOf (eq);
     panel = std::make_unique<ParametricEq> (shown, rate);
     panel->onChange = [this] { panelChanged(); };
     addAndMakeVisible (*panel);
+    addAndMakeVisible (presets);
     setResizable (true, false);
-    setResizeLimits (520, 300, 3000, 2000);
-    setSize (panel->getWidth(), panel->getHeight());
+    setResizeLimits (520, 340, 3000, 2040);
+    setSize (panel->getWidth(), panel->getHeight() + 40);
     startTimerHz (10);
 }
 
@@ -441,7 +574,9 @@ void ParametricEqEditor::refresh()
 
 void ParametricEqEditor::resized()
 {
-    panel->setBounds (getLocalBounds());
+    auto r = getLocalBounds();
+    presets.setBounds (r.removeFromTop (40).reduced (8, 6));
+    panel->setBounds (r);
 }
 
 //==============================================================================
@@ -827,8 +962,11 @@ juce::AudioProcessorEditor* ConvolutionProcessor::createEditor()
 
 //==============================================================================
 ConvolutionEditor::ConvolutionEditor (ConvolutionProcessor& owner)
-    : AudioProcessorEditor (owner), convolution (owner)
+    : AudioProcessorEditor (owner), convolution (owner),
+      presets (EffectPresets::userStore(), owner.getPresetKey(), [&owner] { return owner.getPresetValues(); },
+               [&owner] (const EffectPresets::Values& v) { owner.setPresetValues (v); })
 {
+    addAndMakeVisible (presets);
     addAndMakeVisible (impulseName);
     addAndMakeVisible (load);
     addAndMakeVisible (mix);
@@ -838,7 +976,7 @@ ConvolutionEditor::ConvolutionEditor (ConvolutionProcessor& owner)
     mix.setNumDecimalPlacesToDisplay (1);
     load.onClick = [this] { chooseImpulse(); };
     showImpulse();
-    setSize (420, 110);
+    setSize (420, 150);
 }
 
 ConvolutionEditor::~ConvolutionEditor() = default;
@@ -886,6 +1024,8 @@ void ConvolutionEditor::paint (juce::Graphics& g)
 void ConvolutionEditor::resized()
 {
     auto r = getLocalBounds().reduced (10);
+    presets.setBounds (r.removeFromTop (28));
+    r.removeFromTop (12);
     auto top = r.removeFromTop (28);
     load.setBounds (top.removeFromRight (130));
     impulseName.setBounds (top);

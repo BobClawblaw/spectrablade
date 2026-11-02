@@ -260,7 +260,7 @@ public:
         content = new Content (settings, sampleRate, std::move (onApply), std::move (onSettings), std::move (onPreview));
         setContentOwned (content, true);
         setResizable (true, false);
-        setResizeLimits (520, 320, 3000, 2000);
+        setResizeLimits (780, 320, 3000, 2000);
         centreWithSize (getWidth(), getHeight());
         setVisible (true);
     }
@@ -280,6 +280,17 @@ private:
             makePanel (settings);
             apply.onClick = [this, applyBands = std::move (onApply)] { applyBands (*panel); };   // applying ends the preview
             preview.onClick = [this] { previewBands (preview.getToggleState() ? panel.get() : nullptr); };
+            presets = std::make_unique<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::parametricEqId,
+                                                            [this] { return BuiltInEffects::eqPresetValues (panel->getSettings()); },
+                                                            [this] (const EffectPresets::Values& v)
+                                                            {
+                                                                const auto s = BuiltInEffects::eqSettingsFrom (v, panel->getSettings());
+                                                                makePanel (s);
+                                                                remember (s);
+                                                                changed();
+                                                                resized();
+                                                            });
+            addAndMakeVisible (*presets);
             flat.onClick = [this]
             {
                 auto s = panel->getSettings();
@@ -295,7 +306,7 @@ private:
             addAndMakeVisible (apply);
             addAndMakeVisible (flat);
             addAndMakeVisible (preview);
-            setSize (panel->getWidth(), panel->getHeight() + 40);
+            setSize (juce::jmax (820, panel->getWidth()), panel->getHeight() + 40);   // wide enough for the buttons and presets
         }
 
         void makePanel (const ParametricEq::Settings& settings)
@@ -323,6 +334,8 @@ private:
             buttons.removeFromRight (8);
             flat.setBounds (buttons.removeFromRight (90));
             preview.setBounds (buttons.removeFromLeft (200));
+            buttons.removeFromLeft (8);
+            presets->setBounds (buttons);
             panel->setBounds (r);
         }
 
@@ -332,6 +345,7 @@ private:
         std::unique_ptr<ParametricEq> panel;
         juce::TextButton apply { "Apply" }, flat { "Flat" };
         juce::ToggleButton preview { "Preview on the selection" };
+        std::unique_ptr<EffectPresets::Bar> presets;
     };
 
     Content* content = nullptr;
@@ -4388,44 +4402,32 @@ void MainComponent::showEcho()
 void MainComponent::showEqBand()
 {
     const auto nyquist = engine.document.getSampleRate() / 2.0;
-    auto* box = new juce::AlertWindow ("EQ Band", "A bell boosts or cuts around the frequency (a higher Q is narrower); a shelf boosts or cuts "
-                                       "everything below or above it, half as much at the frequency; a high-pass or low-pass removes what is "
-                                       "below or above it, 3 dB down at the frequency with a Q of 0.71. Gain from -48 to +48 dB; Q from 0.05 to 50.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addComboBox ("type", { "Bell", "Low Shelf", "High Shelf", "High-Pass", "Low-Pass" }, "Type");
-    box->getComboBoxComponent ("type")->setSelectedItemIndex (eqBandType);
-    box->addTextEditor ("frequency", juce::String (eqBandHz, 1), "Frequency (Hz)");
-    box->addTextEditor ("gain", juce::String (eqBandGainDb, 1), "Gain (dB)");
-    box->addTextEditor ("q", juce::String (eqBandQ, 2), "Q");
-    box->getTextEditor ("frequency")->setInputRestrictions (8, ".0123456789");
-    box->getTextEditor ("gain")->setInputRestrictions (6, "-.0123456789");
-    box->getTextEditor ("q")->setInputRestrictions (5, ".0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, nyquist] (int result)
+    const auto toBand = [] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
+        return Equalizer::Band { (Equalizer::BandType) juce::jlimit (0, 4, (int) v.at ("type")), v.at ("frequency"), v.at ("gain"), v.at ("q") };
+    };
 
-        eqBandType = juce::jmax (0, box->getComboBoxComponent ("type")->getSelectedItemIndex());
-        eqBandHz = box->getTextEditorContents ("frequency").getDoubleValue();
-        eqBandGainDb = box->getTextEditorContents ("gain").getDoubleValue();
-        eqBandQ = box->getTextEditorContents ("q").getDoubleValue();
-        const Equalizer::Band band { (Equalizer::BandType) eqBandType, eqBandHz, eqBandGainDb, eqBandQ };
+    showEffectDialog ("EQ Band", "A bell boosts or cuts around the frequency (a higher Q is narrower); a shelf boosts or cuts "
+                                 "everything below or above it, half as much at the frequency; a high-pass or low-pass removes what is "
+                                 "below or above it, 3 dB down at the frequency with a Q of 0.71. Gain from -48 to +48 dB; Q from 0.05 to 50.",
+                      { { "type", "Type", (double) eqBandType, 0, { "Bell", "Low Shelf", "High Shelf", "High-Pass", "Low-Pass" } },
+                        { "frequency", "Frequency (Hz)", eqBandHz, 1 }, { "gain", "Gain (dB)", eqBandGainDb, 1 }, { "q", "Q", eqBandQ, 2 } },
+                      "spectrablade:eq-band", PreviewOwner::none,
+                      [this, toBand] (const EffectValues& v) { return Equalizer::isValid (toBand (v), engine.document.getSampleRate()); },
+                      "The frequency must be above 0 and below " + juce::String (nyquist, 0) + " Hz, the gain within 48 dB either way, and the Q from 0.05 to 50.",
+                      nullptr, nullptr,
+                      [this, toBand] (const EffectValues& v)
+                      {
+                          const auto band = toBand (v);
+                          eqBandType = (int) band.type;
+                          eqBandHz = band.frequency;
+                          eqBandGainDb = band.gainDb;
+                          eqBandQ = band.q;
+                          const auto r = selectionOrAll();
 
-        if (! Equalizer::isValid (band, engine.document.getSampleRate()))
-        {
-            showError ("EQ Band", "The frequency must be above 0 and below " + juce::String (nyquist, 0) + " Hz, the gain within 48 dB "
-                                  "either way, and the Q from 0.05 to 50.");
-            return;
-        }
-
-        const auto r = selectionOrAll();
-
-        if (auto next = Equalizer::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), { band }))
-            applyEdit (std::move (next), "EQ Band", waveform.getSelection());
-    }), true);
+                          if (auto next = Equalizer::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), { band }))
+                              applyEdit (std::move (next), "EQ Band", waveform.getSelection());
+                      });
 }
 
 void MainComponent::toggleParametricEq()
@@ -4520,255 +4522,190 @@ void MainComponent::applyParametricEq (const std::vector<Equalizer::Band>& bands
 
 void MainComponent::showCompressor()
 {
-    auto* box = new juce::AlertWindow ("Compressor", "Above the threshold, each ratio dB in comes out as 1 dB, eased in over the knee's width. "
-                                       "The gain falls with the attack time and recovers with the release time, the same on every channel. "
-                                       "Threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    const auto field = [box] (const char* id, double value, int decimals, const char* label)
+    const auto& s = compressorSettings;
+    const auto toSettings = [] (const EffectValues& v)
     {
-        box->addTextEditor (id, juce::String (value, decimals), label);
-        box->getTextEditor (id)->setInputRestrictions (8, "-.0123456789");
-    };
-    field ("threshold", compressorSettings.thresholdDb, 1, "Threshold (dB)");
-    field ("ratio", compressorSettings.ratio, 1, "Ratio (to 1)");
-    field ("knee", compressorSettings.kneeDb, 1, "Knee (dB)");
-    field ("attack", compressorSettings.attackMs, 2, "Attack (ms)");
-    field ("release", compressorSettings.releaseMs, 0, "Release (ms)");
-    field ("makeup", compressorSettings.makeupDb, 1, "Makeup gain (dB)");
-
-    const auto read = [box]
-    {
-        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
-        return Dynamics::Compressor { value ("threshold"), value ("ratio"), value ("knee"), value ("attack"), value ("release"), value ("makeup") };
+        return Dynamics::Compressor { v.at ("threshold"), v.at ("ratio"), v.at ("knee"), v.at ("attack"), v.at ("release"), v.at ("makeup") };
     };
 
-    // Preview: the live compressor with the fields' settings (the last valid ones while a field is
-    // being typed), on the selection over and over.
-    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
-    preview->setSize (260, 24);
-    box->addCustomComponent (preview.get());
-    const auto update = [this, read, toggle = preview.get()]
-    {
-        if (! toggle->getToggleState())
-        {
-            if (previewOwner == PreviewOwner::compressor)
-                stopPreview();
+    showEffectDialog ("Compressor", "Above the threshold, each ratio dB in comes out as 1 dB, eased in over the knee's width. "
+                                    "The gain falls with the attack time and recovers with the release time, the same on every channel. "
+                                    "Threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.",
+                      { { "threshold", "Threshold (dB)", s.thresholdDb, 1 }, { "ratio", "Ratio (to 1)", s.ratio, 1 }, { "knee", "Knee (dB)", s.kneeDb, 1 },
+                        { "attack", "Attack (ms)", s.attackMs, 2 }, { "release", "Release (ms)", s.releaseMs, 0 }, { "makeup", "Makeup gain (dB)", s.makeupDb, 1 } },
+                      BuiltInEffects::compressorId, PreviewOwner::compressor,
+                      [toSettings] (const EffectValues& v) { return Dynamics::isValid (toSettings (v)); },
+                      "A setting is out of range: threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.",
+                      [] (const EffectValues&) { return std::make_unique<BuiltInEffects::CompressorProcessor>(); },
+                      [toSettings] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          auto* live = dynamic_cast<BuiltInEffects::CompressorProcessor*> (&p);
 
-            return;
-        }
+                          if (live != nullptr)
+                              live->setSettings (toSettings (v));
 
-        const auto settings = read();
+                          return live != nullptr;
+                      },
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          compressorSettings = toSettings (v);
+                          const auto r = selectionOrAll();
 
-        if (! Dynamics::isValid (settings))
-            return;
-
-        if (auto* live = dynamic_cast<BuiltInEffects::CompressorProcessor*> (previewEffectOf (PreviewOwner::compressor)))
-        {
-            live->setSettings (settings);
-            return;
-        }
-
-        auto made = std::make_unique<BuiltInEffects::CompressorProcessor>();
-        made->setSettings (settings);
-        startPreview (PreviewOwner::compressor, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
-
-        if (previewOwner != PreviewOwner::compressor)
-            toggle->setToggleState (false, juce::dontSendNotification);
-    };
-    preview->onClick = update;
-
-    for (auto* id : { "threshold", "ratio", "knee", "attack", "release", "makeup" })
-        box->getTextEditor (id)->onTextChange = update;
-
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, read, preview] (int result)
-    {
-        if (previewOwner == PreviewOwner::compressor)
-            stopPreview();
-
-        if (result != 1)
-            return;
-
-        const auto settings = read();
-
-        if (! Dynamics::isValid (settings))
-        {
-            showError ("Compressor", "A setting is out of range: threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, "
-                                     "attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.");
-            return;
-        }
-
-        compressorSettings = settings;
-        const auto r = selectionOrAll();
-
-        if (auto next = Dynamics::compress (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), settings))
-            applyEdit (std::move (next), "Compressor", waveform.getSelection());
-    }), true);
+                          if (auto next = Dynamics::compress (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), compressorSettings))
+                              applyEdit (std::move (next), "Compressor", waveform.getSelection());
+                      });
 }
 
 void MainComponent::showLimiter()
 {
-    auto* box = new juce::AlertWindow ("Limiter", "No sample comes out above the ceiling, or with true peaks, nothing between samples either. "
-                                       "Gain before the limiter makes the audio louder into it. "
-                                       "The gain starts falling the look-ahead time before each peak and recovers with the release time. "
-                                       "Gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    const auto field = [box] (const char* id, double value, int decimals, const char* label)
+    const auto& s = limiterSettings;
+    const auto toSettings = [] (const EffectValues& v)
     {
-        box->addTextEditor (id, juce::String (value, decimals), label);
-        box->getTextEditor (id)->setInputRestrictions (8, "-.0123456789");
-    };
-    field ("gain", limiterSettings.inputGainDb, 1, "Gain before (dB)");
-    field ("ceiling", limiterSettings.ceilingDb, 1, "Ceiling (dBFS)");
-    field ("release", limiterSettings.releaseMs, 0, "Release (ms)");
-    field ("lookahead", limiterSettings.lookaheadMs, 1, "Look-ahead (ms)");
-    box->addComboBox ("peaks", { "Sample peaks", "True peaks (between samples)" }, "Hold under the ceiling");
-    box->getComboBoxComponent ("peaks")->setSelectedItemIndex (limiterSettings.truePeak ? 1 : 0);
-
-    const auto read = [box]
-    {
-        const auto value = [box] (const char* id) { return box->getTextEditorContents (id).getDoubleValue(); };
-        return Dynamics::Limiter { value ("gain"), value ("ceiling"), value ("release"), value ("lookahead"),
-                                   box->getComboBoxComponent ("peaks")->getSelectedItemIndex() == 1 };
+        return Dynamics::Limiter { v.at ("gain"), v.at ("ceiling"), v.at ("release"), v.at ("lookahead"), v.at ("peaks") > 0.5 };
     };
 
-    // Preview: the live limiter with the fields' settings, holding sample peaks; a new look-ahead
-    // needs a new one, swapped in as it plays.
-    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection (sample peaks)");
-    preview->setSize (300, 24);
-    box->addCustomComponent (preview.get());
-    const auto update = [this, read, toggle = preview.get()]
-    {
-        if (! toggle->getToggleState())
-        {
-            if (previewOwner == PreviewOwner::limiter)
-                stopPreview();
+    showEffectDialog ("Limiter", "No sample comes out above the ceiling, or with true peaks, nothing between samples either. "
+                                 "Gain before the limiter makes the audio louder into it. "
+                                 "The gain starts falling the look-ahead time before each peak and recovers with the release time. "
+                                 "Gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms. "
+                                 "The preview holds sample peaks.",
+                      { { "gain", "Gain before (dB)", s.inputGainDb, 1 }, { "ceiling", "Ceiling (dBFS)", s.ceilingDb, 1 },
+                        { "release", "Release (ms)", s.releaseMs, 0 }, { "lookahead", "Look-ahead (ms)", s.lookaheadMs, 1 },
+                        { "peaks", "Hold under the ceiling", s.truePeak ? 1.0 : 0.0, 0, { "Sample peaks", "True peaks (between samples)" } } },
+                      BuiltInEffects::limiterId, PreviewOwner::limiter,
+                      [toSettings] (const EffectValues& v) { return Dynamics::isValid (toSettings (v)); },
+                      "A setting is out of range: gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms.",
+                      [toSettings] (const EffectValues& v) { return std::make_unique<BuiltInEffects::LimiterProcessor> (toSettings (v).lookaheadMs); },
+                      [toSettings] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          // A limiter is made with its look-ahead; another look-ahead needs a new one.
+                          const auto settings = toSettings (v);
+                          auto* live = dynamic_cast<BuiltInEffects::LimiterProcessor*> (&p);
 
-            return;
-        }
+                          if (live == nullptr || ! juce::exactlyEqual (live->getSettings().lookaheadMs, settings.lookaheadMs))
+                              return false;
 
-        const auto settings = read();
+                          live->setSettings (settings);
+                          return true;
+                      },
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          limiterSettings = toSettings (v);
+                          const auto r = selectionOrAll();
 
-        if (! Dynamics::isValid (settings))
-            return;
-
-        auto* live = dynamic_cast<BuiltInEffects::LimiterProcessor*> (previewEffectOf (PreviewOwner::limiter));
-
-        if (live != nullptr && juce::exactlyEqual (live->getSettings().lookaheadMs, settings.lookaheadMs))
-        {
-            live->setSettings (settings);
-            return;
-        }
-
-        auto made = std::make_unique<BuiltInEffects::LimiterProcessor> (settings.lookaheadMs);
-        made->setSettings (settings);
-        startPreview (PreviewOwner::limiter, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
-
-        if (previewOwner != PreviewOwner::limiter)
-            toggle->setToggleState (false, juce::dontSendNotification);
-    };
-    preview->onClick = update;
-
-    for (auto* id : { "gain", "ceiling", "release", "lookahead" })
-        box->getTextEditor (id)->onTextChange = update;
-
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, read, preview] (int result)
-    {
-        if (previewOwner == PreviewOwner::limiter)
-            stopPreview();
-
-        if (result != 1)
-            return;
-
-        const auto settings = read();
-
-        if (! Dynamics::isValid (settings))
-        {
-            showError ("Limiter", "A setting is out of range: gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms.");
-            return;
-        }
-
-        limiterSettings = settings;
-        const auto r = selectionOrAll();
-
-        if (auto next = Dynamics::limit (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), settings))
-            applyEdit (std::move (next), "Limiter", waveform.getSelection());
-    }), true);
+                          if (auto next = Dynamics::limit (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), limiterSettings))
+                              applyEdit (std::move (next), "Limiter", waveform.getSelection());
+                      });
 }
 
-void MainComponent::showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>& fields, PreviewOwner owner,
+void MainComponent::showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>& fields,
+                                      const juce::String& presetKey, PreviewOwner owner,
                                       std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
-                                      std::function<std::unique_ptr<juce::AudioPluginInstance>()> make,
-                                      std::function<void (juce::AudioPluginInstance&, const EffectValues&)> setLive,
+                                      std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
+                                      std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
                                       std::function<void (const EffectValues&)> apply)
 {
     auto* box = new juce::AlertWindow (title, message, juce::MessageBoxIconType::NoIcon, this);
-    juce::StringArray ids;
 
     for (auto& f : fields)
     {
-        box->addTextEditor (f.id, juce::String (f.value, f.decimals), f.label);
-        box->getTextEditor (f.id)->setInputRestrictions (9, "-.0123456789");
-        ids.add (f.id);
+        if (f.choices.isEmpty())
+        {
+            box->addTextEditor (f.id, juce::String (f.value, f.decimals), f.label);
+            box->getTextEditor (f.id)->setInputRestrictions (9, "-.0123456789");
+        }
+        else
+        {
+            box->addComboBox (f.id, f.choices, f.label);
+            box->getComboBoxComponent (f.id)->setSelectedItemIndex ((int) f.value, juce::dontSendNotification);
+        }
     }
 
-    const auto read = [box, ids]
+    const auto read = [box, fields]
     {
         EffectValues v;
 
-        for (auto& id : ids)
-            v[id] = box->getTextEditorContents (id).getDoubleValue();
+        for (auto& f : fields)
+            v[f.id] = f.choices.isEmpty() ? box->getTextEditorContents (f.id).getDoubleValue()
+                                          : (double) box->getComboBoxComponent (f.id)->getSelectedItemIndex();
 
         return v;
     };
 
-    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
-    preview->setSize (260, 24);
-    box->addCustomComponent (preview.get());
-    const auto update = [this, owner, read, valid, make, setLive, toggle = preview.get()]
+    // The custom components live until the dialog's callback has run (it holds them).
+    std::vector<std::shared_ptr<juce::Component>> extras;
+    std::function<void()> update = [] {};
+
+    if (make != nullptr)
     {
-        if (! toggle->getToggleState())
+        auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
+        preview->setSize (260, 24);
+        box->addCustomComponent (preview.get());
+        extras.push_back (preview);
+
+        // The live effect with the fields' settings (the last valid ones while a field is being
+        // typed); a new one when setLive can't take the settings (the limiter's look-ahead).
+        update = [this, owner, read, valid, make, setLive, toggle = preview.get()]
         {
-            if (previewOwner == owner)
-                stopPreview();
+            if (! toggle->getToggleState())
+            {
+                if (previewOwner == owner)
+                    stopPreview();
 
-            return;
-        }
+                return;
+            }
 
-        const auto values = read();
+            const auto values = read();
 
-        if (! valid (values))
-            return;
+            if (! valid (values))
+                return;
 
-        if (auto* live = previewEffectOf (owner))
+            if (auto* live = previewEffectOf (owner); live != nullptr && setLive (*live, values))
+                return;
+
+            auto made = make (values);
+            setLive (*made, values);
+            startPreview (owner, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
+
+            if (previewOwner != owner)
+                toggle->setToggleState (false, juce::dontSendNotification);
+        };
+        preview->onClick = update;
+    }
+
+    for (auto& f : fields)
+    {
+        if (f.choices.isEmpty())
+            box->getTextEditor (f.id)->onTextChange = update;
+        else
+            box->getComboBoxComponent (f.id)->onChange = update;
+    }
+
+    // Presets: the fields' values under their IDs; a preset fills the fields it names.
+    auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), presetKey, read, [box, fields] (const EffectValues& v)
+    {
+        for (auto& f : fields)
         {
-            setLive (*live, values);
-            return;
+            const auto found = v.find (f.id);
+
+            if (found == v.end() || ! std::isfinite (found->second))
+                continue;
+
+            if (f.choices.isEmpty())
+                box->getTextEditor (f.id)->setText (juce::String (found->second, f.decimals), true);
+            else
+                box->getComboBoxComponent (f.id)->setSelectedItemIndex (juce::jlimit (0, f.choices.size() - 1, (int) std::lround (found->second)));
         }
-
-        auto made = make();
-        setLive (*made, values);
-        startPreview (owner, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
-
-        if (previewOwner != owner)
-            toggle->setToggleState (false, juce::dontSendNotification);
-    };
-    preview->onClick = update;
-
-    for (auto& id : ids)
-        box->getTextEditor (id)->onTextChange = update;
+    });
+    box->addCustomComponent (presets.get());
+    extras.push_back (presets);
 
     box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, owner, read, valid, invalidText, apply, title, preview] (int result)
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, owner, read, valid, invalidText, apply, title, extras] (int result)
     {
-        if (previewOwner == owner)
+        if (owner != PreviewOwner::none && previewOwner == owner)
             stopPreview();
 
         if (result != 1)
@@ -4804,14 +4741,18 @@ void MainComponent::showSweptDelay (bool flanger)
                       { { "rate", "Rate (Hz)", s.rateHz, 2 }, { "delay", "Delay (ms)", s.delayMs, 1 }, { "depth", "Depth (ms)", s.depthMs, 1 },
                         { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2 }, { "mix", "Mix (%)", s.mixPercent, 0 },
                         { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0 } },
-                      flanger ? PreviewOwner::flanger : PreviewOwner::chorus,
+                      flanger ? BuiltInEffects::flangerId : BuiltInEffects::chorusId, flanger ? PreviewOwner::flanger : PreviewOwner::chorus,
                       [toDelay] (const EffectValues& v) { return Modulation::isValid (toDelay (v)); },
                       "A setting is out of range: rate 0.01 to 10 Hz, delay and depth 0 to 50 ms, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
-                      [kind] { return std::make_unique<BuiltInEffects::SweptDelayProcessor> (kind); },
+                      [kind] (const EffectValues&) { return std::make_unique<BuiltInEffects::SweptDelayProcessor> (kind); },
                       [toDelay] (juce::AudioPluginInstance& p, const EffectValues& v)
                       {
-                          if (auto* d = dynamic_cast<BuiltInEffects::SweptDelayProcessor*> (&p))
+                          auto* d = dynamic_cast<BuiltInEffects::SweptDelayProcessor*> (&p);
+
+                          if (d != nullptr)
                               d->setSettings (toDelay (v));
+
+                          return d != nullptr;
                       },
                       [this, flanger, toDelay, title] (const EffectValues& v)
                       {
@@ -4829,29 +4770,30 @@ void MainComponent::showPhaser()
     const auto& s = phaserSettings;
     const auto toPhaser = [] (const EffectValues& v)
     {
-        return Modulation::Phaser { v.at ("rate"), v.at ("low"), v.at ("high"), (int) std::lround (v.at ("stages")),
+        return Modulation::Phaser { v.at ("rate"), v.at ("low"), v.at ("high"), 2 * ((int) std::lround (v.at ("stages")) + 1),
                                     v.at ("feedback"), v.at ("mix"), v.at ("spread") };
     };
 
     showEffectDialog ("Phaser",
                       "A chain of all-pass filters, swept between the low and high frequencies at the rate and mixed with the sound, "
                       "sweeps notches through it (one for every two stages; deepest at a 50 % mix). The second channel's sweep runs the spread behind. "
-                      "Rate 0.01 to 10 Hz, frequencies 20 Hz to 20 kHz (low up to high), stages 2 to 12 (even), feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
+                      "Rate 0.01 to 10 Hz, frequencies 20 Hz to 20 kHz (low up to high), 2 to 12 stages, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
                       { { "rate", "Rate (Hz)", s.rateHz, 2 }, { "low", "Low frequency (Hz)", s.lowHz, 0 }, { "high", "High frequency (Hz)", s.highHz, 0 },
-                        { "stages", "Stages (2 to 12, even)", (double) s.stages, 0 }, { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2 },
+                        { "stages", "Stages", (double) (s.stages / 2 - 1), 0, { "2", "4", "6", "8", "10", "12" } }, { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2 },
                         { "mix", "Mix (%)", s.mixPercent, 0 }, { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0 } },
-                      PreviewOwner::phaser,
-                      [toPhaser] (const EffectValues& v)
-                      {
-                          return juce::exactlyEqual (v.at ("stages"), std::round (v.at ("stages"))) && Modulation::isValid (toPhaser (v));
-                      },
+                      BuiltInEffects::phaserId, PreviewOwner::phaser,
+                      [toPhaser] (const EffectValues& v) { return Modulation::isValid (toPhaser (v)); },
                       "A setting is out of range: rate 0.01 to 10 Hz, frequencies 20 Hz to 20 kHz with the low one no higher than the high, "
-                      "an even number of stages from 2 to 12, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
-                      [] { return std::make_unique<BuiltInEffects::PhaserProcessor>(); },
+                      "feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
+                      [] (const EffectValues&) { return std::make_unique<BuiltInEffects::PhaserProcessor>(); },
                       [toPhaser] (juce::AudioPluginInstance& p, const EffectValues& v)
                       {
-                          if (auto* ph = dynamic_cast<BuiltInEffects::PhaserProcessor*> (&p))
+                          auto* ph = dynamic_cast<BuiltInEffects::PhaserProcessor*> (&p);
+
+                          if (ph != nullptr)
                               ph->setSettings (toPhaser (v));
+
+                          return ph != nullptr;
                       },
                       [this, toPhaser] (const EffectValues& v)
                       {
@@ -4868,7 +4810,7 @@ void MainComponent::showReverb()
     const auto& s = reverbSettings;
     const auto toSettings = [] (const EffectValues& v)
     {
-        return RoomReverb::Settings { v.at ("predelay"), v.at ("decay"), v.at ("size"), v.at ("damping"), v.at ("width"), v.at ("mix") };
+        return RoomReverb::Settings { v.at ("preDelay"), v.at ("decay"), v.at ("size"), v.at ("damping"), v.at ("width"), v.at ("mix") };
     };
 
     showEffectDialog ("Reverb",
@@ -4876,16 +4818,20 @@ void MainComponent::showReverb()
                       "selection (added to what follows) for the pre-delay plus the decay. Size scales the room; damping takes the highs away "
                       "faster; width spreads the reverb across the sides. Pre-delay 0 to 200 ms, decay 0.1 to 20 s, size 50 to 150 %, "
                       "damping, width and mix 0 to 100 %.",
-                      { { "predelay", "Pre-delay (ms)", s.preDelayMs, 0 }, { "decay", "Decay (s)", s.decaySeconds, 2 }, { "size", "Size (%)", s.sizePercent, 0 },
+                      { { "preDelay", "Pre-delay (ms)", s.preDelayMs, 0 }, { "decay", "Decay (s)", s.decaySeconds, 2 }, { "size", "Size (%)", s.sizePercent, 0 },
                         { "damping", "Damping (%)", s.dampingPercent, 0 }, { "width", "Width (%)", s.widthPercent, 0 }, { "mix", "Mix (%)", s.mixPercent, 0 } },
-                      PreviewOwner::reverb,
+                      BuiltInEffects::reverbId, PreviewOwner::reverb,
                       [toSettings] (const EffectValues& v) { return RoomReverb::isValid (toSettings (v)); },
                       "A setting is out of range: pre-delay 0 to 200 ms, decay 0.1 to 20 s, size 50 to 150 %, damping, width and mix 0 to 100 %.",
-                      [] { return std::make_unique<BuiltInEffects::ReverbProcessor>(); },
+                      [] (const EffectValues&) { return std::make_unique<BuiltInEffects::ReverbProcessor>(); },
                       [toSettings] (juce::AudioPluginInstance& p, const EffectValues& v)
                       {
-                          if (auto* r = dynamic_cast<BuiltInEffects::ReverbProcessor*> (&p))
+                          auto* r = dynamic_cast<BuiltInEffects::ReverbProcessor*> (&p);
+
+                          if (r != nullptr)
                               r->setSettings (toSettings (v));
+
+                          return r != nullptr;
                       },
                       [this, toSettings] (const EffectValues& v)
                       {
@@ -4931,10 +4877,10 @@ void MainComponent::showConvolutionDialog (std::shared_ptr<const Convolver::Impu
                           + (impulse->samples.getNumChannels() == 1 ? "mono" : "stereo") + "), scaled so noise comes out about as loud, "
                           "ringing on past the selection (added to what follows) for the impulse's length. Mix 0 to 100 %.",
                       { { "mix", "Mix (%)", convolutionMix, 0 } },
-                      PreviewOwner::convolution,
+                      BuiltInEffects::convolutionId, PreviewOwner::convolution,
                       [] (const EffectValues& v) { return v.at ("mix") >= 0.0 && v.at ("mix") <= 100.0; },
                       "The mix must be from 0 to 100 %.",
-                      [impulse]
+                      [impulse] (const EffectValues&)
                       {
                           auto c = std::make_unique<BuiltInEffects::ConvolutionProcessor>();
                           c->setImpulse (*impulse);
@@ -4942,8 +4888,12 @@ void MainComponent::showConvolutionDialog (std::shared_ptr<const Convolver::Impu
                       },
                       [] (juce::AudioPluginInstance& p, const EffectValues& v)
                       {
-                          if (auto* c = dynamic_cast<BuiltInEffects::ConvolutionProcessor*> (&p))
+                          auto* c = dynamic_cast<BuiltInEffects::ConvolutionProcessor*> (&p);
+
+                          if (c != nullptr)
                               BuiltInEffects::setExactly (*c->mix, (float) v.at ("mix"));
+
+                          return c != nullptr;
                       },
                       [this, impulse] (const EffectValues& v)
                       {
