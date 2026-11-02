@@ -1263,6 +1263,57 @@ namespace
                "empty editor: the recent files that still exist are listed under the hint, and clicking one asks to open that file");
     }
 
+    void testWaveformDivider()
+    {
+        AudioEngine engine;
+        juce::AudioBuffer<float> b (2, 48000);
+        b.clear();
+        engine.document.reset (AudioEdits::fromBuffer (std::move (b)), 48000.0, {}, 24);
+        WaveformView view (engine);
+        view.setBounds (0, 0, 900, 600);
+        view.setDisplay (WaveformView::Display::both);
+
+        double remembered = -1.0;
+        view.onWaveformShareChanged = [&] (double s) { remembered = s; };
+
+        const auto mouse = [&view] (juce::Point<float> at, juce::Point<float> down)
+        {
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &view, &view,
+                                     juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, false);
+        };
+
+        // The second channel's line, found from the lane layout the view draws with.
+        const auto area = view.getWaveArea();
+        const auto laneHeight = area.getHeight() / 2;
+        const auto secondTop = (float) (area.getY() + laneHeight);
+        const juce::Point<float> line (400.0f, secondTop + (float) juce::roundToInt (laneHeight * 0.35));
+        const juce::Point<float> to (400.0f, secondTop + (float) laneHeight * 0.6f);
+        const auto startCursor = view.getCursor();
+
+        view.mouseDown (mouse (line, line));
+        view.mouseDrag (mouse (to, line));
+        const auto during = view.getWaveformShare();
+        view.mouseUp (mouse (to, line));
+        const auto moved = std::abs (during - 0.6) < 0.01 && std::abs (remembered - during) < 1.0e-12 && view.getCursor() == startCursor
+                           && view.getSelection().isEmpty();
+
+        // Clamped at both ends; away from the line a drag selects as before.
+        view.setWaveformShare (0.0);
+        const auto low = view.getWaveformShare();
+        view.setWaveformShare (2.0);
+        const auto high = view.getWaveformShare();
+        view.setWaveformShare (0.5);
+        const juce::Point<float> inside (300.0f, secondTop + (float) laneHeight * 0.8f), further (500.0f, secondTop + (float) laneHeight * 0.8f);
+        view.mouseDown (mouse (inside, inside));
+        view.mouseDrag (mouse (further, inside));
+        view.mouseUp (mouse (further, inside));
+        const auto selects = ! view.getSelection().isEmpty() && std::abs (view.getWaveformShare() - 0.5) < 1.0e-12;
+
+        check (moved && juce::exactlyEqual (low, 0.1) && juce::exactlyEqual (high, 0.9) && selects,
+               "waveform and spectrogram: dragging the line between them sets the waveform's share of each channel (to "
+                   + juce::String (during, 3) + "), remembered when the drag ends and kept within 0.1 to 0.9; a drag elsewhere still selects");
+    }
+
     void testShortcutEditing()
     {
         ThreeCommands target;
@@ -1600,5 +1651,6 @@ void runMixerTests (AudioEngine& engine)
     testSoloSafe (engine);
     testStripMenu (engine);
     testRecentFiles();
+    testWaveformDivider();
     testClipsCsv();
 }

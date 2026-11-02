@@ -39,6 +39,7 @@ namespace
     constexpr const char* loopPlaybackKey = "loopPlayback";
     constexpr const char* rackShownKey    = "rackShown";
     constexpr const char* openPreviewKey  = "previewInOpenPanel";
+    constexpr const char* waveShareKey    = "waveformShare";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -824,6 +825,8 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (waveform);
     waveform.setDisplay ((WaveformView::Display) juce::jlimit (0, 2, settings->getIntValue (displayKey, 0)));
+    waveform.setWaveformShare (settings->getDoubleValue (waveShareKey, 0.35));
+    waveform.onWaveformShareChanged = [settings] (double share) { settings->setValue (waveShareKey, share); };
     fadeShape = FadeShapes::fromId (settings->getValue (fadeShapeKey));
     waveform.onFileDropped = [this] (const juce::File& f) { confirmDiscardChanges ([this, f] { openFile (f); }); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };

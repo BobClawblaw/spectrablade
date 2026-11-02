@@ -26,6 +26,15 @@ public:
     void setDisplay (Display);
     Display getDisplay() const                          { return display; }
 
+    /** In the Both display, the share of each channel's height the waveform takes, the spectrogram
+        having the rest: 0.1 to 0.9, 0.35 to start. Dragging the line between them changes it. */
+    void setWaveformShare (double);
+    double getWaveformShare() const                     { return waveShare; }
+    std::function<void (double)> onWaveformShareChanged;   // when a drag of the line ends
+
+    /** Where the channels are drawn, under the ruler and the markers. */
+    juce::Rectangle<int> getWaveArea() const;
+
     /** The frequency range (Hz) of a box selected in the spectrogram; empty when the selection
         covers all frequencies. */
     juce::Range<double> getSpectralBand() const         { return band; }
@@ -76,12 +85,12 @@ private:
     void scrollBarMoved (juce::ScrollBar*, double newRangeStart) override;
     void timerCallback() override;
 
-    juce::Rectangle<int> getWaveArea() const;
     juce::Rectangle<int> getMarkerLane() const;
 
     /** A channel's waveform and spectrogram areas (either may be empty), relative to the wave area. */
     struct Lane { juce::Rectangle<int> wave, spectrum; };
     Lane getLane (int channel, int numChannels) const;
+    int dividerAt (juce::Point<float>) const;   // the channel whose waveform/spectrogram line is there, or -1
     void drawFrequencyScale (juce::Graphics&, juce::Rectangle<int> spectrum, double sampleRate);
     const Markers& shownMarkers() const;
     int markerAt (juce::Point<float>) const;
@@ -108,6 +117,8 @@ private:
     juce::Range<double> band;
     double bandAnchor = 0.0;
     int bandLane = -1;               // channel whose spectrogram an Option-drag started in
+    double waveShare = 0.35;
+    int dividerChannel = -1;         // channel whose waveform/spectrogram line is being dragged
     juce::uint32 lastVersion = 0;
     int lastResetCount = 0;
 

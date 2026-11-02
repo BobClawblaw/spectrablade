@@ -252,8 +252,40 @@ WaveformView::Lane WaveformView::getLane (int channel, int numChannels) const
         case Display::both:        break;
     }
 
-    const auto wave = lane.removeFromTop (lane.getHeight() * 35 / 100);
+    const auto wave = lane.removeFromTop (juce::roundToInt (lane.getHeight() * waveShare));
     return { wave, lane.withTrimmedTop (1) };
+}
+
+int WaveformView::dividerAt (juce::Point<float> p) const
+{
+    if (display != Display::both || ! engine.document.hasAudio())
+        return -1;
+
+    const auto channels = engine.document.getNumChannels();
+    const auto area = getWaveArea();
+
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        const auto line = (float) (area.getY() + getLane (ch, channels).wave.getBottom());
+
+        if (std::abs (p.y - line) <= 3.0f && p.x >= (float) area.getX() && p.x < (float) area.getRight())
+            return ch;
+    }
+
+    return -1;
+}
+
+void WaveformView::setWaveformShare (double share)
+{
+    const auto s = juce::jlimit (0.1, 0.9, share);
+
+    if (juce::exactlyEqual (s, waveShare))
+        return;
+
+    waveShare = s;
+
+    if (display == Display::both)
+        invalidateWaveform();
 }
 
 void WaveformView::setDisplay (Display d)
@@ -557,6 +589,12 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    if (const auto ch = dividerAt (e.position); ch >= 0)
+    {
+        dividerChannel = ch;
+        return;
+    }
+
     if (const auto index = markerAt (e.position); index >= 0)
     {
         const auto& m = engine.document.getMarkers()[(size_t) index];
@@ -630,6 +668,15 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     if (! engine.document.hasAudio())
         return;
 
+    if (dividerChannel >= 0)
+    {
+        const auto area = getWaveArea();
+        const auto laneHeight = area.getHeight() / juce::jmax (1, engine.document.getNumChannels());
+        const auto top = area.getY() + laneHeight * dividerChannel;
+        setWaveformShare ((e.position.y - (float) top) / (float) juce::jmax (1, laneHeight));
+        return;
+    }
+
     if (draggedMarker >= 0)
     {
         if (! markerWasMoved && e.getDistanceFromDragStart() < 3)
@@ -673,6 +720,16 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
 void WaveformView::mouseUp (const juce::MouseEvent&)
 {
+    if (dividerChannel >= 0)
+    {
+        dividerChannel = -1;
+
+        if (onWaveformShareChanged != nullptr)
+            onWaveformShareChanged (waveShare);
+
+        return;
+    }
+
     if (draggedMarker < 0)
         return;
 
@@ -707,7 +764,9 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
         return;
     }
 
-    setMouseCursor (markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
+    setMouseCursor (dividerAt (e.position) >= 0 ? juce::MouseCursor::UpDownResizeCursor
+                    : markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor
+                                                 : juce::MouseCursor::NormalCursor);
 }
 
 void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)

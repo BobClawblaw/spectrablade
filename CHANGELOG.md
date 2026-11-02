@@ -19,6 +19,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - This also fixes adding an effect from a track's FX menu, which had done nothing: the menu took any choice numbered above 1,000,000 for one of the track's own slots, and JUCE 9 numbers plug-in choices far above that. The new menus number them from 1.
 - Measured by the tests: each of the 6 effects the test scan found (Audio Units and VST3) appears once, under its format and maker, sorted, Audio Units first, with ids below the track menu's own. The track menu's fault was found by reading its code; adding an effect from it was not tried by hand, before or after. The whole suite passed.
 
+**Milestone 193: Sizing the spectrogram**
+- In View > Waveform and Spectrogram, drag the line between a channel's waveform and its spectrogram to give either more room (the pointer changes over it). The waveform's share, 35% to start, is kept between 10% and 90%, applies to every channel, and is remembered.
+- Measured by the tests: dragging the second channel's line to 60% of its height sets the share to 0.600 and remembers it when the drag ends, without moving the cursor or the selection; the share is kept within 0.1 to 0.9; a drag elsewhere still selects. The line was not dragged by hand in the running app. The whole suite passed.
+
 ## Released
 
 **Release 0.9.0: the alpha**
