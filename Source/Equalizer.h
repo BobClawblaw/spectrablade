@@ -29,6 +29,25 @@ namespace Equalizer
         from minQ to maxQ and a gain within maxGainDb either way. */
     bool isValid (const Band&, double sampleRate);
 
+    /** Whether the band changes nothing: a bell or shelf at 0 dB (a pass always changes something). */
+    bool isFlat (const Band&);
+
+    /** One band on one channel, run a block at a time: its state carries from block to block, so
+        any split of the audio into blocks gives the same samples as one pass. */
+    class Filter
+    {
+    public:
+        /** New coefficients for the band at this rate; the state is kept, so a change mid-stream
+            doesn't click more than the change itself. The band must be valid. */
+        void setBand (const Band&, double sampleRate);
+        void reset() noexcept                       { z1 = z2 = 0.0; }
+        void process (float* samples, int numSamples) noexcept;
+
+    private:
+        double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+        double z1 = 0, z2 = 0;
+    };
+
     /** The band's gain at a frequency, in dB; 0 for a band that isn't valid. */
     double responseDb (const Band&, double sampleRate, double frequency);
 

@@ -616,6 +616,10 @@ PluginScan::PluginScan (juce::AudioPluginFormatManager& formats, juce::KnownPlug
     // No dead man's pedal: plug-ins are only ever loaded in the workers during a scan.
     for (auto* format : formats.getFormats())
     {
+        // The built-in effects have nothing to scan; they are added to the list directly.
+        if (! format->canScanForPlugins())
+            continue;
+
         scannedFormats.push_back (format);
         formatScanners.push_back (std::make_unique<juce::PluginDirectoryScanner> (list, *format, format->getDefaultLocationsToSearch(),
                                                                                  true, juce::File(), true));

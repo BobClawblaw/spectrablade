@@ -59,19 +59,31 @@ namespace
         return { b0 / a0, b1 / a0, b2 / a0, a1 / a0, a2 / a0 };
     }
 
-    /** One channel through one band, transposed direct form II in double precision. */
-    void filter (float* x, int n, const Coefficients& c)
-    {
-        double z1 = 0.0, z2 = 0.0;
+}
 
-        for (int i = 0; i < n; ++i)
-        {
-            const auto in = (double) x[i];
-            const auto y = c.b0 * in + z1;
-            z1 = c.b1 * in - c.a1 * y + z2;
-            z2 = c.b2 * in - c.a2 * y;
-            x[i] = (float) y;
-        }
+bool isFlat (const Band& band)
+{
+    const auto isPass = band.type == BandType::highPass || band.type == BandType::lowPass;
+    return ! isPass && juce::exactlyEqual (band.gainDb, 0.0);
+}
+
+void Filter::setBand (const Band& band, double sampleRate)
+{
+    jassert (isValid (band, sampleRate));
+    const auto c = coefficients (band, sampleRate);
+    b0 = c.b0;  b1 = c.b1;  b2 = c.b2;  a1 = c.a1;  a2 = c.a2;
+}
+
+// Transposed direct form II in double precision.
+void Filter::process (float* x, int n) noexcept
+{
+    for (int i = 0; i < n; ++i)
+    {
+        const auto in = (double) x[i];
+        const auto y = b0 * in + z1;
+        z1 = b1 * in - a1 * y + z2;
+        z2 = b2 * in - a2 * y;
+        x[i] = (float) y;
     }
 }
 
@@ -115,7 +127,11 @@ AudioEdits::Snapshot apply (const AudioSnapshot& s, juce::int64 start, juce::int
             before.copyFrom (ch, 0, b, ch, 0, prime);
 
             for (auto& band : bands)
-                filter (b.getWritePointer (ch), b.getNumSamples(), coefficients (band, sampleRate));
+            {
+                Filter f;
+                f.setBand (band, sampleRate);
+                f.process (b.getWritePointer (ch), b.getNumSamples());
+            }
 
             b.copyFrom (ch, 0, before, ch, 0, prime);
         }

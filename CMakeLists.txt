@@ -55,6 +55,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Loudness.cpp
     Source/Equalizer.cpp
     Source/Dynamics.cpp
+    Source/BuiltInEffects.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/ClickRepair.cpp
@@ -115,6 +116,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/LoudnessTests.cpp
     Tests/EqTests.cpp
     Tests/DynamicsTests.cpp
+    Tests/BuiltInEffectsTests.cpp
     Tests/NoiseTests.cpp
     Tests/ClickTests.cpp
     Tests/SessionTests.cpp
@@ -145,6 +147,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Loudness.cpp
     Source/Equalizer.cpp
     Source/Dynamics.cpp
+    Source/BuiltInEffects.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/ClickRepair.cpp

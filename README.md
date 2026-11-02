@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 169: The parametric EQ as a live effect (first part)**
+- SpectraBlade's own effects now have a plug-in format of their own, "SpectraBlade", registered beside VST3 and Audio Unit. Racks, track chains, sessions and offline renders create, save and restore a built-in effect by its description, exactly as they do a scanned plug-in. Nothing needs scanning: the plug-in scan skips the format, and built-in effects are added to the plug-in list directly. This milestone adds the format and its first effect; the menus that offer it come next.
+- The first is the Parametric EQ, live: the five bands of Effects > Parametric EQ, each band's on switch, type, frequency, gain and Q an automatable parameter, run block by block with the same Equalizer filters as the offline EQ (the filter code is now shared). A band switched off, flat, or at or past Nyquist at the current rate passes the audio unchanged, and starts afresh when it comes back. It runs mono or stereo with no latency. For now its window is the generic parameter list.
+- Its state saves each band's plain values (Hz, dB, Q, type, on), and restoring sets every parameter to exactly the value saved. A float parameter holds the nearest value its range can give (1 kHz is held as 999.99994 Hz and a Q of 1 as 0.99999988), so the starting values are set the same way and every value it holds is one a saved state restores exactly.
+- Measured by the tests: created from its description by the app's own format manager, flat at first; three bands played through it in blocks of 1, 7, 512 and 3,000 frames give the offline EQ's samples bit for bit over 100,000 frames of stereo noise; its state, loaded into a new one, gives every band back exactly and plays the same samples; every band off passes the audio bit for bit, and a band switched back on plays as if from the start; it runs mono, and a 15 kHz band at 22.05 kHz passes the audio unchanged; the plug-in list holds it once however often it is added, and its format has nothing to scan; in the master rack it is added by description and saved and restored with its bands. It was not played through the audio device or heard. The whole suite passed, the default-device test included.
+
 **Milestone 168: True-peak limiting, and Match Loudness through the limiter**
 - The Limiter can hold true peaks under its ceiling as well as samples: choose "True peaks (between samples)" in its dialog. Each frame's need then counts the waveform between it and its neighbours, read after 4x oversampling with the sample-rate converter, as Loudness Statistics reads true peak. The gain only approximates the waveform between samples, so the limiter measures what it made and, while the true peak is still more than 0.001 dB over, limits again from the original with the ceiling lowered by the overshoot, up to four passes.
 - Match Loudness asks what to do when the true-peak ceiling would stop the gain: stop short of the target, as before, or limit to reach it. Limiting puts the full gain in front of a true-peak limiter at the ceiling (50 ms release, 5 ms look-ahead), measures the result, and raises the gain by any shortfall, up to four passes, until it is within 0.05 LU of the target; it says so if it isn't. The choice is remembered. It is one undo step.
@@ -1005,6 +1011,7 @@ The tests run against the real machine:
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.
+- Built-in parametric EQ as a plug-in: created by description, bit for bit with the offline EQ in any blocks, its state exact, saved and restored in the rack.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1058,6 +1065,8 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: the built-in effects in the rack and on tracks, played live, with a preview before applying
-2. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
-3. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Effects: the built-in Parametric EQ in the rack's and tracks' effect menus, with the EQ panel as its window
+2. Effects: the compressor and limiter as live effects, the limiter's look-ahead reported as latency
+3. Effects: a preview of an effect on the selection before applying it
+4. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
+5. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection

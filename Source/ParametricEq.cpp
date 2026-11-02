@@ -10,10 +10,6 @@ namespace
         return band.type == Equalizer::BandType::highPass || band.type == Equalizer::BandType::lowPass;
     }
 
-    bool changesNothing (const Equalizer::Band& band)
-    {
-        return ! isPass (band) && juce::exactlyEqual (band.gainDb, 0.0);
-    }
 }
 
 ParametricEq::Settings ParametricEq::defaultSettings()
@@ -111,7 +107,7 @@ std::vector<Equalizer::Band> ParametricEq::getActiveBands() const
     std::vector<Equalizer::Band> active;
 
     for (auto& s : settings)
-        if (s.on && ! changesNothing (s.band))
+        if (s.on && ! Equalizer::isFlat (s.band))
             active.push_back (s.band);
 
     return active;
@@ -212,7 +208,7 @@ void ParametricEq::mouseDrag (const juce::MouseEvent& e)
     double others = 0.0;
 
     for (int i = 0; i < numBands; ++i)
-        if (i != dragging && settings[(size_t) i].on && ! changesNothing (settings[(size_t) i].band))
+        if (i != dragging && settings[(size_t) i].on && ! Equalizer::isFlat (settings[(size_t) i].band))
             others += Equalizer::responseDb (settings[(size_t) i].band, sampleRate, frequency);
 
     const auto share = band.type == Equalizer::BandType::peak ? 1.0 : 0.5;

@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 
+#include "BuiltInEffects.h"
 #include "AudioFileIO.h"
 #include "Metronome.h"
 #include "SessionMixer.h"
@@ -476,6 +477,7 @@ AudioEngine::AudioEngine()
 {
     formatManager.registerBasicFormats();
     juce::addDefaultFormatsToManager (pluginFormatManager);
+    pluginFormatManager.addFormat (BuiltInEffects::createFormat());
     trackEffects.prepare (session.getSampleRate());
 
     auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session, trackEffects);

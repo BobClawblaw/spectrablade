@@ -14,6 +14,7 @@
 #include "LoudnessTests.h"
 #include "EqTests.h"
 #include "DynamicsTests.h"
+#include "BuiltInEffectsTests.h"
 #include "NoiseTests.h"
 #include "ClickTests.h"
 #include "SessionTests.h"
@@ -337,6 +338,7 @@ int main (int argc, char* argv[])
         runLoudnessTests();
         runEqTests();
         runDynamicsTests();
+        runBuiltInEffectsTests (engine);
         runNoiseTests();
         runClickTests();
         runSessionTests (engine.formatManager);
