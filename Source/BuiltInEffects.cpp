@@ -260,7 +260,7 @@ void ParametricEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 
 juce::AudioProcessorEditor* ParametricEqProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor (*this);
+    return new ParametricEqEditor (*this);
 }
 
 void ParametricEqProcessor::getStateInformation (juce::MemoryBlock& block)
@@ -300,5 +300,92 @@ void ParametricEqProcessor::setStateInformation (const void* data, int size)
             if (xml->hasAttribute (f->paramID))
                 setExactly (*f, (float) xml->getDoubleAttribute (f->paramID));
     }
+}
+
+//==============================================================================
+namespace
+{
+    ParametricEq::Settings settingsOf (const ParametricEqProcessor& eq)
+    {
+        ParametricEq::Settings s;
+        const auto bands = eq.getBands();
+
+        for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
+            s[(size_t) i] = { bands[(size_t) i].first, bands[(size_t) i].second };
+
+        return s;
+    }
+
+    bool same (const ParametricEq::BandSetting& a, const ParametricEq::BandSetting& b)
+    {
+        return a.on == b.on && a.band.type == b.band.type && juce::exactlyEqual (a.band.frequency, b.band.frequency)
+            && juce::exactlyEqual (a.band.gainDb, b.band.gainDb) && juce::exactlyEqual (a.band.q, b.band.q);
+    }
+}
+
+ParametricEqEditor::ParametricEqEditor (ParametricEqProcessor& owner)
+    : AudioProcessorEditor (owner), eq (owner)
+{
+    const auto rate = owner.getSampleRate() > 0.0 ? owner.getSampleRate() : 48000.0;
+    shown = settingsOf (eq);
+    panel = std::make_unique<ParametricEq> (shown, rate);
+    panel->onChange = [this] { panelChanged(); };
+    addAndMakeVisible (*panel);
+    setResizable (true, false);
+    setResizeLimits (520, 300, 3000, 2000);
+    setSize (panel->getWidth(), panel->getHeight());
+    startTimerHz (10);
+}
+
+ParametricEqEditor::~ParametricEqEditor()
+{
+    stopTimer();
+}
+
+void ParametricEqEditor::panelChanged()
+{
+    // Only the bands the panel changed, each as one gesture per parameter, so nothing else moves.
+    const auto& wanted = panel->getSettings();
+
+    for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
+    {
+        if (same (wanted[(size_t) i], shown[(size_t) i]))
+            continue;
+
+        for (auto* p : { (juce::AudioProcessorParameter*) &eq.onParameter (i), (juce::AudioProcessorParameter*) &eq.typeParameter (i),
+                         (juce::AudioProcessorParameter*) &eq.frequencyParameter (i), (juce::AudioProcessorParameter*) &eq.gainParameter (i),
+                         (juce::AudioProcessorParameter*) &eq.qParameter (i) })
+            p->beginChangeGesture();
+
+        eq.setBand (i, wanted[(size_t) i].on, wanted[(size_t) i].band);
+
+        for (auto* p : { (juce::AudioProcessorParameter*) &eq.onParameter (i), (juce::AudioProcessorParameter*) &eq.typeParameter (i),
+                         (juce::AudioProcessorParameter*) &eq.frequencyParameter (i), (juce::AudioProcessorParameter*) &eq.gainParameter (i),
+                         (juce::AudioProcessorParameter*) &eq.qParameter (i) })
+            p->endChangeGesture();
+    }
+
+    // What the parameters hold (the nearest values their ranges give) is what is shown from now on.
+    shown = settingsOf (eq);
+}
+
+void ParametricEqEditor::refresh()
+{
+    const auto now = settingsOf (eq);
+    auto changed = false;
+
+    for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
+        changed = changed || ! same (now[(size_t) i], shown[(size_t) i]);
+
+    if (! changed)
+        return;
+
+    shown = now;
+    panel->setSettings (now);
+}
+
+void ParametricEqEditor::resized()
+{
+    panel->setBounds (getLocalBounds());
 }
 }

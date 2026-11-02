@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "BuiltInEffects.h"
 #include "AudioFileIO.h"
 #include "Bounce.h"
 #include "ClipList.h"
@@ -656,6 +657,8 @@ MainComponent::MainComponent()
 
     if (auto xml = settings->getXmlValue (knownPluginsKey))
         engine.knownPlugins.recreateFromXml (*xml);
+
+    BuiltInEffects::addTo (engine.knownPlugins);
 
     engine.knownPlugins.setCustomScanner (std::make_unique<OutOfProcessScanner>());
     engine.knownPlugins.addChangeListener (this);
@@ -1911,6 +1914,10 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     if (source == &engine.knownPlugins)
     {
+        // The Plug-ins window can clear the list; the built-in effects always stay in it. Adding one
+        // that is already there changes nothing, so this settles at once.
+        BuiltInEffects::addTo (engine.knownPlugins);
+
         if (auto xml = engine.knownPlugins.createXml())
         {
             appProperties.getUserSettings()->setValue (knownPluginsKey, xml.get());

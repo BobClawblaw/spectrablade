@@ -1,6 +1,6 @@
 #pragma once
 
-#include "Equalizer.h"
+#include "ParametricEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
     their own ("SpectraBlade"), so racks, track chains, sessions and offline renders create,
@@ -89,5 +89,34 @@ namespace BuiltInEffects
         std::array<std::optional<Equalizer::Band>, numBands> filtersSetFor;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEqProcessor)
+    };
+
+    /** The live EQ's window: the Parametric EQ panel, its bands and curve, on the processor's
+        parameters. Moving a control sets the parameters as a gesture, so a track's automation
+        writing records it; changes from elsewhere (automation, a restored state) show within a
+        tenth of a second. */
+    class ParametricEqEditor final : public juce::AudioProcessorEditor,
+                                     private juce::Timer
+    {
+    public:
+        explicit ParametricEqEditor (ParametricEqProcessor&);
+        ~ParametricEqEditor() override;
+
+        ParametricEq& getPanel() noexcept                             { return *panel; }
+
+        /** Shows the processor's bands now, as the timer does. */
+        void refresh();
+
+        void resized() override;
+
+    private:
+        void timerCallback() override                                 { refresh(); }
+        void panelChanged();
+
+        ParametricEqProcessor& eq;
+        std::unique_ptr<ParametricEq> panel;
+        ParametricEq::Settings shown;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEqEditor)
     };
 }

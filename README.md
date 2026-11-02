@@ -6,6 +6,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 170: The parametric EQ in the rack and on tracks**
+- The built-in Parametric EQ is now offered wherever effects are: the master rack's add menu and each track's FX menu list it under SpectraBlade, beside the scanned plug-ins. It is in the plug-in list from the first launch, needs no scan, and comes back at once if the Plug-ins window clears the list.
+- Its window is the Parametric EQ panel, its five bands over their curve, on the effect's parameters: moving a control or dragging a point sets that band's parameters, as one gesture a control, so writing a track's effect automation records it, and the other bands are left alone. A band changed from outside, by automation or a restored state, shows on the panel within a tenth of a second.
+- Measured by the tests: through the window, a band's gain and Q set its parameters (4.5 dB exactly, the Q to 1e-5) with one gesture per move and every other band untouched; a band made a 120 Hz high-pass from outside shows on the panel with its gain greyed out. Opening the menus and the window in the running app, and hearing the EQ live, were not tried. The whole suite passed, the default-device test included.
+
 **Milestone 169: The parametric EQ as a live effect (first part)**
 - SpectraBlade's own effects now have a plug-in format of their own, "SpectraBlade", registered beside VST3 and Audio Unit. Racks, track chains, sessions and offline renders create, save and restore a built-in effect by its description, exactly as they do a scanned plug-in. Nothing needs scanning: the plug-in scan skips the format, and built-in effects are added to the plug-in list directly. This milestone adds the format and its first effect; the menus that offer it come next.
 - The first is the Parametric EQ, live: the five bands of Effects > Parametric EQ, each band's on switch, type, frequency, gain and Q an automatable parameter, run block by block with the same Equalizer filters as the offline EQ (the filter code is now shared). A band switched off, flat, or at or past Nyquist at the current rate passes the audio unchanged, and starts afresh when it comes back. It runs mono or stereo with no latency. For now its window is the generic parameter list.
@@ -1012,6 +1017,7 @@ The tests run against the real machine:
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.
 - Built-in parametric EQ as a plug-in: created by description, bit for bit with the offline EQ in any blocks, its state exact, saved and restored in the rack.
+- Its window: the EQ panel setting the parameters as gestures, and showing changes made from outside.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1065,8 +1071,7 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Effects: the built-in Parametric EQ in the rack's and tracks' effect menus, with the EQ panel as its window
-2. Effects: the compressor and limiter as live effects, the limiter's look-ahead reported as latency
-3. Effects: a preview of an effect on the selection before applying it
-4. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
-5. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
+1. Effects: the compressor and limiter as live effects, the limiter's look-ahead reported as latency
+2. Effects: a preview of an effect on the selection before applying it
+3. Effects: algorithmic and convolution reverb, chorus, flanger and phaser
+4. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection

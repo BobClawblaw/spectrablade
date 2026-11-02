@@ -82,6 +82,25 @@ ParametricEq::ParametricEq (const Settings& initial, double rate)
     setSize (640, 220 + numBands * rowHeight);
 }
 
+void ParametricEq::setSettings (const Settings& s)
+{
+    settings = s;
+
+    for (int i = 0; i < numBands; ++i)
+    {
+        auto& row = *rows[(size_t) i];
+        const auto& setting = settings[(size_t) i];
+        row.on.setToggleState (setting.on, juce::dontSendNotification);
+        row.type.setSelectedItemIndex ((int) setting.band.type, juce::dontSendNotification);
+        row.frequency.setValue (setting.band.frequency, juce::dontSendNotification);
+        row.gain.setValue (setting.band.gainDb, juce::dontSendNotification);
+        row.gain.setEnabled (! isPass (setting.band));
+        row.q.setValue (setting.band.q, juce::dontSendNotification);
+    }
+
+    repaint();
+}
+
 void ParametricEq::readRow (int index)
 {
     auto& row = *rows[(size_t) index];

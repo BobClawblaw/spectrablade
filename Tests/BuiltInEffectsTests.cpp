@@ -157,6 +157,49 @@ void runBuiltInEffectsTests (AudioEngine& engine)
                && ! format->canScanForPlugins() && format->searchPathsForPlugins ({}, true, false).isEmpty(),
            "built-in effects: listed once however often added; their format has nothing to scan");
 
+    // Its window: the EQ panel on the parameters, both ways.
+    {
+        ParametricEqProcessor shownEq;
+        std::unique_ptr<juce::AudioProcessorEditor> made (shownEq.createEditorAndMakeActive());
+        auto* editor = dynamic_cast<BuiltInEffects::ParametricEqEditor*> (made.get());
+        auto gestures = 0;
+
+        struct Gestures final : juce::AudioProcessorParameter::Listener
+        {
+            int& count;
+            explicit Gestures (int& c) : count (c) {}
+            void parameterValueChanged (int, float) override {}
+            void parameterGestureChanged (int, bool starting) override   { count += starting ? 1 : 0; }
+        } listener (gestures);
+
+        shownEq.gainParameter (2).addListener (&listener);
+        auto panelToEq = false, eqToPanel = false, untouched = true;
+
+        if (editor != nullptr)
+        {
+            auto& row = editor->getPanel().getRow (2);
+            row.gain.setValue (4.5, juce::sendNotificationSync);
+            row.q.setValue (3.0, juce::sendNotificationSync);
+            const auto band = shownEq.getBands()[2].second;
+            panelToEq = shownEq.getBands()[2].first && juce::exactlyEqual (band.gainDb, 4.5) && std::abs (band.q - 3.0) < 1.0e-5
+                     && shownEq.getActiveBands (rate).size() == 1 && gestures == 2;
+
+            for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
+                untouched = untouched && (i == 2 || juce::exactlyEqual (shownEq.getBands()[(size_t) i].second.gainDb, 0.0));
+
+            shownEq.setBand (0, true, { BandType::highPass, 120.0, 0.0, 0.7071067811865476 });
+            editor->refresh();
+            const auto& s = editor->getPanel().getSettings()[0];
+            eqToPanel = s.band.type == BandType::highPass && std::abs (s.band.frequency - 120.0) < 1.0e-3
+                     && ! editor->getPanel().getRow (0).gain.isEnabled() && std::abs (editor->getPanel().getRow (0).frequency.getValue() - 120.0) < 0.05;
+        }
+
+        shownEq.gainParameter (2).removeListener (&listener);
+        check (editor != nullptr && panelToEq && untouched && eqToPanel,
+               "built-in parametric eq window: the EQ panel; its controls set that band's parameters, each move one gesture, and leave the other bands; a band changed from outside shows on the panel");
+        made.reset();
+    }
+
     // In the master rack: added by description, set, saved and restored with its bands.
     engine.clearRack();
     auto added = false;

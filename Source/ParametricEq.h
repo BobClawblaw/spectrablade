@@ -27,6 +27,10 @@ public:
 
     const Settings& getSettings() const noexcept     { return settings; }
 
+    /** Shows these settings, as from outside (automation, a restored state): the controls move
+        without reporting a change. */
+    void setSettings (const Settings&);
+
     /** The bands that change anything, in order: those switched on, leaving out bells and shelves at
         0 dB (passes always count). */
     std::vector<Equalizer::Band> getActiveBands() const;
