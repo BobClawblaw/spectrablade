@@ -2,13 +2,15 @@
 
 Each milestone as it was built, newest first, with what the tests measured on the development Mac. Releases are marked where they were cut.
 
-## Unreleased
+## Released
+
+**Release 0.9.2: the third alpha**
+- `SpectraBlade-0.9.2.dmg` on the repository's Releases page, with its SHA-256: Milestone 195 below (the playback crash at a file's end) on top of 0.9.1. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (760 checks) passed with the signed app as the plug-in scan worker; the disk image's app verified (`codesign --verify --deep --strict`), reads 0.9.2, carries a licence identical to `LICENSE`, and launched from the mounted image and quit with no crash report. The app's Intel half was not launched, and no Intel Mac was tried.
 
 **Milestone 195: No crash at a file's end**
 - Playback could crash as it reached the end of a file (seen once in 0.9.0). The rate converter in front of the file player sometimes asks for audio that starts past the file's end; the file's read then counted backwards from its last piece and cleared memory in front of the buffer it was writing to, wiping that buffer's own channel table, and the next channel's write landed at an address near zero. The 0.9.0 crash report shows exactly that: the clear at the end of the read, writing 145 frames from 110 frames before the buffer's start. A read past the end now copies nothing and writes silence only where it was asked to.
 - Measured by the tests: reads from past the end, across it, and through the playback source leave everything outside the frames asked for untouched and give silence past the end; playing a 1,000-frame file to its end through the rate-converting transport, at 44.1, 48 and 96 kHz with blocks of 64, 100, 480 and 512, made 3 reads that started past the end, all silent and in place. Before the fix the test program crashed (segmentation fault) at these checks. The whole suite passed, and the app launched and quit with no crash report.
-
-## Released
 
 **Release 0.9.1: the second alpha**
 - `SpectraBlade-0.9.1.dmg` on the repository's Releases page, with its SHA-256: Milestones 190 to 194 below, on top of 0.9.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
