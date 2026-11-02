@@ -5,6 +5,7 @@
 #include "AuditionPreview.h"
 #include "WindowPlaces.h"
 #include "FileChecks.h"
+#include "LoadingScreen.h"
 #include "ClickRepair.h"
 #include "LevelMeter.h"
 #include "TransportBar.h"
@@ -49,6 +50,10 @@ public:
 
     std::function<void (const juce::String& title)> onTitleChanged;
 
+    /** Shows the loading screen centred on where the main window will be; whenReady shows that
+        window, once loading is done or Continue is pressed. */
+    void showLoadingScreen (juce::Rectangle<int> windowBounds, std::function<void()> whenReady);
+
     /** Puts a window where it was left last time (under this name) and remembers where it goes. */
     void rememberPlace (juce::ResizableWindow& window, const juce::String& name)   { places->watch (window, name); }
 
@@ -59,6 +64,7 @@ public:
     ApplicationCommandTarget* getNextCommandTarget() override  { return nullptr; }
     void getAllCommands (juce::Array<juce::CommandID>&) override;
     void getCommandInfo (juce::CommandID, juce::ApplicationCommandInfo&) override;
+    void describeCommand (juce::CommandID, juce::ApplicationCommandInfo&);
     bool perform (const InvocationInfo&) override;
 
     // MenuBarModel
@@ -246,6 +252,16 @@ private:
 
     /** At startup, offers the copy left by a session that wasn't closed normally. */
     void offerRecoveredSession();
+
+    // Launch: a small loading screen stands where the window will be until the plug-in list is
+    // read, the audio device is open and the last file is back (or Continue is pressed).
+    std::unique_ptr<LoadingScreen> loading;
+    std::function<void()> whenReady;
+    bool booting() const                          { return loading != nullptr && ! loading->hasFinished(); }
+    void readPluginList();
+    void startOpeningDevice();
+    void finishOpeningDevice (const juce::XmlElement* savedDevice);
+    void bootFinished();
     juce::File recoveryFolder();
     void saveSession (std::function<void (bool saved)> done = {});
     void saveSessionAs (std::function<void (bool saved)> done = {});

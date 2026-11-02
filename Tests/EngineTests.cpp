@@ -119,6 +119,24 @@ namespace
         if (device == nullptr)
             return;
 
+        {
+            // The probe at launch asks for the same device the engine opens, off the message thread,
+            // and for a saved one that has gone, the default.
+            juce::String probed, savedProbed, goneProbed;
+            juce::XmlElement saved ("DEVICESETUP"), gone ("DEVICESETUP");
+            saved.setAttribute ("audioOutputDeviceName", device->getName());
+            gone.setAttribute ("audioOutputDeviceName", "No Such Interface");
+            std::thread ([&]
+            {
+                probed = AudioEngine::probeDevice (nullptr);
+                savedProbed = AudioEngine::probeDevice (&saved);
+                goneProbed = AudioEngine::probeDevice (&gone);
+            }).join();
+            check (probed == device->getName() && savedProbed == device->getName() && goneProbed == probed,
+                   "device probe: off the message thread it finds the device the engine opens (" + probed + "), the saved one, "
+                   "and the default for one that has gone");
+        }
+
         const auto names = device->getOutputChannelNames();
         std::cout << "      device: " << device->getName() << ", " << names.size() << " outputs, "
                   << device->getCurrentSampleRate() << " Hz, " << device->getCurrentBufferSizeSamples() << " samples" << std::endl;

@@ -76,7 +76,13 @@ private:
             setResizeLimits (800, 480, 10000, 10000);
             centreWithSize (getWidth(), getHeight());
             content->rememberPlace (*this, "Main");
-            setVisible (true);
+
+            // The window shows once loading is done; until then the loading screen stands where it will be.
+            content->showLoadingScreen (getBounds(), [this]
+            {
+                setVisible (true);
+                toFront (true);
+            });
         }
 
         MainComponent& getMainComponent()   { return *static_cast<MainComponent*> (getContentComponent()); }

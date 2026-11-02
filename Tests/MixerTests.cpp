@@ -15,6 +15,7 @@
 #include "../Source/MixerView.h"
 #include "../Source/RecentFiles.h"
 #include "../Source/FileChecks.h"
+#include "../Source/LoadingScreen.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/SessionCollect.h"
 #include "../Source/SessionNotes.h"
@@ -1747,6 +1748,50 @@ namespace
                "slow volumes: a file is read on its own thread and handed to the message thread; a missing one gives nothing, no error");
     }
 
+    void testLoadingScreen()
+    {
+        // Steps: the newest one is what the screen says; it stays up its least time, then finishes once.
+        int finishedCount = 0;
+        bool order = false, waited = false, done = false, logo = false;
+        {
+            LoadingScreen screen;
+            screen.onFinished = [&] { ++finishedCount; };
+            screen.setSize (900, 520);
+            logo = screen.hasLogo();
+            screen.begin ("device", "Opening the interface");
+            screen.begin ("plug-ins", "Reading the plug-in list");
+            const auto newest = screen.getStatus() == "Reading the plug-in list";
+            screen.end ("plug-ins");
+            order = newest && screen.getStatus() == "Opening the interface" && screen.isRunning ("device") && ! screen.isRunning ("plug-ins");
+            screen.end ("device");
+            waited = ! screen.hasFinished() && finishedCount == 0;   // ended within its least time
+            done = TestUtils::runUntil ([&] { return screen.hasFinished(); }, 3000) && finishedCount == 1 && screen.getStatus().isEmpty();
+            screen.end ("device");
+        }
+        check (logo && order && waited && done && finishedCount == 1,
+               "loading screen: shows the logo and the newest step, stays up at least its least time, and finishes once when the steps end");
+
+        // A step that takes long: Continue and the step's note come up; Continue finishes the screen.
+        finishedCount = 0;
+        bool quiet = false, offered = false, noted = false, continued = false, ignored = false;
+        {
+            LoadingScreen screen;
+            screen.onFinished = [&] { ++finishedCount; };
+            screen.setSize (900, 520);
+            screen.begin ("device", "Opening the interface", "The interface isn't answering.");
+            quiet = ! screen.isOfferingContinue() && screen.getNote().isEmpty();
+            offered = TestUtils::runUntil ([&] { return screen.isOfferingContinue(); }, LoadingScreen::continueAfterMs + 1500);
+            noted = screen.getNote() == "The interface isn't answering.";
+            screen.continueButton.triggerClick();
+            continued = TestUtils::runUntil ([&] { return screen.hasFinished(); }, 1000) && finishedCount == 1;
+            screen.begin ("file", "Reopening a file");
+            screen.end ("device");
+            ignored = screen.getStatus().isEmpty() && finishedCount == 1;
+        }
+        check (quiet && offered && noted && continued && ignored,
+               "loading screen: a long step brings up Continue and its note; Continue finishes the screen once, and later steps are ignored");
+    }
+
     void testClipsCsv()
     {
         SessionState s;
@@ -1837,6 +1882,7 @@ void runMixerTests (AudioEngine& engine)
     testStripMenu (engine);
     testRecentFiles();
     testSlowVolumes();
+    testLoadingScreen();
     testWaveformDivider();
     testWindowPlaces();
     testClipsCsv();

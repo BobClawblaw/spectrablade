@@ -60,6 +60,7 @@ What they check:
 - Window places: saving and restoring a window's place, a plug-in window's position alone, bringing back a window that would be off screen, and the rack's bar.
 - Reading past a file's end: from the snapshot, through the playback source, and playing to the end through the rate-converting transport.
 - Slow volumes: file checks and a file's read off the message thread, with a check and a read that hang until let go.
+- The loading screen's steps, least time, Continue and notes, and the audio device probe off the message thread.
 - Folder stems: what each one renders, and which folders get one.
 - Folder strips in the mixer: in place, showing and setting the folder, the strips after it showing their own tracks.
 - Dropping a header on a folder: going in from below and above, and plain moves.

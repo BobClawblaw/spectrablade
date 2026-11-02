@@ -734,34 +734,11 @@ MainComponent::MainComponent()
     deadMansPedalFile = settings->getFile().getSiblingFile ("RecentlyCrashedPluginsList");
     places = std::make_unique<WindowPlaces> (*settings);
 
-    if (auto xml = settings->getXmlValue (knownPluginsKey))
-        engine.knownPlugins.recreateFromXml (*xml);
-
-    BuiltInEffects::addTo (engine.knownPlugins);
-
     engine.knownPlugins.setCustomScanner (std::make_unique<OutOfProcessScanner>());
     engine.knownPlugins.addChangeListener (this);
     engine.addChangeListener (this);
     engine.document.addChangeListener (this);
     engine.session.addChangeListener (this);
-
-    const auto savedDevice = settings->getXmlValue (audioDeviceKey);
-    const auto deviceError = engine.openDevice (savedDevice.get());
-
-    if (deviceError.isNotEmpty())
-        showError ("Audio device", deviceError);
-
-    if (auto* device = engine.deviceManager.getCurrentAudioDevice())
-        juce::Logger::writeToLog ("Audio device: " + device->getName() + ", " + juce::String (device->getCurrentSampleRate())
-                                  + " Hz, " + juce::String (device->getCurrentBufferSizeSamples()) + " samples");
-    else
-        juce::Logger::writeToLog ("Audio device: none");
-
-    engine.setOutputPair (settings->getIntValue (outputPairKey, 0));
-
-    if (const auto count = settings->getIntValue (inputCountKey, 0); count > 0)
-        if (const auto error = engine.setInput (settings->getIntValue (inputFirstKey, 0), count); error.isNotEmpty())
-            showError ("Recording input", error);
 
     for (auto* b : { &multitrackButton, &openButton, &pluginsButton, &audioButton })
         addAndMakeVisible (b);
@@ -854,14 +831,6 @@ MainComponent::MainComponent()
     multitrack.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
     multitrack.onEditPlugin = [this] (juce::AudioPluginInstance& p) { showEditor (p); };
 
-    if (auto* device = engine.deviceManager.getCurrentAudioDevice())
-    {
-        SessionState empty;
-        empty.sampleRate = device->getCurrentSampleRate();
-        engine.clearTrackEffects();
-        engine.session.reset (std::move (empty), {});
-    }
-
     addAndMakeVisible (rackView);
     rackShown = settings->getBoolValue (rackShownKey, true);
     rackWidth = settings->getIntValue (rackWidthKey, 0);
@@ -912,9 +881,18 @@ MainComponent::MainComponent()
     // doesn't hold up the window: it comes in when read, unless something else was opened, recorded
     // or edited first. One that can no longer be read is logged and forgotten; one that isn't there
     // (its volume not mounted) is kept for next time.
+    loading = std::make_unique<LoadingScreen>();
+    loading->onFinished = [this] { bootFinished(); };
+
     if (const juce::File last (settings->getValue (lastFileKey)); last != juce::File())
+    {
+        loading->begin ("file", "Reopening " + last.getFileName(),
+                        "The last file's volume isn't answering. Continue to use SpectraBlade now; the file opens when it can be read.");
         BackgroundLoad::start (last, [safe = juce::Component::SafePointer<MainComponent> (this), last] (AudioFileIO::Loaded loaded)
         {
+            if (safe != nullptr)
+                safe->loading->end ("file");
+
             if (safe == nullptr || (loaded.snapshot == nullptr && loaded.error.isEmpty()))
                 return;
 
@@ -929,19 +907,125 @@ MainComponent::MainComponent()
                 safe->appProperties.getUserSettings()->removeValue (lastFileKey);
             }
         });
+    }
 
-    refreshOutputChoices();
-    refreshInputChoices();
+    startOpeningDevice();
+    loading->begin ("plug-ins", "Reading the plug-in list");
+    juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+    {
+        if (safe != nullptr)
+            safe->readPluginList();
+    });
+
     refreshTitle();
     setWantsKeyboardFocus (true);
     setSize (1200, 680);
     startTimerHz (20);
     lastRecoveryCheck = juce::Time::getMillisecondCounter();
+}
 
+void MainComponent::readPluginList()
+{
+    if (auto xml = appProperties.getUserSettings()->getXmlValue (knownPluginsKey))
+        engine.knownPlugins.recreateFromXml (*xml);
+
+    BuiltInEffects::addTo (engine.knownPlugins);
+    loading->end ("plug-ins");
+}
+
+void MainComponent::startOpeningDevice()
+{
+    // The audio system is asked on a thread of its own first: when its service doesn't answer,
+    // that thread waits, not the window. Once it has answered, the device opens here as before.
+    std::shared_ptr<const juce::XmlElement> saved (appProperties.getUserSettings()->getXmlValue (audioDeviceKey));
+    const auto name = saved != nullptr ? saved->getStringAttribute ("audioOutputDeviceName") : juce::String();
+    loading->begin ("device", name.isNotEmpty() ? "Opening " + name : juce::String ("Opening the audio device"),
+                    "The audio device isn't answering. If other apps can't play sound either, the Mac's audio service has stopped: "
+                    "restarting the interface, or the service (sudo killall coreaudiod in Terminal), clears it. "
+                    "Continue to use SpectraBlade now; the device opens when it answers.");
+
+    std::thread ([safe = juce::Component::SafePointer<MainComponent> (this), saved]
+    {
+        AudioEngine::probeDevice (saved.get());
+        juce::MessageManager::callAsync ([safe, saved]
+        {
+            if (safe != nullptr)
+                safe->finishOpeningDevice (saved.get());
+        });
+    }).detach();
+}
+
+void MainComponent::finishOpeningDevice (const juce::XmlElement* savedDevice)
+{
+    auto* settings = appProperties.getUserSettings();
+
+    if (const auto error = engine.openDevice (savedDevice); error.isNotEmpty())
+        showError ("Audio device", error);
+
+    if (auto* device = engine.deviceManager.getCurrentAudioDevice())
+        juce::Logger::writeToLog ("Audio device: " + device->getName() + ", " + juce::String (device->getCurrentSampleRate())
+                                  + " Hz, " + juce::String (device->getCurrentBufferSizeSamples()) + " samples");
+    else
+        juce::Logger::writeToLog ("Audio device: none");
+
+    engine.setOutputPair (settings->getIntValue (outputPairKey, 0));
+
+    if (const auto count = settings->getIntValue (inputCountKey, 0); count > 0)
+        if (const auto error = engine.setInput (settings->getIntValue (inputFirstKey, 0), count); error.isNotEmpty())
+            showError ("Recording input", error);
+
+    // A session nobody has touched yet plays at the device's rate.
+    if (auto* device = engine.deviceManager.getCurrentAudioDevice();
+        device != nullptr && ! engine.session.canUndo() && engine.session.getFile() == juce::File())
+    {
+        SessionState empty;
+        empty.sampleRate = device->getCurrentSampleRate();
+        engine.clearTrackEffects();
+        engine.session.reset (std::move (empty), {});
+    }
+
+    refreshOutputChoices();
+    refreshInputChoices();
+    commands.commandStatusChanged();
+    loading->end ("device");
+}
+
+void MainComponent::showLoadingScreen (juce::Rectangle<int> windowBounds, std::function<void()> ready)
+{
+    whenReady = std::move (ready);
+
+    if (loading->hasFinished())
+    {
+        bootFinished();
+        return;
+    }
+
+    // A quarter of the window's room: half its width and height, the logo's shape kept.
+    loading->setBounds (juce::Rectangle<int> (600, 380).withCentre (windowBounds.getCentre()));
+    loading->addToDesktop (juce::ComponentPeer::windowHasDropShadow);
+    loading->setVisible (true);
+    loading->toFront (true);
+}
+
+void MainComponent::bootFinished()
+{
+    commands.commandStatusChanged();
+
+    if (whenReady == nullptr)   // finished before the window was placed: it shows when it is
+        return;
+
+    whenReady();
+    loading->setVisible (false);
+
+    // Called from inside the loading screen, so it goes on the next message.
     juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
     {
-        if (safe != nullptr)
-            safe->offerRecoveredSession();
+        if (safe == nullptr)
+            return;
+
+        safe->loading->removeFromDesktop();
+        safe->grabKeyboardFocus();
+        safe->offerRecoveredSession();
     });
 }
 
@@ -1125,6 +1209,15 @@ void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 }
 
 void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommandInfo& info)
+{
+    describeCommand (id, info);
+
+    // While loading only About works; afterwards, what plays, records or sets up the device waits for it.
+    if ((booting() && id != cmdAbout) || (! engine.isDeviceOpen() && (id == cmdPlayPause || id == cmdRecord || id == cmdAudioSettings)))
+        info.setActive (false);
+}
+
+void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationCommandInfo& info)
 {
     const auto cmd = juce::ModifierKeys::commandModifier;
     const auto shift = juce::ModifierKeys::shiftModifier;
@@ -2295,7 +2388,7 @@ void MainComponent::refreshOutputChoices()
     }
     else
     {
-        deviceLabel.setText ("No audio device", juce::dontSendNotification);
+        deviceLabel.setText (engine.isDeviceOpen() ? "No audio device" : "Opening the audio device", juce::dontSendNotification);
     }
 }
 
@@ -6160,6 +6253,9 @@ void MainComponent::applyRackToSelection()
 //==============================================================================
 void MainComponent::togglePlay()
 {
+    if (! engine.isDeviceOpen())
+        return;
+
     if (isRecording())
     {
         stopRecording();
@@ -6337,6 +6433,9 @@ void MainComponent::convertSampleRate (double newRate)
 
 void MainComponent::toggleRecord()
 {
+    if (! engine.isDeviceOpen())
+        return;
+
     if (isRecording())
         stopRecording();
     else
@@ -6638,6 +6737,9 @@ void MainComponent::finishSessionRecording (const std::map<Recorder*, Recorder::
 
 void MainComponent::showAudioSettings()
 {
+    if (! engine.isDeviceOpen())
+        return;
+
     auto* selector = new juce::AudioDeviceSelectorComponent (engine.deviceManager, 0, 0, 1, 256,
                                                              false, false, true, false);
     selector->setSize (520, 520);

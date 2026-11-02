@@ -80,6 +80,7 @@ target_sources(SpectraBlade PRIVATE
     Source/AuditionPreview.cpp
     Source/WindowPlaces.cpp
     Source/FileChecks.cpp
+    Source/LoadingScreen.cpp
     Source/TransportBar.cpp
     Source/SessionOverview.cpp
     Source/SessionRecording.cpp
@@ -108,7 +109,11 @@ target_compile_definitions(SpectraBlade PRIVATE
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:SpectraBlade,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SpectraBlade,JUCE_VERSION>")
 
+# The logo on the loading screen.
+juce_add_binary_data(SpectraBladeArt SOURCES Art/spectrablade-banner.png)
+
 target_link_libraries(SpectraBlade PRIVATE
+    SpectraBladeArt
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
@@ -189,6 +194,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/AuditionPreview.cpp
     Source/WindowPlaces.cpp
     Source/FileChecks.cpp
+    Source/LoadingScreen.cpp
     Source/TransportBar.cpp
     Source/WaveformView.cpp
     Source/SessionOverview.cpp
@@ -218,6 +224,7 @@ target_compile_definitions(SpectraBladeTests PRIVATE ${spectrablade_defs} JUCE_M
 add_dependencies(SpectraBladeTests SpectraBlade)
 target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_APP_EXECUTABLE="$<TARGET_FILE:SpectraBlade>")
 target_link_libraries(SpectraBladeTests PRIVATE
+    SpectraBladeArt
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp

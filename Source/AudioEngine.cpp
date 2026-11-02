@@ -567,6 +567,37 @@ juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
     return error;
 }
 
+juce::String AudioEngine::probeDevice (const juce::XmlElement* savedState)
+{
+    std::unique_ptr<juce::AudioIODeviceType> type;
+   #if JUCE_MAC
+    type.reset (juce::AudioIODeviceType::createAudioIODeviceType_CoreAudio());
+   #endif
+
+    if (type == nullptr)
+        return {};
+
+    type->scanForDevices();
+    const auto names = type->getDeviceNames (false);
+    auto name = savedState != nullptr ? savedState->getStringAttribute ("audioOutputDeviceName") : juce::String();
+
+    if (! names.contains (name))
+        name = names[type->getDefaultDeviceIndex (false)];
+
+    if (name.isEmpty())
+        return {};
+
+    // Making the device, and asking it what it offers, is where a stuck audio service was seen to wait.
+    const std::unique_ptr<juce::AudioIODevice> device (type->createDevice (name, {}));
+
+    if (device == nullptr)
+        return {};
+
+    device->getAvailableSampleRates();
+    device->getAvailableBufferSizes();
+    return name;
+}
+
 bool AudioEngine::auditionFile (const juce::File& file)
 {
     std::unique_ptr<juce::AudioFormatReader> reader;

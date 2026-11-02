@@ -242,6 +242,13 @@ public:
 
     /** Opens the audio device, restoring the saved setup when there is one. */
     juce::String openDevice (const juce::XmlElement* savedState);
+    bool isDeviceOpen() const noexcept            { return deviceOpen; }
+
+    /** Asks the audio system for the output device a saved setup names (or the default one), with
+        a device object of its own and from whatever thread calls it: the calls that wait when the
+        system's audio service doesn't answer, made where waiting holds nothing up, so openDevice
+        afterwards doesn't wait. Returns the device's name, or "" when there is none. */
+    static juce::String probeDevice (const juce::XmlElement* savedState);
 
     juce::AudioDeviceManager deviceManager;
     juce::AudioFormatManager formatManager;
