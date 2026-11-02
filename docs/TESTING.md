@@ -57,6 +57,7 @@ What they check:
 - Auditioning in the open panel: a file through the player's audition output, sample for sample and past the rack; stopping it; the Preview strip's choices.
 - The effects rack and plug-in menus: device announcements passing the engine by, the rack keeping its rows until it changes, and the menus by format and maker.
 - The waveform and spectrogram view: dragging the line between them, its limits, and selecting elsewhere.
+- Window places: saving and restoring a window's place, a plug-in window's position alone, bringing back a window that would be off screen, and the rack's bar.
 - Folder stems: what each one renders, and which folders get one.
 - Folder strips in the mixer: in place, showing and setting the folder, the strips after it showing their own tracks.
 - Dropping a header on a folder: going in from below and above, and plain moves.

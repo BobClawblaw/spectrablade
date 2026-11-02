@@ -9,6 +9,7 @@
 #include "../Source/KeyShortcuts.h"
 #include "../Source/TransportBar.h"
 #include "../Source/WaveformView.h"
+#include "../Source/WindowPlaces.h"
 #include "../Source/LoadReadout.h"
 #include "../Source/MarkerTable.h"
 #include "../Source/MixerView.h"
@@ -1314,6 +1315,85 @@ namespace
                    + juce::String (during, 3) + "), remembered when the drag ends and kept within 0.1 to 0.9; a drag elsewhere still selects");
     }
 
+    void testWindowPlaces()
+    {
+        const juce::TemporaryFile file ("places.settings");
+        juce::PropertiesFile::Options options;
+        options.millisecondsBeforeSaving = -1;
+        juce::PropertiesFile settings (file.getFile(), options);
+
+        const auto makeWindow = [] (int w, int h)
+        {
+            // On the desktop but never shown, so nothing appears on screen.
+            auto window = std::make_unique<juce::DocumentWindow> ("Test", juce::Colours::black, 0);
+            window->setBounds (100, 100, w, h);
+            return window;
+        };
+
+        // A window's place is saved as it moves and comes back the next time.
+        bool firstUsed = true, secondUsed = false;
+        juce::Rectangle<int> placed, back;
+        {
+            WindowPlaces places (settings);
+            auto window = makeWindow (400, 300);
+            firstUsed = places.watch (*window, "Tool");
+            window->setBounds (240, 180, 420, 310);
+            placed = window->getBounds();
+        }
+        {
+            WindowPlaces places (settings);
+            auto window = makeWindow (400, 300);
+            secondUsed = places.watch (*window, "Tool");
+            back = window->getBounds();
+        }
+
+        // Keeping the window's own size brings back only the position.
+        juce::Rectangle<int> sizeKept;
+        {
+            WindowPlaces places (settings);
+            auto window = makeWindow (500, 200);
+            places.watch (*window, "Tool", true);
+            sizeKept = window->getBounds();
+        }
+
+        check (! firstUsed && secondUsed && back == placed && sizeKept == juce::Rectangle<int> (240, 180, 500, 200),
+               "window places: a window's place is saved as it moves and restored next time ("
+                   + back.toString() + "); a plug-in's window gets back only its position");
+
+        // A place on a screen that has gone comes back onto the main screen.
+        const juce::Array<juce::Rectangle<int>> screens { juce::Rectangle<int> (0, 25, 1440, 875), juce::Rectangle<int> (1440, 0, 1920, 1080) };
+        const auto onSecond = WindowPlaces::reachable ({ 2000, 300, 800, 600 }, screens);
+        const auto offAll = WindowPlaces::reachable ({ 5000, 300, 800, 600 }, screens);
+        const auto aboveTop = WindowPlaces::reachable ({ 200, -400, 800, 600 }, screens);
+        const auto tooBig = WindowPlaces::reachable ({ -3000, 0, 2000, 1400 }, screens);
+        const auto barelyShown = WindowPlaces::reachable ({ 1380, 300, 800, 600 }, screens);
+        check (onSecond == juce::Rectangle<int> (2000, 300, 800, 600) && offAll == juce::Rectangle<int> (320, 162, 800, 600)
+                   && aboveTop == offAll && tooBig == juce::Rectangle<int> (0, 25, 1440, 875) && barelyShown == juce::Rectangle<int> (1380, 300, 800, 600),
+               "window places: a window off every screen, or with its top above them, is centred on the main screen (shrunk to fit), "
+               "and one whose top can be reached stays put");
+
+        // The bar between two panes reports where it is dragged to, in its parent.
+        juce::Component parent;
+        parent.setSize (1000, 400);
+        DividerBar bar;
+        parent.addAndMakeVisible (bar);
+        bar.setBounds (600, 0, 8, 400);
+        int draggedTo = -1;
+        bool ended = false;
+        bar.onDrag = [&] (int x) { draggedTo = x; };
+        bar.onDragEnd = [&] { ended = true; };
+        const juce::Point<float> down (4.0f, 100.0f), to (-96.0f, 120.0f);
+        const auto event = [&bar] (juce::Point<float> at, juce::Point<float> from)
+        {
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &bar, &bar,
+                                     juce::Time::getCurrentTime(), from, juce::Time::getCurrentTime(), 1, false);
+        };
+        bar.mouseDrag (event (to, down));
+        bar.mouseUp (event (to, down));
+        check (draggedTo == 504 && ended && bar.getMouseCursor() == juce::MouseCursor (juce::MouseCursor::LeftRightResizeCursor),
+               "rack bar: dragging it reports the place in its parent (504), and letting go is reported");
+    }
+
     void testShortcutEditing()
     {
         ThreeCommands target;
@@ -1652,5 +1732,6 @@ void runMixerTests (AudioEngine& engine)
     testStripMenu (engine);
     testRecentFiles();
     testWaveformDivider();
+    testWindowPlaces();
     testClipsCsv();
 }

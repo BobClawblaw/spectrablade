@@ -3,6 +3,7 @@
 #include "AudioEdits.h"
 #include "AudioEngine.h"
 #include "AuditionPreview.h"
+#include "WindowPlaces.h"
 #include "ClickRepair.h"
 #include "LevelMeter.h"
 #include "TransportBar.h"
@@ -46,6 +47,9 @@ public:
     void openDocument (const juce::File&);
 
     std::function<void (const juce::String& title)> onTitleChanged;
+
+    /** Puts a window where it was left last time (under this name) and remembers where it goes. */
+    void rememberPlace (juce::ResizableWindow& window, const juce::String& name)   { places->watch (window, name); }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -305,6 +309,7 @@ private:
     void saveSettings();
 
     juce::ApplicationProperties appProperties;
+    std::unique_ptr<WindowPlaces> places;   // where each window was left
     juce::uint32 recoveredVersion = 0;         // the session version last copied for recovery
     juce::uint32 lastRecoveryCheck = 0;        // when, in milliseconds since startup
     bool recoveryCopyKept = false;
@@ -337,6 +342,8 @@ private:
     SessionOverview overview { engine, multitrack };
     bool multitrackMode = false;
     bool rackShown = true;   // the effects rack beside the editor (View > Effects Rack)
+    int rackWidth = 0;       // dragged by its bar; 0: a third of the window, from 300 to 420
+    DividerBar rackDivider;
     FadeShape fadeShape = FadeShape::sCurve;   // the editor's Fade In and Fade Out
     bool normalizeChannelsApart = false;   // the Normalize dialog's last choice
     float silenceThresholdDb = -60.0f;   // Trim Silence's last level, also used by Select Audible Span and Find Next Silence

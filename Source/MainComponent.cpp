@@ -40,6 +40,7 @@ namespace
     constexpr const char* rackShownKey    = "rackShown";
     constexpr const char* openPreviewKey  = "previewInOpenPanel";
     constexpr const char* waveShareKey    = "waveformShare";
+    constexpr const char* rackWidthKey    = "rackWidth";
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -731,6 +732,7 @@ MainComponent::MainComponent()
 
     auto* settings = appProperties.getUserSettings();
     deadMansPedalFile = settings->getFile().getSiblingFile ("RecentlyCrashedPluginsList");
+    places = std::make_unique<WindowPlaces> (*settings);
 
     if (auto xml = settings->getXmlValue (knownPluginsKey))
         engine.knownPlugins.recreateFromXml (*xml);
@@ -862,6 +864,14 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (rackView);
     rackShown = settings->getBoolValue (rackShownKey, true);
+    rackWidth = settings->getIntValue (rackWidthKey, 0);
+    rackDivider.onDrag = [this] (int x)
+    {
+        rackWidth = rackView.getRight() - x - rackDivider.getWidth() / 2;
+        resized();
+    };
+    rackDivider.onDragEnd = [this] { appProperties.getUserSettings()->setValue (rackWidthKey, rackView.getWidth()); };
+    addAndMakeVisible (rackDivider);
     waveform.getRecentFiles = [this]
     {
         juce::Array<juce::File> files;
@@ -1073,11 +1083,15 @@ void MainComponent::resized()
     r.removeFromBottom (8);
 
     rackView.setVisible (rackShown);
+    rackDivider.setVisible (rackShown);
 
     if (rackShown)
     {
-        rackView.setBounds (r.removeFromRight (juce::jlimit (300, 420, r.getWidth() / 3)));
-        r.removeFromRight (8);
+        // The rack's width as dragged, kept from 220 to 60% of the room; until then, as before.
+        const auto width = rackWidth > 0 ? juce::jlimit (220, juce::jmax (220, r.getWidth() * 6 / 10), rackWidth)
+                                         : juce::jlimit (300, 420, r.getWidth() / 3);
+        rackView.setBounds (r.removeFromRight (width));
+        rackDivider.setBounds (r.removeFromRight (8));
     }
     waveform.setBounds (r);
     overview.setBounds (r.removeFromTop (SessionOverview::height));
@@ -2530,6 +2544,7 @@ void MainComponent::toggleMixer()
                                                                          if (safe != nullptr)
                                                                              safe->toggleMixer();
                                                                      }); });
+        places->watch (*mixerWindow, "Mixer");
 
     commands.commandStatusChanged();
 }
@@ -2644,6 +2659,7 @@ void MainComponent::toggleUndoHistory()
                     safe->toggleUndoHistory();
             });
         });
+        places->watch (*undoHistoryWindow, "Undo History");
 
     commands.commandStatusChanged();
 }
@@ -2662,6 +2678,7 @@ void MainComponent::toggleNotes()
                     safe->toggleNotes();
             });
         });
+        places->watch (*notesWindow, "Session Notes");
 
     commands.commandStatusChanged();
 }
@@ -2680,6 +2697,7 @@ void MainComponent::toggleMarkerList()
                     safe->toggleMarkerList();
             });
         });
+        places->watch (*markerListWindow, "Marker List");
 
     commands.commandStatusChanged();
 }
@@ -2779,6 +2797,7 @@ void MainComponent::toggleClipList()
                     safe->toggleClipList();
             });
         });
+        places->watch (*clipListWindow, "Clip List");
 
     commands.commandStatusChanged();
 }
@@ -2797,6 +2816,7 @@ void MainComponent::toggleClipProperties()
                     safe->toggleClipProperties();
             });
         });
+        places->watch (*clipPropertiesWindow, "Clip Properties");
 
     commands.commandStatusChanged();
 }
@@ -4597,6 +4617,7 @@ void MainComponent::toggleParametricEq()
                 safe->toggleParametricEq();
         });
     });
+    places->watch (*eqWindow, "Parametric EQ");
 }
 
 void MainComponent::previewParametricEq (const ParametricEq* eq)
@@ -6616,6 +6637,7 @@ void MainComponent::showKeyShortcuts()
 {
     // Deleted later, not inside its own close button's callback.
     if (keyShortcutsWindow == nullptr)
+    {
         keyShortcutsWindow = std::make_unique<KeyShortcutsWindow> (commands, [this]
         {
             juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
@@ -6624,17 +6646,26 @@ void MainComponent::showKeyShortcuts()
                     safe->keyShortcutsWindow = nullptr;
             });
         });
+        places->watch (*keyShortcutsWindow, "Keyboard Shortcuts");
+    }
     else
+    {
         keyShortcutsWindow->toFront (true);
+    }
 }
 
 void MainComponent::showPluginList()
 {
     if (pluginListWindow == nullptr)
+    {
         pluginListWindow = std::make_unique<PluginListWindow> (engine, deadMansPedalFile, appProperties.getUserSettings(),
                                                               [this] { pluginListWindow = nullptr; });
+        places->watch (*pluginListWindow, "Plug-ins");
+    }
     else
+    {
         pluginListWindow->toFront (true);
+    }
 }
 
 void MainComponent::showEditor (int slotIndex)
@@ -6664,6 +6695,10 @@ void MainComponent::showEditor (juce::AudioProcessor& p)
                 editorWindows.removeObject (safe.getComponent());
         });
     }));
+
+    const auto* instance = dynamic_cast<juce::AudioPluginInstance*> (plugin);
+    places->watch (*editorWindows.getLast(), "Plug-in " + (instance != nullptr ? instance->getPluginDescription().createIdentifierString()
+                                                                                : plugin->getName()), true);
 }
 
 void MainComponent::closeEditorFor (juce::AudioProcessor* processor)

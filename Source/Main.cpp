@@ -75,6 +75,7 @@ private:
             setResizable (true, true);
             setResizeLimits (800, 480, 10000, 10000);
             centreWithSize (getWidth(), getHeight());
+            content->rememberPlace (*this, "Main");
             setVisible (true);
         }
 

@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 194: Windows stay where you put them**
+- The main window, the mixer, the Plug-ins, Keyboard Shortcuts, Marker List, Clip List, Clip Properties, Undo History, Session Notes and Parametric EQ windows, and each plug-in's editor (by plug-in) open where they were last left. A place is saved as the window moves or resizes, so a crash doesn't lose it. A plug-in's editor gets back only its position; its size stays the plug-in's own.
+- A window whose top edge no longer shows on any screen (a display unplugged, say) opens centred on the main screen instead, shrunk to fit if need be.
+- A bar between the editor and the effects rack drags the rack wider or narrower, from 220 pixels to 60% of the room; the width is remembered. Until it is dragged, the rack keeps its old width.
+- Measured by the tests: a window moved to 240, 180 at 420 by 310 comes back there; with its own size kept, only the position comes back; off every screen, or with its top above them, a window is centred on the main screen and shrunk to fit; with its top showing it stays put; the bar reports where it is dragged in its parent. In the running app, a saved place of 300, 200 at 1100 by 650 opened the main window there, and a saved rack width of 500 showed the rack that wide (seen in a capture of the window). Dragging the bar and moving windows by hand were not tried. The whole suite passed.
+
 **Milestone 190: Auditioning files before opening them**
 - File > Open and Multitrack > Import Audio have a strip under the file list: a Preview checkbox that plays each audio file as you select it, a Play/Stop button for the selected file, and a line describing it (format, rate, channels, depth, length). The checkbox is remembered.
 - The file plays once from its start, as it is, converted to the device's rate; it goes out with the metronome's click, past the effects rack, and leaves the open file or session where it was. Closing the panel stops it.

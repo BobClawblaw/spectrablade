@@ -78,6 +78,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
     Source/AuditionPreview.cpp
+    Source/WindowPlaces.cpp
     Source/TransportBar.cpp
     Source/SessionOverview.cpp
     Source/SessionRecording.cpp
@@ -185,6 +186,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SessionRecovery.cpp
     Source/KeyShortcuts.cpp
     Source/AuditionPreview.cpp
+    Source/WindowPlaces.cpp
     Source/TransportBar.cpp
     Source/WaveformView.cpp
     Source/SessionOverview.cpp
