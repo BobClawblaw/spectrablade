@@ -153,6 +153,44 @@ private:
 
 //==============================================================================
 /** Every command and its keys, to change; the changes are saved as they are made. */
+/** Keys as Adobe Audition's defaults have them, for people coming from it: the keys Adobe's own list
+    of default shortcuts gives (helpx.adobe.com, "Default keyboard shortcuts", updated June 2026),
+    and those its partial list leaves out where two published cheat sheets agree. Only commands
+    SpectraBlade has; the rest are named in `about`. */
+static KeyShortcuts::KeySet auditionStyleKeys()
+{
+    const auto cmd = juce::ModifierKeys::commandModifier;
+    const auto shift = juce::ModifierKeys::shiftModifier;
+    const auto alt = juce::ModifierKeys::altModifier;
+
+    KeyShortcuts::KeySet set;
+    set.name = "Audition-Style Keys";
+    set.about = "The keys Adobe Audition's defaults give these commands, from Adobe's published list (a partial one) and, where it "
+                "says nothing, keys two cheat sheets agree on. 1 switches between the file and the multitrack session; = and - zoom; "
+                "Option-Cmd-Left and Right go to markers; Option-comma and Option-period nudge; Shift-T converts the sample rate. "
+                "Space, Home, End, M, Shift-P, Cmd-K, Cmd-T and S already match.\n\n"
+                "Not carried over, for want of a matching command: going to clip and selection edges (Cmd-Left and Right), "
+                "vertical zoom, repeating the last command (Shift-R, Cmd-R), editing one channel (Up, Down), the spectral "
+                "display's scale and resolution, nudging clips between tracks, and Return to Start on Stop (Shift-X).";
+    set.keys = { { cmdPlayPause, juce::KeyPress (juce::KeyPress::spaceKey) },
+                 { cmdGoToStart, juce::KeyPress (juce::KeyPress::homeKey) },
+                 { cmdGoToEnd, juce::KeyPress (juce::KeyPress::endKey) },
+                 { cmdMultitrack, juce::KeyPress ('1') },
+                 { cmdZoomIn, juce::KeyPress ('=') },
+                 { cmdZoomOut, juce::KeyPress ('-') },
+                 { cmdAddMarker, juce::KeyPress ('m') },
+                 { cmdPreviousMarker, juce::KeyPress (juce::KeyPress::leftKey, cmd | alt, 0) },
+                 { cmdNextMarker, juce::KeyPress (juce::KeyPress::rightKey, cmd | alt, 0) },
+                 { cmdConvertRate, juce::KeyPress ('t', shift, 0) },
+                 { cmdCaptureNoisePrint, juce::KeyPress ('p', shift, 0) },
+                 { cmdNudgeEarlier, juce::KeyPress (',', alt, 0) },
+                 { cmdNudgeLater, juce::KeyPress ('.', alt, 0) },
+                 { cmdSplitClip, juce::KeyPress ('k', cmd, 0) },
+                 { cmdCrop, juce::KeyPress ('t', cmd, 0) },
+                 { cmdSnapping, juce::KeyPress ('s') } };
+    return set;
+}
+
 class MainComponent::KeyShortcutsWindow final : public juce::DocumentWindow
 {
 public:
@@ -161,7 +199,7 @@ public:
           closeCallback (std::move (onClose))
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new KeyShortcuts::Editor (commandManager), true);
+        setContentOwned (new KeyShortcuts::Editor (commandManager, { auditionStyleKeys() }), true);
         setResizable (true, false);
         setResizeLimits (520, 420, 3000, 3000);
         centreWithSize (680, 640);

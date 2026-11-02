@@ -15,9 +15,15 @@ SpectraBlade is free software under the GNU Affero General Public License, versi
 - **Effects:** parametric, graphic (10 and 31 bands) and single-band EQ, compressor, multiband compressor, de-esser, limiter, chorus, flanger, phaser, tremolo, echo, reverb and convolution reverb, each applied to the selection with a preview and presets, and most of them also live in the effects rack and on tracks; VST3 and Audio Unit plug-ins, each checked when it is scanned.
 - **Recording:** from the cursor, or punched in over a selection with pre-roll and post-roll; loop recording into takes; several tracks at once; input monitoring through a track's effects; a metronome and count-in.
 - **Multitrack sessions:** tracks, buses, sends, folders and groups; clip gain, fades, crossfades, stretching and pitch shifting; automation of volume, pan and effect parameters, drawn or written while playing; a tempo map with bars and beats and quantizing; a mixer; freezing, bouncing, mixdown and stems; recovery after a crash.
-- **Getting around:** a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import, recent files, and files opened from Finder.
+- **Getting around:** a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import (with an Audition-style key set), recent files, and files opened from Finder.
 
 The notes below record each milestone as it was built, newest first, with what the tests measured.
+
+**Milestone 189: Audition-style keys**
+- The keyboard shortcuts window has Key Sets... with Audition-Style Keys, for people coming from Adobe Audition. After asking (it starts from the defaults, so your own changes go; export them first), it gives these commands Audition's default keys: 1 switches between the file and the multitrack session, = and - zoom in and out, Option-Cmd-Left and Right go to the previous and next marker, Option-comma and Option-period nudge, and Shift-T opens Convert Sample Rate. Space, Home, End, M, Shift-P, Cmd-K, Cmd-T and S already matched. Each command keeps its own keys too, and any key taken from another command is listed afterwards.
+- Where the keys come from: Adobe's own list of default shortcuts (helpx.adobe.com, updated June 2026), which Adobe calls partial; and, where it says nothing, keys two published cheat sheets (pie-menu.com and prismmultimedia.com) agree on. Keys only one cheat sheet gives, or that contradict Adobe's list, are left out.
+- Not carried over, because SpectraBlade has no such command: going to clip and selection edges, vertical zoom, repeating the last command, editing one channel, the spectral display's scale and resolution, nudging clips between tracks, and Return to Start on Stop. The window says so before applying the set.
+- Measured by the tests: a set starts from the defaults, gives each key to its command (keeping the command's own), reports a key taken from another, and passes over a command that doesn't exist. The Audition set itself was applied in the running app through a temporary hook (since removed): all 16 keys reached the intended commands and none was taken from another. Choosing it from the window was not tried by hand. The whole suite passed.
 
 **Milestone 188: Listening to what the de-esser takes out**
 - The de-esser's dialog has a Listen choice for its preview, "Only to what it takes out", to set the frequency and threshold by hearing exactly what they catch; OK always applies the result. The live effect has it as a Listen switch, for the rack and tracks.
@@ -1152,7 +1158,7 @@ The tests run against the real machine:
 - Empty editor: the recent files listed, a click opening one.
 - Opening from Finder: the types offered all read, the files picked out of an open request.
 - Transport bar: tooltips following the keys; the selection panel's cells.
-- Keyboard shortcuts window: search, keys taken and reset, sets exported and imported.
+- Keyboard shortcuts window: search, keys taken and reset, sets exported and imported, key sets applied over the defaults.
 - Reverse Each Region: regions turned round in place, the rest untouched, overlapping and one-frame regions skipped.
 - Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.
 - Graphic EQ: the bands, a band's gain at and off its centre, the cascade against the bands' responses, refused settings; live bit for bit with offline.
@@ -1209,4 +1215,4 @@ This codebase is written from functional specs and public documentation only:
 
 ## Next milestones
 
-1. Keyboard shortcuts: an Audition-style key set, once Adobe's published list or an exported shortcut file is to hand
+1. The commands Audition users will reach for that SpectraBlade lacks, each then added to the Audition-style keys: go to the previous or next clip or selection edge, vertical zoom, and repeat the last command

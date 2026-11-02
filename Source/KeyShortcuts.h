@@ -48,14 +48,30 @@ namespace KeyShortcuts
         isn't a shortcut set changes nothing. */
     juce::Result importFrom (juce::KeyPressMappingSet&, const juce::File&);
 
+    /** A ready-made set of keys: given to their commands over the defaults. */
+    struct KeySet
+    {
+        juce::String name;    // as the Key Sets menu lists it
+        juce::String about;   // where the keys come from and what the set leaves out, shown before applying it
+        std::vector<std::pair<juce::CommandID, juce::KeyPress>> keys;
+    };
+
+    /** Puts the defaults back, then gives each of the set's keys to its command, taking it from any
+        command that had it (the command keeps its other keys). Returns each key so taken, as
+        "Key (from Command)". */
+    juce::StringArray applySet (juce::ApplicationCommandManager&, const KeySet&);
+
     /** The window's contents: a search box, the commands with their keys, and for the chosen one
-        its keys to change, add or remove; Import, Export and Reset All. */
+        its keys to change, add or remove; Key Sets (when there are any), Import, Export and Reset All. */
     class Editor final : public juce::Component,
                          private juce::ListBoxModel,
                          private juce::ChangeListener
     {
     public:
-        explicit Editor (juce::ApplicationCommandManager&);
+        explicit Editor (juce::ApplicationCommandManager&, std::vector<KeySet> sets = {});
+
+        /** Applies a set after asking (as choosing it from Key Sets does). */
+        void offerSet (size_t index);
         ~Editor() override;
 
         /** Lists the commands again (after a key change elsewhere or a new search). */
@@ -82,6 +98,7 @@ namespace KeyShortcuts
         void askForKey (int replaceIndex);
         void importSet();
         void exportSet();
+        void chooseSet();
 
         juce::ApplicationCommandManager& commands;
         juce::TextEditor search;
@@ -90,7 +107,8 @@ namespace KeyShortcuts
         juce::Label title, description;
         juce::OwnedArray<juce::TextButton> keyButtons;
         juce::TextButton addKey { "Add Key..." }, resetOne { "Reset" }, importButton { "Import..." }, exportButton { "Export..." },
-                         resetAll { "Reset All..." };
+                         resetAll { "Reset All..." }, setsButton { "Key Sets..." };
+        std::vector<KeySet> sets;
         std::vector<Row> shown;
         juce::CommandID chosen = 0;
         std::unique_ptr<juce::FileChooser> chooser;

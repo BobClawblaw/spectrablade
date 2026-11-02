@@ -90,6 +90,20 @@ std::vector<Row> rows (juce::ApplicationCommandManager& commands, const juce::St
     return result;
 }
 
+juce::StringArray applySet (juce::ApplicationCommandManager& commands, const KeySet& set)
+{
+    auto& mappings = *commands.getKeyMappings();
+    mappings.resetToDefaultMappings();
+    juce::StringArray taken;
+
+    for (auto& [id, key] : set.keys)
+        if (commands.getCommandForID (id) != nullptr)
+            if (const auto from = assign (mappings, id, key); from != 0)
+                taken.add (describe (key) + " (from " + commands.getNameOfCommand (from) + ")");
+
+    return taken;
+}
+
 juce::CommandID assign (juce::KeyPressMappingSet& mappings, juce::CommandID id, const juce::KeyPress& key, int replaceIndex)
 {
     if (! key.isValid())
@@ -220,7 +234,7 @@ private:
 };
 
 //==============================================================================
-Editor::Editor (juce::ApplicationCommandManager& c) : commands (c)
+Editor::Editor (juce::ApplicationCommandManager& c, std::vector<KeySet> s) : commands (c), sets (std::move (s))
 {
     search.setTextToShowWhenEmpty ("Search commands or keys", juce::Colours::grey);
     search.onTextChange = [this] { refresh(); };
@@ -271,6 +285,10 @@ Editor::Editor (juce::ApplicationCommandManager& c) : commands (c)
 
     for (auto* b : { &addKey, &resetOne, &importButton, &exportButton, &resetAll })
         addAndMakeVisible (b);
+
+    setsButton.onClick = [this] { chooseSet(); };
+    addChildComponent (setsButton);
+    setsButton.setVisible (! sets.empty());
 
     commands.getKeyMappings()->addChangeListener (this);
     refresh();
@@ -452,6 +470,8 @@ void Editor::resized()
     exportButton.setBounds (bottom.removeFromRight (90));
     bottom.removeFromRight (6);
     importButton.setBounds (bottom.removeFromRight (90));
+    bottom.removeFromRight (6);
+    setsButton.setBounds (bottom.removeFromRight (100));
     r.removeFromBottom (10);
 
     auto details = r.removeFromBottom (92);
@@ -473,5 +493,43 @@ void Editor::resized()
         b->setBounds (keysRow.removeFromLeft (w));
         keysRow.removeFromLeft (6);
     }
+}
+
+void Editor::chooseSet()
+{
+    juce::PopupMenu menu;
+
+    for (size_t i = 0; i < sets.size(); ++i)
+        menu.addItem ((int) i + 1, sets[i].name + "...");
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (setsButton),
+                        [safe = juce::Component::SafePointer<Editor> (this)] (int picked)
+                        {
+                            if (safe != nullptr && picked > 0)
+                                safe->offerSet ((size_t) picked - 1);
+                        });
+}
+
+void Editor::offerSet (size_t index)
+{
+    if (index >= sets.size())
+        return;
+
+    const auto& set = sets[index];
+    juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, set.name,
+                                        set.about + "\n\nThis puts every command's keys back to the defaults first, replacing your own changes "
+                                                    "(export them first to keep them).",
+                                        "Use " + set.name, "Cancel", this,
+                                        juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<Editor> (this), index] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+
+        const auto taken = applySet (safe->commands, safe->sets[index]);
+
+        if (! taken.isEmpty())
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, safe->sets[index].name,
+                                                    "These keys were moved from other commands: " + taken.joinIntoString (", ") + ".");
+    }));
 }
 }

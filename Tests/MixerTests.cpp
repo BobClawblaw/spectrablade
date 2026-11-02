@@ -1315,8 +1315,17 @@ namespace
         file.deleteFile();
         junk.deleteFile();
 
+        // A key set: over the defaults (the import's changes gone), a key taken from another command and
+        // reported, the command's own keys kept, an unknown command passed over.
+        KeyShortcuts::KeySet set { "Test Keys", "For the test.", { { 3, space }, { 1, cmdK }, { 99, cmdS } } };
+        const auto takenBySet = KeyShortcuts::applySet (fresh, set);
+        const auto setApplied = takenBySet == juce::StringArray { KeyShortcuts::describe (space) + " (from Play)" }
+                                && freshKeys.getKeyPressesAssignedToCommand (1) == juce::Array<juce::KeyPress> { cmdS, cmdK }
+                                && freshKeys.getKeyPressesAssignedToCommand (2).isEmpty()
+                                && freshKeys.getKeyPressesAssignedToCommand (3) == juce::Array<juce::KeyPress> { cmdL, space };
+
         // The window: searching narrows its list; choosing a command shows its keys.
-        KeyShortcuts::Editor editor (fresh);
+        KeyShortcuts::Editor editor (fresh, { set });
         editor.getSearchBox().setText ("loop", false);   // the box tells its listener later, so list again now
         editor.refresh();
         const auto narrowed = editor.getNumShown() == 1;
@@ -1330,6 +1339,8 @@ namespace
         check (exported && imported && same && refused && narrowed && editor.getChosen() == 3,
                "shortcut editor: a set exported and imported over a changed fresh start gives the same keys; a file that isn't a set changes nothing; "
                "the window's search narrows its list");
+        check (setApplied, "shortcut editor: a key set starts from the defaults, gives each key to its command (keeping the command's own), "
+                           "reports a key taken from another command, and passes over a command that doesn't exist");
     }
 }
 
