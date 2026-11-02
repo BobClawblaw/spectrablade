@@ -6,6 +6,12 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+**Milestone 177: Graphic EQ**
+- Effects > Graphic EQ (10 Bands) and Graphic EQ (31 Bands): a slider a band (double-click for 0 dB) and Flat, each band boosting or cutting up to 12 dB, applied to the selection or the whole file, with a "Preview on the selection" switch and presets. Both are built-in live effects for the rack and tracks too, each band's gain an automatable parameter, their windows the same sliders and presets.
+- The 10 bands sit an octave apart from 31.5 Hz to 16 kHz, the 31 a third of an octave apart from 20 Hz to 20 kHz, at the standard centre frequencies. Each is a bell as wide as the spacing (a Q of 1.414 an octave, 4.318 a third), run one after another with the parametric EQ's filters; a band at 0 dB, or at or past half the rate, is left out.
+- The bands overlap, so neighbours moved together add up: all ten at +6 dB give +8.8 dB at 1 kHz. The dialog says so.
+- Measured by the tests at 48 kHz: a band at +6 dB gives +6.00 dB at its centre, +1.12 dB an octave up with 10 bands, +1.29 dB at the next centre and +0.15 dB an octave up with 31; with ten bands set to a curve, sines from 50 Hz to 12 kHz change by the bands' responses added up, to 1.6e-6 dB; all at 0 dB, a gain past 12 dB and 11 bands are refused; at 32 kHz the 16 and 20 kHz bands are left out. Live, 31 bands in blocks of 1, 7, 512 and 3,000 frames give the offline samples bit for bit, and the state and the preset values restore every gain exactly. The live window was rendered to an image to check its layout; the dialog and hearing it in the running app were not tried. The whole suite passed.
+
 **Milestone 176: Effect presets**
 - Every effect dialog (EQ Band, Compressor, Limiter, Chorus, Flanger, Phaser, Reverb, Convolution Reverb), the Parametric EQ window, and every built-in live effect's window has a presets row: a menu of the effect's saved presets (choosing one fills in its settings, and a preview playing follows it), Save... (asks for a name; an existing name is replaced) and Delete (asks first).
 - A dialog and its live effect share their presets: the dialog's settings are named as the live effect's parameters, so a compressor preset saved in Effects > Compressor loads in a track's Compressor and the other way round. Settings a preset doesn't name (the Limiter dialog's look-ahead and true-peak choice, in a preset saved from the live Limiter) are left as they are. The convolution reverb's presets hold the mix, not the impulse.
@@ -1068,6 +1074,7 @@ The tests run against the real machine:
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
 - Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.
+- Graphic EQ: the bands, a band's gain at and off its centre, the cascade against the bands' responses, refused settings; live bit for bit with offline.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
@@ -1122,5 +1129,4 @@ This codebase is written from functional specs and public documentation only:
 ## Next milestones
 
 1. Editor: Reverse Each Region, reversing every region in place as Reverse reverses the selection
-2. Effects: a graphic equalizer (10 and 31 bands), offline and live
-3. Effects: a multiband compressor and a de-esser, offline and live
+2. Effects: a multiband compressor and a de-esser, offline and live

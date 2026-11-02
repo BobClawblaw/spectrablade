@@ -153,6 +153,8 @@ private:
     void showConvolutionDialog (std::shared_ptr<const Convolver::Impulse>);
     juce::File lastImpulseFile;
     double convolutionMix = 30.0;
+    void showGraphicEq (int numBands);
+    std::vector<double> graphicEq10Gains = std::vector<double> (10, 0.0), graphicEq31Gains = std::vector<double> (31, 0.0);
 
     void applyParametricEq (const std::vector<Equalizer::Band>&);
     void previewParametricEq (const ParametricEq*);   // nullptr: stop
@@ -363,7 +365,7 @@ private:
         before the rack, until stopPreview. A preview from another owner takes over, and the old
         one's ended callback is called (so it can untick its Preview button); stopPreview calls
         it too. An owner already previewing just has its effect swapped. Files only. */
-    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution };
+    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution, graphicEq };
     void startPreview (PreviewOwner, std::unique_ptr<juce::AudioPluginInstance>, std::function<void()> ended);
     void stopPreview();
     juce::AudioPluginInstance* previewEffectOf (PreviewOwner) const;

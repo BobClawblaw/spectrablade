@@ -5,6 +5,7 @@
 #include "Reverb.h"
 #include "Convolver.h"
 #include "EffectPresets.h"
+#include "GraphicEq.h"
 #include "ParametricEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
@@ -22,6 +23,8 @@ namespace BuiltInEffects
     constexpr const char* phaserId = "spectrablade:phaser";
     constexpr const char* reverbId = "spectrablade:reverb";
     constexpr const char* convolutionId = "spectrablade:convolution-reverb";
+    constexpr const char* graphicEq10Id = "spectrablade:graphic-eq-10";
+    constexpr const char* graphicEq31Id = "spectrablade:graphic-eq-31";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -397,5 +400,59 @@ namespace BuiltInEffects
         std::unique_ptr<juce::FileChooser> chooser;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ConvolutionEditor)
+    };
+
+    /** The graphic EQ, live, with 10 or 31 bands: each band's gain a parameter (band1 ... bandN, in
+        dB), run block by block with the Equalizer filters as the parametric EQ is. A band at 0 dB or
+        at or past half the rate passes the sound unchanged and starts afresh when it comes back.
+        Over a whole file from its start, exactly GraphicEq::apply's samples. No latency. */
+    class GraphicEqProcessor final : public BuiltInEffect
+    {
+    public:
+        explicit GraphicEqProcessor (int numBands);
+
+        int getNumBands() const noexcept                              { return (int) gains.size(); }
+        std::vector<double> getGains() const;
+        void setGains (const std::vector<double>&);
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+        juce::AudioProcessorEditor* createEditor() override;
+
+        std::vector<juce::AudioParameterFloat*> gains;
+
+    private:
+        double rate = 48000.0;
+        std::vector<std::vector<Equalizer::Filter>> filters;   // a band's, one a channel
+        std::vector<std::optional<double>> filtersSetFor;      // the gain they were set for
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GraphicEqProcessor)
+    };
+
+    /** The live graphic EQ's window: its presets and a slider a band. */
+    class GraphicEqEditor final : public juce::AudioProcessorEditor,
+                                  private juce::Timer
+    {
+    public:
+        explicit GraphicEqEditor (GraphicEqProcessor&);
+        ~GraphicEqEditor() override;
+
+        GraphicEq::Panel& getPanel() noexcept                         { return panel; }
+        void refresh();
+
+        void paint (juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        void timerCallback() override                                 { refresh(); }
+        void panelChanged();
+
+        GraphicEqProcessor& eq;
+        EffectPresets::Bar presets;
+        GraphicEq::Panel panel;
+        std::vector<double> shown;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (GraphicEqEditor)
     };
 }

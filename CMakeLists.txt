@@ -54,6 +54,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
     Source/Equalizer.cpp
+    Source/GraphicEq.cpp
     Source/Dynamics.cpp
     Source/Modulation.cpp
     Source/Reverb.cpp
@@ -119,6 +120,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SpectralTests.cpp
     Tests/LoudnessTests.cpp
     Tests/EqTests.cpp
+    Tests/GraphicEqTests.cpp
     Tests/DynamicsTests.cpp
     Tests/ModulationTests.cpp
     Tests/ReverbTests.cpp
@@ -154,6 +156,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
     Source/Equalizer.cpp
+    Source/GraphicEq.cpp
     Source/Dynamics.cpp
     Source/Modulation.cpp
     Source/Reverb.cpp

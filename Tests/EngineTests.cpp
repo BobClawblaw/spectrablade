@@ -18,6 +18,7 @@
 #include "ReverbTests.h"
 #include "ConvolverTests.h"
 #include "EffectPresetsTests.h"
+#include "GraphicEqTests.h"
 #include "BuiltInEffectsTests.h"
 #include "NoiseTests.h"
 #include "ClickTests.h"
@@ -341,6 +342,7 @@ int main (int argc, char* argv[])
         runSpectralTests();
         runLoudnessTests();
         runEqTests();
+        runGraphicEqTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

@@ -43,6 +43,12 @@ namespace
 
     juce::PluginDescription convolutionDescription()    { return describe ("Convolution Reverb", "Reverb", convolutionId, 0x5342434f); }  // "SBCO"
 
+    juce::PluginDescription graphicEqDescription (int bands)
+    {
+        return bands == 31 ? describe ("Graphic EQ (31 Bands)", "EQ", graphicEq31Id, 0x53424733)    // "SBG3"
+                           : describe ("Graphic EQ (10 Bands)", "EQ", graphicEq10Id, 0x53424731);   // "SBG1"
+    }
+
     const juce::StringArray stageNames { "2", "4", "6", "8", "10", "12" };
 
     class Format final : public juce::AudioPluginFormat
@@ -103,6 +109,10 @@ namespace
                 effect = std::make_unique<ReverbProcessor>();
             else if (d.fileOrIdentifier == convolutionId)
                 effect = std::make_unique<ConvolutionProcessor>();
+            else if (d.fileOrIdentifier == graphicEq10Id)
+                effect = std::make_unique<GraphicEqProcessor> (10);
+            else if (d.fileOrIdentifier == graphicEq31Id)
+                effect = std::make_unique<GraphicEqProcessor> (31);
 
             if (effect == nullptr)
             {
@@ -123,7 +133,8 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 
 juce::Array<juce::PluginDescription> getDescriptions()
 {
-    return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription() };
+    return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
+             graphicEqDescription (10), graphicEqDescription (31) };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -1033,5 +1044,155 @@ void ConvolutionEditor::resized()
     auto row = r.removeFromTop (28);
     mixLabel.setBounds (row.removeFromLeft (50));
     mix.setBounds (row);
+}
+
+//==============================================================================
+GraphicEqProcessor::GraphicEqProcessor (int numBands)
+    : BuiltInEffect (graphicEqDescription (numBands), numBands == 31 ? "SPECTRABLADE_GRAPHIC_EQ_31" : "SPECTRABLADE_GRAPHIC_EQ_10")
+{
+    const auto& centres = GraphicEq::centres (numBands == 31 ? 31 : 10);
+    const auto g = (float) GraphicEq::maxGainDb;
+
+    for (size_t i = 0; i < centres.size(); ++i)
+        gains.push_back (addFloat ("band" + juce::String ((int) i + 1), juce::String (centres[i]) + " Hz", { -g, g }, 0.0f, "dB"));
+
+    filters.resize (centres.size());
+    filtersSetFor.resize (centres.size());
+}
+
+std::vector<double> GraphicEqProcessor::getGains() const
+{
+    std::vector<double> g;
+
+    for (auto* p : gains)
+        g.push_back ((double) p->get());
+
+    return g;
+}
+
+void GraphicEqProcessor::setGains (const std::vector<double>& g)
+{
+    for (size_t i = 0; i < gains.size() && i < g.size(); ++i)
+        setExactly (*gains[i], (float) g[i]);
+}
+
+void GraphicEqProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    reset();
+}
+
+void GraphicEqProcessor::reset()
+{
+    for (auto& f : filtersSetFor)
+        f.reset();
+}
+
+void GraphicEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    const auto channels = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
+    const auto& centres = GraphicEq::centres (getNumBands());
+    const auto q = GraphicEq::bandQ (getNumBands());
+
+    for (size_t i = 0; i < gains.size(); ++i)
+    {
+        const Equalizer::Band band { Equalizer::BandType::peak, centres[i], (double) gains[i]->get(), q };
+        auto& set = filtersSetFor[i];
+        auto& bandFilters = filters[i];
+
+        if (Equalizer::isFlat (band) || ! Equalizer::isValid (band, rate))
+        {
+            set.reset();
+            continue;
+        }
+
+        if (! set.has_value() || (int) bandFilters.size() != channels)
+        {
+            bandFilters.assign ((size_t) channels, {});   // a band coming back starts from silence
+            set.reset();
+        }
+
+        if (! set.has_value() || ! juce::exactlyEqual (*set, band.gainDb))
+        {
+            for (auto& f : bandFilters)
+                f.setBand (band, rate);
+
+            set = band.gainDb;
+        }
+
+        for (int ch = 0; ch < channels; ++ch)
+            bandFilters[(size_t) ch].process (buffer.getWritePointer (ch), buffer.getNumSamples());
+    }
+}
+
+juce::AudioProcessorEditor* GraphicEqProcessor::createEditor()
+{
+    return new GraphicEqEditor (*this);
+}
+
+//==============================================================================
+GraphicEqEditor::GraphicEqEditor (GraphicEqProcessor& owner)
+    : AudioProcessorEditor (owner), eq (owner),
+      presets (EffectPresets::userStore(), owner.getPresetKey(), [&owner] { return owner.getPresetValues(); },
+               [this, &owner] (const EffectPresets::Values& v)
+               {
+                   owner.setPresetValues (v);
+                   refresh();
+               }),
+      panel (owner.getNumBands())
+{
+    shown = eq.getGains();
+    panel.setGains (shown);
+    panel.onChange = [this] { panelChanged(); };
+    addAndMakeVisible (presets);
+    addAndMakeVisible (panel);
+    setSize (juce::jmax (420, panel.getWidth()), panel.getHeight() + 40);
+    startTimerHz (10);
+}
+
+GraphicEqEditor::~GraphicEqEditor()
+{
+    stopTimer();
+}
+
+void GraphicEqEditor::panelChanged()
+{
+    // Only the bands moved, each as one gesture, so automation writing records just those.
+    const auto wanted = panel.getGains();
+
+    for (size_t i = 0; i < wanted.size() && i < eq.gains.size(); ++i)
+    {
+        if (juce::exactlyEqual (wanted[i], shown[i]))
+            continue;
+
+        eq.gains[i]->beginChangeGesture();
+        setExactly (*eq.gains[i], (float) wanted[i]);
+        eq.gains[i]->endChangeGesture();
+    }
+
+    shown = eq.getGains();
+}
+
+void GraphicEqEditor::refresh()
+{
+    const auto now = eq.getGains();
+
+    if (now == shown)
+        return;
+
+    shown = now;
+    panel.setGains (now);
+}
+
+void GraphicEqEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+}
+
+void GraphicEqEditor::resized()
+{
+    auto r = getLocalBounds();
+    presets.setBounds (r.removeFromTop (40).reduced (8, 6));
+    panel.setBounds (r);
 }
 }

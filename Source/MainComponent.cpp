@@ -62,7 +62,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -71,7 +71,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdConvolutionReverb);
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1030,7 +1030,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdConvolutionReverb; ++id)
+    for (int id = cmdOpen; id <= cmdGraphicEq31; ++id)
         ids.add (id);
 }
 
@@ -1114,6 +1114,10 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
         case cmdReverb:     info.setInfo ("Reverb...", "Add a room's reverberation, ringing on past the selection", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdConvolutionReverb: info.setInfo ("Convolution Reverb...", "Add the reverberation of a recorded space from an impulse response file", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdGraphicEq10: info.setInfo ("Graphic EQ (10 Bands)...", "Boost or cut ten bands an octave apart, in the selection or the whole file", "Effects", 0);
+                            info.setActive (hasAudio); break;
+        case cmdGraphicEq31: info.setInfo ("Graphic EQ (31 Bands)...", "Boost or cut 31 bands a third of an octave apart, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdTremolo:    info.setInfo ("Tremolo...", "Make the level rise and fall at a chosen rate and depth, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -1588,6 +1592,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdPhaser:     showPhaser(); break;
         case cmdReverb:     showReverb(); break;
         case cmdConvolutionReverb: showConvolutionReverb(); break;
+        case cmdGraphicEq10: showGraphicEq (10); break;
+        case cmdGraphicEq31: showGraphicEq (31); break;
         case cmdFadeRegions: showFadeEdges (true); break;
         case cmdNormalizeRegions:
             askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, [this] (float db)
@@ -1931,7 +1937,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -4903,6 +4909,93 @@ void MainComponent::showConvolutionDialog (std::shared_ptr<const Convolver::Impu
                           if (auto next = Convolver::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), *impulse, convolutionMix))
                               applyEdit (std::move (next), "Convolution Reverb", waveform.getSelection());
                       });
+}
+
+void MainComponent::showGraphicEq (int numBands)
+{
+    auto& remembered = numBands == 31 ? graphicEq31Gains : graphicEq10Gains;
+    const auto title = "Graphic EQ (" + juce::String (numBands) + " Bands)";
+    auto* box = new juce::AlertWindow (title, "Each slider boosts or cuts a band around its frequency by up to 12 dB, "
+                                              "as wide as the spacing; neighbouring bands overlap, so moving several together adds up. "
+                                              "Double-click a slider for 0 dB.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    auto panel = std::make_shared<GraphicEq::Panel> (numBands);
+    panel->setGains (remembered);
+    box->addCustomComponent (panel.get());
+
+    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
+    preview->setSize (260, 24);
+    box->addCustomComponent (preview.get());
+
+    // The live graphic EQ with the sliders' gains, on the selection over and over.
+    const auto update = [this, numBands, p = panel.get(), toggle = preview.get()]
+    {
+        if (! toggle->getToggleState())
+        {
+            if (previewOwner == PreviewOwner::graphicEq)
+                stopPreview();
+
+            return;
+        }
+
+        if (auto* live = dynamic_cast<BuiltInEffects::GraphicEqProcessor*> (previewEffectOf (PreviewOwner::graphicEq)))
+        {
+            live->setGains (p->getGains());
+            return;
+        }
+
+        auto made = std::make_unique<BuiltInEffects::GraphicEqProcessor> (numBands);
+        made->setGains (p->getGains());
+        startPreview (PreviewOwner::graphicEq, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
+
+        if (previewOwner != PreviewOwner::graphicEq)
+            toggle->setToggleState (false, juce::dontSendNotification);
+    };
+    preview->onClick = update;
+    panel->onChange = update;
+
+    // Presets under the live effect's IDs (band1 ... bandN), shared with it.
+    auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), numBands == 31 ? BuiltInEffects::graphicEq31Id : BuiltInEffects::graphicEq10Id,
+                                                         [p = panel.get()]
+                                                         {
+                                                             EffectPresets::Values v;
+                                                             const auto g = p->getGains();
+
+                                                             for (size_t i = 0; i < g.size(); ++i)
+                                                                 v["band" + juce::String ((int) i + 1)] = g[i];
+
+                                                             return v;
+                                                         },
+                                                         [p = panel.get(), update] (const EffectPresets::Values& v)
+                                                         {
+                                                             auto g = p->getGains();
+
+                                                             for (size_t i = 0; i < g.size(); ++i)
+                                                                 if (const auto f = v.find ("band" + juce::String ((int) i + 1)); f != v.end() && std::isfinite (f->second))
+                                                                     g[i] = f->second;
+
+                                                             p->setGains (g);
+                                                             update();
+                                                         });
+    box->addCustomComponent (presets.get());
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, numBands, title, panel, preview, presets] (int result)
+    {
+        if (previewOwner == PreviewOwner::graphicEq)
+            stopPreview();
+
+        if (result != 1)
+            return;
+
+        const auto gains = panel->getGains();
+        (numBands == 31 ? graphicEq31Gains : graphicEq10Gains) = gains;
+        const auto r = selectionOrAll();
+
+        if (auto next = GraphicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), gains))
+            applyEdit (std::move (next), title, waveform.getSelection());
+    }), true);
 }
 
 void MainComponent::showTremolo()
