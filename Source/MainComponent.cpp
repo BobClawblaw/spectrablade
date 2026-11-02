@@ -748,6 +748,16 @@ MainComponent::MainComponent()
     addAndMakeVisible (inputMeter);
     inputChoice.setTooltip ("Device inputs to record from");
     inputMeter.readPeak = [this] (int ch) { return engine.getRecorder().takePeak (ch); };
+    addAndMakeVisible (outputMeter);
+    outputMeter.setNumChannels (2);
+    outputMeter.setTooltip ("What goes to the outputs, after the effects. Click to clear the clip lights.");
+    outputMeter.readPeak = [this] (int ch)
+    {
+        if (ch == 0)
+            outputPeaks = engine.takeMasterPeaks (AudioEngine::MasterReader::mainWindow);
+
+        return ch == 0 ? outputPeaks.first : outputPeaks.second;
+    };
     inputChoice.onChange = [this]
     {
         const auto id = inputChoice.getSelectedId();
@@ -1005,10 +1015,12 @@ void MainComponent::resized()
     bottom.removeFromRight (12);
     auto devices = bottom.removeFromTop (26).reduced (0, 1);
     outputLabel.setBounds (devices.removeFromLeft (52));
-    outputPair.setBounds (devices.removeFromLeft (juce::jmin (220, devices.getWidth() / 3)));
-    devices.removeFromLeft (12);
+    outputPair.setBounds (devices.removeFromLeft (juce::jmin (200, devices.getWidth() / 4)));
+    devices.removeFromLeft (6);
+    outputMeter.setBounds (devices.removeFromLeft (juce::jmin (140, devices.getWidth() / 4)).reduced (0, 3));
+    devices.removeFromLeft (14);
     inputLabel.setBounds (devices.removeFromLeft (42));
-    inputChoice.setBounds (devices.removeFromLeft (juce::jmin (180, devices.getWidth() / 2)));
+    inputChoice.setBounds (devices.removeFromLeft (juce::jmin (170, devices.getWidth() / 2)));
     devices.removeFromLeft (6);
     inputMeter.setBounds (devices.reduced (0, 3));
     auto status = bottom;

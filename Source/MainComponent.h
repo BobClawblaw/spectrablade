@@ -316,7 +316,8 @@ private:
     juce::ComboBox outputPair;
     juce::Label inputLabel { {}, "Input" };
     juce::ComboBox inputChoice;
-    LevelMeter inputMeter;
+    LevelMeter inputMeter, outputMeter;
+    std::pair<float, float> outputPeaks;   // read for both channels at once, handed out one at a time
     juce::Label fileLabel, deviceLabel, selectionLabel;   // selectionLabel: the selected clip, in the multitrack
     TapTempo tapper;
     juce::RecentlyOpenedFilesList recentFiles;

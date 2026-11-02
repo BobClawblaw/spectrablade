@@ -277,9 +277,11 @@ public:
     /** Every recorder: the first, then one for each extra input. */
     std::vector<Recorder*> getRecorders();
 
-    /** The peaks (left, right) of what went to the outputs since the last call, after the effects
-        rack (without the metronome's click), for the master meter. */
-    std::pair<float, float> takeMasterPeaks();
+    /** The peaks (left, right) of what went to the outputs since this reader's last call, after the
+        effects rack (without the metronome's click), for a master meter. Each reader (the mixer's,
+        the main window's) has its own, so neither takes the other's peaks. */
+    enum class MasterReader { mixer, mainWindow };
+    std::pair<float, float> takeMasterPeaks (MasterReader = MasterReader::mixer);
 
     /** Input monitoring: these tracks play what comes in on their inputs (none: off). */
     void setMonitoredTracks (const std::vector<std::pair<juce::uint32, TrackInput>>&);

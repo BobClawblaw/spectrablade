@@ -430,7 +430,7 @@ public:
     MasterMeter() : AudioProcessor (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
                                                      .withOutput ("Out", juce::AudioChannelSet::stereo(), true)) {}
 
-    std::pair<float, float> take()                { return { peaks[0].exchange (0.0f), peaks[1].exchange (0.0f) }; }
+    std::pair<float, float> take (int reader)     { return { peaks[reader][0].exchange (0.0f), peaks[reader][1].exchange (0.0f) }; }
 
     const juce::String getName() const override   { return "Master Meter"; }
     void prepareToPlay (double, int) override     {}
@@ -442,10 +442,14 @@ public:
         {
             const auto range = juce::FloatVectorOperations::findMinAndMax (buffer.getReadPointer (ch), buffer.getNumSamples());
             const auto peak = juce::jmax (-range.getStart(), range.getEnd());
-            auto current = peaks[ch].load();
 
-            while (peak > current && ! peaks[ch].compare_exchange_weak (current, peak))
+            for (auto& reader : peaks)
             {
+                auto current = reader[ch].load();
+
+                while (peak > current && ! reader[ch].compare_exchange_weak (current, peak))
+                {
+                }
             }
         }
     }
@@ -464,12 +468,12 @@ public:
     void setStateInformation (const void*, int) override {}
 
 private:
-    std::atomic<float> peaks[2] { { 0.0f }, { 0.0f } };
+    std::atomic<float> peaks[2][2] { { { 0.0f }, { 0.0f } }, { { 0.0f }, { 0.0f } } };   // [reader][channel]
 };
 
-std::pair<float, float> AudioEngine::takeMasterPeaks()
+std::pair<float, float> AudioEngine::takeMasterPeaks (MasterReader reader)
 {
-    return static_cast<MasterMeter*> (meterNode->getProcessor())->take();
+    return static_cast<MasterMeter*> (meterNode->getProcessor())->take (reader == MasterReader::mixer ? 0 : 1);
 }
 
 //==============================================================================

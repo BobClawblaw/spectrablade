@@ -8,6 +8,11 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
 
+**Milestone 184: An output meter**
+- The main window now meters what goes to the outputs, after the effects rack, beside the output choice: a bar a channel with a falling peak hold and a clip light (click to clear it), as the input meter has.
+- The mixer's master meter and this one each read the output's peaks for themselves, so with the mixer open neither takes the other's.
+- Checked: the build and the whole suite, and the meter in place in a capture of the window on the development Mac. Neither meter was watched while playing, and the tests don't drive the engine's audio graph, so the two readers are not measured.
+
 **Milestone 183: More room, and recent files at hand**
 - View > Effects Rack (Option-Cmd-E) hides the effects rack beside the editor and the multitrack, giving the audio the whole width, and shows it again; the choice is remembered. The rack keeps running while hidden.
 - With no file open, the editor lists up to eight recent files that still exist under its hint, each with its folder, and a click opens one (a session opens in the multitrack), asking about unsaved changes first.

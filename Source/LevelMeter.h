@@ -2,9 +2,10 @@
 
 #include <JuceHeader.h>
 
-/** Input meter: one bar per channel on a -60..0 dB scale with a falling peak hold and a clip light.
-    Levels come from a callback polled on the message thread. */
+/** A level meter (the input's and the output's): one bar per channel on a -60..0 dB scale with a
+    falling peak hold and a clip light. Levels come from a callback polled on the message thread. */
 class LevelMeter final : public juce::Component,
+                         public juce::SettableTooltipClient,
                          private juce::Timer
 {
 public:
