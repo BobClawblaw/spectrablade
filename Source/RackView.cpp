@@ -104,12 +104,24 @@ void RackView::resized()
 
 void RackView::changeListenerCallback (juce::ChangeBroadcaster*)
 {
-    rebuildRows();
+    // The engine also speaks for device changes. Rows are rebuilt only when the rack itself changed,
+    // since a row replaced between a button's press and release loses the click.
+    std::vector<std::pair<const void*, bool>> now;
+
+    for (int i = 0; i < engine.getNumRackSlots(); ++i)
+        now.emplace_back (engine.getRackPlugin (i), engine.isRackSlotBypassed (i));
+
+    if (now != shown)
+        rebuildRows();
 }
 
 void RackView::rebuildRows()
 {
     rows.clear();
+    shown.clear();
+
+    for (int i = 0; i < engine.getNumRackSlots(); ++i)
+        shown.emplace_back (engine.getRackPlugin (i), engine.isRackSlotBypassed (i));
 
     for (int i = 0; i < engine.getNumRackSlots(); ++i)
         addAndMakeVisible (rows.add (new SlotRow (*this, i)));

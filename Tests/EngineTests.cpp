@@ -6,6 +6,7 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/PluginScanner.h"
 #include "../Source/AudioEdits.h"
+#include "../Source/RackView.h"
 #include "DocumentTests.h"
 #include "RecorderTests.h"
 #include "MarkerTests.h"
@@ -219,6 +220,51 @@ namespace
 
         if (added == 0)
             return;
+
+        {
+            // The device manager also announces device-list changes, which some plug-ins set off many
+            // times a second; they must neither reach the engine's listeners nor rebuild the rack's
+            // rows (a row replaced under the mouse loses its click).
+            struct Counter final : public juce::ChangeListener
+            {
+                void changeListenerCallback (juce::ChangeBroadcaster*) override  { ++count; }
+                int count = 0;
+            } counter;
+
+            RackView view (engine);
+            view.setSize (400, 300);
+            juce::Array<juce::Component*> before;
+
+            for (auto* c : view.getChildren())
+                before.add (c);
+
+            engine.addChangeListener (&counter);
+
+            for (int i = 0; i < 20; ++i)
+                engine.deviceManager.sendSynchronousChangeMessage();
+
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (100);
+            const auto quietEngine = counter.count == 0;
+            engine.sendChangeMessage();
+            runUntil ([&] { return counter.count > 0; }, 1000);
+
+            juce::Array<juce::Component*> after;
+
+            for (auto* c : view.getChildren())
+                after.add (c);
+
+            const juce::Component::SafePointer<juce::Component> row (before.getLast());   // a row is gone once rebuilt
+            engine.setRackSlotBypassed (0, true);
+            runUntil ([&] { return counter.count > 1; }, 1000);
+            const auto rebuilt = row == nullptr;
+            engine.setRackSlotBypassed (0, false);
+            runUntil ([&] { return counter.count > 2; }, 1000);
+            engine.removeChangeListener (&counter);
+
+            check (quietEngine && after == before && rebuilt,
+                   "rack: device-list announcements pass the engine by, an engine change that leaves the rack alone keeps its rows, "
+                   "and turning a slot off rebuilds them");
+        }
 
         // Change a parameter and bypass so restore can be told apart from defaults.
         auto* first = engine.getRackPlugin (0);

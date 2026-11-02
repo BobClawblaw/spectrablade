@@ -195,6 +195,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/ClipProperties.cpp
     Source/PluginScanner.cpp
     Source/MixerView.cpp
+    Source/RackView.cpp
     Source/MultitrackView.cpp)
 # Plug-in bundles that misbehave on purpose, for the scan tests (see Tests/TestBundle.cpp).
 foreach(bundle IntelOnlyBundle HangingBundle CrashingBundle)

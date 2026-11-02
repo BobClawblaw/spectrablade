@@ -26,6 +26,7 @@ private:
     juce::Label title { {}, "Effects Rack" };
     juce::TextButton addButton { "+ Add Effect" };
     juce::OwnedArray<SlotRow> rows;
+    std::vector<std::pair<const void*, bool>> shown;   // each row's plug-in and whether it is on
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (RackView)
 };

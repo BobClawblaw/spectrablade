@@ -9,6 +9,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - The file plays once from its start, as it is, converted to the device's rate; it goes out with the metronome's click, past the effects rack, and leaves the open file or session where it was. Closing the panel stops it.
 - Measured by the tests: a stereo float file comes out of the player's second output equal to the file (within 0.000000001), left and right apart, nothing on the main output, stopping by itself at its end and at once when stopped; the engine refuses a file that isn't audio; the strip plays nothing unticked, plays each audio file when ticked, stops on a file that isn't audio, and Play and Stop work either way. The strip was not seen in the real open panel (its menus can't be driven by script on the development Mac). The whole suite passed.
 
+**Milestone 191: Rack buttons that respond**
+- With plug-ins loaded, the effects rack's Edit, on/off and remove buttons could ignore clicks. Loaded plug-ins can make macOS announce changes to its lists of audio and MIDI devices many times a second; each announcement went on to the engine's listeners, and the rack rebuilt its rows every time, so a row was often replaced between a button's press and its release. Measured in the app with two plug-ins loaded: about 27 rebuilds a second before, 2 in 22 seconds after.
+- The engine now passes on a device change only when the device in use, its rate, block size or channels changed, and the rack rebuilds its rows only when its plug-ins or their on/off states change.
+- Measured by the tests: twenty device announcements reach none of the engine's listeners, an engine change that leaves the rack alone keeps its rows, and turning a slot off rebuilds them. The whole suite passed.
+
 ## Released
 
 **Release 0.9.0: the alpha**

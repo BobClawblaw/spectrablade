@@ -356,6 +356,8 @@ private:
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     void rebuildConnections();
+    juce::String deviceSignature() const;   // the device in use, its rate, block size and channels
+    juce::String lastDeviceSignature;       // as of the last change handled
     void addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr<juce::XmlElement>>> slots,
                             size_t next, juce::StringArray errors, AddCallback onDone);
     void createPlugin (const juce::PluginDescription&, double rate,

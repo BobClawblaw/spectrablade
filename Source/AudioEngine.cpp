@@ -838,6 +838,13 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
         return;
     }
 
+    // The device manager also tells of changes to the lists of devices, which some plug-ins set off
+    // many times a second while they are loaded; only a change to the device in use matters here.
+    if (const auto now = deviceSignature(); now == lastDeviceSignature)
+        return;
+    else
+        lastDeviceSignature = now;
+
     // Device, sample rate, buffer size or active channels changed. If the inputs on are not the
     // ones last set, the track inputs are checked again.
     if (auto* device = deviceManager.getCurrentAudioDevice(); device == nullptr || device->getActiveInputChannels() != appliedInputs)
@@ -845,6 +852,18 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     rebuildConnections();
     sendChangeMessage();
+}
+
+juce::String AudioEngine::deviceSignature() const
+{
+    auto* d = deviceManager.getCurrentAudioDevice();
+
+    if (d == nullptr)
+        return "none";
+
+    return d->getTypeName() + "|" + d->getName() + "|" + juce::String (d->getCurrentSampleRate()) + "|"
+         + juce::String (d->getCurrentBufferSizeSamples()) + "|" + d->getActiveInputChannels().toString (2) + "|"
+         + d->getActiveOutputChannels().toString (2) + "|" + juce::String ((int) d->isOpen()) + juce::String ((int) d->isPlaying());
 }
 
 void AudioEngine::rebuildConnections()
