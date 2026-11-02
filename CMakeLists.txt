@@ -23,6 +23,7 @@ endif()
 juce_add_gui_app(SpectraBlade
     PRODUCT_NAME                 "SpectraBlade"
     COMPANY_NAME                 "SpectraBlade"
+    COMPANY_COPYRIGHT            "Copyright (C) 2026 BobClawblaw. Licensed under the GNU AGPLv3."
     BUNDLE_ID                    org.spectrablade.editor
     ICON_BIG                     "${CMAKE_CURRENT_SOURCE_DIR}/Art/spectrablade-icon.png"
     PLUGINHOST_AU                TRUE

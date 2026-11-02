@@ -154,6 +154,7 @@ private:
     juce::File lastImpulseFile;
     double convolutionMix = 30.0;
     void showGraphicEq (int numBands);
+    void showAbout();
     std::vector<double> graphicEq10Gains = std::vector<double> (10, 0.0), graphicEq31Gains = std::vector<double> (31, 0.0);
 
     void applyParametricEq (const std::vector<Equalizer::Band>&);

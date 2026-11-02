@@ -6,6 +6,15 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
+SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
+
+**Milestone 178: The AGPLv3 licence**
+- SpectraBlade is released under the GNU AGPLv3, the licence under which it uses JUCE. `LICENSE` holds the licence's text exactly as the Free Software Foundation publishes it.
+- About SpectraBlade, at the top of the application menu, shows the version, the copyright, the licence and its warranty disclaimer, and where the source code is. The app's Info.plist carries the copyright line too.
+- `Scripts/package.sh` puts the licence in the disk image as `LICENSE.txt`, beside the app.
+- The app stays signed ad hoc: no Developer ID, so no notarization. Installing says how to open it the first time.
+- Checked: the build, the copyright line in the built Info.plist, and that the app launches and quits cleanly. The About item and the packaged disk image were not checked by hand (the app menu can't be read by script on the development Mac, and the universal release build wasn't run). The whole suite passed.
+
 **Milestone 177: Graphic EQ**
 - Effects > Graphic EQ (10 Bands) and Graphic EQ (31 Bands): a slider a band (double-click for 0 dB) and Flat, each band boosting or cutting up to 12 dB, applied to the selection or the whole file, with a "Preview on the selection" switch and presets. Both are built-in live effects for the rack and tracks too, each band's gain an automatable parameter, their windows the same sliders and presets.
 - The 10 bands sit an octave apart from 31.5 Hz to 16 kHz, the 31 a third of an octave apart from 20 Hz to 20 kHz, at the standard centre frequencies. Each is a bell as wide as the spacing (a Q of 1.414 an octave, 4.318 a third), run one after another with the parametric EQ's filters; a band at 0 dB, or at or past half the rate, is left out.
@@ -900,7 +909,7 @@ CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DSPEC
 
 ## Installing
 
-Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications. The app is signed ad hoc, not with a Developer ID, so macOS blocks it the first time: open it once, then choose Open Anyway under System Settings > Privacy & Security. After that it opens normally. macOS asks for microphone access the first time you choose a recording input.
+Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications; the licence is beside it as `LICENSE.txt`. The app is signed ad hoc, not with a Developer ID, so macOS blocks it the first time: open it once, then choose Open Anyway under System Settings > Privacy & Security. After that it opens normally. macOS asks for microphone access the first time you choose a recording input.
 
 Then choose Plug-ins and Scan for Plug-ins. The first scan of a large collection takes a while; it runs in the background, and the window shows how far it has got.
 
@@ -910,7 +919,7 @@ Then choose Plug-ins and Scan for Plug-ins. The first scan of a large collection
 Scripts/package.sh
 ```
 
-This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
+This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app and `LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
 
 To check a disk image's app on its own, mount it and point the tests at it:
 
@@ -1116,9 +1125,9 @@ VST2 is deliberately not supported: Steinberg no longer licenses the VST2 SDK.
 
 ## Licensing
 
-JUCE is dual-licensed under AGPLv3 or a commercial JUCE licence. Shipping SpectraBlade as closed source requires a commercial JUCE licence; otherwise the app must be released under the AGPLv3.
+SpectraBlade is licensed under the GNU Affero General Public License, version 3; the full text is in `LICENSE`. JUCE is dual-licensed under the AGPLv3 or a commercial JUCE licence, and SpectraBlade uses it under the AGPLv3. Anyone who passes on the app, changed or not, must offer its source code under the same licence.
 
-`Scripts/package.sh` signs the app ad hoc, without the hardened runtime, so it loads any plug-in's code. The CMake target asks for the hardened runtime with `disable-library-validation` (which third-party plug-ins need), but that applies only when the app is signed with a Developer ID, as notarization requires. Releases are not notarized yet; building with the Xcode generator (`-G Xcode`) is the simplest way to sign and notarize.
+`Scripts/package.sh` signs the app ad hoc, without the hardened runtime, so it loads any plug-in's code. Releases are not signed with a Developer ID and are not notarized, so Gatekeeper asks the first time the app is opened (see Installing). The CMake target still asks for the hardened runtime with `disable-library-validation` (which third-party plug-ins need), which takes effect for anyone who builds and signs it with their own Developer ID.
 
 ## Clean-room rules
 

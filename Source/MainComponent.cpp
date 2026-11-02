@@ -62,7 +62,7 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -835,7 +835,9 @@ MainComponent::MainComponent()
     addKeyListener (commands.getKeyMappings());
     setApplicationCommandManagerToWatch (&commands);   // menus refresh when command state changes
    #if JUCE_MAC
-    juce::MenuBarModel::setMacMainMenu (this);
+    juce::PopupMenu appMenu;   // at the top of the application menu
+    appMenu.addCommandItem (&commands, cmdAbout);
+    juce::MenuBarModel::setMacMainMenu (this, &appMenu);
    #endif
 
     RecentFiles::restore (recentFiles, *settings);
@@ -1030,7 +1032,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdGraphicEq31; ++id)
+    for (int id = cmdOpen; id <= cmdAbout; ++id)
         ids.add (id);
 }
 
@@ -1117,6 +1119,7 @@ void MainComponent::getCommandInfo (juce::CommandID id, juce::ApplicationCommand
                             info.setActive (hasAudio); break;
         case cmdGraphicEq10: info.setInfo ("Graphic EQ (10 Bands)...", "Boost or cut ten bands an octave apart, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
+        case cmdAbout: info.setInfo ("About SpectraBlade", "Show the version, the copyright and the licence", "Help", 0); break;
         case cmdGraphicEq31: info.setInfo ("Graphic EQ (31 Bands)...", "Boost or cut 31 bands a third of an octave apart, in the selection or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdTremolo:    info.setInfo ("Tremolo...", "Make the level rise and fall at a chosen rate and depth, in the selection or the whole file", "Effects", 0);
@@ -1594,6 +1597,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdConvolutionReverb: showConvolutionReverb(); break;
         case cmdGraphicEq10: showGraphicEq (10); break;
         case cmdGraphicEq31: showGraphicEq (31); break;
+        case cmdAbout: showAbout(); break;
         case cmdFadeRegions: showFadeEdges (true); break;
         case cmdNormalizeRegions:
             askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, [this] (float db)
@@ -4909,6 +4913,21 @@ void MainComponent::showConvolutionDialog (std::shared_ptr<const Convolver::Impu
                           if (auto next = Convolver::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), *impulse, convolutionMix))
                               applyEdit (std::move (next), "Convolution Reverb", waveform.getSelection());
                       });
+}
+
+void MainComponent::showAbout()
+{
+    const auto version = juce::JUCEApplication::getInstance() != nullptr ? juce::JUCEApplication::getInstance()->getApplicationVersion() : juce::String();
+    showNote ("About SpectraBlade",
+              "SpectraBlade " + version + "\n"
+              "Copyright (C) 2026 BobClawblaw\n\n"
+              "This program is free software: you can redistribute it and/or modify it under the terms of the "
+              "GNU Affero General Public License, version 3, as published by the Free Software Foundation.\n\n"
+              "It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied "
+              "warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licence for more details: "
+              "LICENSE.txt in the disk image, or https://www.gnu.org/licenses/agpl-3.0.html\n\n"
+              "Source code: https://github.com/BobClawblaw/spectrablade\n"
+              "Built with JUCE, used under the AGPLv3.");
 }
 
 void MainComponent::showGraphicEq (int numBands)

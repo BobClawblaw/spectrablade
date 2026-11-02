@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds SpectraBlade as a universal (Apple silicon and Intel) app, signs it, runs the tests with
 # the signed app as the plug-in scan worker, and packs it into a disk image:
-#   dist/SpectraBlade-<version>.dmg and its .sha256
+#   dist/SpectraBlade-<version>.dmg (the app and the licence) and its .sha256
 #
 # Usage: Scripts/package.sh [--juce <JUCE checkout>] [--jobs <n>] [--skip-tests]
 #
@@ -56,6 +56,7 @@ stage="$(mktemp -d)"
 trap 'rm -rf "$stage"' EXIT
 ditto "$app" "$stage/SpectraBlade.app"
 ln -s /Applications "$stage/Applications"
+cp "$root/LICENSE" "$stage/LICENSE.txt"
 mkdir -p "$dist"
 dmg="$dist/SpectraBlade-$version.dmg"
 rm -f "$dmg"
