@@ -8,6 +8,21 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 
 SpectraBlade is free software under the GNU Affero General Public License, version 3 (see `LICENSE`).
 
+## What it does
+
+- **Editing audio files:** waveform and spectrogram views; cut, copy, paste, paste mix and paste to fill; silence, insert and trim silence, crop, reverse, invert, swap, copy or silence one channel, mix to mono and make stereo; gain, normalize (each channel or each region on its own), fades with shapes, gain and pan ramps, balance and stereo width; markers and regions, with lists, CSV import and export, and saving regions or the pieces between markers as files; an undo history.
+- **Repair and analysis:** spectral selection and attenuation, noise reduction, click and pop repair, Repair Selection, DC offset removal, a noise gate; finding clipping, silences and sounds; EBU R128 loudness with Match Loudness and true-peak limiting; stereo correlation; sample-rate conversion.
+- **Effects:** parametric, graphic (10 and 31 bands) and single-band EQ, compressor, limiter, chorus, flanger, phaser, tremolo, echo, reverb and convolution reverb, each applied to the selection with a preview and presets, and most of them also live in the effects rack and on tracks; VST3 and Audio Unit plug-ins, each checked when it is scanned.
+- **Recording:** from the cursor, or punched in over a selection with pre-roll and post-roll; loop recording into takes; several tracks at once; input monitoring through a track's effects; a metronome and count-in.
+- **Multitrack sessions:** tracks, buses, sends, folders and groups; clip gain, fades, crossfades, stretching and pitch shifting; automation of volume, pan and effect parameters, drawn or written while playing; a tempo map with bars and beats and quantizing; a mixer; freezing, bouncing, mixdown and stems; recovery after a crash.
+- **Getting around:** a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import, recent files, and files opened from Finder.
+
+The notes below record each milestone as it was built, newest first, with what the tests measured.
+
+**Release 1.0.0: the first release**
+- `dist/SpectraBlade-1.0.0.dmg` (10.4 MB) holds the universal app (Apple silicon and Intel) and the licence as `LICENSE.txt`. See [Installing](#installing); it is signed ad hoc, not notarized, so macOS asks once before opening it. Everything in [What it does](#what-it-does) is in it, through Milestone 185.
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite passed with the signed app as the plug-in scan worker; the disk image's app verified (`codesign --verify --deep --strict`), reads 1.0.0 with its copyright line, carries a licence identical to `LICENSE`, and launched from the mounted image and quit with no crash report. The universal test build's Intel half also passed the whole suite under Rosetta (737 checks: the one that an Intel-only plug-in is reported as lacking Apple silicon code applies only natively). The app's own Intel half was not launched, and no Intel Mac was tried.
+
 **Milestone 185: Quiet scroll bars everywhere**
 - Every scroll bar in the app (the multitrack's, the lists', the windows') is now the quiet grey Milestone 183 gave the editor's, set once for the whole app instead of view by view.
 - Checked in a capture of the window on the development Mac; the whole suite passed.
@@ -960,7 +975,7 @@ This builds a universal Release app in `build-release/`, signs it ad hoc, runs t
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.1.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 1.0.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Integration tests
