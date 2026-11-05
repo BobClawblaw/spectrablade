@@ -530,6 +530,8 @@ void WaveformView::paint (juce::Graphics& g)
         }
     }
 
+    drawFades (g, area);
+
     g.setColour (cursorColour);
     g.drawVerticalLine ((int) frameToX (cursor), (float) area.getY(), (float) area.getBottom());
 
@@ -537,6 +539,141 @@ void WaveformView::paint (juce::Graphics& g)
     {
         g.setColour (juce::Colours::white);
         g.drawVerticalLine ((int) frameToX (engine.getPlayer().getPositionFrames()), 0.0f, (float) area.getBottom());
+    }
+}
+
+//==============================================================================
+juce::Rectangle<float> WaveformView::getFadeHandle (bool out) const
+{
+    const auto area = getWaveArea().toFloat();
+    const auto length = engine.document.getNumFrames();
+    const auto frames = shownFade (out).frames;
+    constexpr auto size = 12.0f;
+    const auto x = (float) frameToX (out ? length - frames : frames);
+    const auto centre = juce::jlimit (area.getX() + size * 0.5f + 1.0f, area.getRight() - size * 0.5f - 1.0f, x);
+    return { centre - size * 0.5f, area.getY() + 3.0f, size, size };
+}
+
+int WaveformView::fadeHandleAt (juce::Point<float> p) const
+{
+    if (! engine.document.hasAudio())
+        return -1;
+
+    // The fade out's handle wins where the two meet, since a fade in can then only shrink.
+    for (auto out : { true, false })
+        if (getFadeHandle (out).expanded (4.0f).contains (p))
+            return out ? 1 : 0;
+
+    return -1;
+}
+
+void WaveformView::dragFade (const juce::MouseEvent& e)
+{
+    const auto out = fadeDragged == 1;
+    const auto length = engine.document.getNumFrames();
+    const auto frame = juce::jlimit ((juce::int64) 0, length, xToFrame (e.position.x));
+
+    // Sideways sets the length; up bends the curve to rise sooner (120 pixels from straight to the end).
+    pendingFade.frames = juce::jmin (out ? length - frame : frame, fades.maxFrames (engine.document, out));
+    pendingFade.curve = juce::jlimit (-1.0f, 1.0f, fadeAtDragStart.curve - (e.position.y - e.mouseDownPosition.y) / 120.0f);
+    fadePending = true;
+
+    // Put in at most 30 times a second; the timer puts in the last one.
+    if (juce::Time::getMillisecondCounterHiRes() - lastFadeApplied >= 33.0)
+        applyPendingFade();
+}
+
+void WaveformView::applyPendingFade()
+{
+    if (! fadePending || fadeDragged < 0)
+        return;
+
+    fadePending = false;
+    lastFadeApplied = juce::Time::getMillisecondCounterHiRes();
+
+    if (pendingFade != getFade (fadeDragged == 1))
+        fades.set (engine.document, fadeDragged == 1, pendingFade);
+
+    repaint();
+}
+
+void WaveformView::drawFades (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    const auto channels = engine.document.getNumChannels();
+    const auto length = engine.document.getNumFrames();
+    const auto rate = engine.document.getSampleRate();
+
+    for (auto out : { false, true })
+    {
+        const auto fade = shownFade (out);
+        const auto handle = getFadeHandle (out);
+        const auto dragging = fadeDragged == (out ? 1 : 0);
+
+        if (fade.frames > 0)
+        {
+            const auto startX = (float) frameToX (out ? length - fade.frames : 0);
+            const auto endX = (float) frameToX (out ? length : fade.frames);
+
+            // The gain curve over each channel's waveform, and a shade over what it takes away.
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                const auto lane = getLane (ch, channels).wave.translated (area.getX(), area.getY()).toFloat();
+                const auto from = juce::jmax (startX, lane.getX()), to = juce::jmin (endX, lane.getRight());
+
+                if (lane.isEmpty() || to <= from)
+                    continue;
+
+                juce::Path curve;
+
+                for (auto x = from; ; x += 2.0f)
+                {
+                    const auto at = juce::jmin (x, to);
+                    const auto t = (double) (at - startX) / (double) juce::jmax (1.0f, endX - startX);
+                    const auto level = FileFades::level (out ? 1.0 - t : t, fade.curve);
+                    const juce::Point<float> p (at, lane.getBottom() - level * lane.getHeight());
+
+                    if (at <= from)
+                        curve.startNewSubPath (p);
+                    else
+                        curve.lineTo (p);
+
+                    if (at >= to)
+                        break;
+                }
+
+                auto shade = curve;
+                shade.lineTo (to, lane.getY());
+                shade.lineTo (from, lane.getY());
+                shade.closeSubPath();
+                g.setColour (Theme::base.withAlpha (0.45f));
+                g.fillPath (shade);
+                g.setColour (Theme::accent);
+                g.strokePath (curve, juce::PathStrokeType (1.5f));
+            }
+
+            g.setColour (Theme::accent.withAlpha (0.5f));
+            g.drawVerticalLine (juce::roundToInt (out ? startX : endX), (float) area.getY(), (float) area.getBottom());
+        }
+
+        // The handle: a small rounded square, filled with the accent while it has a fade.
+        g.setColour (fade.frames > 0 || dragging ? Theme::accent : Theme::raised);
+        g.fillRoundedRectangle (handle, 3.0f);
+        g.setColour (fade.frames > 0 || dragging ? Theme::textStrong : Theme::dimText);
+        g.drawRoundedRectangle (handle.reduced (0.5f), 3.0f, 1.0f);
+
+        if (dragging && rate > 0.0)
+        {
+            const auto text = juce::String (out ? "Fade out " : "Fade in ") + juce::String ((double) fade.frames / rate, 3) + " s, curve "
+                              + (fade.curve > 0.005f ? "+" : "") + juce::String (juce::roundToInt (fade.curve * 100.0f)) + "%";
+            g.setFont (juce::FontOptions (Theme::bodyText));
+            const auto w = (float) juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), text) + 16.0f;
+            const auto box = juce::Rectangle<float> (out ? handle.getX() - w - 6.0f : handle.getRight() + 6.0f, handle.getY() - 2.0f, w, 18.0f)
+                                 .constrainedWithin (area.toFloat());
+            g.setColour (Theme::raised.withAlpha (0.92f));
+            g.fillRoundedRectangle (box, Theme::radius);
+            g.setColour (Theme::text);
+            g.drawText (text, box, juce::Justification::centred);
+        }
     }
 }
 
@@ -621,6 +758,13 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    if (const auto handle = fadeHandleAt (e.position); handle >= 0 && ! e.mods.isPopupMenu())
+    {
+        fadeDragged = handle;
+        fadeAtDragStart = getFade (handle == 1);
+        return;
+    }
+
     if (const auto index = markerAt (e.position); index >= 0)
     {
         const auto& m = engine.document.getMarkers()[(size_t) index];
@@ -694,6 +838,12 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     if (! engine.document.hasAudio())
         return;
 
+    if (fadeDragged >= 0)
+    {
+        dragFade (e);
+        return;
+    }
+
     if (dividerChannel >= 0)
     {
         const auto area = getWaveArea();
@@ -746,6 +896,14 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
 void WaveformView::mouseUp (const juce::MouseEvent&)
 {
+    if (fadeDragged >= 0)
+    {
+        applyPendingFade();
+        fadeDragged = -1;
+        repaint();
+        return;
+    }
+
     if (dividerChannel >= 0)
     {
         dividerChannel = -1;
@@ -790,14 +948,20 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
         return;
     }
 
-    setMouseCursor (dividerAt (e.position) >= 0 ? juce::MouseCursor::UpDownResizeCursor
+    setMouseCursor (fadeHandleAt (e.position) >= 0 ? juce::MouseCursor::UpDownLeftRightResizeCursor
+                    : dividerAt (e.position) >= 0 ? juce::MouseCursor::UpDownResizeCursor
                     : markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor
                                                  : juce::MouseCursor::NormalCursor);
 }
 
 void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (const auto index = markerAt (e.position); index >= 0)
+    if (const auto handle = fadeHandleAt (e.position); handle >= 0)
+    {
+        fades.set (engine.document, handle == 1, {});
+        repaint();
+    }
+    else if (const auto index = markerAt (e.position); index >= 0)
         renameMarker (index);
     else if (engine.document.hasAudio() && e.position.y >= (float) getWaveArea().getY() && dividerAt (e.position) < 0)
         selectAll();
@@ -916,6 +1080,9 @@ void WaveformView::changeListenerCallback (juce::ChangeBroadcaster*)
 void WaveformView::timerCallback()
 {
     engine.document.releaseUnusedSnapshots();
+
+    if (fadeDragged >= 0 && fadePending)
+        applyPendingFade();
 
     auto& player = engine.getPlayer();
 

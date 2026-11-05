@@ -84,6 +84,7 @@ target_sources(SpectraBlade PRIVATE
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
     Source/Theme.cpp
+    Source/FileFades.cpp
     Source/FileChecks.cpp
     Source/LoadingScreen.cpp
     Source/TransportBar.cpp
@@ -165,6 +166,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/OpenFilesTests.cpp
     Tests/PanelTests.cpp
     Tests/ThemeTests.cpp
+    Tests/FadeHandleTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/Metronome.cpp
@@ -207,6 +209,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
     Source/Theme.cpp
+    Source/FileFades.cpp
     Source/FileChecks.cpp
     Source/LoadingScreen.cpp
     Source/TransportBar.cpp

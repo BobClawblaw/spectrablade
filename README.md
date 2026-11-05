@@ -37,6 +37,7 @@ Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a larg
 
 - **Open a file:** File > Open (Cmd-O), drop it on the window, or click one of the recent files listed in the empty editor. Tick Preview in the open panel to hear files as you select them.
 - **Look at it:** View > Waveform (Cmd-1), Spectrogram (Cmd-2), or Waveform and Spectrogram (Cmd-3); in the last, drag the line between the two to size them.
+- **Fade in and out:** drag the small handle at the waveform's top-left corner to the right for a fade in, or the one at the top-right to the left for a fade out; drag up or down as you go to bend the curve. Drag again to adjust it while it is still the last edit; double-click a handle to remove its fade.
 - **Edit:** select by dragging (double-click selects the whole file), Option-drag in the spectrogram to select a band of frequencies, and use the Edit and Effects menus. Space plays the selection, or from the cursor.
 - **Use plug-ins on a file:** add effects to the effects rack beside the editor (+ Add Effect, by format and maker), set them up with Edit while you listen, then Effects > Apply Effects Rack (Cmd-R) writes them into the selection or the whole file. Window > Effects Rack (Option-Cmd-E) hides or shows it.
 - **Multitrack:** View > Multitrack Session (Cmd-4) switches to the session; each track's FX button holds its own effects.

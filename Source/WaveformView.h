@@ -2,6 +2,7 @@
 
 #include "AudioEngine.h"
 #include "OpenFiles.h"
+#include "FileFades.h"
 #include "Spectrogram.h"
 
 /** The editor view: time ruler, marker lane, one lane per channel, selection, cursor and playhead.
@@ -51,6 +52,11 @@ public:
     /** Where the view is in the file (selection, cursor, zoom, spectral band), to be put back
         with setPlace when the file is shown again. */
     FilePlace getPlace() const;
+
+    /** The fade handles at the top corners of the waveform: drag one sideways to set its fade's
+        length and up or down to bend its curve; double-click it to take the fade away. */
+    juce::Rectangle<float> getFadeHandle (bool out) const;
+    FileFades::Fade getFade (bool out) const          { return fades.get (engine.document, out); }
 
     /** Puts a kept place back in the file now open, in place of fitting it to the window as a new
         file is; a place with no zoom fits it. */
@@ -130,6 +136,23 @@ private:
     int dividerChannel = -1;         // channel whose waveform/spectrogram line is being dragged
     juce::uint32 lastVersion = 0;
     int lastResetCount = 0;
+
+    // A fade handle being dragged (0 the fade in, 1 the fade out), and the fade waiting to be put in.
+    FileFades::Draft fades;
+    int fadeDragged = -1;
+    FileFades::Fade fadeAtDragStart, pendingFade;
+    bool fadePending = false;
+    double lastFadeApplied = 0.0;
+    int fadeHandleAt (juce::Point<float>) const;
+    void dragFade (const juce::MouseEvent&);
+    void applyPendingFade();
+    void drawFades (juce::Graphics&, juce::Rectangle<int> area);
+
+    /** The fade as drawn: the one under the mouse while its handle is dragged, ahead of the document. */
+    FileFades::Fade shownFade (bool out) const
+    {
+        return fadeDragged == (out ? 1 : 0) && fadePending ? pendingFade : getFade (out);
+    }
 
     // A marker being dragged: the document's markers with that one moved, shown until mouse-up.
     int draggedMarker = -1;
