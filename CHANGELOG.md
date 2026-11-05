@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.9.5: docked panels, several files, meters, fade handles and themes**
+- `SpectraBlade-0.9.5.dmg` on the repository's Releases page, with its SHA-256: Milestones 198 to 207 below on top of 0.9.4. The first release published as a regular release rather than a pre-release, so it shows as the repository's latest. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (872 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.9.5, carries a licence identical to `LICENSE`, and launched from the mounted image (the main window in 2.57 seconds, reopening the last file) and quit with no crash report. The app's Intel half was not launched, and no Intel Mac was tried.
+
 **Milestone 207: Colour themes**
 - View > Theme switches the whole interface between four themes, Dark (as before), Darker, Light and High Contrast, and four accents, Blue (as before), Teal, Orange and Violet. The switch takes effect at once, with no restart: every panel, control, menu, dialog and floating window, the waveform (redrawn in the new colours), the multitrack lanes and the mixer. The choice is kept for the next launch. The spectrogram's colours, and the track, marker and automation colours, are the same in every theme, since they carry meaning in the audio; the overlays drawn on the audio (grid lines, beat lines, the time selection) are white on the dark themes and black on Light.
 - The transport icons and the fade handles' ramps no longer assume a dark background: the icons take the theme's text colour, and the ramps stay white on the accent.
@@ -56,8 +64,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 **Milestone 198: Double-click selects the whole file**
 - A double-click in a channel's waveform or spectrogram selects the whole file. Double-clicking a marker still renames it, and the ruler, the marker lane and the line between waveform and spectrogram are as before.
 - Measured by the tests, through the real view: a double-click in the waveform and one in the spectrogram select every frame; one in the ruler and one in the marker lane leave the selection empty.
-
-## Released
 
 **Release 0.9.4: the fifth alpha**
 - `SpectraBlade-0.9.4.dmg` on the repository's Releases page, with its SHA-256: Milestone 197 below (a loading screen, and the audio device opened without holding it up) on top of 0.9.3. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
