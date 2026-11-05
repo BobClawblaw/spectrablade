@@ -1,4 +1,5 @@
 #include "SessionNotes.h"
+#include "Theme.h"
 
 SessionNotes::SessionNotes (Session& s) : session (s)
 {
@@ -7,7 +8,7 @@ SessionNotes::SessionNotes (Session& s) : session (s)
     editor.setTabKeyUsedAsCharacter (true);
     editor.setScrollbarsShown (true);
     editor.setFont (juce::FontOptions (14.0f));
-    editor.setTextToShowWhenEmpty ("Notes for this session: lyrics, takes, things to do...", juce::Colours::grey);
+    editor.setTextToShowWhenEmpty ("Notes for this session: lyrics, takes, things to do...", Theme::dimText);
     editor.setText (session.getState()->notes, false);
     editor.onTextChange = [this]
     {

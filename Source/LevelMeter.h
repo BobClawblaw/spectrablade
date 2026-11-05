@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Theme.h"
 
 /** A level meter (the input's and the output's): one bar per channel on a -60..0 dB scale with a
     falling peak hold and a clip light. Levels come from a callback polled on the message thread. */
@@ -19,7 +20,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         auto r = getLocalBounds().toFloat();
-        g.setColour (juce::Colour (0xff1c1f24));
+        g.setColour (Theme::inset);
         g.fillRoundedRectangle (r, 3.0f);
 
         if (numChannels == 0)
@@ -35,12 +36,12 @@ public:
             const auto clipArea = row.removeFromRight (clipWidth);
             row.removeFromRight (2.0f);
 
-            g.setColour (clipped[ch] ? juce::Colours::red : juce::Colour (0xff3a2020));
+            g.setColour (clipped[ch] ? Theme::danger : Theme::clipOff);
             g.fillRect (clipArea);
 
             const auto w = row.getWidth() * proportion (level[ch]);
-            g.setGradientFill (juce::ColourGradient::horizontal (juce::Colour (0xff2e9e5b), row.getX(),
-                                                                 juce::Colour (0xffe0c040), row.getRight()));
+            g.setGradientFill (juce::ColourGradient::horizontal (Theme::meterLow, row.getX(),
+                                                                 Theme::meterMid, row.getRight()));
             g.fillRect (row.withWidth (w));
 
             if (hold[ch] > 0.0f)

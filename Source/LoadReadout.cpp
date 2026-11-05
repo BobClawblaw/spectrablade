@@ -1,4 +1,5 @@
 #include "LoadReadout.h"
+#include "Theme.h"
 
 LoadReadout::LoadReadout (std::function<Reading()> r) : read (std::move (r))
 {
@@ -38,7 +39,7 @@ void LoadReadout::resetDropouts()
 
 void LoadReadout::paint (juce::Graphics& g)
 {
-    g.setColour (warning ? juce::Colour (0xffff7b72) : juce::Colours::grey);
+    g.setColour (warning ? Theme::danger : Theme::dimText);
     g.setFont (14.0f);
     g.drawText (text, getLocalBounds().reduced (4, 0), juce::Justification::centredRight, true);
 }

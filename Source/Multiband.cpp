@@ -1,4 +1,5 @@
 #include "Multiband.h"
+#include "Theme.h"
 
 namespace Multiband
 {
@@ -323,10 +324,10 @@ void Panel::paint (juce::Graphics& g)
     for (size_t b = 0; b < 3; ++b)
     {
         auto column = header.removeFromLeft (width).reduced (4, 0);
-        g.setColour (juce::Colour (0xffd8dde3));
+        g.setColour (Theme::text);
         g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
         g.drawText (names[b], column.removeFromTop (17), juce::Justification::centred);
-        g.setColour (juce::Colours::grey);
+        g.setColour (Theme::dimText);
         g.setFont (juce::FontOptions (11.0f));
 
         if (! reductionDb)
@@ -339,9 +340,9 @@ void Panel::paint (juce::Graphics& g)
         auto text = column.removeFromTop (12);
         g.drawText (spans[b] + ",  " + juce::String ((*reductionDb)[b], 1) + " dB", text, juce::Justification::centred);
         auto bar = column.withSizeKeepingCentre (juce::jmin (120, column.getWidth()), 4);
-        g.setColour (juce::Colour (0xff1a1f24));
+        g.setColour (Theme::inset);
         g.fillRect (bar);
-        g.setColour (juce::Colour (0xffe0a040));
+        g.setColour (Theme::meterHigh);
         g.fillRect (bar.removeFromRight (juce::roundToInt (bar.getWidth() * juce::jlimit (0.0, 1.0, -(*reductionDb)[b] / 24.0))));
     }
 }

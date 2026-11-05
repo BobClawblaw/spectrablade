@@ -1,4 +1,5 @@
 #include "ClipList.h"
+#include "Theme.h"
 
 ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, std::function<void (juce::uint32)> chooseClip)
     : engine (e), selected (std::move (selectedClip)), choose (std::move (chooseClip))
@@ -10,17 +11,17 @@ ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, 
     header.addColumn ("Length (s)", length, 80);
     header.addColumn ("File", file, 180);
     header.addColumn ("", state, 90);
-    table.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff161b22));
+    table.setColour (juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
     addAndMakeVisible (table);
 
-    search.setTextToShowWhenEmpty ("Search names, files and tracks", juce::Colours::grey);
-    search.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0e1013));
+    search.setTextToShowWhenEmpty ("Search names, files and tracks", Theme::dimText);
+    search.setColour (juce::TextEditor::backgroundColourId, Theme::inset);
     search.onTextChange = [this] { rebuild(); };
     search.onEscapeKey = [this] { setSearch ({}); };
     addAndMakeVisible (search);
 
-    summary.setColour (juce::Label::textColourId, juce::Colours::grey);
+    summary.setColour (juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (summary);
 
     engine.session.addChangeListener (this);
@@ -200,12 +201,12 @@ void ClipList::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void ClipList::paintRowBackground (juce::Graphics& g, int, int, int, bool isSelected)
 {
-    g.fillAll (isSelected ? juce::Colour (0xff2f81f7).withAlpha (0.45f) : juce::Colour (0xff161b22));
+    g.fillAll (isSelected ? Theme::selection : Theme::surface);
 }
 
 void ClipList::paintCell (juce::Graphics& g, int row, int column, int width, int height, bool)
 {
-    g.setColour (column == file || column == state ? juce::Colours::lightgrey : juce::Colours::white);
+    g.setColour (column == file || column == state ? Theme::text : juce::Colours::white);
     g.setFont (13.0f);
     const auto right = column == start || column == length;
     g.drawText (getText (row, column), 6, 0, width - 12, height, right ? juce::Justification::centredRight : juce::Justification::centredLeft, true);

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioEngine.h"
+#include "OpenFiles.h"
 #include "Spectrogram.h"
 
 /** The editor view: time ruler, marker lane, one lane per channel, selection, cursor and playhead.
@@ -46,6 +47,14 @@ public:
     void setSelection (juce::Range<juce::int64>);
     void setCursor (juce::int64 frame);
     void selectAll();
+
+    /** Where the view is in the file (selection, cursor, zoom, spectral band), to be put back
+        with setPlace when the file is shown again. */
+    FilePlace getPlace() const;
+
+    /** Puts a kept place back in the file now open, in place of fitting it to the window as a new
+        file is; a place with no zoom fits it. */
+    void setPlace (const FilePlace&);
 
     /** Moves the cursor to a frame and scrolls it into view (a tenth of the way in) when it is
         out of view, keeping the zoom. */

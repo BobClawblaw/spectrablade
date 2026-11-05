@@ -1,4 +1,5 @@
 #include "TransportBar.h"
+#include "Theme.h"
 
 namespace TransportBar
 {
@@ -161,7 +162,7 @@ void IconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     auto r = getLocalBounds().toFloat().reduced (1.0f);
     const auto on = getToggleState();
-    auto fill = juce::Colour (0xff2a2f36);
+    auto fill = Theme::line;
 
     if (on)
         fill = onColour.withMultipliedBrightness (0.55f);
@@ -172,7 +173,7 @@ void IconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 
     g.setColour (fill);
     g.fillRoundedRectangle (r, 5.0f);
-    g.setColour (juce::Colour (0xff434a54));
+    g.setColour (Theme::lineStrong);
     g.drawRoundedRectangle (r, 5.0f, 1.0f);
 
     const auto side = juce::jmin (r.getWidth(), r.getHeight()) * 0.52f;
@@ -199,10 +200,10 @@ Bar::Bar (juce::ApplicationCommandManager& c, Commands commandIds) : commands (c
     };
 
     add (transport, ids.goToStart, Icons::goToStart(), plain);
-    add (transport, ids.playPause, Icons::play(), juce::Colour (0xff4cc38a));
+    add (transport, ids.playPause, Icons::play(), Theme::good);
     add (transport, ids.stop, Icons::stop(), plain);
-    add (transport, ids.record, Icons::record(), juce::Colour (0xffe5484d));
-    add (transport, ids.loop, Icons::loop(), juce::Colour (0xff4f9be8));
+    add (transport, ids.record, Icons::record(), Theme::danger);
+    add (transport, ids.loop, Icons::loop(), Theme::accent);
     add (transport, ids.goToEnd, Icons::goToEnd(), plain);
     add (zoom, ids.zoomIn, Icons::zoomIn(), plain);
     add (zoom, ids.zoomOut, Icons::zoomOut(), plain);
@@ -282,11 +283,11 @@ void Bar::paint (juce::Graphics& g)
 {
     // The time, large, in a panel of its own; red while recording.
     const auto r = timeArea.toFloat();
-    g.setColour (juce::Colour (0xff111418));
+    g.setColour (Theme::inset);
     g.fillRoundedRectangle (r, 5.0f);
-    g.setColour (showingRecording ? juce::Colour (0xffe5484d) : juce::Colour (0xff434a54));
+    g.setColour (showingRecording ? Theme::danger : Theme::lineStrong);
     g.drawRoundedRectangle (r.reduced (0.5f), 5.0f, 1.0f);
-    g.setColour (showingRecording ? juce::Colour (0xffff7a7e) : juce::Colour (0xff8fd3ff));
+    g.setColour (showingRecording ? juce::Colour (0xffff7a7e) : Theme::accentLight);
     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), r.getHeight() * 0.62f, juce::Font::plain));
     g.drawText (timeText, timeArea.reduced (8, 0), juce::Justification::centred, false);
 }
@@ -355,7 +356,7 @@ void SelectionPanel::set (juce::Range<juce::int64> selection, juce::Range<juce::
 void SelectionPanel::paint (juce::Graphics& g)
 {
     auto r = getLocalBounds().toFloat();
-    g.setColour (juce::Colour (0xff1c2026));
+    g.setColour (Theme::raised);
     g.fillRoundedRectangle (r, 4.0f);
 
     auto area = getLocalBounds().reduced (8, 2);
@@ -364,7 +365,7 @@ void SelectionPanel::paint (juce::Graphics& g)
     const auto labelWidth = 70;
     const auto columnWidth = (area.getWidth() - labelWidth) / 3;
     g.setFont (juce::FontOptions (11.0f));
-    g.setColour (juce::Colours::grey);
+    g.setColour (Theme::dimText);
     header.removeFromLeft (labelWidth);
 
     for (auto name : { "Start", "End", "Duration" })
@@ -376,10 +377,10 @@ void SelectionPanel::paint (juce::Graphics& g)
     {
         auto line = area.removeFromTop (rowHeight);
         g.setFont (juce::FontOptions (12.0f));
-        g.setColour (juce::Colours::lightgrey);
+        g.setColour (Theme::text);
         g.drawText (rowNames[row], line.removeFromLeft (labelWidth), juce::Justification::centredLeft, false);
         g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
-        g.setColour (row == 0 ? juce::Colour (0xff8fd3ff) : juce::Colour (0xffd8dde3));
+        g.setColour (row == 0 ? Theme::accentLight : Theme::text);
 
         for (size_t column = 0; column < 3; ++column)
             g.drawText (cells[(size_t) row][column], line.removeFromLeft (columnWidth), juce::Justification::centredRight, false);

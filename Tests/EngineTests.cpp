@@ -22,6 +22,9 @@
 #include "EffectPresetsTests.h"
 #include "GraphicEqTests.h"
 #include "DockTests.h"
+#include "OpenFilesTests.h"
+#include "PanelTests.h"
+#include "ThemeTests.h"
 #include "MultibandTests.h"
 #include "BuiltInEffectsTests.h"
 #include "NoiseTests.h"
@@ -505,6 +508,9 @@ int main (int argc, char* argv[])
         runBounceTests();
         runAuditionTests (engine);
         runDockTests();
+        runOpenFilesTests();
+        runPanelTests();
+        runThemeTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

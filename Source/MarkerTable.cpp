@@ -1,4 +1,5 @@
 #include "MarkerTable.h"
+#include "Theme.h"
 
 #include "TrackColours.h"
 
@@ -9,17 +10,17 @@ MarkerTable::MarkerTable (Session& s, Actions a) : session (s), actions (std::mo
     header.addColumn ("Start (s)", start, 90);
     header.addColumn ("End (s)", end, 90);
     header.addColumn ("Length (s)", length, 90);
-    table.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff161b22));
+    table.setColour (juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
     addAndMakeVisible (table);
 
-    search.setTextToShowWhenEmpty ("Search names", juce::Colours::grey);
-    search.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xff0e1013));
+    search.setTextToShowWhenEmpty ("Search names", Theme::dimText);
+    search.setColour (juce::TextEditor::backgroundColourId, Theme::inset);
     search.onTextChange = [this] { refilter(); };
     search.onEscapeKey = [this] { setSearch ({}); };
     addAndMakeVisible (search);
 
-    summary.setColour (juce::Label::textColourId, juce::Colours::grey);
+    summary.setColour (juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (summary);
 
     rename.onClick = [this] { returnKeyPressed (table.getSelectedRow()); };
@@ -200,7 +201,7 @@ void MarkerTable::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void MarkerTable::paintRowBackground (juce::Graphics& g, int, int, int, bool isSelected)
 {
-    g.fillAll (isSelected ? juce::Colour (0xff2f81f7).withAlpha (0.45f) : juce::Colour (0xff161b22));
+    g.fillAll (isSelected ? Theme::selection : Theme::surface);
 }
 
 void MarkerTable::paintCell (juce::Graphics& g, int row, int column, int width, int height, bool)

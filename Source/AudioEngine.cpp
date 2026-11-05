@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "Analysis.h"
 
 #include "BuiltInEffects.h"
 #include "AudioFileIO.h"
@@ -462,12 +463,16 @@ public:
 
     std::pair<float, float> take (int reader)     { return { peaks[reader][0].exchange (0.0f), peaks[reader][1].exchange (0.0f) }; }
 
+    void copyRecent (juce::AudioBuffer<float>& dest) const   { tap.copyRecent (dest); }
+
     const juce::String getName() const override   { return "Master Meter"; }
     void prepareToPlay (double, int) override     {}
     void releaseResources() override              {}
 
     void processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) override
     {
+        tap.write (buffer);
+
         for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
         {
             const auto range = juce::FloatVectorOperations::findMinAndMax (buffer.getReadPointer (ch), buffer.getNumSamples());
@@ -498,12 +503,24 @@ public:
     void setStateInformation (const void*, int) override {}
 
 private:
-    std::atomic<float> peaks[2][2] { { { 0.0f }, { 0.0f } }, { { 0.0f }, { 0.0f } } };   // [reader][channel]
+    Analysis::OutputTap tap;
+    std::atomic<float> peaks[3][2] { { { 0.0f }, { 0.0f } }, { { 0.0f }, { 0.0f } }, { { 0.0f }, { 0.0f } } };   // [reader][channel]
 };
 
 std::pair<float, float> AudioEngine::takeMasterPeaks (MasterReader reader)
 {
-    return static_cast<MasterMeter*> (meterNode->getProcessor())->take (reader == MasterReader::mixer ? 0 : 1);
+    return static_cast<MasterMeter*> (meterNode->getProcessor())->take ((int) reader);
+}
+
+void AudioEngine::copyRecentOutput (juce::AudioBuffer<float>& dest) const
+{
+    static_cast<MasterMeter*> (meterNode->getProcessor())->copyRecent (dest);
+}
+
+double AudioEngine::getOutputSampleRate() const
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+    return device != nullptr ? device->getCurrentSampleRate() : 0.0;
 }
 
 //==============================================================================
@@ -634,6 +651,14 @@ juce::String AudioEngine::adoptFile (const juce::File& file, AudioFileIO::Loaded
     player->resetSource();
     sendChangeMessage();
     return {};
+}
+
+void AudioEngine::swapDocument (AudioDocument& other)
+{
+    player->pause();
+    document.swapWith (other);
+    player->resetSource();
+    sendChangeMessage();
 }
 
 //==============================================================================

@@ -1,17 +1,34 @@
 #include "UndoHistory.h"
+#include "Theme.h"
 
-UndoHistory::UndoHistory (Session& s) : session (s)
+UndoHistory::UndoHistory (Session& s) : UndoHistory (s, nullptr, {})
 {
-    list.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xff161b22));
+}
+
+UndoHistory::UndoHistory (Session& s, AudioDocument& d, std::function<bool()> shown) : UndoHistory (s, &d, std::move (shown))
+{
+}
+
+UndoHistory::UndoHistory (Session& s, AudioDocument* d, std::function<bool()> shown)
+    : session (s), document (d), sessionShown (std::move (shown))
+{
+    list.setColour (juce::ListBox::backgroundColourId, Theme::surface);
     list.setRowHeight (22);
     addAndMakeVisible (list);
     session.addChangeListener (this);
+
+    if (document != nullptr)
+        document->addChangeListener (this);
+
     refresh();
 }
 
 UndoHistory::~UndoHistory()
 {
     session.removeChangeListener (this);
+
+    if (document != nullptr)
+        document->removeChangeListener (this);
 }
 
 juce::String UndoHistory::getText (int row) const
@@ -22,7 +39,12 @@ juce::String UndoHistory::getText (int row) const
 void UndoHistory::chooseRow (int row)
 {
     if (juce::isPositiveAndBelow (row, steps.size()))
-        session.goTo (row);
+    {
+        if (showingSession())
+            session.goTo (row);
+        else
+            document->goTo (row);
+    }
 
     refresh();
 }
@@ -39,16 +61,16 @@ void UndoHistory::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void UndoHistory::refresh()
 {
-    steps = session.getHistory();
+    steps = showingSession() ? session.getHistory() : document->getHistory();
     list.updateContent();
-    list.selectRow (session.getPosition(), false, true);
+    list.selectRow (position(), false, true);
     list.repaint();
 }
 
 void UndoHistory::paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected)
 {
-    g.fillAll (selected ? juce::Colour (0xff2f81f7).withAlpha (0.45f) : juce::Colour (0xff161b22));
-    g.setColour (row > session.getPosition() ? juce::Colours::grey : juce::Colours::white);
+    g.fillAll (selected ? Theme::selection : Theme::surface);
+    g.setColour (row > position() ? Theme::dimText : juce::Colours::white);
     g.setFont (13.0f);
     g.drawText (getText (row), 8, 0, width - 16, height, juce::Justification::centredLeft, true);
 }

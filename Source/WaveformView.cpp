@@ -1,4 +1,5 @@
 #include "WaveformView.h"
+#include "Theme.h"
 
 namespace
 {
@@ -11,7 +12,7 @@ namespace
     const juce::Colour laneLine    (0xff2a2f37);
     const juce::Colour waveColour  (0xff4fc3a1);
     const juce::Colour selectColour (0x3346a0ff);
-    const juce::Colour cursorColour (0xffffd34d);
+    const juce::Colour cursorColour = Theme::cursor;
     const juce::Colour markerColour (0xffff8a3d);
     const juce::Colour regionColour (0xff58a6ff);
 
@@ -101,7 +102,7 @@ void WaveformView::drawMarkers (juce::Graphics& g)
     const auto lane = getMarkerLane().toFloat();
     const auto wave = getWaveArea().toFloat();
 
-    g.setColour (juce::Colour (0xff181b20));
+    g.setColour (Theme::raised);
     g.fillRect (lane);
 
     if (! engine.document.hasAudio())
@@ -147,7 +148,7 @@ void WaveformView::drawMarkers (juce::Graphics& g)
             const float dashes[] = { 4.0f, 3.0f };
             g.setColour (markerColour.withAlpha (0.7f));
             g.drawDashedLine (juce::Line<float> (x1, wave.getY(), x1, wave.getBottom()), dashes, 2);
-            g.setColour (juce::Colours::lightgrey);
+            g.setColour (Theme::text);
             g.drawText (m.name, juce::Rectangle<float> (x1 + 7.0f, lane.getY(), 120.0f, lane.getHeight()),
                         juce::Justification::centredLeft, true);
         }
@@ -224,6 +225,31 @@ void WaveformView::showFrame (juce::int64 frame)
 
     if ((double) frame < viewStart || (double) frame >= viewStart + width)
         setView ((double) frame - width * 0.1, framesPerPixel);
+}
+
+FilePlace WaveformView::getPlace() const
+{
+    return { selection, cursor, viewStart, framesPerPixel, band };
+}
+
+void WaveformView::setPlace (const FilePlace& place)
+{
+    // Taken as the file's arrival, so the change it brings doesn't fit it to the window afterwards.
+    lastResetCount = engine.document.getResetCount();
+    lastVersion = engine.document.getVersion();
+
+    if (place.framesPerPixel <= 0.0)
+    {
+        zoomToFit();
+        setCursor (0);
+        return;
+    }
+
+    setView (place.viewStart, place.framesPerPixel);
+    setSelection (place.selection);
+    band = place.selection.isEmpty() ? juce::Range<double>() : place.band;
+    cursor = juce::jlimit ((juce::int64) 0, engine.document.getNumFrames(), place.cursor);
+    repaint();
 }
 
 void WaveformView::selectAll()
@@ -414,7 +440,7 @@ void WaveformView::renderWaveform()
 
 void WaveformView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area)
 {
-    g.setColour (juce::Colour (0xff1b1e23));
+    g.setColour (Theme::surface);
     g.fillRect (area);
 
     const auto rate = engine.document.getSampleRate();
@@ -441,9 +467,9 @@ void WaveformView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area)
     for (auto t = std::floor (startSeconds / tick) * tick; t <= endSeconds; t += tick)
     {
         const auto x = (float) ((t * rate - viewStart) / framesPerPixel);
-        g.setColour (juce::Colours::grey);
+        g.setColour (Theme::dimText);
         g.drawVerticalLine ((int) x, (float) area.getBottom() - 6.0f, (float) area.getBottom());
-        g.setColour (juce::Colours::lightgrey);
+        g.setColour (Theme::text);
         g.drawText (formatTime (juce::jmax (0.0, t), tick), juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 80.0f, (float) area.getHeight() - 4.0f),
                     juce::Justification::centredLeft, false);
     }
@@ -534,7 +560,7 @@ void WaveformView::drawEmpty (juce::Graphics& g, juce::Rectangle<int> area)
     const auto lineHeight = 24;
     const auto listHeight = recent.isEmpty() ? 0 : 34 + recent.size() * lineHeight;
     auto block = area.withSizeKeepingCentre (juce::jmin (area.getWidth() - 40, 560), 30 + listHeight);
-    g.setColour (juce::Colours::grey);
+    g.setColour (Theme::dimText);
     g.setFont (juce::FontOptions (16.0f));
     g.drawText ("Drop an audio file here, or use File > Open", block.removeFromTop (30), juce::Justification::centred);
 
@@ -542,7 +568,7 @@ void WaveformView::drawEmpty (juce::Graphics& g, juce::Rectangle<int> area)
     {
         block.removeFromTop (14);
         g.setFont (juce::FontOptions (12.0f, juce::Font::bold));
-        g.setColour (juce::Colour (0xff7d8794));
+        g.setColour (Theme::dimText);
         g.drawText ("RECENT", block.removeFromTop (20), juce::Justification::centredLeft);
 
         for (int i = 0; i < recent.size(); ++i)
@@ -552,7 +578,7 @@ void WaveformView::drawEmpty (juce::Graphics& g, juce::Rectangle<int> area)
 
             if (hovered)
             {
-                g.setColour (juce::Colour (0xff2a2f36));
+                g.setColour (Theme::line);
                 g.fillRoundedRectangle (line.toFloat(), 4.0f);
             }
 
@@ -560,10 +586,10 @@ void WaveformView::drawEmpty (juce::Graphics& g, juce::Rectangle<int> area)
             const auto name = recent[i].getFileName();
             g.setFont (juce::FontOptions (14.0f));
             const auto nameWidth = juce::jmin (text.getWidth(), juce::GlyphArrangement::getStringWidthInt (g.getCurrentFont(), name) + 16);
-            g.setColour (hovered ? juce::Colour (0xff8fd3ff) : juce::Colour (0xffd8dde3));
+            g.setColour (hovered ? Theme::accentLight : Theme::text);
             g.drawText (name, text.removeFromLeft (nameWidth), juce::Justification::centredLeft, true);
             g.setFont (juce::FontOptions (12.0f));
-            g.setColour (juce::Colour (0xff6b737d));
+            g.setColour (Theme::faintText);
             g.drawText (recent[i].getParentDirectory().getFullPathName().replace (juce::File::getSpecialLocation (juce::File::userHomeDirectory).getFullPathName(), "~"),
                         text, juce::Justification::centredLeft, true);
             links.emplace_back (line, recent[i]);

@@ -1,4 +1,5 @@
 #include "RackView.h"
+#include "Theme.h"
 #include "PluginMenu.h"
 
 //==============================================================================
@@ -14,7 +15,7 @@ public:
         name.setText (juce::String (index + 1) + ". " + description.name, juce::dontSendNotification);
         name.setTooltip (description.manufacturerName + " - " + description.pluginFormatName);
         format.setText (description.pluginFormatName, juce::dontSendNotification);
-        format.setColour (juce::Label::textColourId, juce::Colours::grey);
+        format.setColour (juce::Label::textColourId, Theme::dimText);
 
         bypass.setToggleState (! rackEngine.isRackSlotBypassed (index), juce::dontSendNotification);
         bypass.setTooltip ("On/off (bypass)");
@@ -34,7 +35,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.setColour (juce::Colour (0xff23272e));
+        g.setColour (Theme::raised);
         g.fillRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 4.0f);
     }
 
@@ -78,11 +79,11 @@ RackView::~RackView()
 
 void RackView::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1b1e23));
+    g.fillAll (Theme::surface);
 
     if (rows.isEmpty())
     {
-        g.setColour (juce::Colours::grey);
+        g.setColour (Theme::dimText);
         g.drawFittedText ("No effects.\nScan your plug-ins, then add VST3 or Audio Unit effects here.",
                           getLocalBounds().reduced (16).withTrimmedTop (80), juce::Justification::centredTop, 4);
     }

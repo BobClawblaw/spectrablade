@@ -296,12 +296,67 @@ void AudioDocument::redo()
         setCurrent (history[(size_t) ++position]);
 }
 
+juce::StringArray AudioDocument::getHistory() const
+{
+    juce::StringArray steps;
+
+    for (auto& entry : history)
+        steps.add (entry.description);
+
+    return steps;
+}
+
+void AudioDocument::goTo (int step)
+{
+    if (juce::isPositiveAndBelow (step, (int) history.size()) && step != position)
+    {
+        position = step;
+        setCurrent (history[(size_t) position]);
+    }
+}
+
 void AudioDocument::markSaved (const juce::File& savedAs, int bitDepth)
 {
     savedPosition = position;
     file = savedAs;
     sourceBitDepth = bitDepth;
     sendChangeMessage();
+}
+
+void AudioDocument::swapWith (AudioDocument& other)
+{
+    if (&other == this)
+        return;
+
+    auto leaving = getSnapshot();
+    auto arriving = other.getSnapshot();
+
+    std::swap (history, other.history);
+    std::swap (position, other.position);
+    std::swap (savedPosition, other.savedPosition);
+    std::swap (file, other.file);
+    std::swap (sourceBitDepth, other.sourceBitDepth);
+
+    for (auto* d : { this, &other })
+    {
+        d->sampleRate = d->history[(size_t) d->position].sampleRate;
+        ++d->resetCount;
+        ++d->version;
+    }
+
+    {
+        const juce::SpinLock::ScopedLockType sl (lock);
+        current = std::move (arriving);
+    }
+
+    {
+        const juce::SpinLock::ScopedLockType sl (other.lock);
+        other.current = leaving;
+    }
+
+    retire (std::move (leaving));
+    sendChangeMessage();
+    other.sendChangeMessage();
 }
 
 void AudioDocument::releaseUnusedSnapshots()

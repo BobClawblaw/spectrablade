@@ -1,4 +1,5 @@
 #include "AuditionPreview.h"
+#include "Theme.h"
 
 AuditionPreview::AuditionPreview (juce::AudioFormatManager& f, Player p, bool previewOn)
     : formats (f), player (std::move (p))
@@ -13,7 +14,7 @@ AuditionPreview::AuditionPreview (juce::AudioFormatManager& f, Player p, bool pr
     addAndMakeVisible (playButton);
 
     description.setFont (juce::FontOptions (12.0f));
-    description.setColour (juce::Label::textColourId, juce::Colours::grey);
+    description.setColour (juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (description);
 
     setSize (520, 36);

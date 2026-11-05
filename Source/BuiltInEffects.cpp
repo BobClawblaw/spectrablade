@@ -1,4 +1,5 @@
 #include "BuiltInEffects.h"
+#include "Theme.h"
 
 namespace BuiltInEffects
 {
@@ -304,14 +305,14 @@ namespace
 
             // "Reduction", the dB, and a bar growing from the right as the sound is turned down (24 dB full).
             auto strip = getLocalBounds().removeFromBottom (stripHeight).reduced (12, 8);
-            g.setColour (juce::Colours::grey);
+            g.setColour (Theme::dimText);
             g.setFont (juce::FontOptions (12.0f));
             g.drawText ("Reduction", strip.removeFromLeft (80), juce::Justification::centredLeft);
             g.drawText (juce::String (shownDb, 1) + " dB", strip.removeFromRight (64), juce::Justification::centredRight);
             auto bar = strip.reduced (8, 0).withSizeKeepingCentre (strip.getWidth() - 16, 6);
-            g.setColour (juce::Colour (0xff1a1f24));
+            g.setColour (Theme::inset);
             g.fillRect (bar);
-            g.setColour (juce::Colour (0xffe0a040));
+            g.setColour (Theme::meterHigh);
             g.fillRect (bar.removeFromRight (juce::roundToInt (bar.getWidth() * juce::jlimit (0.0, 1.0, -shownDb / 24.0))));
         }
 

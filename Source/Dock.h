@@ -162,7 +162,11 @@ namespace Dock
         /** A floating panel's window was made (to give it the app's keys, say). */
         virtual void windowCreated (juce::DocumentWindow&)            {}
 
-        /** Where a panel shown again goes: beside which panel, on which side. */
+        /** The share of the room a panel shown again takes where it goes. */
+        virtual double defaultShare (const juce::String&)             { return 0.3; }
+
+        /** Where a panel shown again goes: beside which panel, on which side (beside no panel: along
+            that edge of the whole dock). */
         virtual std::pair<juce::String, Side> defaultPlace (const juce::String& id) = 0;
     };
 

@@ -1,4 +1,5 @@
 #include "MultitrackView.h"
+#include "Theme.h"
 #include "PluginMenu.h"
 #include "Metronome.h"
 #include "TrackColours.h"
@@ -10,7 +11,7 @@ namespace
     const juce::Colour laneAlternate (0xff1c2027);
     const juce::Colour frozenColour (0xff9fd8ff);
     const juce::Colour laneLine (0xff2a2f37);
-    const juce::Colour cursorColour (0xffffd34d);
+    const juce::Colour cursorColour = Theme::cursor;
     const juce::Colour playColour (0xffffffff);
 
     constexpr int edgeGrab = 6;   // pixels from a clip's edge that trim instead of move
@@ -61,7 +62,7 @@ public:
         };
 
         arm.setClickingTogglesState (true);
-        arm.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffd0453a));
+        arm.setColour (juce::TextButton::buttonOnColourId, Theme::danger);
         arm.setTooltip ("Arm for recording: Record puts a take on each armed track, from its input");
         arm.onClick = [this] { view.setArmed (trackId, arm.getToggleState()); };
 
@@ -71,19 +72,19 @@ public:
         for (auto* b : { &mute, &solo })
         {
             b->setClickingTogglesState (true);
-            b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? juce::Colour (0xffd0453a) : juce::Colour (0xffd8b43a));
+            b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
         }
 
         sendsButton.setTooltip ("Send this track to buses");
-        sendsButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+        sendsButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
         sendsButton.onClick = [this] { view.showSends (trackId, sendsButton); };
 
         effectsButton.setTooltip ("This track's effects");
-        effectsButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+        effectsButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
         effectsButton.onClick = [this] { view.showEffectsMenu (trackId, effectsButton); };
 
         automationButton.setTooltip ("Volume and pan envelopes");
-        automationButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+        automationButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
         automationButton.onClick = [this] { view.showAutomationMenu (trackId, automationButton); };
 
         mute.setTooltip ("Mute");
@@ -123,7 +124,7 @@ public:
         for (auto* s : { &gain, &pan })
         {
             s->setSliderStyle (juce::Slider::LinearBar);
-            s->setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
+            s->setColour (juce::Slider::trackColourId, Theme::lineStrong);
             s->onDragEnd = [this]
             {
                 view.finishAutomationPass();
@@ -304,7 +305,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (isSelected ? juce::Colour (0xff232a33) : juce::Colour (isBus ? 0xff16191d : isFolder ? 0xff1e2229 : 0xff1b1e23));
+        g.fillAll (isSelected ? Theme::hover : juce::Colour (isBus ? 0xff16191d : isFolder ? 0xff1e2229 : 0xff1b1e23));
 
         // Two bars, left and right, -60 dB at the bottom to +6 dB at the top: red-tinted while
         // they show the input, each with a line at its held peak. A red light on top once
@@ -312,10 +313,10 @@ public:
         if (! isFolder)
         {
             auto area = meterArea().toFloat();
-            g.setColour (clipped ? juce::Colour (0xffff4040) : juce::Colour (0xff2a2f36));
+            g.setColour (clipped ? Theme::danger : Theme::line);
             g.fillRect (area.removeFromTop (3.0f).withTrimmedRight (1.0f));
             area.removeFromTop (1.0f);
-            g.setColour (juce::Colour (0xff0e1013));
+            g.setColour (Theme::inset);
             g.fillRect (area);
 
             const auto heightOf = [&area] (float level)
@@ -334,7 +335,7 @@ public:
 
                 if (holds[ch] > 0.0f)
                 {
-                    g.setColour (holds[ch] >= 1.0f ? juce::Colour (0xffff4040) : barColour.brighter (0.5f));
+                    g.setColour (holds[ch] >= 1.0f ? Theme::danger : barColour.brighter (0.5f));
                     g.fillRect (juce::Rectangle<float> (x, area.getBottom() - juce::jmax (1.0f, heightOf (holds[ch])), 2.0f, 1.0f));
                 }
             }
@@ -359,24 +360,24 @@ public:
             else
                 triangle.addTriangle (box.getTopLeft(), box.getTopRight(), { box.getCentreX(), box.getBottom() });
 
-            g.setColour (juce::Colours::lightgrey);
+            g.setColour (Theme::text);
             g.fillPath (triangle);
             g.setFont (12.0f);
-            g.setColour (juce::Colours::grey);
+            g.setColour (Theme::dimText);
             g.drawText (juce::String (members) + (members == 1 ? " track" : " tracks") + (collapsed ? ", collapsed" : ""),
                         getLocalBounds().withTrimmedLeft (32).withTrimmedTop (32).withHeight (20), juce::Justification::centredLeft);
         }
 
         if (group != 0)
         {
-            g.setColour (juce::Colours::lightgrey);
+            g.setColour (Theme::text);
             g.setFont (11.0f);
             g.drawText ("G" + juce::String (group), juce::Rectangle<int> (getWidth() - 30, getHeight() - 15, 26, 12), juce::Justification::centredRight);
         }
 
         if (inverted && ! isFolder)
         {
-            g.setColour (juce::Colour (0xffe3c74f));
+            g.setColour (Theme::warn);
             g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
             g.drawText (juce::String (juce::CharPointer_UTF8 ("\xc3\x98")), name.getX() - 14, name.getY(), 14, name.getHeight(), juce::Justification::centred);
         }
@@ -384,7 +385,7 @@ public:
         // Solo safe: a bar under the solo button.
         if (soloSafe && solo.isVisible() && ! solo.getBounds().isEmpty())
         {
-            g.setColour (juce::Colour (0xffe3c74f));
+            g.setColour (Theme::warn);
             g.fillRect (solo.getBounds().getX() + 3, solo.getBounds().getBottom() + 1, solo.getWidth() - 6, 2);
         }
 
@@ -590,7 +591,7 @@ public:
         addAndMakeVisible (newBus);
         addChildComponent (empty);
         empty.setText ("No buses yet.", juce::dontSendNotification);
-        empty.setColour (juce::Label::textColourId, juce::Colours::grey);
+        empty.setColour (juce::Label::textColourId, Theme::dimText);
         engine.session.addChangeListener (this);
         refresh();
     }
@@ -679,10 +680,10 @@ private:
                 row->level.setSkewFactorFromMidPoint (-12.0);
                 row->level.setDoubleClickReturnValue (true, 0.0);
                 row->level.setTextValueSuffix (" dB");
-                row->level.setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
+                row->level.setColour (juce::Slider::trackColourId, Theme::lineStrong);
                 row->pre.setClickingTogglesState (true);
                 row->pre.setTooltip ("Send before the track's volume");
-                row->pre.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff3a7bd8));
+                row->pre.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
 
                 // Turning a level or Pre on a send that is off turns it on.
                 row->on.onClick = [this, row] { apply (*row, row->on.getToggleState() ? "Add Send" : "Remove Send", false); };
@@ -1774,7 +1775,7 @@ void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area
         const auto [bar, inBar] = map.barAndBeat (beat);
         const auto labelled = label.bars == 0 || (inBar == 0 && bar % label.bars == 0);
         const auto change = inBar == 0 ? changeAt (bar) : s.tempoChanges.end();
-        g.setColour (change != s.tempoChanges.end() ? juce::Colour (0xfff2cc60) : juce::Colours::grey);
+        g.setColour (change != s.tempoChanges.end() ? juce::Colour (0xfff2cc60) : Theme::dimText);
         g.drawVerticalLine ((int) x, change != s.tempoChanges.end() ? (float) area.getY() : (float) area.getBottom() - (labelled ? 8.0f : 4.0f),
                             (float) area.getBottom());
 
@@ -1785,7 +1786,7 @@ void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area
         // A bar where the tempo changes shows the new tempo and time signature after its number.
         const auto text = inBar == 0 ? juce::String (bar + 1) : juce::String (bar + 1) + "." + juce::String (inBar + 1);
         const auto box = juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 120.0f, (float) area.getHeight() - 4.0f);
-        g.setColour (juce::Colours::lightgrey);
+        g.setColour (Theme::text);
         g.drawText (text, box, juce::Justification::centredLeft, false);
 
         if (change != s.tempoChanges.end())
@@ -1808,7 +1809,7 @@ void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area
 
 void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) const
 {
-    g.setColour (juce::Colour (0xff1b1e23));
+    g.setColour (Theme::surface);
     g.fillRect (area);
 
     if (showBars)
@@ -1828,9 +1829,9 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
     for (auto t = std::floor (startSeconds / tick) * tick; t <= endSeconds; t += tick)
     {
         const auto x = xForFrame ((juce::int64) std::llround (t * rate));
-        g.setColour (juce::Colours::grey);
+        g.setColour (Theme::dimText);
         g.drawVerticalLine ((int) x, (float) area.getBottom() - 6.0f, (float) area.getBottom());
-        g.setColour (juce::Colours::lightgrey);
+        g.setColour (Theme::text);
         g.drawText (formatTime (juce::jmax (0.0, t), tick), juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 80.0f, (float) area.getHeight() - 4.0f),
                     juce::Justification::centredLeft, false);
     }
@@ -1839,7 +1840,7 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
 void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& c) const
 {
     const auto r = clipBounds (track, c);
-    const auto colour = c.muted ? juce::Colour (0xff6e7681) : TrackColours::of (c, shown().tracks[(size_t) track], track);
+    const auto colour = c.muted ? Theme::faintText : TrackColours::of (c, shown().tracks[(size_t) track], track);
     const auto selected = isClipSelected (c.id);
 
     g.setColour (colour.withAlpha (0.18f));
@@ -1965,7 +1966,7 @@ void MultitrackView::paint (juce::Graphics& g)
                 continue;
 
             const auto lane = juce::Rectangle<int> (area.getX(), laneTop (t), area.getWidth(), laneHeight);
-            g.setColour (s.tracks[(size_t) t].id == selectedTrackId ? juce::Colour (0xff20262e) : (rowOf (t) % 2 == 0 ? laneColour : laneAlternate));
+            g.setColour (s.tracks[(size_t) t].id == selectedTrackId ? Theme::hover : (rowOf (t) % 2 == 0 ? laneColour : laneAlternate));
             g.fillRect (lane);
             g.setColour (laneLine);
             g.drawHorizontalLine (lane.getBottom() - 1, (float) lane.getX(), (float) lane.getRight());
@@ -1982,7 +1983,7 @@ void MultitrackView::paint (juce::Graphics& g)
 
                 g.setColour (juce::Colour (0x0affffff));
                 g.fillRect (lane.reduced (0, 3));
-                g.setColour (juce::Colours::grey);
+                g.setColour (Theme::dimText);
                 g.setFont (13.0f);
                 g.drawText (feeders.isEmpty() ? "Bus: nothing sends here yet. Use a track's Sends button."
                                               : "Bus: from " + feeders.joinIntoString (", "),
@@ -2020,7 +2021,7 @@ void MultitrackView::paint (juce::Graphics& g)
 
                 if (members.empty())
                 {
-                    g.setColour (juce::Colours::grey);
+                    g.setColour (Theme::dimText);
                     g.setFont (13.0f);
                     g.drawText ("Folder: empty. Right-click a track's header to put it in.", lane.reduced (12, 0), juce::Justification::centredLeft);
                 }
@@ -2070,7 +2071,7 @@ void MultitrackView::paint (juce::Graphics& g)
 
         if (s.tracks.empty())
         {
-            g.setColour (juce::Colours::grey);
+            g.setColour (Theme::dimText);
             g.setFont (15.0f);
             g.drawText ("Drop audio files here, or choose Multitrack > Import Audio", area, juce::Justification::centred);
         }
@@ -2112,9 +2113,9 @@ void MultitrackView::paint (juce::Graphics& g)
             for (auto lane : lanes)
             {
                 const auto r = juce::Rectangle<float> (x0, (float) laneTop (lane) + 2.0f, juce::jmax (1.0f, x1 - x0), (float) laneHeight - 4.0f);
-                g.setColour (juce::Colour (0xffd0453a).withAlpha (0.3f));
+                g.setColour (Theme::danger.withAlpha (0.3f));
                 g.fillRoundedRectangle (r, 3.0f);
-                g.setColour (juce::Colour (0xffd0453a));
+                g.setColour (Theme::danger);
                 g.drawRoundedRectangle (r.reduced (0.5f), 3.0f, 1.0f);
             }
         }
@@ -2161,9 +2162,9 @@ void MultitrackView::paint (juce::Graphics& g)
         if (x1 > x0)
             g.fillRect (juce::Rectangle<float> (x0, (float) timeRulerHeight - 5.0f, x1 - x0, 5.0f));
     }
-    g.setColour (juce::Colour (0xff1b1e23));
+    g.setColour (Theme::surface);
     g.fillRect (0, 0, headerWidth, rulerHeight);
-    g.setColour (juce::Colours::lightgrey);
+    g.setColour (Theme::text);
     g.setFont (12.0f);
     g.drawText (juce::String (s.sampleRate / 1000.0, 1) + " kHz session", juce::Rectangle<int> (8, 0, headerWidth - 8, timeRulerHeight),
                 juce::Justification::centredLeft);
@@ -2208,7 +2209,7 @@ int MultitrackView::markerAt (juce::Point<int> p) const
 void MultitrackView::drawMarkers (juce::Graphics& g, juce::Rectangle<int> area) const
 {
     const auto lane = juce::Rectangle<int> (area.getX(), timeRulerHeight, area.getWidth(), markerLaneHeight).toFloat();
-    g.setColour (juce::Colour (0xff181b20));
+    g.setColour (Theme::raised);
     g.fillRect (lane);
 
     g.saveState();

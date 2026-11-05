@@ -1,4 +1,5 @@
 #include "ClipProperties.h"
+#include "Theme.h"
 
 namespace
 {
@@ -37,7 +38,7 @@ ClipProperties::ClipProperties (AudioEngine& e, std::function<juce::uint32()> to
         addAndMakeVisible (row.editor);
     }
 
-    info.setColour (juce::Label::textColourId, juce::Colours::grey);
+    info.setColour (juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (info);
     engine.session.addChangeListener (this);
     refresh();
@@ -171,7 +172,7 @@ void ClipProperties::refresh()
 
 void ClipProperties::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff1b1e23));
+    g.fillAll (Theme::surface);
 }
 
 void ClipProperties::resized()

@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Theme.h"
 #include "BuiltInEffects.h"
 #include "AudioFileIO.h"
 #include "Bounce.h"
@@ -19,6 +20,8 @@
 #include "TrackTemplate.h"
 #include "SessionNotes.h"
 #include "UndoHistory.h"
+#include "LevelsPanel.h"
+#include "Analysis.h"
 
 namespace
 {
@@ -47,22 +50,31 @@ namespace
     {
         const juce::String editor { "editor" }, rack { "rack" }, selection { "selection" }, mixer { "mixer" },
                            clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
-                           history { "history" }, notes { "notes" };
+                           history { "history" }, notes { "notes" }, files { "files" }, levels { "levels" },
+                                spectrum { "spectrum" }, phase { "phase" };
 
         juce::StringArray all()
         {
-            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes };
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase };
         }
     }
 
     /** The workspaces SpectraBlade comes with: Classic, the editor with the effects rack and the
-        selection beside it; Multitrack, with the mixer under the editor and the clip panels beside it. */
+        selection beside it; Editing, with the open files on the left, the undo history among the rack's
+        tabs and the levels along the bottom; Multitrack, with the mixer
+        under the editor and the clip panels beside it. */
     std::vector<std::pair<juce::String, Dock::Layout>> builtInWorkspaces()
     {
         using Dock::Side;
         auto classic = Dock::Layout::single (Panels::editor);
         classic.dock (Panels::rack, Panels::editor, Side::right, 0.28);
         classic.dock (Panels::selection, Panels::rack, Side::bottom, 0.2);
+
+        auto editing = classic;
+        editing.dock (Panels::files, Panels::editor, Side::left, 0.22);
+        editing.dock (Panels::history, Panels::rack, Side::centre);
+        editing.bringToFront (Panels::rack);
+        editing.dockAtEdge (Panels::levels, Side::bottom, 0.12);
 
         auto multitrack = Dock::Layout::single (Panels::editor);
         multitrack.dock (Panels::rack, Panels::editor, Side::right, 0.26);
@@ -72,7 +84,13 @@ namespace
         multitrack.dock (Panels::clipProperties, Panels::rack, Side::top, 0.4);
         multitrack.dockAtEdge (Panels::mixer, Side::bottom, 0.3);
 
-        return { { "Classic", classic }, { "Multitrack", multitrack } };
+        auto analysis = Dock::Layout::single (Panels::editor);
+        analysis.dock (Panels::rack, Panels::editor, Side::right, 0.26);
+        analysis.dockAtEdge (Panels::spectrum, Side::bottom, 0.34);
+        analysis.dock (Panels::phase, Panels::spectrum, Side::right, 0.22);
+        analysis.dockAtEdge (Panels::levels, Side::bottom, 0.1);
+
+        return { { "Classic", classic }, { "Editing", editing }, { "Multitrack", multitrack }, { "Analysis", analysis } };
     }
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
@@ -100,7 +118,8 @@ namespace
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
-        cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace
+        cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
+        cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -186,7 +205,7 @@ class MainComponent::KeyShortcutsWindow final : public juce::DocumentWindow
 {
 public:
     KeyShortcutsWindow (juce::ApplicationCommandManager& commandManager, std::function<void()> onClose)
-        : DocumentWindow ("Keyboard Shortcuts", juce::Colours::darkgrey, DocumentWindow::closeButton),
+        : DocumentWindow ("Keyboard Shortcuts", Theme::surface, DocumentWindow::closeButton),
           closeCallback (std::move (onClose))
     {
         setUsingNativeTitleBar (true);
@@ -212,7 +231,7 @@ public:
     EqWindow (const ParametricEq::Settings& settings, double sampleRate, std::function<void (const ParametricEq&)> onApply,
               std::function<void (const ParametricEq::Settings&)> onSettings, std::function<void (const ParametricEq*)> onPreview,
               std::function<void()> onClose)
-        : DocumentWindow ("Parametric EQ", juce::Colours::darkgrey, DocumentWindow::closeButton),
+        : DocumentWindow ("Parametric EQ", Theme::surface, DocumentWindow::closeButton),
           closeCallback (std::move (onClose))
     {
         setUsingNativeTitleBar (true);
@@ -317,7 +336,7 @@ class MainComponent::PluginEditorWindow final : public juce::DocumentWindow
 {
 public:
     PluginEditorWindow (juce::AudioProcessor& p, std::function<void (PluginEditorWindow*)> onClose)
-        : DocumentWindow (p.getName(), juce::Colours::darkgrey, DocumentWindow::closeButton | DocumentWindow::minimiseButton),
+        : DocumentWindow (p.getName(), Theme::surface, DocumentWindow::closeButton | DocumentWindow::minimiseButton),
           processor (p), closeCallback (std::move (onClose))
     {
         juce::AudioProcessorEditor* editor = p.hasEditor() ? p.createEditorAndMakeActive() : nullptr;
@@ -352,7 +371,7 @@ class MainComponent::PluginListWindow final : public juce::DocumentWindow
 public:
     PluginListWindow (AudioEngine& audioEngine, const juce::File& deadMansPedal, juce::PropertiesFile* props,
                       std::function<void()> onClose)
-        : DocumentWindow ("Plug-ins", juce::Colours::darkgrey, DocumentWindow::closeButton),
+        : DocumentWindow ("Plug-ins", Theme::surface, DocumentWindow::closeButton),
           closeCallback (std::move (onClose))
     {
         setContentOwned (new Panel (audioEngine, deadMansPedal, props), false);
@@ -389,7 +408,7 @@ private:
             for (auto* c : std::initializer_list<juce::Component*> { &scanButton, &retryButton, &removeButton, &stopButton, &progressBar, &status })
                 addAndMakeVisible (c);
 
-            status.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+            status.setColour (juce::Label::textColourId, Theme::text);
             showSummary ({});
             updateButtons();
         }
@@ -665,7 +684,7 @@ MainComponent::MainComponent()
         addAndMakeVisible (b);
 
     multitrackButton.setTooltip ("Switch between the file and the multitrack session (Cmd+4)");
-    multitrackButton.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2d5a8a));
+    multitrackButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
     multitrackButton.onClick = [this] { setMultitrack (! multitrackMode); };
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
@@ -718,15 +737,15 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (loadReadout);
 
-    deviceLabel.setColour (juce::Label::textColourId, juce::Colours::grey);
-    selectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    deviceLabel.setColour (juce::Label::textColourId, Theme::dimText);
+    selectionLabel.setColour (juce::Label::textColourId, Theme::text);
     selectionLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
 
     waveform.setDisplay ((WaveformView::Display) juce::jlimit (0, 2, settings->getIntValue (displayKey, 0)));
     waveform.setWaveformShare (settings->getDoubleValue (waveShareKey, 0.35));
     waveform.onWaveformShareChanged = [settings] (double share) { settings->setValue (waveShareKey, share); };
     fadeShape = FadeShapes::fromId (settings->getValue (fadeShapeKey));
-    waveform.onFileDropped = [this] (const juce::File& f) { confirmDiscardChanges ([this, f] { openFile (f); }); };
+    waveform.onFileDropped = [this] (const juce::File& f) { openFile (f); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
     editorPanel = std::make_unique<EditorPanel> (waveform, overview, multitrack);
@@ -737,14 +756,7 @@ MainComponent::MainComponent()
     multitrack.setLaneHeight (settings->getIntValue (laneHeightKey, MultitrackView::trackHeight));
     rolls.preroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (prerollKey, rolls.preroll));
     rolls.postroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (postrollKey, rolls.postroll));
-    multitrack.onOpenInEditor = [this] (const juce::File& f)
-    {
-        confirmDiscardChanges ([this, f]
-        {
-            setMultitrack (false);
-            openFile (f);
-        });
-    };
+    multitrack.onOpenInEditor = [this] (const juce::File& f) { openFile (f); };
     multitrack.onFilesDropped = [this] (const juce::StringArray& files, int track, juce::int64 frame) { addFilesToSession (files, track, frame); };
     multitrack.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
     multitrack.onEditPlugin = [this] (juce::AudioPluginInstance& p) { showEditor (p); };
@@ -1070,7 +1082,7 @@ void MainComponent::saveSettings()
 //==============================================================================
 void MainComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff111317));
+    g.fillAll (Theme::base);
 }
 
 void MainComponent::resized()
@@ -1117,7 +1129,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDeleteWorkspace; ++id)
+    for (int id = cmdOpen; id <= cmdShowPhase; ++id)
         ids.add (id);
 }
 
@@ -1340,6 +1352,21 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
 
         case cmdShowRack:   info.setInfo ("Effects Rack", "Show or hide the effects rack panel", "Window", 0);
                             info.addDefaultKeypress ('e', cmd | alt); info.setTicked (dock->isShown (Panels::rack)); break;
+        case cmdShowSpectrum: info.setInfo ("Frequency Analysis", "Show or hide the spectrum of what goes to the outputs", "Window", 0);
+                            info.setTicked (dock->isShown (Panels::spectrum)); break;
+        case cmdShowPhase:  info.setInfo ("Phase Meter", "Show or hide the goniometer and correlation of what goes to the outputs", "Window", 0);
+                            info.setTicked (dock->isShown (Panels::phase)); break;
+        case cmdShowLevels: info.setInfo ("Levels", "Show or hide the panel metering what goes to the outputs", "Window", 0);
+                            info.setTicked (dock->isShown (Panels::levels)); break;
+        case cmdShowFiles:  info.setInfo ("Files", "Show or hide the panel listing the open files", "Window", 0);
+                            info.setTicked (dock->isShown (Panels::files)); break;
+        case cmdCloseFile:  info.setInfo ("Close File", "Close the file in the editor, asking about unsaved changes", "File", 0);
+                            info.addDefaultKeypress ('w', cmd);
+                            info.setActive (! isRecording() && (engine.document.hasAudio() || openFiles.size() > 1)); break;
+        case cmdNextFile:   info.setInfo ("Next File", "Show the next open file in the editor", "File", 0);
+                            info.setActive (openFiles.size() > 1 && ! isRecording()); break;
+        case cmdPreviousFile: info.setInfo ("Previous File", "Show the previous open file in the editor", "File", 0);
+                            info.setActive (openFiles.size() > 1 && ! isRecording()); break;
         case cmdShowSelectionPanel: info.setInfo ("Selection/View", "Show or hide the panel with the selection's and the view's start, end and length", "Window", 0);
                             info.setTicked (dock->isShown (Panels::selection)); break;
         case cmdSaveWorkspace: info.setInfo ("Save Workspace As...", "Keep the panels as they are now as a workspace of your own", "Window", 0); break;
@@ -1518,7 +1545,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (multitrackMode && ! isRecording()); break;
         case cmdSessionNotes: info.setInfo ("Session Notes", "A panel of free text kept with the session: lyrics, takes, things to do", "Multitrack", 0);
                             info.setTicked (dock->isShown (Panels::notes)); break;
-        case cmdUndoHistory: info.setInfo ("Undo History", "A panel listing the session's undo steps; click one to go back or forward to it", "Edit", 0);
+        case cmdUndoHistory: info.setInfo ("Undo History", "A panel listing the undo steps of the file or the session showing; click one to go back or forward to it", "Edit", 0);
                             info.setTicked (dock->isShown (Panels::history)); break;
         case cmdShiftPitch: info.setInfo ("Shift Clip Pitch...", "Raise or lower the selected clip's pitch without changing its length", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
@@ -1671,7 +1698,7 @@ bool MainComponent::perform (const InvocationInfo& info)
 {
     switch (info.commandID)
     {
-        case cmdOpen:       confirmDiscardChanges ([this] { chooseFile(); }); break;
+        case cmdOpen:       chooseFile(); break;
         case cmdSave:       if (multitrackMode) saveSession(); else save(); break;
         case cmdSaveAs:     if (multitrackMode) saveSessionAs(); else saveAs(); break;
         case cmdUndo:       if (multitrackMode) engine.session.undo(); else engine.document.undo(); break;
@@ -1856,6 +1883,13 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRecord:     toggleRecord(); break;
         case cmdStop:       stopTransport(); break;
         case cmdShowRack:   dock->toggle (Panels::rack); break;
+        case cmdShowFiles:  dock->toggle (Panels::files); break;
+        case cmdShowLevels: dock->toggle (Panels::levels); break;
+        case cmdShowSpectrum: dock->toggle (Panels::spectrum); break;
+        case cmdShowPhase:  dock->toggle (Panels::phase); break;
+        case cmdCloseFile:  closeFile (openFiles.getActiveIndex()); break;
+        case cmdNextFile:   switchToFile ((openFiles.getActiveIndex() + 1) % openFiles.size()); break;
+        case cmdPreviousFile: switchToFile ((openFiles.getActiveIndex() + openFiles.size() - 1) % openFiles.size()); break;
         case cmdShowSelectionPanel: dock->toggle (Panels::selection); break;
         case cmdSaveWorkspace: askToSaveWorkspace(); break;
         case cmdResetWorkspace: resetWorkspace(); break;
@@ -2065,7 +2099,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2088,7 +2122,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdShowRack, cmdShowSelectionPanel, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
+                   cmdShowFiles, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
 
             juce::PopupMenu workspaceMenu;
 
@@ -2379,7 +2413,7 @@ void MainComponent::confirmDiscardChanges (std::function<void()> proceed)
 
 void MainComponent::confirmQuit (std::function<void()> proceed)
 {
-    confirmDiscardChanges ([this, then = std::move (proceed)] { confirmDiscardSession (then); });
+    confirmAllFiles ([this, then = std::move (proceed)] { confirmDiscardSession (then); });
 }
 
 //==============================================================================
@@ -2395,6 +2429,10 @@ void MainComponent::setMultitrack (bool on)
     waveform.setVisible (! on);
     multitrack.setVisible (on);
     overview.setVisible (on);
+
+    if (auto it = madePanels.find (Panels::history); it != madePanels.end())
+        if (auto* history = dynamic_cast<UndoHistory*> (it->second.get()))
+            history->refresh();   // the file's steps, or the session's
     refreshTitle();
     timerCallback();
     commands.commandStatusChanged();
@@ -3497,22 +3535,103 @@ void MainComponent::openDocument (const juce::File& file)
     if (file.hasFileExtension ("sbsession"))
         confirmDiscardSession ([this, file] { openSession (file); });
     else
-        confirmDiscardChanges ([this, file] { openFile (file); });
+        openFile (file);
 }
 
 void MainComponent::openFile (const juce::File& file)
 {
-    stopPreview();
-    const auto error = engine.openFile (file);
+    if (isRecording())
+        return;
 
-    if (error.isNotEmpty())
+    // A file already open is switched to; another opens beside the files open.
+    if (const auto index = openFiles.indexOf (file); index >= 0)
     {
-        showError ("Can't open file", file.getFullPathName() + "\n\n" + error);
+        switchToFile (index);
+        setMultitrack (false);
         return;
     }
 
+    stopPreview();
+    auto loaded = AudioFileIO::load (file, engine.formatManager);
+
+    if (loaded.error.isNotEmpty())
+    {
+        showError ("Can't open file", file.getFullPathName() + "\n\n" + loaded.error);
+        return;
+    }
+
+    openFiles.prepareForAnother (waveform.getPlace());
+    engine.adoptFile (file, std::move (loaded));
     setMultitrack (false);
     noteRecent (file);
+    refreshTitle();
+}
+
+void MainComponent::switchToFile (int index)
+{
+    if (isRecording())
+        return;
+
+    stopPreview();
+
+    if (const auto place = openFiles.activate (index, waveform.getPlace()))
+        waveform.setPlace (*place);
+
+    setMultitrack (false);
+    refreshTitle();
+    timerCallback();
+    commands.commandStatusChanged();
+}
+
+void MainComponent::closeFile (int index)
+{
+    if (isRecording() || ! juce::isPositiveAndBelow (index, openFiles.size()))
+        return;
+
+    const auto finish = [this]
+    {
+        stopPreview();
+
+        if (const auto place = openFiles.close (openFiles.getActiveIndex()))
+            waveform.setPlace (*place);
+
+        refreshTitle();
+        timerCallback();
+        commands.commandStatusChanged();
+    };
+
+    // One without changes closes where it is; one with them is shown first, to be asked about.
+    const auto& doc = openFiles.documentAt (index);
+
+    if (doc.isDirty() && doc.hasAudio())
+    {
+        switchToFile (index);
+        confirmDiscardChanges (finish);
+    }
+    else if (index == openFiles.getActiveIndex())
+    {
+        finish();
+    }
+    else
+    {
+        openFiles.close (index);
+        commands.commandStatusChanged();
+    }
+}
+
+void MainComponent::confirmAllFiles (std::function<void()> proceed, int from)
+{
+    for (auto index : openFiles.unsaved())
+    {
+        if (index < from)
+            continue;
+
+        switchToFile (index);
+        confirmDiscardChanges ([this, proceed, index] { confirmAllFiles (proceed, index + 1); });
+        return;
+    }
+
+    proceed();
 }
 
 void MainComponent::noteRecent (const juce::File& file)
@@ -3554,7 +3673,7 @@ void MainComponent::menuItemSelected (int menuItemId, int)
     else if (RecentFiles::isSession (file))
         confirmDiscardSession ([this, file] { openSession (file); });
     else
-        confirmDiscardChanges ([this, file] { openFile (file); });
+        openFile (file);
 }
 
 AuditionPreview* MainComponent::makeOpenPreview()
@@ -6574,7 +6693,7 @@ void MainComponent::showAudioSettings()
     juce::DialogWindow::LaunchOptions o;
     o.content.setOwned (selector);
     o.dialogTitle = "Audio Settings";
-    o.dialogBackgroundColour = juce::Colours::darkgrey;
+    o.dialogBackgroundColour = Theme::surface;
     o.useNativeTitleBar = true;
     o.resizable = true;
     o.launchAsync();
@@ -6707,7 +6826,15 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
 
     const auto selectedClip = [this] { return multitrack.getSelectedClip(); };
 
-    if (id == Panels::mixer)
+    if (id == Panels::files)
+    {
+        auto panel = std::make_unique<FilesPanel> (openFiles);
+        panel->onChoose = [this] (int index) { switchToFile (index); };
+        panel->onClose = [this] (int index) { closeFile (index); };
+        panel->onOpen = [this] { chooseFile(); };
+        made = std::move (panel);
+    }
+    else if (id == Panels::mixer)
         made = std::make_unique<MixerView> (engine);
     else if (id == Panels::clipProperties)
         made = std::make_unique<ClipProperties> (engine, selectedClip);
@@ -6718,7 +6845,25 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
                                                                                     [this] (int i) { multitrack.renameMarker (i); },
                                                                                     [this] (int i) { multitrack.deleteMarker (i); } });
     else if (id == Panels::history)
-        made = std::make_unique<UndoHistory> (engine.session);
+        made = std::make_unique<UndoHistory> (engine.session, engine.document, [this] { return multitrackMode; });
+    else if (id == Panels::levels)
+    {
+        auto panel = std::make_unique<LevelsPanel>();
+        panel->readPeaks = [this] { return engine.takeMasterPeaks (AudioEngine::MasterReader::levels); };
+        made = std::move (panel);
+    }
+    else if (id == Panels::spectrum)
+    {
+        auto panel = std::make_unique<Analysis::SpectrumPanel>();
+        panel->readOutput = [this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); };
+        made = std::move (panel);
+    }
+    else if (id == Panels::phase)
+    {
+        auto panel = std::make_unique<Analysis::PhasePanel>();
+        panel->readOutput = [this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); };
+        made = std::move (panel);
+    }
     else if (id == Panels::notes)
         made = std::make_unique<SessionNotes> (engine.session);
 
@@ -6741,6 +6886,10 @@ juce::String MainComponent::getTitle (const juce::String& id)
     if (id == Panels::markers)         return "Markers";
     if (id == Panels::history)         return "Undo History";
     if (id == Panels::notes)           return "Session Notes";
+    if (id == Panels::files)           return "Files";
+    if (id == Panels::levels)          return "Levels";
+    if (id == Panels::spectrum)        return "Frequency Analysis";
+    if (id == Panels::phase)           return "Phase Meter";
     return id;
 }
 
@@ -6759,11 +6908,21 @@ void MainComponent::layoutChanged()
     commands.commandStatusChanged();
 }
 
+double MainComponent::defaultShare (const juce::String& id)
+{
+    return id == Panels::levels ? 0.12 : id == Panels::files ? 0.2 : 0.3;
+}
+
 std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::String& id)
 {
     if (id == Panels::mixer)       return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::rack)        return { Panels::editor, Dock::Side::right };
     if (id == Panels::selection)   return { Panels::rack, Dock::Side::bottom };
+    if (id == Panels::files)       return { Panels::editor, Dock::Side::left };
+    if (id == Panels::levels)      return { {}, Dock::Side::bottom };
+    if (id == Panels::spectrum)    return { Panels::editor, Dock::Side::bottom };
+    if (id == Panels::phase)       return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,
+                                            dock->getLayout().isDocked (Panels::spectrum) ? Dock::Side::right : Dock::Side::bottom };
 
     // Lists and the rest join the rack's tabs, or sit at the right without it.
     return { Panels::rack, Dock::Side::centre };

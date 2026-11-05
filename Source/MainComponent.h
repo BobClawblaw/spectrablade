@@ -349,6 +349,16 @@ private:
 
     WaveformView waveform { engine };
     MultitrackView multitrack { engine };
+    OpenFiles openFiles { engine };
+
+    /** Shows another open file in the editor, where it was left. */
+    void switchToFile (int index);
+
+    /** Closes an open file, asking about its changes first. */
+    void closeFile (int index);
+
+    /** Asks about each open file with unsaved changes in turn (from the index given), then proceeds. */
+    void confirmAllFiles (std::function<void()> proceed, int from = 0);
     SessionOverview overview { engine, multitrack };
     bool multitrackMode = false;
     FadeShape fadeShape = FadeShape::sCurve;   // the editor's Fade In and Fade Out
@@ -432,6 +442,7 @@ private:
     bool isMovable (const juce::String&) override;
     void layoutChanged() override;
     std::pair<juce::String, Dock::Side> defaultPlace (const juce::String&) override;
+    double defaultShare (const juce::String&) override;
     void windowCreated (juce::DocumentWindow&) override;
 
     void selectWorkspace (const juce::String& name);

@@ -270,6 +270,10 @@ public:
         its error, or empty on success. */
     juce::String adoptFile (const juce::File& file, AudioFileIO::Loaded);
 
+    /** Brings another document into the editor in place of the open one, which goes into
+        `other` (switching between open files). Playback pauses. */
+    void swapDocument (AudioDocument& other);
+
     /** Plays a file once from its start without opening it (see DocumentPlayerProcessor::audition).
         Returns false, with nothing playing, when it can't be read; an empty File stops it. */
     bool auditionFile (const juce::File&);
@@ -310,8 +314,15 @@ public:
     /** The peaks (left, right) of what went to the outputs since this reader's last call, after the
         effects rack (without the metronome's click), for a master meter. Each reader (the mixer's,
         the main window's) has its own, so neither takes the other's peaks. */
-    enum class MasterReader { mixer, mainWindow };
+    enum class MasterReader { mixer, mainWindow, levels };
     std::pair<float, float> takeMasterPeaks (MasterReader = MasterReader::mixer);
+
+    /** The newest frames of what went to the outputs (stereo, up to 16,384 frames), oldest first,
+        for the analysis panels. */
+    void copyRecentOutput (juce::AudioBuffer<float>& dest) const;
+
+    /** The device's sample rate, or 0 with no device open. */
+    double getOutputSampleRate() const;
 
     /** Input monitoring: these tracks play what comes in on their inputs (none: off). */
     void setMonitoredTracks (const std::vector<std::pair<juce::uint32, TrackInput>>&);

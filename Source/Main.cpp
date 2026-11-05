@@ -2,6 +2,7 @@
 #include "MainComponent.h"
 #include "PluginScanner.h"
 #include "AudioFileIO.h"
+#include "Theme.h"
 
 class SpectraBladeApplication final : public juce::JUCEApplication
 {
@@ -27,10 +28,7 @@ public:
                                                                getApplicationName() + " " + getApplicationVersion()));
         juce::Logger::setCurrentLogger (logger.get());
 
-        // Every scroll bar a quiet grey, so none outshines the audio.
-        auto& lookAndFeel = juce::LookAndFeel::getDefaultLookAndFeel();
-        lookAndFeel.setColour (juce::ScrollBar::thumbColourId, juce::Colour (0xff4a525c));
-        lookAndFeel.setColour (juce::ScrollBar::trackColourId, juce::Colour (0xff1c2026));
+        juce::LookAndFeel::setDefaultLookAndFeel (&theme);
 
         mainWindow = std::make_unique<MainWindow> (getApplicationName());
         anotherInstanceStarted (commandLine);
@@ -39,6 +37,7 @@ public:
     void shutdown() override
     {
         mainWindow = nullptr;
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
         juce::Logger::setCurrentLogger (nullptr);
         scannerWorker = nullptr;
     }
@@ -66,7 +65,7 @@ private:
     {
     public:
         explicit MainWindow (const juce::String& name)
-            : DocumentWindow (name, juce::Colour (0xff111317), DocumentWindow::allButtons)
+            : DocumentWindow (name, Theme::base, DocumentWindow::allButtons)
         {
             setUsingNativeTitleBar (true);
             auto* content = new MainComponent();
@@ -94,6 +93,7 @@ private:
     };
 
     std::unique_ptr<juce::FileLogger> logger;
+    Theme::LookAndFeel theme;   // before the window, so it outlives it
     std::unique_ptr<MainWindow> mainWindow;
     std::unique_ptr<ScannerWorker> scannerWorker;
 };

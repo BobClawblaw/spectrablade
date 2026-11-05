@@ -1,4 +1,5 @@
 #include "SessionOverview.h"
+#include "Theme.h"
 #include "TrackColours.h"
 
 SessionOverview::SessionOverview (AudioEngine& e, MultitrackView& v) : engine (e), view (v)
@@ -30,7 +31,7 @@ float SessionOverview::xFor (double frame) const
 
 void SessionOverview::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff11151a));
+    g.fillAll (Theme::base);
     const auto s = engine.session.getState();
     std::vector<int> shown;
 
@@ -48,7 +49,7 @@ void SessionOverview::paint (juce::Graphics& g)
 
         for (auto& c : track.clips)
         {
-            g.setColour (c.muted ? juce::Colour (0xff6e7681) : TrackColours::of (c, track, t));
+            g.setColour (c.muted ? Theme::faintText : TrackColours::of (c, track, t));
             const auto x0 = xFor ((double) c.position), x1 = xFor ((double) c.getEnd());
             g.fillRect (juce::Rectangle<float> (x0, 2.0f + band * (float) row, juce::jmax (1.0f, x1 - x0), juce::jmax (1.0f, band - 1.0f)));
         }

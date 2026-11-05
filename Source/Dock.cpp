@@ -1,4 +1,5 @@
 #include "Dock.h"
+#include "Theme.h"
 #include "WindowPlaces.h"
 
 namespace Dock
@@ -588,14 +589,14 @@ void Workspaces::restore (const juce::XmlElement& xml, const juce::StringArray& 
 //==============================================================================
 namespace Palette
 {
-    const juce::Colour background   { 0xff111317 };
-    const juce::Colour header       { 0xff16191d };
-    const juce::Colour tab          { 0xff1d2126 };
-    const juce::Colour tabFront     { 0xff262b32 };
-    const juce::Colour text         { 0xffc9ced6 };
-    const juce::Colour dimText      { 0xff7d848e };
-    const juce::Colour accent       { 0xff4a9fe0 };
-    const juce::Colour bar          { 0xff0c0e11 };
+    const juce::Colour background   = Theme::base;
+    const juce::Colour header       = Theme::surface;
+    const juce::Colour tab          = Theme::raised;
+    const juce::Colour tabFront     = Theme::hover;
+    const juce::Colour text         = Theme::text;
+    const juce::Colour dimText      = Theme::dimText;
+    const juce::Colour accent       = Theme::accent;
+    const juce::Colour bar          = Theme::inset;
 }
 
 /** One group: a strip of tabs over the panel in front. A target for dragged tabs, except in a
@@ -1192,9 +1193,10 @@ void Area::show (const juce::String& panel)
     }
 
     const auto [target, side] = host.defaultPlace (panel);
+    const auto share = host.defaultShare (panel);
 
-    if (! layout.dock (panel, target, side))
-        layout.dockAtEdge (panel, side == Side::centre ? Side::right : side);
+    if (! layout.dock (panel, target, side, share))
+        layout.dockAtEdge (panel, side == Side::centre ? Side::right : side, share);
 
     changed();
 }

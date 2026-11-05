@@ -108,8 +108,21 @@ public:
     void undo();
     void redo();
 
+    /** The undo steps, oldest first: the first is where the file started (no description), and
+        getPosition() is the one it is at. Steps after it can be redone. */
+    juce::StringArray getHistory() const;
+    int getPosition() const noexcept              { return position; }
+
+    /** Goes back or forward to a step in getHistory(), as that many undos or redos would. */
+    void goTo (int step);
+
     bool isDirty() const noexcept                 { return position != savedPosition; }
     void markSaved (const juce::File& savedAs, int bitDepth);
+
+    /** Trades everything with another document (its audio, undo history, markers, file and saved
+        point), as switching between open files does; counted as a new file by both. The audio
+        leaving this one is held until the audio thread lets go of it. Message thread only. */
+    void swapWith (AudioDocument& other);
 
     /** Frees snapshots dropped from history once the audio thread has let go of them. */
     void releaseUnusedSnapshots();

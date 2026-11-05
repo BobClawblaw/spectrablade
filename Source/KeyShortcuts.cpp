@@ -1,4 +1,5 @@
 #include "KeyShortcuts.h"
+#include "Theme.h"
 
 namespace KeyShortcuts
 {
@@ -236,7 +237,7 @@ private:
 //==============================================================================
 Editor::Editor (juce::ApplicationCommandManager& c, std::vector<KeySet> s) : commands (c), sets (std::move (s))
 {
-    search.setTextToShowWhenEmpty ("Search commands or keys", juce::Colours::grey);
+    search.setTextToShowWhenEmpty ("Search commands or keys", Theme::dimText);
     search.onTextChange = [this] { refresh(); };
     search.onEscapeKey = [this] { search.clear(); refresh(); };
     addAndMakeVisible (search);
@@ -248,7 +249,7 @@ Editor::Editor (juce::ApplicationCommandManager& c, std::vector<KeySet> s) : com
     addAndMakeVisible (list);
 
     title.setFont (juce::FontOptions (15.0f, juce::Font::bold));
-    description.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
+    description.setColour (juce::Label::textColourId, Theme::text);
     description.setMinimumHorizontalScale (1.0f);
     addAndMakeVisible (title);
     addAndMakeVisible (description);
@@ -340,7 +341,7 @@ void Editor::paintListBoxItem (int row, juce::Graphics& g, int width, int height
 
     auto area = juce::Rectangle<int> (0, 0, width, height).reduced (8, 0);
     g.setFont (juce::FontOptions (12.0f));
-    g.setColour (juce::Colours::grey);
+    g.setColour (Theme::dimText);
     g.drawText (r.menu, area.removeFromLeft (90), juce::Justification::centredLeft, true);
 
     juce::StringArray keys;
@@ -351,7 +352,7 @@ void Editor::paintListBoxItem (int row, juce::Graphics& g, int width, int height
     const auto keyText = keys.isEmpty() ? juce::String ("no key") : keys.joinIntoString ("   ");
     auto keyArea = area.removeFromRight (juce::jmin (220, width / 3));
     g.setFont (juce::FontOptions (13.0f));
-    g.setColour (keys.isEmpty() ? juce::Colours::grey : (r.changed ? juce::Colour (0xffffc857) : lf.findColour (juce::ListBox::textColourId)));
+    g.setColour (keys.isEmpty() ? Theme::dimText : (r.changed ? juce::Colour (0xffffc857) : lf.findColour (juce::ListBox::textColourId)));
     g.drawText (keyText, keyArea, juce::Justification::centredRight, true);
 
     g.setColour (lf.findColour (juce::ListBox::textColourId));

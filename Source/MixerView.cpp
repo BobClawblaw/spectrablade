@@ -1,4 +1,5 @@
 #include "MixerView.h"
+#include "Theme.h"
 #include "TrackColours.h"
 
 namespace
@@ -36,7 +37,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xff0e1013));
+        g.fillAll (Theme::inset);
         const auto barWidth = (getWidth() - 3) / 2;
 
         for (int ch = 0; ch < 2; ++ch)
@@ -44,13 +45,13 @@ public:
             const auto height = (float) getHeight() * meterProportion (shown[ch]);
             const auto bar = juce::Rectangle<float> ((float) (1 + ch * (barWidth + 1)), (float) getHeight() - height, (float) barWidth, height);
             g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4fc3a1), 0.0f, (float) getHeight(),
-                                                     juce::Colour (0xffffd34d), 0.0f, (float) getHeight() * 0.1f, false));
+                                                     Theme::cursor, 0.0f, (float) getHeight() * 0.1f, false));
             g.fillRect (bar);
         }
 
         // 0 dB, and a red mark once anything went over it (click to clear).
         const auto zero = (float) getHeight() * (1.0f - meterProportion (1.0f));
-        g.setColour (clipped ? juce::Colour (0xffd0453a) : juce::Colours::grey);
+        g.setColour (clipped ? Theme::danger : Theme::dimText);
         g.fillRect (0.0f, zero - (clipped ? 2.0f : 0.5f), (float) getWidth(), clipped ? 3.0f : 1.0f);
     }
 
@@ -103,7 +104,7 @@ public:
         pan.setSliderStyle (juce::Slider::LinearBar);
         pan.setRange (-100.0, 100.0, 1.0);
         pan.setDoubleClickReturnValue (true, 0.0);
-        pan.setColour (juce::Slider::trackColourId, juce::Colour (0xff2c3542));
+        pan.setColour (juce::Slider::trackColourId, Theme::lineStrong);
         pan.textFromValueFunction = [] (double value)
         {
             return value == 0.0 ? juce::String ("C") : juce::String (std::abs ((int) value)) + (value < 0.0 ? " L" : " R");
@@ -117,11 +118,11 @@ public:
         for (auto* b : { &mute, &solo })
         {
             b->setClickingTogglesState (true);
-            b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? juce::Colour (0xffd0453a) : juce::Colour (0xffd8b43a));
+            b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
         }
 
         polarity.setClickingTogglesState (true);
-        polarity.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffe3c74f));
+        polarity.setColour (juce::TextButton::buttonOnColourId, Theme::warn);
         polarity.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
         polarity.setTooltip ("Invert polarity: turn the track's output upside down, after its effects");
         polarity.onClick = [this]
@@ -181,7 +182,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (trackId == 0 ? juce::Colour (0xff20262e) : isBus ? busColour : isFolder ? folderColour : stripColour);
+        g.fillAll (trackId == 0 ? Theme::hover : isBus ? busColour : isFolder ? folderColour : stripColour);
 
         if (trackId != 0)
         {
@@ -192,11 +193,11 @@ public:
         // Solo safe: a bar under the solo button, as in the track headers.
         if (soloSafe && trackId != 0)
         {
-            g.setColour (juce::Colour (0xffe3c74f));
+            g.setColour (Theme::warn);
             g.fillRect (solo.getX() + 3, solo.getBottom() + 1, solo.getWidth() - 6, 2);
         }
 
-        g.setColour (juce::Colour (0xff2a2f37));
+        g.setColour (Theme::line);
         g.drawVerticalLine (getWidth() - 1, 0.0f, (float) getHeight());
     }
 
@@ -409,7 +410,7 @@ void MixerView::paint (juce::Graphics& g)
 
     if (strips.empty())
     {
-        g.setColour (juce::Colours::grey);
+        g.setColour (Theme::dimText);
         g.drawText ("No tracks yet", getLocalBounds().withTrimmedRight (stripWidth + 12), juce::Justification::centred);
     }
 }

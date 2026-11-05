@@ -1,4 +1,5 @@
 #include "WindowPlaces.h"
+#include "Theme.h"
 
 WindowPlaces::WindowPlaces (juce::PropertiesFile& s) : settings (s) {}
 
@@ -88,7 +89,7 @@ DividerBar::DividerBar()
 
 void DividerBar::paint (juce::Graphics& g)
 {
-    g.setColour (juce::Colour (0xff4a525c).withAlpha (isMouseOverOrDragging() ? 1.0f : 0.35f));
+    g.setColour (Theme::lineStrong.withAlpha (isMouseOverOrDragging() ? 1.0f : 0.35f));
     g.fillRect (getLocalBounds().withSizeKeepingCentre (2, getHeight()));
 }
 
