@@ -21,6 +21,7 @@
 #include "ConvolverTests.h"
 #include "EffectPresetsTests.h"
 #include "GraphicEqTests.h"
+#include "DockTests.h"
 #include "MultibandTests.h"
 #include "BuiltInEffectsTests.h"
 #include "NoiseTests.h"
@@ -135,6 +136,18 @@ namespace
             check (probed == device->getName() && savedProbed == device->getName() && goneProbed == probed,
                    "device probe: off the message thread it finds the device the engine opens (" + probed + "), the saved one, "
                    "and the default for one that has gone");
+
+            // A setup saved while no device was open names none; it is passed over, so the default opens.
+            juce::XmlElement none ("DEVICESETUP");
+            none.setAttribute ("deviceType", "");
+            none.setAttribute ("audioOutputDeviceName", "");
+            none.setAttribute ("audioInputDeviceName", "");
+            AudioEngine fresh;
+            const auto freshError = fresh.openDevice (&none);
+            auto* opened = fresh.deviceManager.getCurrentAudioDevice();
+            check (AudioEngine::namingADevice (&none) == nullptr && AudioEngine::namingADevice (&saved) == &saved
+                       && freshError.isEmpty() && opened != nullptr && opened->getName() == probed,
+                   "device: a saved setup naming no device opens the default (" + (opened != nullptr ? opened->getName() : juce::String ("none")) + ")");
         }
 
         const auto names = device->getOutputChannelNames();
@@ -491,6 +504,7 @@ int main (int argc, char* argv[])
         runMixerTests (engine);
         runBounceTests();
         runAuditionTests (engine);
+        runDockTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
         std::atomic<bool> scanned { false };

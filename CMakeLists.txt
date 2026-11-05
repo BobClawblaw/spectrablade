@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SpectraBlade VERSION 0.9.4 LANGUAGES C CXX)
+project(SpectraBlade VERSION 0.9.5 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -79,6 +79,7 @@ target_sources(SpectraBlade PRIVATE
     Source/KeyShortcuts.cpp
     Source/AuditionPreview.cpp
     Source/WindowPlaces.cpp
+    Source/Dock.cpp
     Source/FileChecks.cpp
     Source/LoadingScreen.cpp
     Source/TransportBar.cpp
@@ -156,6 +157,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/MixerTests.cpp
     Tests/BounceTests.cpp
     Tests/PluginTests.cpp
+    Tests/DockTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
     Source/Metronome.cpp
@@ -193,6 +195,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/KeyShortcuts.cpp
     Source/AuditionPreview.cpp
     Source/WindowPlaces.cpp
+    Source/Dock.cpp
     Source/FileChecks.cpp
     Source/LoadingScreen.cpp
     Source/TransportBar.cpp

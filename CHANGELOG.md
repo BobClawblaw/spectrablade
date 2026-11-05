@@ -2,6 +2,22 @@
 
 Each milestone as it was built, newest first, with what the tests measured on the development Mac. Releases are marked where they were cut.
 
+## Unreleased
+
+**Milestone 200: The audio device after a launch without one**
+- A device setup saved while no device was open names none, and restoring it opened nothing: once SpectraBlade had quit without a device (its audio service stuck, say), every later launch showed "No audio device" until one was chosen by hand. A saved setup that names no device is now passed over, so the default device opens, as with nothing saved; and the setup is saved only while a device is open, so the one chosen is asked for again next time.
+- Measured by the tests: a setup naming no device is passed over and opens the default device. In the app, with such a setup in the settings, the build before showed "No audio device" and this one opened the default interface.
+
+**Milestone 199: Docked panels and workspaces**
+- The effects rack, the selection and view times, the mixer, clip properties, the clip list, the marker list, the undo history and the session notes are panels docked around the editor, instead of windows of their own beside it. Panels sit side by side, stacked or as tabs in one group; drag a tab onto the edge of another group to dock it there, onto its middle to join its tabs, or out of the main window to float it in a window of its own (drag that tab back in to dock it again). A tab's menu closes it, floats it, or docks it along an edge of the whole window. The bars between groups share out the room. A panel closed with its × comes back from the Window menu, or its old command, where it goes by default (the mixer under the editor, the lists among the rack's tabs). The keys work with a floating panel in front.
+- Window > Workspace keeps layouts: Classic (the editor with the rack and the selection beside it, as before) and Multitrack (the mixer under the editor, clip properties over the rack, markers and clip list), and any saved with Save Workspace As. Each keeps its layout as last left, across launches; Reset Workspace puts the current one back as it was saved; one of your own can be deleted. A rack hidden before this version stays hidden.
+- Measured by the tests: docking beside, above and in the middle of a group, at the window's edges, and moving, floating and closing panels, each layout checked by its shape and shares; layouts written and read back, through their text too, leaving out panels that aren't known and putting right a doubled panel, a tab out of range and a weight below zero, and refusing one without the editor; workspaces kept apart from how they were saved, reset, saved as, replaced, restored and deleted; and the dock itself with stand-in panels: groups sized by their weights with a bar between, panels shown where they go and brought to the front, closing, dropping and floating them in a window, and the editor neither closed nor floated. The whole suite passed (817 checks).
+- Tried in the app: the Classic and Multitrack workspaces laid out as above, with a file and with a session (seen in captures of the window). Not tried by hand: dragging tabs and bars, floating a panel and the tab menu.
+
+**Milestone 198: Double-click selects the whole file**
+- A double-click in a channel's waveform or spectrogram selects the whole file. Double-clicking a marker still renames it, and the ruler, the marker lane and the line between waveform and spectrogram are as before.
+- Measured by the tests, through the real view: a double-click in the waveform and one in the spectrogram select every frame; one in the ruler and one in the marker lane leave the selection empty.
+
 ## Released
 
 **Release 0.9.4: the fifth alpha**

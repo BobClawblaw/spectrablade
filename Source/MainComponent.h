@@ -27,12 +27,14 @@
 #include "SessionOverview.h"
 #include "SessionRecording.h"
 #include "WaveformView.h"
+#include "Dock.h"
 
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
                             public juce::MenuBarModel,
                             private juce::ChangeListener,
-                            private juce::Timer
+                            private juce::Timer,
+                            private Dock::Host
 {
 public:
     MainComponent();
@@ -74,13 +76,8 @@ public:
 
 private:
     class PluginEditorWindow;
-    class MixerWindow;
-    class ClipPropertiesWindow;
-    class ClipListWindow;
-    class MarkerListWindow;
+    class EditorPanel;
     class KeyShortcutsWindow;
-    class UndoHistoryWindow;
-    class NotesWindow;
     class EqWindow;
     class PluginListWindow;
     class RackRenderJob;
@@ -297,10 +294,6 @@ private:
         tempo change at the bar the cursor is in (offering to remove one there). */
     void showTempoDialog (bool atCursor);
     void showRecordingOptions();
-    void toggleMixer();
-    void toggleClipProperties();
-    void toggleClipList();
-    void toggleMarkerList();
     void showKeyShortcuts();
 
     /** Asks for a folder, then mixes each region of the session to a file of its own there. */
@@ -312,8 +305,6 @@ private:
     void chooseMarkersToImport();
     void importMarkers (const juce::String& csv, const juce::String& fileName);
     void chooseClipsCsv();
-    void toggleUndoHistory();
-    void toggleNotes();
     void showPluginList();
     void showEditor (int slotIndex);
     void showEditor (juce::AudioProcessor&);
@@ -360,9 +351,6 @@ private:
     MultitrackView multitrack { engine };
     SessionOverview overview { engine, multitrack };
     bool multitrackMode = false;
-    bool rackShown = true;   // the effects rack beside the editor (View > Effects Rack)
-    int rackWidth = 0;       // dragged by its bar; 0: a third of the window, from 300 to 420
-    DividerBar rackDivider;
     FadeShape fadeShape = FadeShape::sCurve;   // the editor's Fade In and Fade Out
     bool normalizeChannelsApart = false;   // the Normalize dialog's last choice
     float silenceThresholdDb = -60.0f;   // Trim Silence's last level, also used by Select Audible Span and Find Next Silence
@@ -374,13 +362,7 @@ private:
     AuditionPreview* makeOpenPreview();
     juce::OwnedArray<PluginEditorWindow> editorWindows;
     std::unique_ptr<PluginListWindow> pluginListWindow;
-    std::unique_ptr<MixerWindow> mixerWindow;
-    std::unique_ptr<ClipPropertiesWindow> clipPropertiesWindow;
-    std::unique_ptr<ClipListWindow> clipListWindow;
-    std::unique_ptr<MarkerListWindow> markerListWindow;
     std::unique_ptr<KeyShortcutsWindow> keyShortcutsWindow;
-    std::unique_ptr<UndoHistoryWindow> undoHistoryWindow;
-    std::unique_ptr<NotesWindow> notesWindow;
     std::unique_ptr<EqWindow> eqWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
@@ -442,6 +424,26 @@ private:
     SessionRecording::Rolls rolls;                       // pre-roll and post-roll, kept in the settings
     std::vector<std::pair<juce::uint32, Recorder*>> recordTracks;   // the tracks recording (0: a new one), and from what
     juce::String lastInputError;
+
+    // The dock: the editor with the panels around it, laid out by the current workspace.
+    juce::Component* getPanel (const juce::String&) override;
+    void panelHidden (const juce::String&) override;
+    juce::String getTitle (const juce::String&) override;
+    bool isMovable (const juce::String&) override;
+    void layoutChanged() override;
+    std::pair<juce::String, Dock::Side> defaultPlace (const juce::String&) override;
+    void windowCreated (juce::DocumentWindow&) override;
+
+    void selectWorkspace (const juce::String& name);
+    void askToSaveWorkspace();
+    void askToDeleteWorkspace();
+    void resetWorkspace();
+    static constexpr int workspaceBaseId = 0x7200;   // menu ids for Window > Workspace
+
+    std::unique_ptr<EditorPanel> editorPanel;
+    std::map<juce::String, std::unique_ptr<juce::Component>> madePanels;   // the panels made when shown
+    std::unique_ptr<Dock::Workspaces> workspaces;
+    std::unique_ptr<Dock::Area> dock;   // last, so it lets go of the panels before they go
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainComponent)
 };

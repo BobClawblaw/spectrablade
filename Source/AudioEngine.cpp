@@ -551,7 +551,7 @@ juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
     // Inputs stay off until one is chosen for recording; up to 256 outputs so large interfaces such
     // as a 30-output Fireface show every channel. With no saved state the system default device
     // opens at its current sample rate, so other apps sharing the interface are not disturbed.
-    auto error = deviceManager.initialise (0, 256, savedState, true);
+    auto error = deviceManager.initialise (0, 256, namingADevice (savedState), true);
 
     // The monitor tap runs before the player in each cycle, so the player hears this cycle's
     // input; the recorder runs after it, so it sees what the player just played.
@@ -565,6 +565,15 @@ juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
     deviceOpen = true;
     rebuildConnections();
     return error;
+}
+
+const juce::XmlElement* AudioEngine::namingADevice (const juce::XmlElement* savedState)
+{
+    if (savedState == nullptr)
+        return nullptr;
+
+    const auto names = savedState->getStringAttribute ("audioOutputDeviceName") + savedState->getStringAttribute ("audioInputDeviceName");
+    return names.trim().isEmpty() ? nullptr : savedState;
 }
 
 juce::String AudioEngine::probeDevice (const juce::XmlElement* savedState)

@@ -773,6 +773,8 @@ void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
 {
     if (const auto index = markerAt (e.position); index >= 0)
         renameMarker (index);
+    else if (engine.document.hasAudio() && e.position.y >= (float) getWaveArea().getY() && dividerAt (e.position) < 0)
+        selectAll();
 }
 
 void WaveformView::renameMarker (int index)

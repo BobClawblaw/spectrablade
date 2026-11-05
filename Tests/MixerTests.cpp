@@ -1280,6 +1280,50 @@ namespace
                "empty editor: the recent files found to exist are listed under the hint once checked, and clicking one asks to open that file");
     }
 
+    void testDoubleClickSelectsAll()
+    {
+        AudioEngine engine;
+        juce::AudioBuffer<float> b (2, 48000);
+        b.clear();
+        engine.document.reset (AudioEdits::fromBuffer (std::move (b)), 48000.0, {}, 24);
+        WaveformView view (engine);
+        view.setBounds (0, 0, 900, 600);
+        view.setDisplay (WaveformView::Display::both);
+
+        const auto click = [&view] (juce::Point<float> at, int clicks)
+        {
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &view, &view,
+                                     juce::Time::getCurrentTime(), at, juce::Time::getCurrentTime(), clicks, false);
+        };
+
+        // As the mouse sends it: a click, then the second click as a double-click.
+        const auto doubleClick = [&] (juce::Point<float> at)
+        {
+            view.mouseDown (click (at, 1));
+            view.mouseUp (click (at, 1));
+            view.mouseDown (click (at, 2));
+            view.mouseDoubleClick (click (at, 2));
+            view.mouseUp (click (at, 2));
+        };
+
+        const auto area = view.getWaveArea();
+        const auto laneHeight = area.getHeight() / 2;
+        doubleClick ({ 300.0f, (float) area.getY() + 10.0f });
+        const auto inWaveform = view.getSelection() == juce::Range<juce::int64> (0, 48000);
+
+        view.setSelection ({});
+        doubleClick ({ 600.0f, (float) (area.getY() + laneHeight) + (float) laneHeight * 0.8f });
+        const auto inSpectrogram = view.getSelection() == juce::Range<juce::int64> (0, 48000);
+
+        view.setSelection ({});
+        doubleClick ({ 300.0f, 4.0f });
+        doubleClick ({ 300.0f, (float) area.getY() - 2.0f });   // the marker lane, just above the channels
+        const auto aboveLeft = view.getSelection().isEmpty();
+
+        check (inWaveform && inSpectrogram && aboveLeft,
+               "editor: a double-click in a channel's waveform or spectrogram selects the whole file; one in the ruler or the marker lane doesn't");
+    }
+
     void testWaveformDivider()
     {
         AudioEngine engine;
@@ -1884,6 +1928,7 @@ void runMixerTests (AudioEngine& engine)
     testSlowVolumes();
     testLoadingScreen();
     testWaveformDivider();
+    testDoubleClickSelectsAll();
     testWindowPlaces();
     testClipsCsv();
 }

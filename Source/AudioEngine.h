@@ -240,8 +240,12 @@ public:
     AudioEngine();
     ~AudioEngine() override;
 
-    /** Opens the audio device, restoring the saved setup when there is one. */
+    /** Opens the audio device, restoring the saved setup when there is one that names a device. */
     juce::String openDevice (const juce::XmlElement* savedState);
+
+    /** A saved device setup, or null when it names no device, as one saved while none was open
+        does: restoring that would open nothing, where no setup opens the default device. */
+    static const juce::XmlElement* namingADevice (const juce::XmlElement* savedState);
     bool isDeviceOpen() const noexcept            { return deviceOpen; }
 
     /** Asks the audio system for the output device a saved setup names (or the default one), with

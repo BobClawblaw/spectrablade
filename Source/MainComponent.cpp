@@ -40,7 +40,40 @@ namespace
     constexpr const char* rackShownKey    = "rackShown";
     constexpr const char* openPreviewKey  = "previewInOpenPanel";
     constexpr const char* waveShareKey    = "waveformShare";
-    constexpr const char* rackWidthKey    = "rackWidth";
+    constexpr const char* workspacesKey   = "workspaces";
+
+    // The dock's panels.
+    namespace Panels
+    {
+        const juce::String editor { "editor" }, rack { "rack" }, selection { "selection" }, mixer { "mixer" },
+                           clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
+                           history { "history" }, notes { "notes" };
+
+        juce::StringArray all()
+        {
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes };
+        }
+    }
+
+    /** The workspaces SpectraBlade comes with: Classic, the editor with the effects rack and the
+        selection beside it; Multitrack, with the mixer under the editor and the clip panels beside it. */
+    std::vector<std::pair<juce::String, Dock::Layout>> builtInWorkspaces()
+    {
+        using Dock::Side;
+        auto classic = Dock::Layout::single (Panels::editor);
+        classic.dock (Panels::rack, Panels::editor, Side::right, 0.28);
+        classic.dock (Panels::selection, Panels::rack, Side::bottom, 0.2);
+
+        auto multitrack = Dock::Layout::single (Panels::editor);
+        multitrack.dock (Panels::rack, Panels::editor, Side::right, 0.26);
+        multitrack.dock (Panels::markers, Panels::rack, Side::centre);
+        multitrack.dock (Panels::clipList, Panels::rack, Side::centre);
+        multitrack.bringToFront (Panels::rack);
+        multitrack.dock (Panels::clipProperties, Panels::rack, Side::top, 0.4);
+        multitrack.dockAtEdge (Panels::mixer, Side::bottom, 0.3);
+
+        return { { "Classic", classic }, { "Multitrack", multitrack } };
+    }
 
     // Input choice IDs: none, a stereo pair from channel n, or mono channel n.
     constexpr int noInputId = 1, stereoInputBase = 1000, monoInputBase = 2000;
@@ -66,7 +99,8 @@ namespace
         cmdNudgeEarlier, cmdNudgeLater, cmdExportStems, cmdClipProperties,
         cmdRepeatClip, cmdReverseClip, cmdRecordingOptions,
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
-        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser
+        cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
+        cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -107,52 +141,6 @@ namespace
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, title, message);
     }
 }
-
-//==============================================================================
-/** The selected clip's settings, in a small window that follows the selection. */
-class MainComponent::ClipPropertiesWindow final : public juce::DocumentWindow
-{
-public:
-    ClipPropertiesWindow (AudioEngine& audioEngine, MultitrackView& view, std::function<void()> onClose)
-        : DocumentWindow ("Clip Properties", juce::Colours::darkgrey, DocumentWindow::closeButton),
-          closeCallback (std::move (onClose))
-    {
-        setUsingNativeTitleBar (true);
-        setContentOwned (new ClipProperties (audioEngine, [&view] { return view.getSelectedClip(); }), false);
-        centreWithSize (340, 280);
-        setAlwaysOnTop (true);
-        setVisible (true);
-    }
-
-    void closeButtonPressed() override              { closeCallback(); }
-
-private:
-    std::function<void()> closeCallback;
-};
-
-//==============================================================================
-/** Every clip in the session, in a window that follows the selection. */
-class MainComponent::ClipListWindow final : public juce::DocumentWindow
-{
-public:
-    ClipListWindow (AudioEngine& audioEngine, MultitrackView& view, std::function<void()> onClose)
-        : DocumentWindow ("Clip List", juce::Colours::darkgrey, DocumentWindow::closeButton),
-          closeCallback (std::move (onClose))
-    {
-        setUsingNativeTitleBar (true);
-        setContentOwned (new ClipList (audioEngine, [&view] { return view.getSelectedClip(); },
-                                       [&view] (juce::uint32 id) { view.showClip (id); }), false);
-        setResizable (true, false);
-        setResizeLimits (300, 150, 3000, 2000);
-        centreWithSize (710, 320);
-        setVisible (true);
-    }
-
-    void closeButtonPressed() override              { closeCallback(); }
-
-private:
-    std::function<void()> closeCallback;
-};
 
 //==============================================================================
 /** Every command and its keys, to change; the changes are saved as they are made. */
@@ -206,77 +194,6 @@ public:
         setResizable (true, false);
         setResizeLimits (520, 420, 3000, 3000);
         centreWithSize (680, 640);
-        setVisible (true);
-    }
-
-    void closeButtonPressed() override              { closeCallback(); }
-
-private:
-    std::function<void()> closeCallback;
-};
-
-//==============================================================================
-/** The session's markers and regions, in a window beside the main one. */
-class MainComponent::MarkerListWindow final : public juce::DocumentWindow
-{
-public:
-    MarkerListWindow (Session& session, MultitrackView& view, std::function<void()> onClose)
-        : DocumentWindow ("Marker List", juce::Colours::darkgrey, DocumentWindow::closeButton),
-          closeCallback (std::move (onClose))
-    {
-        setUsingNativeTitleBar (true);
-        setContentOwned (new MarkerTable (session, { [&view] (int i) { view.showMarker (i); },
-                                                    [&view] (int i) { view.renameMarker (i); },
-                                                    [&view] (int i) { view.deleteMarker (i); } }), false);
-        setResizable (true, false);
-        setResizeLimits (250, 150, 3000, 2000);
-        centreWithSize (470, 320);
-        setVisible (true);
-    }
-
-    void closeButtonPressed() override              { closeCallback(); }
-
-private:
-    std::function<void()> closeCallback;
-};
-
-//==============================================================================
-/** The session's undo steps, in a window beside the main one. */
-class MainComponent::UndoHistoryWindow final : public juce::DocumentWindow
-{
-public:
-    UndoHistoryWindow (Session& session, std::function<void()> onClose)
-        : DocumentWindow ("Undo History", juce::Colours::darkgrey, DocumentWindow::closeButton),
-          closeCallback (std::move (onClose))
-    {
-        setUsingNativeTitleBar (true);
-        setContentOwned (new UndoHistory (session), false);
-        setResizable (true, false);
-        setResizeLimits (200, 150, 2000, 3000);
-        centreWithSize (280, 400);
-        setVisible (true);
-    }
-
-    void closeButtonPressed() override              { closeCallback(); }
-
-private:
-    std::function<void()> closeCallback;
-};
-
-//==============================================================================
-/** The session's notes, in a window beside the main one. */
-class MainComponent::NotesWindow final : public juce::DocumentWindow
-{
-public:
-    NotesWindow (Session& session, std::function<void()> onClose)
-        : DocumentWindow ("Session Notes", juce::Colours::darkgrey, DocumentWindow::closeButton),
-          closeCallback (std::move (onClose))
-    {
-        setUsingNativeTitleBar (true);
-        setContentOwned (new SessionNotes (session), false);
-        setResizable (true, false);
-        setResizeLimits (240, 150, 3000, 3000);
-        centreWithSize (420, 480);
         setVisible (true);
     }
 
@@ -391,29 +308,6 @@ private:
     };
 
     Content* content = nullptr;
-    std::function<void()> closeCallback;
-};
-
-//==============================================================================
-/** The mixer, in a window of its own beside the main one. */
-class MainComponent::MixerWindow final : public juce::DocumentWindow
-{
-public:
-    MixerWindow (AudioEngine& audioEngine, std::function<void()> onClose)
-        : DocumentWindow ("Mixer", juce::Colours::darkgrey, DocumentWindow::closeButton | DocumentWindow::minimiseButton),
-          closeCallback (std::move (onClose))
-    {
-        setUsingNativeTitleBar (true);
-        setContentOwned (new MixerView (audioEngine), false);
-        setResizable (true, false);
-        setResizeLimits (MixerView::stripWidth * 2 + 12, 300, 4000, 2000);
-        centreWithSize (MixerView::stripWidth * 8 + 12, 420);
-        setVisible (true);
-    }
-
-    void closeButtonPressed() override              { closeCallback(); }
-
-private:
     std::function<void()> closeCallback;
 };
 
@@ -702,6 +596,33 @@ private:
 };
 
 //==============================================================================
+/** The dock's middle: the file's waveform, or the session's overview over its tracks. */
+class MainComponent::EditorPanel final : public juce::Component
+{
+public:
+    EditorPanel (WaveformView& w, SessionOverview& o, MultitrackView& m) : waveform (w), overview (o), multitrack (m)
+    {
+        addAndMakeVisible (waveform);
+        addChildComponent (overview);
+        addChildComponent (multitrack);
+    }
+
+    void resized() override
+    {
+        auto r = getLocalBounds();
+        waveform.setBounds (r);
+        overview.setBounds (r.removeFromTop (SessionOverview::height));
+        r.removeFromTop (4);
+        multitrack.setBounds (r);
+    }
+
+private:
+    WaveformView& waveform;
+    SessionOverview& overview;
+    MultitrackView& multitrack;
+};
+
+//==============================================================================
 MainComponent::MainComponent()
 {
     juce::PropertiesFile::Options options;
@@ -750,7 +671,6 @@ MainComponent::MainComponent()
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
     pluginsButton.onClick  = [this] { showPluginList(); };
     audioButton.onClick    = [this] { showAudioSettings(); };
-    addAndMakeVisible (selectionPanel);
     selectionPanel.onClick = [this] { commands.invokeDirectly (cmdSetSelection, true); };
 
     addAndMakeVisible (outputLabel);
@@ -802,7 +722,6 @@ MainComponent::MainComponent()
     selectionLabel.setColour (juce::Label::textColourId, juce::Colours::lightgrey);
     selectionLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
 
-    addAndMakeVisible (waveform);
     waveform.setDisplay ((WaveformView::Display) juce::jlimit (0, 2, settings->getIntValue (displayKey, 0)));
     waveform.setWaveformShare (settings->getDoubleValue (waveShareKey, 0.35));
     waveform.onWaveformShareChanged = [settings] (double share) { settings->setValue (waveShareKey, share); };
@@ -810,8 +729,7 @@ MainComponent::MainComponent()
     waveform.onFileDropped = [this] (const juce::File& f) { confirmDiscardChanges ([this, f] { openFile (f); }); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
-    addChildComponent (multitrack);
-    addChildComponent (overview);
+    editorPanel = std::make_unique<EditorPanel> (waveform, overview, multitrack);
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
     multitrack.setFindingZeroCrossings (settings->getBoolValue (zeroCrossingsKey, false));
@@ -831,16 +749,6 @@ MainComponent::MainComponent()
     multitrack.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
     multitrack.onEditPlugin = [this] (juce::AudioPluginInstance& p) { showEditor (p); };
 
-    addAndMakeVisible (rackView);
-    rackShown = settings->getBoolValue (rackShownKey, true);
-    rackWidth = settings->getIntValue (rackWidthKey, 0);
-    rackDivider.onDrag = [this] (int x)
-    {
-        rackWidth = rackView.getRight() - x - rackDivider.getWidth() / 2;
-        resized();
-    };
-    rackDivider.onDragEnd = [this] { appProperties.getUserSettings()->setValue (rackWidthKey, rackView.getWidth()); };
-    addAndMakeVisible (rackDivider);
     waveform.getRecentFiles = [this]
     {
         juce::Array<juce::File> files;
@@ -860,11 +768,31 @@ MainComponent::MainComponent()
     rackView.onEditSlot = [this] (int index) { showEditor (index); };
     engine.onPluginAboutToBeRemoved = [this] (juce::AudioProcessor* p) { closeEditorFor (p); };
 
+    // The panels as the current workspace left them. Before there were workspaces the rack could be
+    // hidden; it stays hidden.
+    workspaces = std::make_unique<Dock::Workspaces> (builtInWorkspaces());
+
+    if (auto saved = settings->getXmlValue (workspacesKey))
+    {
+        workspaces->restore (*saved, Panels::all(), Panels::editor);
+    }
+    else if (! settings->getBoolValue (rackShownKey, true))
+    {
+        auto layout = workspaces->current().now;
+        layout.remove (Panels::rack);
+        workspaces->update (layout);
+    }
+
+    dock = std::make_unique<Dock::Area> (static_cast<Dock::Host&> (*this));
+    dock->setLayout (workspaces->current().now);
+    addAndMakeVisible (*dock);
+
     commands.registerAllCommandsForTarget (this);
     commands.setFirstCommandTarget (this);
     transportBar = std::make_unique<TransportBar::Bar> (commands, TransportBar::Commands { cmdGoToStart, cmdPlayPause, cmdStop, cmdRecord, cmdLoopPlayback, cmdGoToEnd,
                                                                                          cmdZoomIn, cmdZoomOut, cmdZoomSelection, cmdZoomFit });
     addAndMakeVisible (*transportBar);
+
     KeyShortcuts::restore (*commands.getKeyMappings(), *settings);
     commands.getKeyMappings()->addChangeListener (this);
     addKeyListener (commands.getKeyMappings());
@@ -1115,11 +1043,8 @@ MainComponent::~MainComponent()
     keyShortcutsWindow = nullptr;
     editorWindows.clear();
     pluginListWindow = nullptr;
-    mixerWindow = nullptr;
-    clipPropertiesWindow = nullptr;
-    clipListWindow = nullptr;
-    undoHistoryWindow = nullptr;
-    notesWindow = nullptr;
+    dock = nullptr;
+    madePanels.clear();
     eqWindow = nullptr;
 }
 
@@ -1127,8 +1052,11 @@ void MainComponent::saveSettings()
 {
     auto* settings = appProperties.getUserSettings();
 
-    if (auto xml = engine.deviceManager.createStateXml())
-        settings->setValue (audioDeviceKey, xml.get());
+    // Only a device that is open is kept: with none open (its service stuck, say) the setup names
+    // nothing, and the device that was chosen is asked for again next time.
+    if (engine.deviceManager.getCurrentAudioDevice() != nullptr)
+        if (auto xml = engine.deviceManager.createStateXml())
+            settings->setValue (audioDeviceKey, xml.get());
 
     settings->setValue (outputPairKey, engine.getOutputPair());
     settings->setValue (inputFirstKey, engine.getInputFirstChannel());
@@ -1165,8 +1093,6 @@ void MainComponent::resized()
     // Bottom: the devices and the file over its status line, the selection and view beside them.
     r.removeFromTop (8);
     auto bottom = r.removeFromBottom (52);
-    selectionPanel.setBounds (bottom.removeFromRight (juce::jmin (400, bottom.getWidth() / 2)));
-    bottom.removeFromRight (12);
     auto devices = bottom.removeFromTop (26).reduced (0, 1);
     outputLabel.setBounds (devices.removeFromLeft (52));
     outputPair.setBounds (devices.removeFromLeft (juce::jmin (200, devices.getWidth() / 4)));
@@ -1184,27 +1110,14 @@ void MainComponent::resized()
     fileLabel.setBounds (status);
     r.removeFromBottom (8);
 
-    rackView.setVisible (rackShown);
-    rackDivider.setVisible (rackShown);
-
-    if (rackShown)
-    {
-        // The rack's width as dragged, kept from 220 to 60% of the room; until then, as before.
-        const auto width = rackWidth > 0 ? juce::jlimit (220, juce::jmax (220, r.getWidth() * 6 / 10), rackWidth)
-                                         : juce::jlimit (300, 420, r.getWidth() / 3);
-        rackView.setBounds (r.removeFromRight (width));
-        rackDivider.setBounds (r.removeFromRight (8));
-    }
-    waveform.setBounds (r);
-    overview.setBounds (r.removeFromTop (SessionOverview::height));
-    r.removeFromTop (4);
-    multitrack.setBounds (r);
+    if (dock != nullptr)
+        dock->setBounds (r);
 }
 
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDeEsser; ++id)
+    for (int id = cmdOpen; id <= cmdDeleteWorkspace; ++id)
         ids.add (id);
 }
 
@@ -1425,8 +1338,14 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                           "Record from the input", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, shift); break;
 
-        case cmdShowRack:   info.setInfo ("Effects Rack", "Show or hide the effects rack beside the editor", "View", 0);
-                            info.addDefaultKeypress ('e', cmd | alt); info.setTicked (rackShown); break;
+        case cmdShowRack:   info.setInfo ("Effects Rack", "Show or hide the effects rack panel", "Window", 0);
+                            info.addDefaultKeypress ('e', cmd | alt); info.setTicked (dock->isShown (Panels::rack)); break;
+        case cmdShowSelectionPanel: info.setInfo ("Selection/View", "Show or hide the panel with the selection's and the view's start, end and length", "Window", 0);
+                            info.setTicked (dock->isShown (Panels::selection)); break;
+        case cmdSaveWorkspace: info.setInfo ("Save Workspace As...", "Keep the panels as they are now as a workspace of your own", "Window", 0); break;
+        case cmdResetWorkspace: info.setInfo ("Reset Workspace", "Put the current workspace's panels back as it was saved", "Window", 0); break;
+        case cmdDeleteWorkspace: info.setInfo ("Delete Workspace...", "Delete the current workspace (the built-in ones can't be deleted)", "Window", 0);
+                            info.setActive (! workspaces->current().builtIn); break;
         case cmdShowWaveform: info.setInfo ("Waveform", "Show each channel's waveform", "View", 0);
                             info.addDefaultKeypress ('1', cmd);
                             info.setTicked (waveform.getDisplay() == WaveformView::Display::waveform); break;
@@ -1474,8 +1393,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('c', 0); info.setTicked (engine.getPlayer().isMetronomeOn()); info.setActive (multitrackMode); break;
         case cmdCountIn:    info.setInfo ("Count-In", "Record after one bar of clicks instead of the preroll", "Multitrack", 0);
                             info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
-        case cmdMixer:      info.setInfo ("Mixer", "A window with a strip for each track and bus, and the master meter", "Multitrack", 0);
-                            info.addDefaultKeypress ('m', cmd | shift); info.setTicked (mixerWindow != nullptr); break;
+        case cmdMixer:      info.setInfo ("Mixer", "A panel with a strip for each track and bus, and the master meter", "Multitrack", 0);
+                            info.addDefaultKeypress ('m', cmd | shift); info.setTicked (dock->isShown (Panels::mixer)); break;
         case cmdTallerTracks: info.setInfo ("Taller Tracks", "Make every track's lane taller", "View", 0);
                             info.addDefaultKeypress ('=', cmd | alt);
                             info.setActive (multitrackMode && multitrack.getLaneHeight() < MultitrackView::maxLaneHeight); break;
@@ -1497,13 +1416,13 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdLockClip:   info.setInfo ("Lock Clip", "Keep the selected clips from being moved, trimmed or deleted, or let them be again", "Multitrack", 0);
                             info.addDefaultKeypress ('l', cmd | shift); info.setTicked (multitrack.areSelectedClipsLocked());
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
-        case cmdClipList:   info.setInfo ("Clip List", "A window listing every clip in the session; click one to go to it", "Multitrack", 0);
-                            info.setTicked (clipListWindow != nullptr); break;
+        case cmdClipList:   info.setInfo ("Clip List", "A panel listing every clip in the session; click one to go to it", "Multitrack", 0);
+                            info.setTicked (dock->isShown (Panels::clipList)); break;
         case cmdMuteClip:   info.setInfo ("Mute Clip", "Keep the selected clips in place but silent, or let them be heard again", "Multitrack", 0);
                             info.setTicked (multitrack.areSelectedClipsMuted());
                             info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
-        case cmdClipProperties: info.setInfo ("Clip Properties", "A window with the selected clip's name, start, length, gain and fades", "Multitrack", 0);
-                            info.addDefaultKeypress ('i', cmd | shift); info.setTicked (clipPropertiesWindow != nullptr); break;
+        case cmdClipProperties: info.setInfo ("Clip Properties", "A panel with the selected clip's name, start, length, gain and fades", "Multitrack", 0);
+                            info.addDefaultKeypress ('i', cmd | shift); info.setTicked (dock->isShown (Panels::clipProperties)); break;
         case cmdExportFolderStems: info.setInfo ("Export Folder Stems...", "Write each folder's tracks and buses, mixed together through their effects, to a file of its own", "Multitrack", 0);
                             info.setActive (multitrackMode && backgroundJob == nullptr && ! Bounce::stemFolders (*engine.session.getState()).empty()); break;
         case cmdExportStems: info.setInfo ("Export Stems...", "Write each track, alone through its effects, to a file of its own", "Multitrack", 0);
@@ -1597,10 +1516,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                             && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].isFolder); break;
         case cmdAddFromTemplate: info.setInfo ("Add Track from Template...", "Add a track or bus made from a saved template", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
-        case cmdSessionNotes: info.setInfo ("Session Notes", "A window of free text kept with the session: lyrics, takes, things to do", "Multitrack", 0);
-                            info.setTicked (notesWindow != nullptr); break;
-        case cmdUndoHistory: info.setInfo ("Undo History", "A window listing the session's undo steps; click one to go back or forward to it", "Edit", 0);
-                            info.setTicked (undoHistoryWindow != nullptr); break;
+        case cmdSessionNotes: info.setInfo ("Session Notes", "A panel of free text kept with the session: lyrics, takes, things to do", "Multitrack", 0);
+                            info.setTicked (dock->isShown (Panels::notes)); break;
+        case cmdUndoHistory: info.setInfo ("Undo History", "A panel listing the session's undo steps; click one to go back or forward to it", "Edit", 0);
+                            info.setTicked (dock->isShown (Panels::history)); break;
         case cmdShiftPitch: info.setInfo ("Shift Clip Pitch...", "Raise or lower the selected clip's pitch without changing its length", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
         case cmdClearRange: info.setInfo ("Clear Range", "Clear the time range on every track, leaving the time empty", "Multitrack", 0);
@@ -1609,9 +1528,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
         case cmdInsertTime: info.setInfo ("Insert Time", "Put as much empty time as the range is long in at its start, moving what is after it on", "Multitrack", 0);
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
-        case cmdMarkerList: info.setInfo ("Marker List", "Show the session's markers and regions in a list", "Multitrack", 0);
-                            info.setActive (multitrackMode);
-                            info.setTicked (markerListWindow != nullptr); break;
+        case cmdMarkerList: info.setInfo ("Marker List", "A panel listing the session's markers and regions", "Multitrack", 0);
+                            info.setTicked (dock->isShown (Panels::markers)); break;
         case cmdImportMarkers: info.setInfo ("Import Markers from CSV...", "Add the markers and regions from a CSV file written by Export Markers", "File", 0);
                             info.setActive (multitrackMode || hasAudio); break;
         case cmdExportMarkers: info.setInfo ("Export Markers as CSV...", "Write the markers and regions of the session or file to a CSV file", "File", 0);
@@ -1909,8 +1827,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdExportStems: chooseStemsFolder (false); break;
         case cmdExportFolderStems: chooseStemsFolder (true); break;
         case cmdExportRegions: chooseRegionsFolder(); break;
-        case cmdClipProperties: toggleClipProperties(); break;
-        case cmdClipList:   toggleClipList(); break;
+        case cmdClipProperties: dock->toggle (Panels::clipProperties); break;
+        case cmdClipList:   dock->toggle (Panels::clipList); break;
         case cmdRepeatClip: multitrack.repeatSelectedClip(); break;
         case cmdRecordingOptions: showRecordingOptions(); break;
         case cmdTallerTracks:
@@ -1937,12 +1855,11 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdLoadRack:   loadRack(); break;
         case cmdRecord:     toggleRecord(); break;
         case cmdStop:       stopTransport(); break;
-        case cmdShowRack:
-            rackShown = ! rackShown;
-            appProperties.getUserSettings()->setValue (rackShownKey, rackShown);
-            resized();
-            commands.commandStatusChanged();
-            break;
+        case cmdShowRack:   dock->toggle (Panels::rack); break;
+        case cmdShowSelectionPanel: dock->toggle (Panels::selection); break;
+        case cmdSaveWorkspace: askToSaveWorkspace(); break;
+        case cmdResetWorkspace: resetWorkspace(); break;
+        case cmdDeleteWorkspace: askToDeleteWorkspace(); break;
         case cmdAddMarker:  addMarker(); break;
         case cmdConvertRate: chooseSampleRate(); break;
         case cmdShowWaveform: setMultitrack (false); setDisplay (WaveformView::Display::waveform); break;
@@ -1988,7 +1905,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDeleteTime: multitrack.deleteTimeSelection(); break;
         case cmdInsertTime: multitrack.insertTimeAtSelection(); break;
         case cmdCutTime:    multitrack.cutTimeSelection(); break;
-        case cmdMarkerList: toggleMarkerList(); break;
+        case cmdMarkerList: dock->toggle (Panels::markers); break;
         case cmdQuantize:   multitrack.quantizeSelectedClips(); break;
         case cmdExportMarkers: chooseMarkersCsv(); break;
         case cmdImportMarkers: chooseMarkersToImport(); break;
@@ -1998,8 +1915,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDuplicateTime: multitrack.duplicateTimeSelection(); break;
         case cmdStretchClip: askToStretchSelectedClip(); break;
         case cmdShiftPitch: askToShiftSelectedClip(); break;
-        case cmdUndoHistory: toggleUndoHistory(); break;
-        case cmdSessionNotes: toggleNotes(); break;
+        case cmdUndoHistory: dock->toggle (Panels::history); break;
+        case cmdSessionNotes: dock->toggle (Panels::notes); break;
         case cmdSaveTrackTemplate: chooseTrackTemplateToSave(); break;
         case cmdSaveCopyWithAudio: saveSessionCopyWithAudio(); break;
         case cmdAddFromTemplate: chooseTrackTemplateToAdd(); break;
@@ -2036,9 +1953,7 @@ bool MainComponent::perform (const InvocationInfo& info)
             multitrack.setShowBars (! multitrack.isShowingBars());
             commands.commandStatusChanged();
             break;
-        case cmdMixer:
-            toggleMixer();
-            break;
+        case cmdMixer:      dock->toggle (Panels::mixer); break;
         case cmdInputMonitoring:
             inputMonitoring = ! inputMonitoring;
             updateInputs();
@@ -2170,7 +2085,24 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdGoToTime }); break;
         case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdRegionsOverSounds, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, cmdMarkersToZero, 0, cmdMoveMarkersInSelection, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
-        case 7: add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack }); break;
+        case 7:
+        {
+            add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
+                   cmdShowRack, cmdShowSelectionPanel, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
+
+            juce::PopupMenu workspaceMenu;
+
+            for (size_t i = 0; i < workspaces->all().size(); ++i)
+                workspaceMenu.addItem (workspaceBaseId + (int) i, workspaces->all()[i].name, true, (int) i == workspaces->getCurrentIndex());
+
+            workspaceMenu.addSeparator();
+            workspaceMenu.addCommandItem (&commands, cmdSaveWorkspace);
+            workspaceMenu.addCommandItem (&commands, cmdResetWorkspace);
+            workspaceMenu.addCommandItem (&commands, cmdDeleteWorkspace);
+            menu.addSeparator();
+            menu.addSubMenu ("Workspace", workspaceMenu);
+            break;
+        }
         default: break;
     }
 
@@ -2644,22 +2576,6 @@ void MainComponent::askForMixDownFormat (const juce::File& file)
         }), true);
 }
 
-void MainComponent::toggleMixer()
-{
-    // Deleted later, not inside its own close button's callback.
-    if (mixerWindow != nullptr)
-        mixerWindow = nullptr;
-    else
-        mixerWindow = std::make_unique<MixerWindow> (engine, [this] { juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
-                                                                     {
-                                                                         if (safe != nullptr)
-                                                                             safe->toggleMixer();
-                                                                     }); });
-        places->watch (*mixerWindow, "Mixer");
-
-    commands.commandStatusChanged();
-}
-
 void MainComponent::duplicateTrack()
 {
     const auto state = engine.session.getState();
@@ -2756,63 +2672,6 @@ void MainComponent::chooseTrackTemplateToAdd()
                           });
 }
 
-void MainComponent::toggleUndoHistory()
-{
-    // Deleted later, not inside its own close button's callback.
-    if (undoHistoryWindow != nullptr)
-        undoHistoryWindow = nullptr;
-    else
-        undoHistoryWindow = std::make_unique<UndoHistoryWindow> (engine.session, [this]
-        {
-            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
-            {
-                if (safe != nullptr)
-                    safe->toggleUndoHistory();
-            });
-        });
-        places->watch (*undoHistoryWindow, "Undo History");
-
-    commands.commandStatusChanged();
-}
-
-void MainComponent::toggleNotes()
-{
-    // Deleted later, not inside its own close button's callback.
-    if (notesWindow != nullptr)
-        notesWindow = nullptr;
-    else
-        notesWindow = std::make_unique<NotesWindow> (engine.session, [this]
-        {
-            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
-            {
-                if (safe != nullptr)
-                    safe->toggleNotes();
-            });
-        });
-        places->watch (*notesWindow, "Session Notes");
-
-    commands.commandStatusChanged();
-}
-
-void MainComponent::toggleMarkerList()
-{
-    // Deleted later, not inside its own close button's callback.
-    if (markerListWindow != nullptr)
-        markerListWindow = nullptr;
-    else
-        markerListWindow = std::make_unique<MarkerListWindow> (engine.session, multitrack, [this]
-        {
-            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
-            {
-                if (safe != nullptr)
-                    safe->toggleMarkerList();
-            });
-        });
-        places->watch (*markerListWindow, "Marker List");
-
-    commands.commandStatusChanged();
-}
-
 void MainComponent::chooseMarkersCsv()
 {
     // Taken now: what is shown when the command is chosen.
@@ -2892,44 +2751,6 @@ void MainComponent::chooseClipsCsv()
                               if (file != juce::File() && ! file.replaceWithText (csv))
                                   showError ("Export Clip List", "Couldn't write " + file.getFullPathName() + ".");
                           });
-}
-
-void MainComponent::toggleClipList()
-{
-    // Deleted later, not inside its own close button's callback.
-    if (clipListWindow != nullptr)
-        clipListWindow = nullptr;
-    else
-        clipListWindow = std::make_unique<ClipListWindow> (engine, multitrack, [this]
-        {
-            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
-            {
-                if (safe != nullptr)
-                    safe->toggleClipList();
-            });
-        });
-        places->watch (*clipListWindow, "Clip List");
-
-    commands.commandStatusChanged();
-}
-
-void MainComponent::toggleClipProperties()
-{
-    // Deleted later, not inside its own close button's callback.
-    if (clipPropertiesWindow != nullptr)
-        clipPropertiesWindow = nullptr;
-    else
-        clipPropertiesWindow = std::make_unique<ClipPropertiesWindow> (engine, multitrack, [this]
-        {
-            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
-            {
-                if (safe != nullptr)
-                    safe->toggleClipProperties();
-            });
-        });
-        places->watch (*clipPropertiesWindow, "Clip Properties");
-
-    commands.commandStatusChanged();
 }
 
 void MainComponent::showRecordingOptions()
@@ -3702,6 +3523,12 @@ void MainComponent::noteRecent (const juce::File& file)
 
 void MainComponent::menuItemSelected (int menuItemId, int)
 {
+    if (juce::isPositiveAndBelow (menuItemId - workspaceBaseId, (int) workspaces->all().size()))
+    {
+        selectWorkspace (workspaces->all()[(size_t) (menuItemId - workspaceBaseId)].name);
+        return;
+    }
+
     if (juce::isPositiveAndBelow (menuItemId - fadeShapeBaseId, (int) FadeShapes::all.size()))
     {
         fadeShape = FadeShapes::all[(size_t) (menuItemId - fadeShapeBaseId)];
@@ -6861,4 +6688,154 @@ void MainComponent::loadRack()
                                       showError ("Some plug-ins did not load", errors);
                               });
                           });
+}
+
+//==============================================================================
+juce::Component* MainComponent::getPanel (const juce::String& id)
+{
+    if (id == Panels::editor)       return editorPanel.get();
+    if (id == Panels::rack)         return &rackView;
+    if (id == Panels::selection)    return &selectionPanel;
+
+    if (! Panels::all().contains (id))
+        return nullptr;
+
+    auto& made = madePanels[id];
+
+    if (made != nullptr)
+        return made.get();
+
+    const auto selectedClip = [this] { return multitrack.getSelectedClip(); };
+
+    if (id == Panels::mixer)
+        made = std::make_unique<MixerView> (engine);
+    else if (id == Panels::clipProperties)
+        made = std::make_unique<ClipProperties> (engine, selectedClip);
+    else if (id == Panels::clipList)
+        made = std::make_unique<ClipList> (engine, selectedClip, [this] (juce::uint32 clip) { multitrack.showClip (clip); });
+    else if (id == Panels::markers)
+        made = std::make_unique<MarkerTable> (engine.session, MarkerTable::Actions { [this] (int i) { multitrack.showMarker (i); },
+                                                                                    [this] (int i) { multitrack.renameMarker (i); },
+                                                                                    [this] (int i) { multitrack.deleteMarker (i); } });
+    else if (id == Panels::history)
+        made = std::make_unique<UndoHistory> (engine.session);
+    else if (id == Panels::notes)
+        made = std::make_unique<SessionNotes> (engine.session);
+
+    return made.get();
+}
+
+void MainComponent::panelHidden (const juce::String& id)
+{
+    madePanels.erase (id);
+}
+
+juce::String MainComponent::getTitle (const juce::String& id)
+{
+    if (id == Panels::editor)          return "Editor";
+    if (id == Panels::rack)            return "Effects Rack";
+    if (id == Panels::selection)       return "Selection/View";
+    if (id == Panels::mixer)           return "Mixer";
+    if (id == Panels::clipProperties)  return "Clip Properties";
+    if (id == Panels::clipList)        return "Clip List";
+    if (id == Panels::markers)         return "Markers";
+    if (id == Panels::history)         return "Undo History";
+    if (id == Panels::notes)           return "Session Notes";
+    return id;
+}
+
+bool MainComponent::isMovable (const juce::String& id)
+{
+    return id != Panels::editor;
+}
+
+void MainComponent::layoutChanged()
+{
+    workspaces->update (dock->getLayout());
+
+    if (auto xml = workspaces->toXml())
+        appProperties.getUserSettings()->setValue (workspacesKey, xml.get());
+
+    commands.commandStatusChanged();
+}
+
+std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::String& id)
+{
+    if (id == Panels::mixer)       return { Panels::editor, Dock::Side::bottom };
+    if (id == Panels::rack)        return { Panels::editor, Dock::Side::right };
+    if (id == Panels::selection)   return { Panels::rack, Dock::Side::bottom };
+
+    // Lists and the rest join the rack's tabs, or sit at the right without it.
+    return { Panels::rack, Dock::Side::centre };
+}
+
+void MainComponent::windowCreated (juce::DocumentWindow& window)
+{
+    window.addKeyListener (commands.getKeyMappings());   // the keys work with a floating panel in front
+}
+
+void MainComponent::selectWorkspace (const juce::String& name)
+{
+    if (! workspaces->select (name))
+        return;
+
+    dock->setLayout (workspaces->current().now);
+    layoutChanged();
+    menuItemsChanged();
+}
+
+void MainComponent::resetWorkspace()
+{
+    workspaces->reset();
+    dock->setLayout (workspaces->current().now);
+    layoutChanged();
+}
+
+void MainComponent::askToSaveWorkspace()
+{
+    auto* box = new juce::AlertWindow ("Save Workspace", "Keep the panels as they are now under a name of your own. "
+                                                         "One of yours with the same name is replaced.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("name", workspaces->current().builtIn ? juce::String() : workspaces->current().name, "Name");
+    box->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<MainComponent> (this), box] (int result)
+    {
+        if (safe == nullptr || result != 1)
+            return;
+
+        const auto name = box->getTextEditorContents ("name").trim();
+
+        if (! safe->workspaces->saveAs (name, safe->dock->getLayout()))
+        {
+            showError ("Save Workspace", name.isEmpty() ? "The workspace needs a name."
+                                                              : "\"" + name + "\" is a built-in workspace; choose another name.");
+            return;
+        }
+
+        safe->layoutChanged();
+        safe->menuItemsChanged();
+    }), true);
+}
+
+void MainComponent::askToDeleteWorkspace()
+{
+    const auto name = workspaces->current().name;
+
+    if (workspaces->current().builtIn)
+        return;
+
+    auto* box = new juce::AlertWindow ("Delete Workspace", "Delete the workspace \"" + name + "\"?", juce::MessageBoxIconType::QuestionIcon, this);
+    box->addButton ("Delete", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([safe = juce::Component::SafePointer<MainComponent> (this), name] (int result)
+    {
+        if (safe == nullptr || result != 1 || ! safe->workspaces->remove (name))
+            return;
+
+        safe->dock->setLayout (safe->workspaces->current().now);
+        safe->layoutChanged();
+        safe->menuItemsChanged();
+    }), true);
 }

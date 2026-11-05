@@ -4,7 +4,7 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
-**Status:** 0.9.4, an alpha for testing before 1.0. See the [changelog](CHANGELOG.md) for what each version holds and the [roadmap](ROADMAP.md) for what comes next.
+**Status:** 0.9.5, an alpha for testing before 1.0. See the [changelog](CHANGELOG.md) for what each version holds and the [roadmap](ROADMAP.md) for what comes next.
 
 SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026. On first launch it copies the settings of whichever earlier version you ran (audio device, inputs and outputs, plug-in list), and it still opens `.wdrack` and `.wlrack` rack files.
 
@@ -15,7 +15,15 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - **Effects:** parametric, graphic (10 and 31 bands) and single-band EQ, compressor, multiband compressor, de-esser, limiter, chorus, flanger, phaser, tremolo, echo, reverb and convolution reverb, each applied to the selection with a preview and presets, and most of them also live in the effects rack and on tracks; VST3 and Audio Unit plug-ins, each checked when it is scanned.
 - **Recording:** from the cursor, or punched in over a selection with pre-roll and post-roll; loop recording into takes; several tracks at once; input monitoring through a track's effects; a metronome and count-in.
 - **Multitrack sessions:** tracks, buses, sends, folders and groups; clip gain, fades, crossfades, stretching and pitch shifting; automation of volume, pan and effect parameters, drawn or written while playing; a tempo map with bars and beats and quantizing; a mixer; freezing, bouncing, mixdown and stems; recovery after a crash.
-- **Getting around:** a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import (with an Audition-style key set), recent files, and files opened from Finder.
+- **Getting around:** panels docked around the editor, tabbed or floating, kept in workspaces; a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import (with an Audition-style key set), recent files, and files opened from Finder.
+
+## Screenshots
+
+![The editor: a stereo file in the waveform and spectrogram view, with the effects rack beside it](docs/screenshots/editor.png)
+
+![A multitrack session: four tracks and a reverb bus, with clips, fades, sends and markers](docs/screenshots/multitrack.png)
+
+The audio in both was generated for the screenshots.
 
 ## Download and install
 
@@ -29,10 +37,10 @@ Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a larg
 
 - **Open a file:** File > Open (Cmd-O), drop it on the window, or click one of the recent files listed in the empty editor. Tick Preview in the open panel to hear files as you select them.
 - **Look at it:** View > Waveform (Cmd-1), Spectrogram (Cmd-2), or Waveform and Spectrogram (Cmd-3); in the last, drag the line between the two to size them.
-- **Edit:** select by dragging, Option-drag in the spectrogram to select a band of frequencies, and use the Edit and Effects menus. Space plays the selection, or from the cursor.
-- **Use plug-ins on a file:** add effects to the effects rack beside the editor (+ Add Effect, by format and maker), set them up with Edit while you listen, then Effects > Apply Effects Rack (Cmd-R) writes them into the selection or the whole file. Drag the bar beside the rack to widen it; View > Effects Rack (Option-Cmd-E) hides or shows it.
+- **Edit:** select by dragging (double-click selects the whole file), Option-drag in the spectrogram to select a band of frequencies, and use the Edit and Effects menus. Space plays the selection, or from the cursor.
+- **Use plug-ins on a file:** add effects to the effects rack beside the editor (+ Add Effect, by format and maker), set them up with Edit while you listen, then Effects > Apply Effects Rack (Cmd-R) writes them into the selection or the whole file. Window > Effects Rack (Option-Cmd-E) hides or shows it.
 - **Multitrack:** View > Multitrack Session (Cmd-4) switches to the session; each track's FX button holds its own effects.
-- **Windows:** every window opens where you last left it, and the rack keeps the width you gave it.
+- **Panels and workspaces:** the effects rack, the selection, the mixer, markers, clip lists and the rest are panels docked around the editor. Drag a panel's tab onto the edge of another panel to dock it there, onto its middle to make it a tab there, or out of the window to float it; drag the bars between panels to size them. Close a panel with its ×, and show it again from the Window menu. Window > Workspace switches between layouts (Classic, Multitrack and your own), keeps each as you left it, saves the current one under a name, and puts one back as it was saved. Other windows open where you last left them.
 - **Keys:** Window > Keyboard Shortcuts... lists every command's keys; change them, export and import them, or pick Key Sets... > Audition-Style Keys.
 
 ## Plug-ins
@@ -67,7 +75,7 @@ This builds a universal Release app in `build-release/`, signs it ad hoc, runs t
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.9.4/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.9.5/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Tests
