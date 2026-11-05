@@ -104,3 +104,43 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FilesPanel)
 };
+
+/** The open files as tabs over the editor: each with its name (dotted while unsaved) and a × to
+    close it, the one showing marked with the accent. Click a tab to show its file. The tabs
+    share out the width, shrinking when there are many. */
+class FileTabs final : public juce::Component,
+                       public juce::SettableTooltipClient,
+                       private juce::ChangeListener
+{
+public:
+    explicit FileTabs (OpenFiles&);
+    ~FileTabs() override;
+
+    std::function<void (int)> onChoose, onClose;
+
+    /** Whether there is a file to show a tab for (none while the editor is empty). */
+    bool hasTabs() const;
+
+    juce::Rectangle<int> getTabBounds (int index) const;
+    juce::Rectangle<int> getCloseBounds (int index) const;
+    int tabAt (juce::Point<int>) const;
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+    void mouseMove (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
+
+    static constexpr int height = 30;
+    static constexpr int widest = 220, narrowest = 70;
+
+private:
+    void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    int tabWidth (int index) const;
+
+    OpenFiles& files;
+    int hovered = -1, pressed = -1;
+    bool pressedClose = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FileTabs)
+};

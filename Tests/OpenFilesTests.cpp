@@ -156,9 +156,73 @@ namespace
     }
 }
 
+namespace
+{
+    juce::MouseEvent press (juce::Component& c, juce::Point<int> at, juce::ModifierKeys mods = {})
+    {
+        const auto now = juce::Time::getCurrentTime();
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at.toFloat(), mods, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &c, &c,
+                                 now, at.toFloat(), now, 1, false);
+    }
+
+    void testTabs()
+    {
+        AudioEngine engine;
+        OpenFiles files (engine);
+        FileTabs tabs (files);
+        tabs.setSize (900, FileTabs::height);
+        const auto empty = ! tabs.hasTabs();
+
+        load (engine, "Drums.wav", 1000, 0.1f);
+        files.prepareForAnother ({});
+        load (engine, "Bass.wav", 1000, 0.2f);
+        files.prepareForAnother ({});
+        load (engine, "A very long file name for the lead vocal take seven.wav", 1000, 0.3f);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+
+        const auto first = tabs.getTabBounds (0), second = tabs.getTabBounds (1), third = tabs.getTabBounds (2);
+        check (empty && tabs.hasTabs() && first.getX() == 0 && second.getX() == first.getRight() && third.getX() == second.getRight()
+                   && third.getWidth() == FileTabs::widest && first.getWidth() < third.getWidth() && tabs.tabAt (second.getCentre()) == 1,
+               "file tabs: none while the editor is empty, then one per open file side by side, each as wide as its name needs up to a limit");
+
+        std::vector<int> chosen, closed;
+        tabs.onChoose = [&] (int i) { chosen.push_back (i); };
+        tabs.onClose = [&] (int i) { closed.push_back (i); };
+        tabs.mouseDown (press (tabs, first.getCentre().withX (first.getX() + 20)));
+        tabs.mouseUp (press (tabs, first.getCentre().withX (first.getX() + 20)));
+        const auto closeAt = tabs.getCloseBounds (1).getCentre();
+        tabs.mouseDown (press (tabs, closeAt));
+        tabs.mouseUp (press (tabs, closeAt));
+        tabs.mouseDown (press (tabs, tabs.getCloseBounds (2).getCentre()));
+        tabs.mouseUp (press (tabs, first.getCentre()));   // released away from the ×: nothing closes
+        check (chosen == std::vector<int> { 0 } && closed == std::vector<int> { 1 },
+               "file tabs: clicking a tab shows its file, and its × closes it only when released over it");
+
+        tabs.setSize (150, FileTabs::height);
+        const auto squeezed = tabs.getTabBounds (0).getWidth() == 50 && tabs.getTabBounds (2).getRight() == 150;
+        tabs.createComponentSnapshot (tabs.getLocalBounds());   // paints
+        check (squeezed, "file tabs: when they don't fit they share the width evenly");
+    }
+
+    void testDroppingSeveral()
+    {
+        AudioEngine engine;
+        WaveformView view (engine);
+        view.setBounds (0, 0, 800, 400);
+        juce::Array<juce::File> dropped;
+        view.onFilesDropped = [&] (const juce::Array<juce::File>& f) { dropped = f; };
+        view.filesDropped ({ "/tmp/one.wav", "/tmp/notes.txt", "/tmp/two.aiff", "/tmp/three.flac" }, 10, 10);
+        check (dropped.size() == 3 && dropped[0].getFileName() == "one.wav" && dropped[1].getFileName() == "two.aiff"
+                   && dropped[2].getFileName() == "three.flac",
+               "file tabs: dropping several files on the editor hands on every audio file, in order, leaving out the rest");
+    }
+}
+
 void runOpenFilesTests()
 {
     testSwitching();
     testViewPlaces();
     testPanel();
+    testTabs();
+    testDroppingSeveral();
 }

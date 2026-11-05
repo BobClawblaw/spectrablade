@@ -50,6 +50,10 @@ public:
         other file in the editor, each after asking about unsaved changes. */
     void openDocument (const juce::File&);
 
+    /** Opens several files at once, each beside the others (the last shows); a session among them
+        is opened instead of the audio files. */
+    void openDocuments (const juce::Array<juce::File>&);
+
     std::function<void (const juce::String& title)> onTitleChanged;
 
     /** Shows the loading screen centred on where the main window will be; whenReady shows that
@@ -350,6 +354,7 @@ private:
     WaveformView waveform { engine };
     MultitrackView multitrack { engine };
     OpenFiles openFiles { engine };
+    FileTabs fileTabs { openFiles };
 
     /** Shows another open file in the editor, where it was left. */
     void switchToFile (int index);

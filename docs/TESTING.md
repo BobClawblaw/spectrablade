@@ -189,7 +189,7 @@ What they check:
 - Markers: the edit rules (delete, insert, replace, crop), undo and redo, and WAV, AIFF and FLAC round trips.
 - The recorder against a simulated device: channel mapping among active inputs, a 30 s take checked sample by sample, the playback anchor, and a punch-in through a simulated loop cable that must line up exactly.
 - The dock: docking, tabbing, floating and closing panels, layouts in XML, workspaces, and the dock itself laying out stand-in panels and taking drops.
-- Several open files: keeping each aside with its history and place, switching, closing, and the Files panel.
+- Several open files: keeping each aside with its history and place, switching, closing, the Files panel, the tabs over the editor, and dropping several at once.
 - The panels: the undo history following the file or the session, the levels, the spectrum against sines at known levels, correlation and the goniometer, and the copy of the output they read.
 - The fade handles: the curves, the faded samples, the fades kept adjustable as one undo step, and dragging the handles in the view.
 - The theme: its text contrast measured as WCAG ratios, and the standard controls drawn in its colours.

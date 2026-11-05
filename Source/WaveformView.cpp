@@ -548,7 +548,7 @@ juce::Rectangle<float> WaveformView::getFadeHandle (bool out) const
     const auto area = getWaveArea().toFloat();
     const auto length = engine.document.getNumFrames();
     const auto frames = shownFade (out).frames;
-    constexpr auto size = 12.0f;
+    constexpr auto size = 14.0f;
     const auto x = (float) frameToX (out ? length - frames : frames);
     const auto centre = juce::jlimit (area.getX() + size * 0.5f + 1.0f, area.getRight() - size * 0.5f - 1.0f, x);
     return { centre - size * 0.5f, area.getY() + 3.0f, size, size };
@@ -655,10 +655,17 @@ void WaveformView::drawFades (juce::Graphics& g, juce::Rectangle<int> area)
             g.drawVerticalLine (juce::roundToInt (out ? startX : endX), (float) area.getY(), (float) area.getBottom());
         }
 
-        // The handle: a small rounded square, filled with the accent while it has a fade.
-        g.setColour (fade.frames > 0 || dragging ? Theme::accent : Theme::raised);
+        // The handle: an accent square holding a ramp, rising for the fade in and falling for the
+        // fade out, so the two mirror each other. A white edge while it has a fade or is dragged.
+        const auto active = fade.frames > 0 || dragging;
+        g.setColour (Theme::accent);
         g.fillRoundedRectangle (handle, 3.0f);
-        g.setColour (fade.frames > 0 || dragging ? Theme::textStrong : Theme::dimText);
+        const auto inner = handle.reduced (3.0f);
+        juce::Path ramp;
+        ramp.addTriangle (out ? inner.getTopLeft() : inner.getTopRight(), inner.getBottomLeft(), inner.getBottomRight());
+        g.setColour (Theme::textStrong.withAlpha (active ? 1.0f : 0.85f));
+        g.fillPath (ramp);
+        g.setColour (active ? Theme::textStrong : Theme::accent.brighter (0.4f));
         g.drawRoundedRectangle (handle.reduced (0.5f), 3.0f, 1.0f);
 
         if (dragging && rate > 0.0)
@@ -1047,8 +1054,14 @@ bool WaveformView::isInterestedInFileDrag (const juce::StringArray& files)
 
 void WaveformView::filesDropped (const juce::StringArray& files, int, int)
 {
-    if (onFileDropped != nullptr && ! files.isEmpty())
-        onFileDropped (juce::File (files[0]));
+    juce::Array<juce::File> audio;
+
+    for (auto& path : files)
+        if (engine.formatManager.findFormatForFileExtension (juce::File (path).getFileExtension()) != nullptr)
+            audio.add (juce::File (path));
+
+    if (onFilesDropped != nullptr && ! audio.isEmpty())
+        onFilesDropped (audio);
 }
 
 void WaveformView::changeListenerCallback (juce::ChangeBroadcaster*)

@@ -3,6 +3,7 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/FileFades.h"
 #include "../Source/WaveformView.h"
+#include "../Source/Theme.h"
 #include "TestUtils.h"
 #include "FadeHandleTests.h"
 
@@ -156,6 +157,32 @@ namespace
                "fade handles: the fade out's handle sets its own fade, and a later drag keeps the curve and both stay one undo step, selecting nothing");
 
         view.createComponentSnapshot (view.getLocalBounds());   // paints the curves and handles
+
+        // The two handles mirror each other: the fade out's is the fade in's flipped left to right.
+        {
+            AudioEngine plain;
+            plain.document.reset (ones (2, 48000), 48000.0, {}, 24);
+            WaveformView fresh (plain);
+            fresh.setBounds (0, 0, 1000, 600);
+            fresh.zoomToFit();
+            const auto image = fresh.createComponentSnapshot (fresh.getLocalBounds());
+            const auto a = fresh.getFadeHandle (false).toNearestInt(), b = fresh.getFadeHandle (true).toNearestInt();
+            auto mirrored = a.getWidth() == b.getWidth() && a.getY() == b.getY();
+            auto accentPixels = 0;
+
+            for (int y = 0; y < a.getHeight() && mirrored; ++y)
+                for (int x = 0; x < a.getWidth(); ++x)
+                {
+                    const auto left = image.getPixelAt (a.getX() + x, a.getY() + y), right = image.getPixelAt (b.getRight() - 1 - x, b.getY() + y);
+                    mirrored = mirrored && std::abs ((int) left.getRed() - (int) right.getRed()) <= 8 && std::abs ((int) left.getGreen() - (int) right.getGreen()) <= 8
+                               && std::abs ((int) left.getBlue() - (int) right.getBlue()) <= 8;
+                    accentPixels += left == Theme::accent ? 1 : 0;
+                }
+
+            const auto rising = image.getPixelAt (a.getRight() - 4, a.getY() + 4) != image.getPixelAt (a.getX() + 4, a.getY() + 4);
+            check (mirrored && rising && accentPixels >= 20,
+                   "fade handles: both show the accent with no fades, the fade in's ramp rising and the fade out's its mirror image");
+        }
 
         const auto at = view.getFadeHandle (true).getCentre();
         view.mouseDown (mouse (view, at, at));

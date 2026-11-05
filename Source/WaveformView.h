@@ -21,7 +21,7 @@ public:
     explicit WaveformView (AudioEngine& engine);
     ~WaveformView() override;
 
-    std::function<void (const juce::File&)> onFileDropped;
+    std::function<void (const juce::Array<juce::File>&)> onFilesDropped;   // every audio file dropped, in order
     std::function<void()> onSelectionChanged;
 
     enum class Display { waveform, spectrogram, both };

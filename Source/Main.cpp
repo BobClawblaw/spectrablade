@@ -50,14 +50,13 @@ public:
             quit();
     }
     // Files opened from Finder or the Dock arrive here on macOS, as do any named on the command line.
-    // Only the last one stays open, so they open one after another, each asking about unsaved changes.
+    // Each opens beside the files already open, the last one showing.
     void anotherInstanceStarted (const juce::String& commandLine) override
     {
         if (mainWindow == nullptr)
             return;
 
-        for (auto& file : AudioFileIO::filesIn (commandLine))
-            mainWindow->getMainComponent().openDocument (file);
+        mainWindow->getMainComponent().openDocuments (AudioFileIO::filesIn (commandLine));
     }
 
 private:

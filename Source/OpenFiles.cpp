@@ -261,3 +261,171 @@ void FilesPanel::changeListenerCallback (juce::ChangeBroadcaster*)
     list.repaint();
     repaint();
 }
+
+//==============================================================================
+FileTabs::FileTabs (OpenFiles& f) : files (f)
+{
+    files.addChangeListener (this);
+}
+
+FileTabs::~FileTabs()
+{
+    files.removeChangeListener (this);
+}
+
+bool FileTabs::hasTabs() const
+{
+    return files.size() > 1 || files.documentAt (0).hasAudio() || files.documentAt (0).getFile() != juce::File();
+}
+
+int FileTabs::tabWidth (int index) const
+{
+    // Each wants room for its name and its ×; when they don't all fit, they share the width.
+    const auto wanted = [this] (int i)
+    {
+        const auto name = files.nameAt (i) + " *";
+        return juce::jlimit (narrowest, widest,
+                             juce::GlyphArrangement::getStringWidthInt (juce::Font (juce::FontOptions (Theme::bodyText)), name) + 44);
+    };
+
+    auto total = 0;
+
+    for (int i = 0; i < files.size(); ++i)
+        total += wanted (i);
+
+    if (total <= getWidth())
+        return wanted (index);
+
+    return juce::jmax (narrowest / 2, getWidth() / juce::jmax (1, files.size()));
+}
+
+juce::Rectangle<int> FileTabs::getTabBounds (int index) const
+{
+    if (! juce::isPositiveAndBelow (index, files.size()))
+        return {};
+
+    auto x = 0;
+
+    for (int i = 0; i < index; ++i)
+        x += tabWidth (i);
+
+    return { x, 0, tabWidth (index), getHeight() };
+}
+
+juce::Rectangle<int> FileTabs::getCloseBounds (int index) const
+{
+    const auto tab = getTabBounds (index);
+    return tab.isEmpty() ? tab : juce::Rectangle<int> (tab.getRight() - 24, tab.getCentreY() - 8, 16, 16);
+}
+
+int FileTabs::tabAt (juce::Point<int> p) const
+{
+    for (int i = 0; i < files.size(); ++i)
+        if (getTabBounds (i).contains (p))
+            return i;
+
+    return -1;
+}
+
+void FileTabs::paint (juce::Graphics& g)
+{
+    g.fillAll (Theme::surface);
+
+    if (! hasTabs())
+        return;
+
+    for (int i = 0; i < files.size(); ++i)
+    {
+        const auto tab = getTabBounds (i);
+        const auto active = i == files.getActiveIndex();
+        const auto& doc = files.documentAt (i);
+        const auto unsaved = doc.isDirty() && doc.hasAudio();
+
+        g.setColour (active ? Theme::base : i == hovered ? Theme::hover : Theme::raised);
+        g.fillRect (tab.withTrimmedRight (1));
+
+        if (active)
+        {
+            g.setColour (Theme::accent);
+            g.fillRect (tab.withHeight (2).withTrimmedRight (1));
+        }
+
+        auto text = tab.withTrimmedLeft (12).withTrimmedRight (28);
+        g.setColour (active ? Theme::textStrong : Theme::dimText);
+        g.setFont (juce::FontOptions (Theme::bodyText, active ? juce::Font::bold : juce::Font::plain));
+        g.drawText (files.nameAt (i), text, juce::Justification::centredLeft, true);
+
+        // The ×, or a dot in its place while unsaved and not under the mouse.
+        const auto c = getCloseBounds (i).toFloat();
+
+        if (unsaved && i != hovered)
+        {
+            g.setColour (active ? Theme::text : Theme::dimText);
+            g.fillEllipse (c.withSizeKeepingCentre (7.0f, 7.0f));
+        }
+        else if (active || i == hovered)
+        {
+            const auto x = c.reduced (4.0f);
+            g.setColour (Theme::dimText);
+            g.drawLine ({ x.getTopLeft(), x.getBottomRight() }, 1.4f);
+            g.drawLine ({ x.getTopRight(), x.getBottomLeft() }, 1.4f);
+        }
+    }
+
+    g.setColour (Theme::line);
+    g.fillRect (0, getHeight() - 1, getWidth(), 1);
+}
+
+void FileTabs::mouseDown (const juce::MouseEvent& e)
+{
+    pressed = tabAt (e.getPosition());
+    pressedClose = pressed >= 0 && getCloseBounds (pressed).contains (e.getPosition());
+
+    if (pressed < 0)
+        return;
+
+    if (e.mods.isPopupMenu())
+    {
+        const auto index = std::exchange (pressed, -1);
+        juce::PopupMenu menu;
+        menu.addItem ("Close " + files.nameAt (index), [this, index] { if (onClose != nullptr) onClose (index); });
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
+        return;
+    }
+
+    // A tab is shown as it is pressed; its × closes it when released over it.
+    if (! pressedClose && onChoose != nullptr)
+        onChoose (pressed);
+}
+
+void FileTabs::mouseUp (const juce::MouseEvent& e)
+{
+    const auto index = std::exchange (pressed, -1);
+
+    if (index >= 0 && pressedClose && getCloseBounds (index).contains (e.getPosition()) && onClose != nullptr)
+        onClose (index);
+}
+
+void FileTabs::mouseMove (const juce::MouseEvent& e)
+{
+    if (const auto over = tabAt (e.getPosition()); over != hovered)
+    {
+        hovered = over;
+        setTooltip (over >= 0 ? files.documentAt (over).getFile().getFullPathName() : juce::String());
+        repaint();
+    }
+}
+
+void FileTabs::mouseExit (const juce::MouseEvent&)
+{
+    hovered = -1;
+    repaint();
+}
+
+void FileTabs::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    repaint();
+
+    if (auto* parent = getParentComponent())
+        parent->resized();   // the tabs come and go with the files
+}

@@ -615,12 +615,14 @@ private:
 };
 
 //==============================================================================
-/** The dock's middle: the file's waveform, or the session's overview over its tracks. */
+/** The dock's middle: the open files' tabs over the file's waveform, or the session's overview over
+    its tracks. */
 class MainComponent::EditorPanel final : public juce::Component
 {
 public:
-    EditorPanel (WaveformView& w, SessionOverview& o, MultitrackView& m) : waveform (w), overview (o), multitrack (m)
+    EditorPanel (FileTabs& t, WaveformView& w, SessionOverview& o, MultitrackView& m) : tabs (t), waveform (w), overview (o), multitrack (m)
     {
+        addAndMakeVisible (tabs);
         addAndMakeVisible (waveform);
         addChildComponent (overview);
         addChildComponent (multitrack);
@@ -629,13 +631,18 @@ public:
     void resized() override
     {
         auto r = getLocalBounds();
+        const auto showTabs = waveform.isVisible() && tabs.hasTabs();
+        tabs.setVisible (showTabs);
+        tabs.setBounds (showTabs ? r.removeFromTop (FileTabs::height) : juce::Rectangle<int>());
         waveform.setBounds (r);
+        r = getLocalBounds();
         overview.setBounds (r.removeFromTop (SessionOverview::height));
         r.removeFromTop (4);
         multitrack.setBounds (r);
     }
 
 private:
+    FileTabs& tabs;
     WaveformView& waveform;
     SessionOverview& overview;
     MultitrackView& multitrack;
@@ -745,10 +752,12 @@ MainComponent::MainComponent()
     waveform.setWaveformShare (settings->getDoubleValue (waveShareKey, 0.35));
     waveform.onWaveformShareChanged = [settings] (double share) { settings->setValue (waveShareKey, share); };
     fadeShape = FadeShapes::fromId (settings->getValue (fadeShapeKey));
-    waveform.onFileDropped = [this] (const juce::File& f) { openFile (f); };
+    waveform.onFilesDropped = [this] (const juce::Array<juce::File>& files) { openDocuments (files); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
-    editorPanel = std::make_unique<EditorPanel> (waveform, overview, multitrack);
+    editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, overview, multitrack);
+    fileTabs.onChoose = [this] (int index) { switchToFile (index); };
+    fileTabs.onClose = [this] (int index) { closeFile (index); };
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
     multitrack.setFindingZeroCrossings (settings->getBoolValue (zeroCrossingsKey, false));
@@ -2429,6 +2438,7 @@ void MainComponent::setMultitrack (bool on)
     waveform.setVisible (! on);
     multitrack.setVisible (on);
     overview.setVisible (on);
+    editorPanel->resized();   // the file tabs show with the editor only
 
     if (auto it = madePanels.find (Panels::history); it != madePanels.end())
         if (auto* history = dynamic_cast<UndoHistory*> (it->second.get()))
@@ -3538,6 +3548,75 @@ void MainComponent::openDocument (const juce::File& file)
         openFile (file);
 }
 
+void MainComponent::openDocuments (const juce::Array<juce::File>& chosen)
+{
+    juce::Array<juce::File> audio;
+
+    for (auto& file : chosen)
+    {
+        if (! file.existsAsFile())
+            continue;
+
+        if (file.hasFileExtension ("sbsession"))
+        {
+            openDocument (file);   // a session takes the place of the rest
+            return;
+        }
+
+        audio.add (file);
+    }
+
+    if (audio.isEmpty())
+        return;
+
+    if (isRecording())
+    {
+        showError ("Can't open files", "Stop recording first.");
+        return;
+    }
+
+    // All but the last are read and set aside unseen, so each is fitted to the window when first
+    // shown; the one showing now keeps its place. The ones that can't be read are listed once.
+    juce::StringArray errors;
+    auto opened = 0;
+    auto showingUnseen = false;   // the editor holds a file adopted here that hasn't been laid out yet
+    stopPreview();
+
+    for (auto& file : audio)
+    {
+        if (const auto index = openFiles.indexOf (file); index >= 0)
+        {
+            switchToFile (index);
+            showingUnseen = false;
+            ++opened;
+            continue;
+        }
+
+        auto loaded = AudioFileIO::load (file, engine.formatManager);
+
+        if (loaded.error.isNotEmpty())
+        {
+            errors.add (file.getFileName() + ": " + loaded.error);
+            continue;
+        }
+
+        openFiles.prepareForAnother (showingUnseen ? FilePlace {} : waveform.getPlace());
+        engine.adoptFile (file, std::move (loaded));
+        showingUnseen = true;
+        noteRecent (file);
+        ++opened;
+    }
+
+    if (opened > 0)
+    {
+        setMultitrack (false);
+        refreshTitle();
+    }
+
+    if (! errors.isEmpty())
+        showError (errors.size() == 1 ? juce::String ("Can't open file") : juce::String ("Can't open some files"), errors.joinIntoString ("\n"));
+}
+
 void MainComponent::openFile (const juce::File& file)
 {
     if (isRecording())
@@ -3693,13 +3772,12 @@ void MainComponent::chooseFile()
     auto* preview = makeOpenPreview();
     chooser = std::make_unique<juce::FileChooser> ("Open audio file", engine.document.getFile().getParentDirectory(),
                                                    engine.formatManager.getWildcardForAllFormats());
-    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::canSelectMultipleItems,
                           [this] (const juce::FileChooser& fc)
                           {
                               engine.auditionFile ({});
-
-                              if (fc.getResult().existsAsFile())
-                                  openFile (fc.getResult());
+                              openDocuments (fc.getResults());
                           },
                           preview);
 }
