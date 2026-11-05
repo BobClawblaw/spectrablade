@@ -14,7 +14,7 @@ AuditionPreview::AuditionPreview (juce::AudioFormatManager& f, Player p, bool pr
     addAndMakeVisible (playButton);
 
     description.setFont (juce::FontOptions (12.0f));
-    description.setColour (juce::Label::textColourId, Theme::dimText);
+    Theme::follow (description, juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (description);
 
     setSize (520, 36);

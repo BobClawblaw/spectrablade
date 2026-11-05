@@ -58,9 +58,9 @@ void SessionOverview::paint (juce::Graphics& g)
     const auto visible = view.getVisibleFrames();
     const auto frame = juce::Rectangle<float> (xFor (visible.getStart()), 0.5f, juce::jmax (3.0f, xFor (visible.getEnd()) - xFor (visible.getStart())),
                                                (float) getHeight() - 1.0f);
-    g.setColour (juce::Colours::white.withAlpha (0.08f));
+    g.setColour (Theme::overlay.withAlpha (0.08f));
     g.fillRect (frame);
-    g.setColour (juce::Colours::white.withAlpha (0.6f));
+    g.setColour (Theme::overlay.withAlpha (0.6f));
     g.drawRect (frame, 1.0f);
 
     g.setColour (juce::Colour (0xfff2cc60));

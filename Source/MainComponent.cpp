@@ -44,6 +44,8 @@ namespace
     constexpr const char* openPreviewKey  = "previewInOpenPanel";
     constexpr const char* waveShareKey    = "waveformShare";
     constexpr const char* workspacesKey   = "workspaces";
+    constexpr const char* themeKey        = "theme";
+    constexpr const char* accentKey       = "accent";
 
     // The dock's panels.
     namespace Panels
@@ -408,7 +410,7 @@ private:
             for (auto* c : std::initializer_list<juce::Component*> { &scanButton, &retryButton, &removeButton, &stopButton, &progressBar, &status })
                 addAndMakeVisible (c);
 
-            status.setColour (juce::Label::textColourId, Theme::text);
+            Theme::follow (status, juce::Label::textColourId, Theme::text);
             showSummary ({});
             updateButtons();
         }
@@ -678,6 +680,7 @@ MainComponent::MainComponent()
     }
 
     auto* settings = appProperties.getUserSettings();
+    Theme::apply (Theme::make (settings->getValue (themeKey, "Dark"), settings->getValue (accentKey, "Blue")));
     deadMansPedalFile = settings->getFile().getSiblingFile ("RecentlyCrashedPluginsList");
     places = std::make_unique<WindowPlaces> (*settings);
 
@@ -691,7 +694,7 @@ MainComponent::MainComponent()
         addAndMakeVisible (b);
 
     multitrackButton.setTooltip ("Switch between the file and the multitrack session (Cmd+4)");
-    multitrackButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
+    Theme::follow (multitrackButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
     multitrackButton.onClick = [this] { setMultitrack (! multitrackMode); };
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
@@ -744,8 +747,8 @@ MainComponent::MainComponent()
 
     addAndMakeVisible (loadReadout);
 
-    deviceLabel.setColour (juce::Label::textColourId, Theme::dimText);
-    selectionLabel.setColour (juce::Label::textColourId, Theme::text);
+    Theme::follow (deviceLabel, juce::Label::textColourId, Theme::dimText);
+    Theme::follow (selectionLabel, juce::Label::textColourId, Theme::text);
     selectionLabel.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
 
     waveform.setDisplay ((WaveformView::Display) juce::jlimit (0, 2, settings->getIntValue (displayKey, 0)));
@@ -2123,8 +2126,27 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack });
             break;
         }
-        case 3: add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, cmdShowRack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
-                       0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks }); break;
+        case 3:
+        {
+            add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, cmdShowRack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
+                   0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks });
+
+            juce::PopupMenu themeMenu;
+            const auto themes = Theme::themeNames(), accents = Theme::accentNames();
+
+            for (int i = 0; i < themes.size(); ++i)
+                themeMenu.addItem (themeBaseId + i, themes[i], true, themes[i] == Theme::current().name);
+
+            themeMenu.addSeparator();
+            themeMenu.addSectionHeader ("Accent");
+
+            for (int i = 0; i < accents.size(); ++i)
+                themeMenu.addItem (accentBaseId + i, accents[i], true, accents[i] == appProperties.getUserSettings()->getValue (accentKey, "Blue"));
+
+            menu.addSeparator();
+            menu.addSubMenu ("Theme", themeMenu);
+            break;
+        }
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdGoToTime }); break;
         case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdRegionsOverSounds, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, cmdMarkersToZero, 0, cmdMoveMarkersInSelection, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
@@ -3719,8 +3741,29 @@ void MainComponent::noteRecent (const juce::File& file)
     menuItemsChanged();
 }
 
+void MainComponent::setTheme (const juce::String& theme, const juce::String& accentName)
+{
+    auto* settings = appProperties.getUserSettings();
+    settings->setValue (themeKey, theme);
+    settings->setValue (accentKey, accentName);
+    Theme::apply (Theme::make (theme, accentName));
+    menuItemsChanged();
+}
+
 void MainComponent::menuItemSelected (int menuItemId, int)
 {
+    if (const auto themes = Theme::themeNames(); juce::isPositiveAndBelow (menuItemId - themeBaseId, themes.size()))
+    {
+        setTheme (themes[menuItemId - themeBaseId], appProperties.getUserSettings()->getValue (accentKey, "Blue"));
+        return;
+    }
+
+    if (const auto accents = Theme::accentNames(); juce::isPositiveAndBelow (menuItemId - accentBaseId, accents.size()))
+    {
+        setTheme (Theme::current().name, accents[menuItemId - accentBaseId]);
+        return;
+    }
+
     if (juce::isPositiveAndBelow (menuItemId - workspaceBaseId, (int) workspaces->all().size()))
     {
         selectWorkspace (workspaces->all()[(size_t) (menuItemId - workspaceBaseId)].name);

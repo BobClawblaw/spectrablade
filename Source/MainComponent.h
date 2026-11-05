@@ -455,6 +455,10 @@ private:
     void askToDeleteWorkspace();
     void resetWorkspace();
     static constexpr int workspaceBaseId = 0x7200;   // menu ids for Window > Workspace
+    static constexpr int themeBaseId = 0x7300, accentBaseId = 0x7380;   // menu ids for View > Theme
+
+    /** Puts a theme and accent into use and keeps them for next time. */
+    void setTheme (const juce::String& theme, const juce::String& accentName);
 
     std::unique_ptr<EditorPanel> editorPanel;
     std::map<juce::String, std::unique_ptr<juce::Component>> madePanels;   // the panels made when shown

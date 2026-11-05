@@ -8,11 +8,11 @@ namespace
     constexpr int scrollBarHeight = 12;
     constexpr double minFramesPerPixel = 1.0 / 64.0;
 
-    const juce::Colour background  (0xff15181d);
-    const juce::Colour laneLine    (0xff2a2f37);
-    const juce::Colour waveColour  (0xff4fc3a1);
-    const juce::Colour selectColour (0x3346a0ff);
-    const juce::Colour cursorColour = Theme::cursor;
+    // The theme's colours, read as they are when painting.
+    const juce::Colour& background = Theme::canvas;
+    const juce::Colour& laneLine = Theme::line;
+    const juce::Colour& waveColour = Theme::waveform;
+    const juce::Colour& cursorColour = Theme::cursor;
     const juce::Colour markerColour (0xffff8a3d);
     const juce::Colour regionColour (0xff58a6ff);
 
@@ -132,7 +132,7 @@ void WaveformView::drawMarkers (juce::Graphics& g)
             g.setColour (regionColour.withAlpha (0.6f));
             g.drawVerticalLine ((int) x1, wave.getY(), wave.getBottom());
             g.drawVerticalLine ((int) x2, wave.getY(), wave.getBottom());
-            g.setColour (juce::Colours::white);
+            g.setColour (Theme::textStrong);
             g.drawText (m.name, bar.reduced (4.0f, 0.0f), juce::Justification::centredLeft, true);
         }
         else
@@ -142,7 +142,7 @@ void WaveformView::drawMarkers (juce::Graphics& g)
 
             juce::Path flag;
             flag.addTriangle (x1 - 5.0f, lane.getY() + 2.0f, x1 + 5.0f, lane.getY() + 2.0f, x1, lane.getBottom() - 2.0f);
-            g.setColour (active ? juce::Colours::white : markerColour);
+            g.setColour (active ? Theme::textStrong : markerColour);
             g.fillPath (flag);
 
             const float dashes[] = { 4.0f, 3.0f };
@@ -503,7 +503,7 @@ void WaveformView::paint (juce::Graphics& g)
 
         if (band.isEmpty())
         {
-            g.setColour (selectColour);
+            g.setColour (Theme::accent.withAlpha (0.2f));
             g.fillRect (juce::Rectangle<float> (x1, (float) area.getY(), w, (float) area.getHeight()));
         }
         else
@@ -537,7 +537,7 @@ void WaveformView::paint (juce::Graphics& g)
 
     if (engine.getPlayer().isPlaying())
     {
-        g.setColour (juce::Colours::white);
+        g.setColour (Theme::textStrong);
         g.drawVerticalLine ((int) frameToX (engine.getPlayer().getPositionFrames()), 0.0f, (float) area.getBottom());
     }
 }
@@ -663,7 +663,7 @@ void WaveformView::drawFades (juce::Graphics& g, juce::Rectangle<int> area)
         const auto inner = handle.reduced (3.0f);
         juce::Path ramp;
         ramp.addTriangle (out ? inner.getTopLeft() : inner.getTopRight(), inner.getBottomLeft(), inner.getBottomRight());
-        g.setColour (Theme::textStrong.withAlpha (active ? 1.0f : 0.85f));
+        g.setColour (juce::Colours::white.withAlpha (active ? 1.0f : 0.85f));   // on the accent in every theme
         g.fillPath (ramp);
         g.setColour (active ? Theme::textStrong : Theme::accent.brighter (0.4f));
         g.drawRoundedRectangle (handle.reduced (0.5f), 3.0f, 1.0f);

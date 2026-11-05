@@ -178,7 +178,8 @@ void IconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 
     const auto side = juce::jmin (r.getWidth(), r.getHeight()) * 0.52f;
     const auto square = r.withSizeKeepingCentre (side, side);
-    auto colour = on || ! tintedWhenOff ? juce::Colour (on ? 0xffffffff : 0xffd8dde3) : onColour;
+    // White on the coloured fill of a button that is on; otherwise the theme's text.
+    auto colour = on ? juce::Colours::white : tintedWhenOff ? onColour : Theme::text;
 
     if (! isEnabled())
         colour = colour.withAlpha (0.35f);

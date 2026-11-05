@@ -4,30 +4,47 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
-**Status:** 0.9.5, an alpha for testing before 1.0. See the [changelog](CHANGELOG.md) for what each version holds and the [roadmap](ROADMAP.md) for what comes next.
+**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon and Intel).
+
+**Status:** 0.9.5, on the way to 1.0. See the [changelog](CHANGELOG.md) for what each version holds, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
 SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026. On first launch it copies the settings of whichever earlier version you ran (audio device, inputs and outputs, plug-in list), and it still opens `.wdrack` and `.wlrack` rack files.
 
 ## Features
 
-- **Editing audio files:** waveform and spectrogram views; cut, copy, paste, paste mix and paste to fill; silence, insert and trim silence, crop, reverse, invert, swap, copy or silence one channel, mix to mono and make stereo; gain, normalize (each channel or each region on its own), fades with shapes, gain and pan ramps, balance and stereo width; markers and regions, with lists, CSV import and export, and saving regions or the pieces between markers as files; an undo history.
+- **Editing audio files:** waveform and spectrogram views; cut, copy, paste, paste mix and paste to fill; silence, insert and trim silence, crop, reverse, invert, swap, copy or silence one channel, mix to mono and make stereo; gain, normalize (each channel or each region on its own), fades with shapes (or dragged straight from handles on the waveform, curve and all), gain and pan ramps, balance and stereo width; markers and regions, with lists, CSV import and export, and saving regions or the pieces between markers as files; an undo history.
 - **Repair and analysis:** spectral selection and attenuation, noise reduction, click and pop repair, Repair Selection, DC offset removal, a noise gate; finding clipping, silences and sounds; EBU R128 loudness with Match Loudness and true-peak limiting; stereo correlation; sample-rate conversion.
 - **Effects:** parametric, graphic (10 and 31 bands) and single-band EQ, compressor, multiband compressor, de-esser, limiter, chorus, flanger, phaser, tremolo, echo, reverb and convolution reverb, each applied to the selection with a preview and presets, and most of them also live in the effects rack and on tracks; VST3 and Audio Unit plug-ins, each checked when it is scanned.
 - **Recording:** from the cursor, or punched in over a selection with pre-roll and post-roll; loop recording into takes; several tracks at once; input monitoring through a track's effects; a metronome and count-in.
 - **Multitrack sessions:** tracks, buses, sends, folders and groups; clip gain, fades, crossfades, stretching and pitch shifting; automation of volume, pan and effect parameters, drawn or written while playing; a tempo map with bars and beats and quantizing; a mixer; freezing, bouncing, mixdown and stems; recovery after a crash.
 - **Getting around:** several files open at once with a Files panel; panels docked around the editor, tabbed or floating, kept in workspaces; a levels meter, a frequency analyzer and a phase meter of what plays; a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import (with an Audition-style key set), recent files, and files opened from Finder.
+- **Themes:** Dark, Darker, Light and High Contrast, each with a Blue, Teal, Orange or Violet accent, switched at once from View > Theme and kept for next time.
 
 ## Screenshots
 
-![The editor: a stereo file in the waveform and spectrogram view, with the effects rack beside it](docs/screenshots/editor.png)
+![The editor in the Editing workspace: two files open as tabs, a stereo file in the waveform and spectrogram view with its fade handles at the top corners, the Files panel, the effects rack and undo history, and the levels meter](docs/screenshots/editor.png)
 
-![A multitrack session: four tracks and a reverb bus, with clips, fades, sends and markers](docs/screenshots/multitrack.png)
+The Editing workspace: two files open as tabs, the Files panel on the left, the effects rack and undo history on the right, and the levels meter below. The small handles at the waveform's top corners drag fades in and out.
 
-The audio in both was generated for the screenshots.
+![A multitrack session: four tracks and a reverb bus, with clips, fades, sends, markers and the mixer](docs/screenshots/multitrack.png)
+
+A multitrack session in the Multitrack workspace: four tracks and a reverb bus with clips, clip fades, a crossfade, sends and markers, the mixer underneath, and clip properties, the rack, markers and the clip list as tabs on the right.
+
+![The Analysis workspace in the Darker theme: the frequency analyzer and phase meter under the editor](docs/screenshots/analysis.png)
+
+The Analysis workspace, in the Darker theme: a frequency analyzer and a phase meter of what plays, under the editor.
+
+| Light | High Contrast |
+|---|---|
+| ![The Light theme](docs/screenshots/theme-light.png) | ![The High Contrast theme](docs/screenshots/theme-high-contrast.png) |
+
+The Light and High Contrast themes (View > Theme).
+
+The audio in all of them was generated for the screenshots.
 
 ## Download and install
 
-Builds are on the repository's [Releases](../../releases) page as `SpectraBlade-<version>.dmg`, with a `.sha256` beside each. They are universal (Apple silicon and Intel) and need macOS 13 or later.
+The newest build is always at [Releases > Latest](https://github.com/BobClawblaw/spectrablade/releases/latest), and every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page, as `SpectraBlade-<version>.dmg`, with a `.sha256` beside each. They are universal (Apple silicon and Intel) and need macOS 13 or later.
 
 Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications; the licence is beside it as `LICENSE.txt`. The app is signed ad hoc, not with a Developer ID, so macOS blocks it the first time: open it once, then choose Open Anyway under System Settings > Privacy & Security. After that it opens normally. macOS asks for microphone access the first time you choose a recording input.
 
@@ -44,7 +61,8 @@ Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a larg
 - **Several files:** files you open join the ones already open; choose several at once in File > Open, or drop several on the editor. Each has a tab over the editor (and Window > Files lists them); click one to show it (each keeps its own selection, zoom and undo history), and Cmd-W closes the one showing. File > Next File and Previous File step through them.
 - **Meters and analysis:** Window > Levels meters what goes to the outputs (click it to reset the peaks and clip lights); Window > Frequency Analysis and Phase Meter show its spectrum and its stereo image.
 - **Panels and workspaces:** the effects rack, the selection, the files, the mixer, markers, clip lists, the meters and the rest are panels docked around the editor. Drag a panel's tab onto the edge of another panel to dock it there, onto its middle to make it a tab there, or out of the window to float it; drag the bars between panels to size them. Close a panel with its ×, and show it again from the Window menu. Window > Workspace switches between layouts (Classic, Editing, Multitrack, Analysis and your own), keeps each as you left it, saves the current one under a name, and puts one back as it was saved. Other windows open where you last left them.
-- **Keys:** Window > Keyboard Shortcuts... lists every command's keys; change them, export and import them, or pick Key Sets... > Audition-Style Keys.
+- **Themes:** View > Theme picks Dark, Darker, Light or High Contrast, and under Accent the colour that marks what is selected or on. The interface changes at once, and the choice is kept for next time.
+- **Keys:** [docs/SHORTCUTS.md](docs/SHORTCUTS.md) lists the keys it ships with. Window > Keyboard Shortcuts... lists every command's keys; change them, export and import them, or pick Key Sets... > Audition-Style Keys.
 
 ## Plug-ins
 

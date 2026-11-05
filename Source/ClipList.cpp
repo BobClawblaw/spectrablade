@@ -11,17 +11,17 @@ ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, 
     header.addColumn ("Length (s)", length, 80);
     header.addColumn ("File", file, 180);
     header.addColumn ("", state, 90);
-    table.setColour (juce::ListBox::backgroundColourId, Theme::surface);
+    Theme::follow (table, juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
     addAndMakeVisible (table);
 
     search.setTextToShowWhenEmpty ("Search names, files and tracks", Theme::dimText);
-    search.setColour (juce::TextEditor::backgroundColourId, Theme::inset);
+    Theme::follow (search, juce::TextEditor::backgroundColourId, Theme::inset);
     search.onTextChange = [this] { rebuild(); };
     search.onEscapeKey = [this] { setSearch ({}); };
     addAndMakeVisible (search);
 
-    summary.setColour (juce::Label::textColourId, Theme::dimText);
+    Theme::follow (summary, juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (summary);
 
     engine.session.addChangeListener (this);
@@ -206,7 +206,7 @@ void ClipList::paintRowBackground (juce::Graphics& g, int, int, int, bool isSele
 
 void ClipList::paintCell (juce::Graphics& g, int row, int column, int width, int height, bool)
 {
-    g.setColour (column == file || column == state ? Theme::text : juce::Colours::white);
+    g.setColour (column == file || column == state ? Theme::text : Theme::textStrong);
     g.setFont (13.0f);
     const auto right = column == start || column == length;
     g.drawText (getText (row, column), 6, 0, width - 12, height, right ? juce::Justification::centredRight : juce::Justification::centredLeft, true);

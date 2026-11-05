@@ -12,7 +12,7 @@ UndoHistory::UndoHistory (Session& s, AudioDocument& d, std::function<bool()> sh
 UndoHistory::UndoHistory (Session& s, AudioDocument* d, std::function<bool()> shown)
     : session (s), document (d), sessionShown (std::move (shown))
 {
-    list.setColour (juce::ListBox::backgroundColourId, Theme::surface);
+    Theme::follow (list, juce::ListBox::backgroundColourId, Theme::surface);
     list.setRowHeight (22);
     addAndMakeVisible (list);
     session.addChangeListener (this);
@@ -70,7 +70,7 @@ void UndoHistory::refresh()
 void UndoHistory::paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected)
 {
     g.fillAll (selected ? Theme::selection : Theme::surface);
-    g.setColour (row > position() ? Theme::dimText : juce::Colours::white);
+    g.setColour (row > position() ? Theme::dimText : Theme::textStrong);
     g.setFont (13.0f);
     g.drawText (getText (row), 8, 0, width - 16, height, juce::Justification::centredLeft, true);
 }

@@ -38,7 +38,7 @@ ClipProperties::ClipProperties (AudioEngine& e, std::function<juce::uint32()> to
         addAndMakeVisible (row.editor);
     }
 
-    info.setColour (juce::Label::textColourId, Theme::dimText);
+    Theme::follow (info, juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (info);
     engine.session.addChangeListener (this);
     refresh();

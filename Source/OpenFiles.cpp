@@ -226,7 +226,7 @@ void FilesPanel::paintListBoxItem (int row, juce::Graphics& g, int width, int he
     r.removeFromLeft (8);
     r.removeFromRight (30);
     const auto unsaved = doc.isDirty() && doc.hasAudio();
-    g.setColour (isActive ? juce::Colours::white : Theme::text);
+    g.setColour (isActive ? Theme::textStrong : Theme::text);
     g.setFont (juce::FontOptions (14.0f, isActive ? juce::Font::bold : juce::Font::plain));
     g.drawText (files.nameAt (row) + (unsaved ? juce::String (" " + juce::String::charToString (0x2022)) : juce::String()),
                 r.removeFromTop (r.getHeight() / 2 + 1), juce::Justification::bottomLeft, true);

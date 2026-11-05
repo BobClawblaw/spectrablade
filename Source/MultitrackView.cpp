@@ -6,13 +6,14 @@
 
 namespace
 {
-    const juce::Colour background (0xff15181d);
-    const juce::Colour laneColour (0xff191c22);
-    const juce::Colour laneAlternate (0xff1c2027);
+    // The theme's colours, read as they are when painting.
+    const juce::Colour& background = Theme::canvas;
+    const juce::Colour& laneColour = Theme::lane;
+    const juce::Colour& laneAlternate = Theme::laneAlternate;
     const juce::Colour frozenColour (0xff9fd8ff);
-    const juce::Colour laneLine (0xff2a2f37);
-    const juce::Colour cursorColour = Theme::cursor;
-    const juce::Colour playColour (0xffffffff);
+    const juce::Colour& laneLine = Theme::line;
+    const juce::Colour& cursorColour = Theme::cursor;
+    const juce::Colour& playColour = Theme::textStrong;
 
     constexpr int edgeGrab = 6;   // pixels from a clip's edge that trim instead of move
 
@@ -62,7 +63,7 @@ public:
         };
 
         arm.setClickingTogglesState (true);
-        arm.setColour (juce::TextButton::buttonOnColourId, Theme::danger);
+        Theme::follow (arm, juce::TextButton::buttonOnColourId, Theme::danger);
         arm.setTooltip ("Arm for recording: Record puts a take on each armed track, from its input");
         arm.onClick = [this] { view.setArmed (trackId, arm.getToggleState()); };
 
@@ -72,19 +73,19 @@ public:
         for (auto* b : { &mute, &solo })
         {
             b->setClickingTogglesState (true);
-            b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
+            Theme::follow (*b, juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
         }
 
         sendsButton.setTooltip ("Send this track to buses");
-        sendsButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
+        Theme::follow (sendsButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         sendsButton.onClick = [this] { view.showSends (trackId, sendsButton); };
 
         effectsButton.setTooltip ("This track's effects");
-        effectsButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
+        Theme::follow (effectsButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         effectsButton.onClick = [this] { view.showEffectsMenu (trackId, effectsButton); };
 
         automationButton.setTooltip ("Volume and pan envelopes");
-        automationButton.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
+        Theme::follow (automationButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         automationButton.onClick = [this] { view.showAutomationMenu (trackId, automationButton); };
 
         mute.setTooltip ("Mute");
@@ -124,7 +125,7 @@ public:
         for (auto* s : { &gain, &pan })
         {
             s->setSliderStyle (juce::Slider::LinearBar);
-            s->setColour (juce::Slider::trackColourId, Theme::lineStrong);
+            Theme::follow (*s, juce::Slider::trackColourId, Theme::lineStrong);
             s->onDragEnd = [this]
             {
                 view.finishAutomationPass();
@@ -305,7 +306,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (isSelected ? Theme::hover : juce::Colour (isBus ? 0xff16191d : isFolder ? 0xff1e2229 : 0xff1b1e23));
+        g.fillAll (isSelected ? Theme::hover : (isBus ? Theme::base : isFolder ? Theme::raised : Theme::surface));
 
         // Two bars, left and right, -60 dB at the bottom to +6 dB at the top: red-tinted while
         // they show the input, each with a line at its held peak. A red light on top once
@@ -324,7 +325,7 @@ public:
                 return juce::jlimit (0.0f, 1.0f, (juce::Decibels::gainToDecibels (level, -60.0f) + 60.0f) / 66.0f) * area.getHeight();
             };
 
-            const auto barColour = showingInput ? juce::Colour (0xffe0705a) : juce::Colour (0xff4fc3a1);
+            const auto barColour = showingInput ? juce::Colour (0xffe0705a) : Theme::waveform;
 
             for (int ch = 0; ch < 2; ++ch)
             {
@@ -346,7 +347,7 @@ public:
         // A member of a folder: a rule down its left, inset under the folder's triangle.
         if (inFolder)
         {
-            g.setColour (juce::Colours::white.withAlpha (0.15f));
+            g.setColour (Theme::overlay.withAlpha (0.15f));
             g.fillRect (0, 0, 3, getHeight());
         }
 
@@ -591,7 +592,7 @@ public:
         addAndMakeVisible (newBus);
         addChildComponent (empty);
         empty.setText ("No buses yet.", juce::dontSendNotification);
-        empty.setColour (juce::Label::textColourId, Theme::dimText);
+        Theme::follow (empty, juce::Label::textColourId, Theme::dimText);
         engine.session.addChangeListener (this);
         refresh();
     }
@@ -680,10 +681,10 @@ private:
                 row->level.setSkewFactorFromMidPoint (-12.0);
                 row->level.setDoubleClickReturnValue (true, 0.0);
                 row->level.setTextValueSuffix (" dB");
-                row->level.setColour (juce::Slider::trackColourId, Theme::lineStrong);
+                Theme::follow (row->level, juce::Slider::trackColourId, Theme::lineStrong);
                 row->pre.setClickingTogglesState (true);
                 row->pre.setTooltip ("Send before the track's volume");
-                row->pre.setColour (juce::TextButton::buttonOnColourId, Theme::accentDeep);
+                Theme::follow (row->pre, juce::TextButton::buttonOnColourId, Theme::accentDeep);
 
                 // Turning a level or Pre on a send that is off turns it on.
                 row->on.onClick = [this, row] { apply (*row, row->on.getToggleState() ? "Add Send" : "Remove Send", false); };
@@ -1981,7 +1982,7 @@ void MultitrackView::paint (juce::Graphics& g)
                     if (other.findSend (track.id) != nullptr)
                         feeders.add (other.name);
 
-                g.setColour (juce::Colour (0x0affffff));
+                g.setColour (Theme::overlay.withAlpha (0.04f));
                 g.fillRect (lane.reduced (0, 3));
                 g.setColour (Theme::dimText);
                 g.setFont (13.0f);
@@ -2085,7 +2086,7 @@ void MultitrackView::paint (juce::Graphics& g)
             map.forEachLine (juce::jmax ((juce::int64) 0, frameForX ((float) area.getX())), frameForX ((float) area.getRight()), rulerBeats().second,
                              [&] (juce::int64 frame, juce::int64 beat)
                              {
-                                 g.setColour (juce::Colours::white.withAlpha (map.barAndBeat (beat).second == 0 ? 0.12f : 0.05f));
+                                 g.setColour (Theme::overlay.withAlpha (map.barAndBeat (beat).second == 0 ? 0.12f : 0.05f));
                                  g.drawVerticalLine ((int) xForFrame (frame), (float) area.getY(), bottom);
                              });
         }
@@ -2093,7 +2094,7 @@ void MultitrackView::paint (juce::Graphics& g)
         if (! timeSelection.isEmpty())
         {
             const auto x0 = xForFrame (timeSelection.getStart()), x1 = xForFrame (timeSelection.getEnd());
-            g.setColour (juce::Colours::white.withAlpha (0.08f));
+            g.setColour (Theme::overlay.withAlpha (0.08f));
             g.fillRect (juce::Rectangle<float> (x0, (float) area.getY(), x1 - x0, (float) area.getHeight()));
         }
 
@@ -2238,7 +2239,7 @@ void MultitrackView::drawMarkers (juce::Graphics& g, juce::Rectangle<int> area) 
             g.setColour (colour.withAlpha (0.45f));
             g.drawVerticalLine ((int) x1, top, bottom);
             g.drawVerticalLine ((int) x2, top, bottom);
-            g.setColour (juce::Colours::white);
+            g.setColour (Theme::textStrong);
             g.drawText (m.name, bar.reduced (4.0f, 0.0f), juce::Justification::centredLeft, true);
         }
         else
@@ -2252,7 +2253,7 @@ void MultitrackView::drawMarkers (juce::Graphics& g, juce::Rectangle<int> area) 
             g.fillPath (flag);
             g.setColour (colour.withAlpha (0.55f));
             g.drawVerticalLine ((int) x1, top, bottom);
-            g.setColour (juce::Colours::white);
+            g.setColour (Theme::textStrong);
             g.drawText (m.name, juce::Rectangle<float> (x1 + 9.0f, lane.getY(), 120.0f, lane.getHeight()), juce::Justification::centredLeft, true);
         }
     }

@@ -46,7 +46,7 @@ public:
 
             if (hold[ch] > 0.0f)
             {
-                g.setColour (juce::Colours::white);
+                g.setColour (Theme::textStrong);
                 g.fillRect (row.getX() + row.getWidth() * proportion (hold[ch]) - 1.0f, row.getY(), 1.0f, row.getHeight());
             }
         }

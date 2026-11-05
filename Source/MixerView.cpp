@@ -4,10 +4,11 @@
 
 namespace
 {
-    const juce::Colour background (0xff15181d);
-    const juce::Colour stripColour (0xff1b1e23);
-    const juce::Colour busColour (0xff16191d);
-    const juce::Colour folderColour (0xff1e2229);
+    // The theme's colours, read as they are when painting.
+    const juce::Colour& background = Theme::canvas;
+    const juce::Colour& stripColour = Theme::surface;
+    const juce::Colour& busColour = Theme::base;
+    const juce::Colour& folderColour = Theme::raised;
 
     /** How far up a meter a level (gain) reaches: -60 dB at the bottom, +6 dB at the top. */
     float meterProportion (float gain)
@@ -44,8 +45,8 @@ public:
         {
             const auto height = (float) getHeight() * meterProportion (shown[ch]);
             const auto bar = juce::Rectangle<float> ((float) (1 + ch * (barWidth + 1)), (float) getHeight() - height, (float) barWidth, height);
-            g.setGradientFill (juce::ColourGradient (juce::Colour (0xff4fc3a1), 0.0f, (float) getHeight(),
-                                                     Theme::cursor, 0.0f, (float) getHeight() * 0.1f, false));
+            g.setGradientFill (juce::ColourGradient (Theme::meterLow, 0.0f, (float) getHeight(),
+                                                     Theme::meterMid, 0.0f, (float) getHeight() * 0.1f, false));
             g.fillRect (bar);
         }
 
@@ -104,7 +105,7 @@ public:
         pan.setSliderStyle (juce::Slider::LinearBar);
         pan.setRange (-100.0, 100.0, 1.0);
         pan.setDoubleClickReturnValue (true, 0.0);
-        pan.setColour (juce::Slider::trackColourId, Theme::lineStrong);
+        Theme::follow (pan, juce::Slider::trackColourId, Theme::lineStrong);
         pan.textFromValueFunction = [] (double value)
         {
             return value == 0.0 ? juce::String ("C") : juce::String (std::abs ((int) value)) + (value < 0.0 ? " L" : " R");
@@ -118,11 +119,11 @@ public:
         for (auto* b : { &mute, &solo })
         {
             b->setClickingTogglesState (true);
-            b->setColour (juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
+            Theme::follow (*b, juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
         }
 
         polarity.setClickingTogglesState (true);
-        polarity.setColour (juce::TextButton::buttonOnColourId, Theme::warn);
+        Theme::follow (polarity, juce::TextButton::buttonOnColourId, Theme::warn);
         polarity.setColour (juce::TextButton::textColourOnId, juce::Colours::black);
         polarity.setTooltip ("Invert polarity: turn the track's output upside down, after its effects");
         polarity.onClick = [this]

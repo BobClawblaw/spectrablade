@@ -589,14 +589,14 @@ void Workspaces::restore (const juce::XmlElement& xml, const juce::StringArray& 
 //==============================================================================
 namespace Palette
 {
-    const juce::Colour background   = Theme::base;
-    const juce::Colour header       = Theme::surface;
-    const juce::Colour tab          = Theme::raised;
-    const juce::Colour tabFront     = Theme::hover;
-    const juce::Colour text         = Theme::text;
-    const juce::Colour dimText      = Theme::dimText;
-    const juce::Colour accent       = Theme::accent;
-    const juce::Colour bar          = Theme::inset;
+    const juce::Colour& background   = Theme::base;
+    const juce::Colour& header       = Theme::surface;
+    const juce::Colour& tab          = Theme::raised;
+    const juce::Colour& tabFront     = Theme::hover;
+    const juce::Colour& text         = Theme::text;
+    const juce::Colour& dimText      = Theme::dimText;
+    const juce::Colour& accent       = Theme::accent;
+    const juce::Colour& bar          = Theme::inset;
 }
 
 /** One group: a strip of tabs over the panel in front. A target for dragged tabs, except in a

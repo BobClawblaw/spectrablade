@@ -10,17 +10,17 @@ MarkerTable::MarkerTable (Session& s, Actions a) : session (s), actions (std::mo
     header.addColumn ("Start (s)", start, 90);
     header.addColumn ("End (s)", end, 90);
     header.addColumn ("Length (s)", length, 90);
-    table.setColour (juce::ListBox::backgroundColourId, Theme::surface);
+    Theme::follow (table, juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
     addAndMakeVisible (table);
 
     search.setTextToShowWhenEmpty ("Search names", Theme::dimText);
-    search.setColour (juce::TextEditor::backgroundColourId, Theme::inset);
+    Theme::follow (search, juce::TextEditor::backgroundColourId, Theme::inset);
     search.onTextChange = [this] { refilter(); };
     search.onEscapeKey = [this] { setSearch ({}); };
     addAndMakeVisible (search);
 
-    summary.setColour (juce::Label::textColourId, Theme::dimText);
+    Theme::follow (summary, juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (summary);
 
     rename.onClick = [this] { returnKeyPressed (table.getSelectedRow()); };
@@ -214,7 +214,7 @@ void MarkerTable::paintCell (juce::Graphics& g, int row, int column, int width, 
             g.fillRect (2, 3, 3, height - 6);
         }
 
-    g.setColour (juce::Colours::white);
+    g.setColour (Theme::textStrong);
     g.setFont (13.0f);
     const auto left = column == name ? 10 : 6;
     g.drawText (getText (row, column), left, 0, width - left - 6, height,

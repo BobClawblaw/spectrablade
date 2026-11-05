@@ -2,6 +2,169 @@
 
 namespace Theme
 {
+namespace
+{
+    juce::Colour c (juce::uint32 argb)    { return juce::Colour (argb); }
+
+    Palette dark()
+    {
+        Palette p;
+        p.name = "Dark";
+        p.inset = c (0xff0c0e11); p.base = c (0xff111317); p.surface = c (0xff16191d); p.raised = c (0xff1d2126);
+        p.hover = c (0xff262b32); p.line = c (0xff2a2f36); p.lineStrong = c (0xff434a54);
+        p.textStrong = c (0xffffffff); p.text = c (0xffd8dde3); p.dimText = c (0xff8b939e); p.faintText = c (0xff6b737d);
+        p.good = c (0xff4cc38a); p.warn = c (0xffe3c74f); p.danger = c (0xffe5484d); p.cursor = c (0xffffd34d);
+        p.meterLow = c (0xff2e9e5b); p.meterMid = c (0xffe3c74f); p.meterHigh = c (0xffe07a40); p.clipOff = c (0xff3a2020);
+        p.canvas = c (0xff15181d); p.lane = c (0xff191c22); p.laneAlternate = c (0xff1c2027);
+        p.waveform = c (0xff4fc3a1); p.overlay = c (0xffffffff);
+        return p;
+    }
+
+    Palette darker()
+    {
+        auto p = dark();
+        p.name = "Darker";
+        p.inset = c (0xff000000); p.base = c (0xff08090b); p.surface = c (0xff0d0f11); p.raised = c (0xff15171a);
+        p.hover = c (0xff1e2124); p.line = c (0xff23272c); p.lineStrong = c (0xff3b4149);
+        p.clipOff = c (0xff2e1818);
+        p.canvas = c (0xff0a0b0d); p.lane = c (0xff0e1013); p.laneAlternate = c (0xff121418);
+        p.waveform = c (0xff45b896);
+        return p;
+    }
+
+    Palette light()
+    {
+        Palette p;
+        p.name = "Light";
+        p.light = true;
+        p.inset = c (0xffffffff); p.base = c (0xffeceef1); p.surface = c (0xfff6f7f9); p.raised = c (0xffe2e5e9);
+        p.hover = c (0xffd6dade); p.line = c (0xffc9ced4); p.lineStrong = c (0xff9aa2ab);
+        p.textStrong = c (0xff0b0d10); p.text = c (0xff1f2328); p.dimText = c (0xff525b65); p.faintText = c (0xff7d868f);
+        p.good = c (0xff1a7f4b); p.warn = c (0xff9a6700); p.danger = c (0xffc9262b); p.cursor = c (0xffb35a00);
+        p.meterLow = c (0xff2e9e5b); p.meterMid = c (0xffd4a72c); p.meterHigh = c (0xffe07a40); p.clipOff = c (0xfff2d4d4);
+        p.canvas = c (0xfff9fafb); p.lane = c (0xfff3f4f6); p.laneAlternate = c (0xffeceff2);
+        p.waveform = c (0xff1b8a6b); p.overlay = c (0xff000000);
+        return p;
+    }
+
+    Palette highContrast()
+    {
+        Palette p;
+        p.name = "High Contrast";
+        p.inset = c (0xff000000); p.base = c (0xff000000); p.surface = c (0xff0a0a0a); p.raised = c (0xff1a1a1a);
+        p.hover = c (0xff2e2e2e); p.line = c (0xff707070); p.lineStrong = c (0xffc0c0c0);
+        p.textStrong = c (0xffffffff); p.text = c (0xffffffff); p.dimText = c (0xffd0d0d0); p.faintText = c (0xff9a9a9a);
+        p.good = c (0xff5ee08f); p.warn = c (0xffffd84d); p.danger = c (0xffff5c5c); p.cursor = c (0xffffe14d);
+        p.meterLow = c (0xff38c46e); p.meterMid = c (0xffffd84d); p.meterHigh = c (0xffff8f4d); p.clipOff = c (0xff401818);
+        p.canvas = c (0xff000000); p.lane = c (0xff0a0a0a); p.laneAlternate = c (0xff141414);
+        p.waveform = c (0xff5ef0c4); p.overlay = c (0xffffffff);
+        return p;
+    }
+
+    // Each accent in three tones: for dark themes, light ones and high contrast.
+    struct AccentTones { const char* name; juce::uint32 dark, light, high; };
+    constexpr AccentTones accents[] { { "Blue",   0xff4a9fe0, 0xff0969da, 0xff5cb8ff },
+                                      { "Teal",   0xff2fb8a6, 0xff0b7a6e, 0xff3fe0c8 },
+                                      { "Orange", 0xffe8893a, 0xffb4540a, 0xffffa24d },
+                                      { "Violet", 0xffa47ae8, 0xff7a46c9, 0xffc39bff } };
+
+    Palette inUse;
+
+    void setColours (const Palette& p)
+    {
+        inUse = p;
+        inset = p.inset; base = p.base; surface = p.surface; raised = p.raised; hover = p.hover; line = p.line; lineStrong = p.lineStrong;
+        textStrong = p.textStrong; text = p.text; dimText = p.dimText; faintText = p.faintText;
+        accent = p.accent; accentLight = p.accentLight; accentDeep = p.accentDeep; selection = p.selection;
+        good = p.good; warn = p.warn; danger = p.danger; cursor = p.cursor;
+        meterLow = p.meterLow; meterMid = p.meterMid; meterHigh = p.meterHigh; clipOff = p.clipOff;
+        canvas = p.canvas; lane = p.lane; laneAlternate = p.laneAlternate; waveform = p.waveform; overlay = p.overlay;
+    }
+
+    // Dark with blue until a theme is applied, so every colour has a value from the start.
+    const bool started = [] { setColours (make ("Dark", "Blue")); return true; }();
+
+    struct Follower
+    {
+        juce::Component::SafePointer<juce::Component> component;
+        int colourId;
+        const juce::Colour* colour;
+    };
+
+    std::vector<Follower>& followers()          { static std::vector<Follower> list; return list; }
+    std::vector<LookAndFeel*>& looks()          { static std::vector<LookAndFeel*> list; return list; }
+}
+
+juce::StringArray themeNames()
+{
+    return { "Dark", "Darker", "Light", "High Contrast" };
+}
+
+juce::StringArray accentNames()
+{
+    juce::StringArray names;
+
+    for (auto& a : accents)
+        names.add (a.name);
+
+    return names;
+}
+
+Palette make (const juce::String& theme, const juce::String& accentName)
+{
+    auto p = theme == "Darker" ? darker() : theme == "Light" ? light() : theme == "High Contrast" ? highContrast() : dark();
+    const auto* tones = &accents[0];
+
+    for (auto& a : accents)
+        if (accentName == a.name)
+            tones = &a;
+
+    const auto high = p.name == "High Contrast";
+    p.accent = juce::Colour (p.light ? tones->light : high ? tones->high : tones->dark);
+    p.accentLight = p.light ? p.accent.interpolatedWith (juce::Colours::black, 0.15f) : p.accent.interpolatedWith (juce::Colours::white, 0.4f);
+    p.accentDeep = p.surface.interpolatedWith (p.accent, p.light ? 0.22f : 0.3f);
+    p.selection = p.accent.withAlpha (p.light ? 0.22f : 0.35f);
+    return p;
+}
+
+const Palette& current()
+{
+    return inUse;
+}
+
+void apply (const Palette& p)
+{
+    setColours (p);
+
+    for (auto* look : looks())
+        look->refresh();
+
+    auto& list = followers();
+    list.erase (std::remove_if (list.begin(), list.end(), [] (const Follower& f) { return f.component == nullptr; }), list.end());
+
+    for (auto& f : list)
+        f.component->setColour (f.colourId, *f.colour);
+
+    auto& desktop = juce::Desktop::getInstance();
+
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+    {
+        auto* window = desktop.getComponent (i);
+
+        if (auto* resizable = dynamic_cast<juce::ResizableWindow*> (window))
+            resizable->setBackgroundColour (base);
+
+        window->sendLookAndFeelChange();   // views drop images drawn in the old colours
+        window->repaint();
+    }
+}
+
+void follow (juce::Component& component, int colourId, const juce::Colour& themeColour)
+{
+    component.setColour (colourId, themeColour);
+    followers().push_back ({ &component, colourId, &themeColour });
+}
+
 double contrast (juce::Colour a, juce::Colour b)
 {
     const auto luminance = [] (juce::Colour c)
@@ -20,6 +183,18 @@ double contrast (juce::Colour a, juce::Colour b)
 }
 
 LookAndFeel::LookAndFeel()
+{
+    looks().push_back (this);
+    refresh();
+}
+
+LookAndFeel::~LookAndFeel()
+{
+    auto& list = looks();
+    list.erase (std::remove (list.begin(), list.end(), this), list.end());
+}
+
+void LookAndFeel::refresh()
 {
     setColourScheme ({ base,            // window background
                        raised,          // widget background

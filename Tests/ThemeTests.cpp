@@ -1,5 +1,8 @@
 #include <JuceHeader.h>
 #include "../Source/Theme.h"
+#include "../Source/WaveformView.h"
+#include "../Source/AudioEdits.h"
+#include "../Source/AudioEngine.h"
 #include "TestUtils.h"
 #include "ThemeTests.h"
 
@@ -13,29 +16,90 @@ namespace
                    && std::abs (Theme::contrast (Theme::base, Theme::base) - 1.0) < 1.0e-9,
                "theme: contrast runs from 1 (the same colour) to 21 (black on white)");
 
-        auto least = 100.0;
+        // Every theme with every accent: text is checked as text (WCAG 4.5:1, body text 7:1), and
+        // lines, handles, the cursor and the waveform as graphics (3:1).
+        juce::StringArray failures;
+        auto leastBody = 100.0, leastDim = 100.0;
 
-        for (auto back : { Theme::inset, Theme::base, Theme::surface, Theme::raised, Theme::hover })
-            least = juce::jmin (least, Theme::contrast (Theme::text, back));
+        for (auto& name : Theme::themeNames())
+            for (auto& accentName : Theme::accentNames())
+            {
+                const auto p = Theme::make (name, accentName);
+                const auto fail = [&] (const juce::String& what, double ratio, double needed)
+                {
+                    if (ratio < needed)
+                        failures.add (name + "/" + accentName + " " + what + " " + juce::String (ratio, 2));
+                };
 
-        check (least >= 7.0, "theme: body text reads at 7:1 or better on every surface (least " + juce::String (least, 1) + ")");
+                for (auto back : { p.inset, p.base, p.surface, p.raised, p.hover })
+                {
+                    leastBody = juce::jmin (leastBody, Theme::contrast (p.text, back));
+                    fail ("text", Theme::contrast (p.text, back), 7.0);
+                }
 
-        least = 100.0;
+                for (auto back : { p.inset, p.base, p.surface, p.raised })
+                {
+                    leastDim = juce::jmin (leastDim, Theme::contrast (p.dimText, back));
+                    fail ("secondary text", Theme::contrast (p.dimText, back), 4.5);
+                }
 
-        for (auto back : { Theme::inset, Theme::base, Theme::surface, Theme::raised })
-            least = juce::jmin (least, Theme::contrast (Theme::dimText, back));
+                fail ("text on a button that is on", Theme::contrast (p.textStrong, p.accentDeep), 4.5);
+                fail ("text on a selected row", Theme::contrast (p.textStrong, p.surface.overlaidWith (p.selection)), 4.5);
+                fail ("the clock", Theme::contrast (p.accentLight, p.inset), 4.5);
+                fail ("disabled text", Theme::contrast (p.faintText, p.surface), 3.0);
+                fail ("the accent", Theme::contrast (p.accent, p.base), 3.0);
+                fail ("the cursor", Theme::contrast (p.cursor, p.canvas), 3.0);
+                fail ("the waveform", Theme::contrast (p.waveform, p.canvas), 3.0);
+                fail ("danger", Theme::contrast (p.danger, p.base), 3.0);
+                fail ("button edges", Theme::contrast (p.lineStrong, p.raised), 1.5);
+            }
 
-        check (least >= 4.5, "theme: secondary text reads at 4.5:1 or better on every surface but hover (least " + juce::String (least, 1) + ")");
+        check (failures.isEmpty(), "theme: in all 4 themes with all 4 accents, body text reads at 7:1 or better (least "
+                                       + juce::String (leastBody, 1) + "), secondary text at 4.5:1 (least " + juce::String (leastDim, 1)
+                                       + "), and the accent, cursor, waveform and edges stand out" + (failures.isEmpty() ? juce::String() : ": " + failures.joinIntoString ("; ")));
 
-        const auto selectedRow = Theme::surface.overlaidWith (Theme::selection);
-        const auto pairs = { Theme::contrast (Theme::textStrong, Theme::accentDeep), Theme::contrast (Theme::textStrong, selectedRow),
-                             Theme::contrast (Theme::accentLight, Theme::inset), Theme::contrast (Theme::accent, Theme::base),
-                             Theme::contrast (Theme::cursor, Theme::base) };
-        check (std::all_of (pairs.begin(), pairs.end(), [] (double c) { return c >= 4.5; }),
-               "theme: text on a button that is on, on a selected row, the clock, the accent and the cursor all read at 4.5:1 or better");
+        const auto unknown = Theme::make ("Sepia", "Plaid");
+        check (unknown.name == "Dark" && unknown.accent == Theme::make ("Dark", "Blue").accent && Theme::make ("Light", "Teal").light
+                   && Theme::make ("Light", "Teal").overlay == juce::Colours::black && Theme::make ("Darker", "Teal").overlay == juce::Colours::white,
+               "theme: an unknown theme or accent falls back to Dark and Blue, and overlays are black on Light and white on the dark themes");
+    }
 
-        check (Theme::contrast (Theme::lineStrong, Theme::raised) >= 1.5 && Theme::contrast (Theme::faintText, Theme::surface) >= 3.0,
-               "theme: button edges stand off their fill, and disabled text still reads at 3:1");
+    void testSwitching()
+    {
+        Theme::LookAndFeel look;
+        juce::Label label;
+        label.setLookAndFeel (&look);
+        Theme::follow (label, juce::Label::textColourId, Theme::dimText);
+        auto gone = std::make_unique<juce::Label>();
+        Theme::follow (*gone, juce::Label::textColourId, Theme::text);
+        gone.reset();   // a follower that has gone is passed over
+
+        Theme::apply (Theme::make ("Light", "Orange"));
+        const auto light = Theme::make ("Light", "Orange");
+        const auto switched = Theme::base == light.base && Theme::accent == light.accent && Theme::current().name == "Light"
+                              && label.findColour (juce::Label::textColourId) == light.dimText
+                              && look.findColour (juce::TextButton::buttonColourId) == light.raised
+                              && look.findColour (juce::PopupMenu::highlightedBackgroundColourId) == light.accentDeep;
+
+        AudioEngine engine;
+        juce::AudioBuffer<float> b (1, 4800);
+        b.clear();
+        engine.document.reset (AudioEdits::fromBuffer (std::move (b)), 48000.0, {}, 24);
+        WaveformView view (engine);
+        view.setBounds (0, 0, 600, 300);
+        view.zoomToFit();
+        const auto area = view.getWaveArea();
+        const auto drawnLight = view.createComponentSnapshot (view.getLocalBounds()).getPixelAt (area.getCentreX(), area.getY() + 30);
+
+        Theme::apply (Theme::make ("Dark", "Blue"));
+        view.sendLookAndFeelChange();
+        const auto drawnDark = view.createComponentSnapshot (view.getLocalBounds()).getPixelAt (area.getCentreX(), area.getY() + 30);
+        const auto back = Theme::base == Theme::make ("Dark", "Blue").base && label.findColour (juce::Label::textColourId) == Theme::dimText;
+        label.setLookAndFeel (nullptr);
+
+        check (switched && back, "theme: switching sets every colour, the controls' look and the colours controls follow, and switching back restores them");
+        check (drawnLight == light.canvas && drawnDark == Theme::canvas,
+               "theme: the waveform view draws its background in the theme in use, redrawn when the theme changes");
     }
 
     void testControls()
@@ -82,5 +146,6 @@ namespace
 void runThemeTests()
 {
     testContrast();
+    testSwitching();
     testControls();
 }

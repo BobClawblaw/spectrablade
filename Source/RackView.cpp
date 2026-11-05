@@ -15,7 +15,7 @@ public:
         name.setText (juce::String (index + 1) + ". " + description.name, juce::dontSendNotification);
         name.setTooltip (description.manufacturerName + " - " + description.pluginFormatName);
         format.setText (description.pluginFormatName, juce::dontSendNotification);
-        format.setColour (juce::Label::textColourId, Theme::dimText);
+        Theme::follow (format, juce::Label::textColourId, Theme::dimText);
 
         bypass.setToggleState (! rackEngine.isRackSlotBypassed (index), juce::dontSendNotification);
         bypass.setTooltip ("On/off (bypass)");

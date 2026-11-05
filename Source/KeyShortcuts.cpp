@@ -249,7 +249,7 @@ Editor::Editor (juce::ApplicationCommandManager& c, std::vector<KeySet> s) : com
     addAndMakeVisible (list);
 
     title.setFont (juce::FontOptions (15.0f, juce::Font::bold));
-    description.setColour (juce::Label::textColourId, Theme::text);
+    Theme::follow (description, juce::Label::textColourId, Theme::text);
     description.setMinimumHorizontalScale (1.0f);
     addAndMakeVisible (title);
     addAndMakeVisible (description);

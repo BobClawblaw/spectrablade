@@ -98,7 +98,10 @@ void OutputTap::copyRecent (juce::AudioBuffer<float>& dest) const
 //==============================================================================
 namespace
 {
-    const juce::Colour background = Theme::base, grid = Theme::raised.brighter (0.05f), label = Theme::dimText, curve = Theme::accent;
+    const juce::Colour& background = Theme::base;   // the theme's colours, read as they are when painting
+    const juce::Colour& grid = Theme::line;
+    const juce::Colour& label = Theme::dimText;
+    const juce::Colour& curve = Theme::accent;
 
     juce::String frequencyText (double f)
     {
@@ -246,9 +249,9 @@ void SpectrumPanel::paint (juce::Graphics& g)
     if (hover.has_value() && plot.contains (*hover))
     {
         const auto f = frequencyAt (hover->x - plot.getX(), plot.getWidth());
-        g.setColour (juce::Colours::white.withAlpha (0.4f));
+        g.setColour (Theme::overlay.withAlpha (0.4f));
         g.fillRect (hover->x, plot.getY(), 1.0f, plot.getHeight());
-        g.setColour (juce::Colours::white);
+        g.setColour (Theme::textStrong);
         g.setFont (juce::FontOptions (12.0f));
         g.drawText (frequencyText (f) + "   " + juce::String (levelAt (shown, f, rate), 1) + " dB",
                     plot.withHeight (16.0f).reduced (4.0f, 0.0f), juce::Justification::centredRight);
@@ -334,7 +337,7 @@ void PhasePanel::paint (juce::Graphics& g)
     const auto x = zero + shownCorrelation * bar.getWidth() * 0.5f;
     g.setColour (shownCorrelation < 0.0f ? Theme::danger : Theme::good);
     g.fillRect (juce::Rectangle<float>::leftTopRightBottom (juce::jmin (zero, x), bar.getY() + 2.0f, juce::jmax (zero, x), bar.getBottom() - 2.0f));
-    g.setColour (juce::Colours::white);
+    g.setColour (Theme::textStrong);
     g.fillRect (x - 1.0f, bar.getY(), 2.0f, bar.getHeight());
 
     g.setColour (label);
@@ -342,7 +345,7 @@ void PhasePanel::paint (juce::Graphics& g)
     auto labels = barArea.withTrimmedTop (2.0f);
     g.drawText ("-1", labels, juce::Justification::topLeft);
     g.drawText ("+1", labels, juce::Justification::topRight);
-    g.setColour (juce::Colours::white);
+    g.setColour (Theme::textStrong);
     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain));
     g.drawText ((shownCorrelation >= 0.0f ? "+" : "") + juce::String (shownCorrelation, 2), labels, juce::Justification::centredTop);
 }
