@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 214: Remove Hum**
+- Effects > Remove Hum... takes mains hum out of the selection, or the whole file: a narrow notch at 50 or 60 Hz and at each harmonic up to the number given (8 to start, up to 40, below 0.45 of the sample rate), each as wide in hertz as the first (the mains frequency over the narrowness: 1.7 Hz at 50 Hz and 30). The notches settle first on a second of audio: what comes before the selection, and where there isn't a second of it (at the file's start), the audio turned about its first frame, which runs on into it without a jump or a kink, so the hum goes from the first frame. The dialog keeps its settings and presets; it has no preview.
+- Measured by the tests, on two seconds of 50 Hz hum with its third harmonic and a 1 kHz tone: the hum down 105 dB on both channels in the second second and 48 dB in the first tenth of a second, the tone changed by less than 0.001 dB; on a selection starting half a second in, the audio outside left bit for bit and the hum inside down 59 dB; at 60 Hz, 60 Hz down 125 dB with 50 Hz changed by 0.04 dB; and the limits refused. The whole suite passed (904 checks).
+- Not tried by hand: the dialog in the app, or a recording with real hum.
+
 **Milestone 213: Going to edges, and repeating the last effect**
 - Transport > Go to Previous Edge and Go to Next Edge (Cmd-Left and Cmd-Right) move the cursor to the nearest edge before or after it, scrolling it into view. In a file the edges are its start and end and the selection's ends; moving the cursor takes the selection away, as a click does, so from a selection Next Edge goes to its end and then to the file's end. In a session they are every clip's start and end on the tracks shown in the lanes, the time selection's ends, and the session's start and end; the time selection stays.
 - Edit > Repeat (Shift-R) runs the last command from the Effects menu again, named in the menu ("Repeat Normalize", say); an effect with a dialog opens it again. It works on files, not in the session.

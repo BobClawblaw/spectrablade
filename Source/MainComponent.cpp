@@ -1,5 +1,6 @@
 #include "MainComponent.h"
 #include "Navigation.h"
+#include "Restoration.h"
 #include "Theme.h"
 #include "BuiltInEffects.h"
 #include "AudioFileIO.h"
@@ -124,7 +125,7 @@ namespace
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
-        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast
+        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -133,7 +134,8 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser;
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
+            || id == cmdRemoveHum;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1158,7 +1160,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdRepeatLast; ++id)
+    for (int id = cmdOpen; id <= cmdRemoveHum; ++id)
         ids.add (id);
 }
 
@@ -1431,6 +1433,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdNoiseReduction: info.setInfo ("Noise Reduction...", "Reduce the captured noise in the selection or file", "Effects", 0);
             info.addDefaultKeypress ('p', cmd | juce::ModifierKeys::shiftModifier);
             info.setActive (hasAudio && noisePrint.has_value() && backgroundJob == nullptr); break;
+        case cmdRemoveHum:  info.setInfo ("Remove Hum...", "Take mains hum (50 or 60 Hz and its harmonics) out of the selection, or the whole file", "Effects", 0);
+                            info.setActive (hasAudio); break;
         case cmdClickRepair: info.setInfo ("Click and Pop Repair...", "Find clicks and pops in the selection or file and rebuild them", "Effects", 0);
             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdMultitrack: info.setInfo ("Multitrack Session", "Show the multitrack session instead of the file", "View", 0);
@@ -2139,6 +2143,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCaptureNoisePrint: captureNoisePrint(); break;
         case cmdNoiseReduction: askForNoiseReduction(); break;
         case cmdClickRepair: askForClickRepair(); break;
+        case cmdRemoveHum:  showRemoveHum(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdSelectBetweenMarkers: selectBetweenMarkers(); break;
@@ -2235,7 +2240,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
             add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, 0, cmdApplyRack });
+                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, 0, cmdApplyRack });
             break;
         }
         case 3:
@@ -4866,6 +4871,40 @@ void MainComponent::showEcho()
             if (auto next = AudioEdits::echo (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), delay, (float) echoFeedbackPercent / 100.0f))
                 applyEdit (std::move (next), "Echo", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showRemoveHum()
+{
+    const auto rate = engine.document.getSampleRate();
+    const auto toHum = [] (const EffectValues& v)
+    {
+        Restoration::Hum h;
+        h.frequency = v.at ("mains") < 0.5 ? 50.0 : 60.0;
+        h.harmonics = juce::roundToInt (v.at ("harmonics"));
+        h.q = v.at ("q");
+        return h;
+    };
+
+    showEffectDialog ("Remove Hum", "Takes out mains hum: a narrow notch at the mains frequency and at each of its harmonics up to the "
+                                    "number given, each as wide in hertz as the first (the mains frequency divided by the narrowness: "
+                                    "1.7 Hz at 50 Hz and 30). Harmonics from 1 to 40; narrowness from 5 (wide) to 200 (narrow).",
+                      { { "mains", "Mains", humIs60 ? 1.0 : 0.0, 0, { "50 Hz", "60 Hz" } },
+                        { "harmonics", "Harmonics", (double) humHarmonics, 0 }, { "q", "Narrowness (Q)", humQ, 0 } },
+                      "spectrablade:remove-hum", PreviewOwner::none,
+                      [toHum, rate] (const EffectValues& v) { return Restoration::isValid (toHum (v), rate); },
+                      "The harmonics must be from 1 to 40 and the narrowness from 5 to 200.",
+                      nullptr, nullptr,
+                      [this, toHum, rate] (const EffectValues& v)
+                      {
+                          const auto hum = toHum (v);
+                          humIs60 = hum.frequency > 55.0;
+                          humHarmonics = hum.harmonics;
+                          humQ = hum.q;
+                          const auto r = selectionOrAll();
+
+                          if (auto next = Restoration::removeHum (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), rate, hum))
+                              applyEdit (std::move (next), "Remove Hum", waveform.getSelection());
+                      });
 }
 
 void MainComponent::showEqBand()

@@ -158,6 +158,10 @@ private:
     void showTremolo();
     void showEcho();
     void showEqBand();
+    void showRemoveHum();
+    bool humIs60 = false;   // Remove Hum's last settings
+    int humHarmonics = 8;
+    double humQ = 30.0;
     void toggleParametricEq();
     void showCompressor();
     void showLimiter();
