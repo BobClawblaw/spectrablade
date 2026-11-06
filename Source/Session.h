@@ -311,6 +311,11 @@ struct SessionState
     int beatsPerBar = 4;
     std::vector<Metronome::TempoChange> tempoChanges;   // at later bars, sorted by bar, one a bar
     juce::String notes;                                 // free text kept with the session
+
+    /** The video the session goes with, shown in the Video panel, and where in the session (in
+        seconds, 0 or later) its first frame plays. */
+    juce::File video;
+    double videoStart = 0.0;
     std::vector<SessionTrack> tracks;
     Markers markers;                       // points and regions on the session's time, kept sorted
     juce::uint32 nextId = 1;

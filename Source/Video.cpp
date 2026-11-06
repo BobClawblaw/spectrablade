@@ -1,6 +1,9 @@
 #include "Video.h"
 #include "Theme.h"
 #include "Ffmpeg.h"
+#include "OfflineRender.h"
+#include "AudioFileIO.h"
+#include "AudioEdits.h"
 
 namespace Video
 {
@@ -13,6 +16,51 @@ const juce::StringArray& extensions()
 bool isVideoFile (const juce::File& f)
 {
     return extensions().contains (f.getFileExtension().substring (1).toLowerCase());
+}
+
+SessionPicture sessionPicture (double sessionSeconds, double videoStart)
+{
+    const auto at = sessionSeconds - videoStart;
+    return at < 0.0 ? SessionPicture { 0.0, true } : SessionPicture { at, false };
+}
+
+juce::Range<juce::int64> sessionRange (double videoStart, double videoSeconds, double sampleRate)
+{
+    const auto start = (juce::int64) std::llround (juce::jmax (0.0, videoStart) * sampleRate);
+    return { start, start + (juce::int64) std::llround (juce::jmax (0.0, videoSeconds) * sampleRate) };
+}
+
+juce::String saveMixInto (const SessionState& state, SessionMixer::Inserts* inserts, const juce::File& ffmpeg, const juce::File& target,
+                          juce::AudioFormatManager& formats, const std::function<bool (float)>& progress)
+{
+    const auto keepGoing = [&progress] (float p) { return progress == nullptr || progress (p); };
+
+    if (! state.video.existsAsFile())
+        return "The session's video " + state.video.getFullPathName() + " was not found.";
+
+    if (target == state.video)
+        return "The new video needs a name of its own: the original is read while it is written.";
+
+    const auto picture = Ffmpeg::probePicture (ffmpeg, state.video);
+
+    if (picture.duration <= 0.0)
+        return "The length of " + state.video.getFileName() + " could not be read.";
+
+    juce::AudioBuffer<float> mix;
+
+    if (! OfflineRender::mixSession (state, sessionRange (state.videoStart, picture.duration, state.sampleRate), mix, inserts,
+                                     [&keepGoing] (float p) { return keepGoing (p * 0.6f); }))
+        return "Stopped.";
+
+    juce::TemporaryFile wav (".wav");
+
+    if (auto error = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (mix)), state.sampleRate, wav.getFile(), 32, formats); error.isNotEmpty())
+        return error;
+
+    if (! keepGoing (0.6f))
+        return "Stopped.";
+
+    return Ffmpeg::replaceAudio (ffmpeg, state.video, wav.getFile(), target, [&keepGoing] { return keepGoing (0.6f); });
 }
 
 bool needsPreview (const juce::File& f)

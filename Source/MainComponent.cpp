@@ -139,7 +139,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -151,7 +151,8 @@ namespace
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
-            || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels || id == cmdAttachVideo || id == cmdSaveIntoVideo;
+            || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
+            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1184,7 +1185,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdLevelSpeech; ++id)
+    for (int id = cmdOpen; id <= cmdDetachVideo; ++id)
         ids.add (id);
 }
 
@@ -1489,12 +1490,16 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                info.setActive (backgroundJob == nullptr); break;
         case cmdKeepProjectHistory: info.setInfo ("Keep Undo History in Projects", "Save each file's undo steps with a project (writing the audio of every version they hold)", "File", 0);
                                     info.setTicked (appProperties.getUserSettings()->getBoolValue (projectHistoryKey, true)); break;
-        case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's video, following the playhead", "Window", 0);
+        case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's or session's video, following the playhead", "Window", 0);
                            info.setTicked (dock->isShown (Panels::video)); break;
         case cmdAttachVideo: info.setInfo ("Attach Video...", "Choose the video this file's sound goes with, to watch in the Video panel and to put the sound back into", "File", 0);
                              info.setActive (hasAudio); break;
         case cmdSaveIntoVideo: info.setInfo ("Save Sound into Video...", "Write a copy of the file's video with this sound in place of its own, the picture copied as it is (needs ffmpeg)", "File", 0);
                                info.setActive (hasAudio && doc.getVideo().existsAsFile() && backgroundJob == nullptr && Ffmpeg::find() != juce::File()); break;
+        case cmdVideoStart: info.setInfo ("Video Start...", "Set where in the session the video's first frame plays", "File", 0);
+                            info.setActive (false); break;   // a session's
+        case cmdDetachVideo: info.setInfo ("Detach Video", "Stop showing a video with the file or session", "File", 0);
+                             info.setActive (doc.getVideo() != juce::File()); break;
         case cmdNewFromChannels: info.setInfo ("New File from Mono Files...", "Put several files' channels side by side as one file, such as six mono files as 5.1", "File", 0);
                                  info.setActive (backgroundJob == nullptr); break;
         case cmdPlaySequence: info.setInfo ("Play Sequence...", "Play a recorded sequence on the selection, or the whole file", "Sequences", 0);
@@ -1880,6 +1885,13 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                                          [] (const Marker& m) { return m.isRegion(); })); break;
             case cmdSelectRegion: info.setActive (std::any_of (session.getState()->markers.begin(), session.getState()->markers.end(),
                                                                [] (const Marker& m) { return m.isRegion(); })); break;
+            case cmdAttachVideo: info.description = "Choose the video this session goes with, to watch in the Video panel and to put the mix into";
+                                 info.setActive (true); break;
+            case cmdSaveIntoVideo: info.shortName = "Save Mix into Video...";
+                                   info.description = "Write a copy of the session's video with the mix from the video's start in place of its sound, the picture copied as it is (needs ffmpeg)";
+                                   info.setActive (session.getState()->video.existsAsFile() && backgroundJob == nullptr && Ffmpeg::find() != juce::File()); break;
+            case cmdVideoStart: info.setActive (session.getState()->video != juce::File()); break;
+            case cmdDetachVideo: info.setActive (session.getState()->video != juce::File()); break;
             default:        if (isEditorOnly (id)) info.setActive (false); break;
         }
     }
@@ -2292,6 +2304,8 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdAttachVideo: attachVideo(); break;
         case cmdSaveIntoVideo: saveIntoVideo(); break;
+        case cmdVideoStart: askForVideoStart(); break;
+        case cmdDetachVideo: detachVideo(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
         case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
@@ -2390,7 +2404,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -5449,6 +5463,28 @@ void MainComponent::showVideoPanel()
 
 void MainComponent::attachVideo()
 {
+    if (multitrackMode)
+    {
+        const auto state = engine.session.getState();
+        const auto start = state->video != juce::File() ? state->video
+                                                        : engine.session.getFile() != juce::File() ? engine.session.getFile().getParentDirectory()
+                                                                                                   : juce::File::getSpecialLocation (juce::File::userMoviesDirectory);
+        chooser = std::make_unique<juce::FileChooser> ("Attach Video to the Session", start, "*." + Video::extensions().joinIntoString (";*."));
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                              [this] (const juce::FileChooser& fc)
+        {
+            if (const auto video = fc.getResult(); video.existsAsFile() && Video::isVideoFile (video))
+            {
+                auto next = *engine.session.getState();
+                next.video = video;
+                engine.session.apply (std::move (next), "Attach Video");
+                showVideoPanel();
+                commands.commandStatusChanged();
+            }
+        });
+        return;
+    }
+
     if (! engine.document.hasAudio())
         return;
 
@@ -5467,8 +5503,131 @@ void MainComponent::attachVideo()
     });
 }
 
+void MainComponent::askForVideoStart()
+{
+    const auto state = engine.session.getState();
+
+    if (! multitrackMode || state->video == juce::File())
+        return;
+
+    const auto cursor = (double) multitrack.getCursor() / engine.session.getSampleRate();
+    auto* box = new juce::AlertWindow ("Video Start",
+                                       "Where in the session " + state->video.getFileName() + " starts: its first frame plays at this time, and "
+                                           "Save Mix into Video puts the mix from here into it. The cursor is at " + juce::String (cursor, 3) + " s.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("start", juce::String (state->videoStart, 3), "Start (seconds into the session)");
+    box->getTextEditor ("start")->setInputRestrictions (12, ".0123456789");
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("At the Cursor", 2);
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, cursor] (int result)
+    {
+        if (result == 0)
+            return;
+
+        const auto start = result == 2 ? cursor : box->getTextEditorContents ("start").getDoubleValue();
+
+        if (! std::isfinite (start) || start < 0.0)
+            return;
+
+        auto next = *engine.session.getState();
+        next.videoStart = start;
+        engine.session.apply (std::move (next), "Video Start");
+    }), true);
+}
+
+void MainComponent::detachVideo()
+{
+    if (multitrackMode)
+    {
+        auto next = *engine.session.getState();
+
+        if (next.video == juce::File())
+            return;
+
+        next.video = juce::File();
+        next.videoStart = 0.0;
+        engine.session.apply (std::move (next), "Detach Video");
+    }
+    else
+        engine.document.setVideo ({});
+
+    commands.commandStatusChanged();
+}
+
+void MainComponent::saveMixIntoVideo()
+{
+    const auto video = engine.session.getState()->video;
+    const auto ffmpeg = Ffmpeg::find();
+
+    if (! video.existsAsFile() || ffmpeg == juce::File() || backgroundJob != nullptr)
+        return;
+
+    const auto extension = video.getFileExtension();
+    const auto suggested = video.getSiblingFile (video.getFileNameWithoutExtension() + " (mix)" + extension);
+    chooser = std::make_unique<juce::FileChooser> ("Save Mix into Video", suggested, "*" + extension);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this, video, ffmpeg, extension] (const juce::FileChooser& fc)
+    {
+        auto target = fc.getResult();
+
+        if (target == juce::File() || backgroundJob != nullptr)
+            return;
+
+        target = target.withFileExtension (extension);
+
+        if (target == video)
+        {
+            showError ("Save Mix into Video", "The new video needs a name of its own: the original is read while it is written.");
+            return;
+        }
+
+        const auto state = engine.session.getState();
+        const auto rate = engine.session.getSampleRate();
+        auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
+
+        for (auto& track : state->tracks)
+            if (auto xml = engine.getTrackEffects().createXml (track.id))
+                (*effects)[track.id] = std::move (xml);
+
+        auto inserts = std::make_shared<TrackEffects>();
+        auto error = std::make_shared<juce::String>();
+        auto warnings = std::make_shared<juce::String>();
+
+        backgroundJob = std::make_unique<BackgroundJob> (*this, "Saving mix into video...",
+            [this, state, rate, effects, inserts, error, warnings, ffmpeg, target] (const std::function<bool (float)>& progress)
+            {
+                *warnings = OfflineRender::loadTrackEffects (*effects, engine.pluginFormatManager, rate, *inserts);
+                *error = Video::saveMixInto (*state, inserts.get(), ffmpeg, target, engine.formatManager, progress);
+                return *error != "Stopped.";
+            },
+            [error, warnings, target, video]
+            {
+                const auto audio = Ffmpeg::audioForVideo (video);
+
+                if (error->isNotEmpty())
+                    showError ("Save Mix into Video", *error);
+                else
+                    showNote ("Save Mix into Video", "Written: " + target.getFileName() + ", with the picture of " + video.getFileName()
+                                                         + " as it was and the mix from the video's start as " + audio.description
+                                                         + (audio.kbps > 0 ? " at " + juce::String (audio.kbps) + " kbps." : juce::String ("."))
+                                                         + (warnings->isNotEmpty() ? "\n\nThese effects could not be loaded and were left out:\n" + *warnings
+                                                                                   : juce::String()));
+            });
+        backgroundJob->launchThread();
+        commands.commandStatusChanged();
+    });
+}
+
 void MainComponent::saveIntoVideo()
 {
+    if (multitrackMode)
+    {
+        saveMixIntoVideo();
+        return;
+    }
+
     const auto& doc = engine.document;
     const auto video = doc.getVideo();
     const auto ffmpeg = Ffmpeg::find();
@@ -8972,12 +9131,26 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
     else if (id == Panels::video)
     {
         auto panel = std::make_unique<Video::Panel>();
-        panel->readVideo = [this] { return engine.document.getVideo(); };
+        panel->readVideo = [this] { return multitrackMode ? engine.session.getState()->video : engine.document.getVideo(); };
         panel->readPlayhead = [this]() -> std::optional<Video::Panel::Playhead>
         {
+            if (multitrackMode)
+            {
+                const auto state = engine.session.getState();
+                const auto rate = engine.session.getSampleRate();
+
+                if (rate <= 0.0)
+                    return std::nullopt;
+
+                auto& player = engine.getPlayer();
+                const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session;
+                const auto at = Video::sessionPicture ((double) (playing ? player.getPositionFrames() : multitrack.getCursor()) / rate, state->videoStart);
+                return Video::Panel::Playhead { at.picture, playing && ! at.blank, at.blank };
+            }
+
             const auto rate = engine.document.getSampleRate();
 
-            if (multitrackMode || rate <= 0.0)
+            if (rate <= 0.0)
                 return std::nullopt;
 
             auto& player = engine.getPlayer();

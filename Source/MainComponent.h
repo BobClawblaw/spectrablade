@@ -184,6 +184,9 @@ private:
     void askToShiftPitch();
     void askToReduceReverb();
     void askToLevelSpeech();
+    void askForVideoStart();
+    void detachVideo();
+    void saveMixIntoVideo();
     double stretchPercent = 100.0, pitchSemitones = 0.0;   // as last asked
     void recordStep (const Sequences::Step&);              // after the edit is applied
     void noticeUnrecordedEdits();

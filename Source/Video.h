@@ -1,10 +1,14 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "SessionMixer.h"
 
 /** Video beside the audio: a file opened from a video (or given one with Attach Video) shows its
     picture in the Video panel, following the editor's playhead, and its edited sound can be put back
-    into a copy of the video (Ffmpeg::replaceAudio). The audio's time 0 is the video's time 0. */
+    into a copy of the video (Ffmpeg::replaceAudio). The audio's time 0 is the video's time 0.
+
+    A multitrack session can have a video too, starting at a time in the session of its own: the
+    panel follows the session's playhead, and the mix from that time can be put into a copy. */
 namespace Video
 {
     /** The video types opened (their sound, through ffmpeg) and shown: MP4, M4V, MOV, MKV, WebM, AVI. */
@@ -54,6 +58,26 @@ namespace Video
         bool settling = false;
     };
 
+    /** Where in a session's video the session's time is: its time less the video's start, or
+        blank (the first frame, shown black) before the video starts. */
+    struct SessionPicture
+    {
+        double picture = 0.0;
+        bool blank = false;
+    };
+
+    SessionPicture sessionPicture (double sessionSeconds, double videoStart);
+
+    /** The session frames a video's length covers from its start: the sound put into it. */
+    juce::Range<juce::int64> sessionRange (double videoStart, double videoSeconds, double sampleRate);
+
+    /** Writes target: a copy of the session's video with the session's mix in place of its sound,
+        from the video's start for the video's length, so its picture streams are copied as they
+        are (Ffmpeg::replaceAudio). inserts: the tracks' effects, or null for none. progress gets
+        0..1 and returns false to stop (then "Stopped."). Returns an error message, or empty. */
+    juce::String saveMixInto (const SessionState&, SessionMixer::Inserts* inserts, const juce::File& ffmpeg, const juce::File& target,
+                              juce::AudioFormatManager&, const std::function<bool (float)>& progress = {});
+
     /** The Video panel: the picture, kept in step with the playhead each 30th of a second, without
         its own sound. */
     class Panel final : public juce::Component,
@@ -71,7 +95,7 @@ namespace Video
             bool playing = false, blank = false;
         };
 
-        /** The playhead now; nothing while the picture shouldn't follow (the multitrack session is shown). */
+        /** The playhead now (the editor's, or the session's while it is shown); nothing while the picture shouldn't follow. */
         std::function<std::optional<Playhead>()> readPlayhead;
 
         /** Whether the panel is black because the sound there has no picture. */

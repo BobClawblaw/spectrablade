@@ -8,6 +8,8 @@
 #include "../Source/Ffmpeg.h"
 #include "../Source/Video.h"
 #include "../Source/PictureMap.h"
+#include "../Source/Session.h"
+#include "../Source/OfflineRender.h"
 #include "TestUtils.h"
 #include "VideoTests.h"
 
@@ -49,8 +51,70 @@ namespace
     }
 }
 
+namespace
+{
+    /** A session's video: where its picture is at a session time, the sound it takes, and how it
+        is kept in the session file and undone. */
+    void testSessionVideo()
+    {
+        const auto before = Video::sessionPicture (1.0, 2.5), at = Video::sessionPicture (3.25, 2.5), from0 = Video::sessionPicture (0.75, 0.0);
+        const auto range = Video::sessionRange (2.5, 2.0, 48000.0);
+        check (before.blank && ! at.blank && std::abs (at.picture - 0.75) < 1.0e-9 && ! from0.blank && std::abs (from0.picture - 0.75) < 1.0e-9
+                   && range == juce::Range<juce::int64> (120000, 216000),
+               "session video: a video starting 2.5 s in shows black at 1 s and its 0.75 s at 3.25 s, and takes the session's frames "
+               "120000 to 216000 for its 2 s");
+
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        juce::TemporaryFile folderTemp;
+        const auto folder = folderTemp.getFile();
+        const auto moved = folder.getChildFile ("Moved");
+        moved.createDirectory();
+        const auto video = folder.getChildFile ("Film.mp4");
+        video.replaceWithText ("not read when a session is saved or opened");
+
+        SessionState state;
+        state.video = video;
+        state.videoStart = 2.5;
+        const auto sessionFile = folder.getChildFile ("With Video.sbsession");
+        const auto saveError = SessionFile::save (state, sessionFile);
+        const auto loaded = SessionFile::load (sessionFile, formats);
+
+        // Moved with the session to another folder, the original gone: found by its relative path.
+        sessionFile.copyFileTo (moved.getChildFile (sessionFile.getFileName()));
+        video.copyFileTo (moved.getChildFile (video.getFileName()));
+        video.deleteFile();
+        const auto movedLoaded = SessionFile::load (moved.getChildFile (sessionFile.getFileName()), formats);
+
+        const auto plainFile = folder.getChildFile ("Without.sbsession");
+        SessionFile::save (SessionState(), plainFile);
+        const auto plain = SessionFile::load (plainFile, formats);
+        const auto xml = juce::parseXML (plainFile);
+
+        check (saveError.isEmpty() && loaded.error.isEmpty() && loaded.state.video == video && std::abs (loaded.state.videoStart - 2.5) < 1.0e-9
+                   && movedLoaded.state.video == moved.getChildFile ("Film.mp4") && plain.state.video == juce::File()
+                   && xml != nullptr && xml->getChildByName ("VIDEO") == nullptr,
+               "session video: kept in the session file with its start (2.5 s), found beside the session when both are moved, "
+               "and a session without one has none");
+
+        Session session;
+        auto next = *session.getState();
+        next.video = video;
+        next.videoStart = 1.0;
+        session.apply (std::move (next), "Attach Video");
+        const auto attached = session.getState()->video == video;
+        session.undo();
+        check (attached && session.getState()->video == juce::File() && juce::exactlyEqual (session.getState()->videoStart, 0.0),
+               "session video: attaching one is a step to undo");
+
+        folder.deleteRecursively();
+    }
+}
+
 void runVideoTests()
 {
+    testSessionVideo();
+
     // Following the playhead, against a player that starts 0.1 s after it is told to (as AVPlayer
     // was measured to, about 0.107 s), looked at 30 times a second.
     {
@@ -506,6 +570,72 @@ void runVideoTests()
                "320 x 240 and 2 s long, silent; stopped, it shows the frame at the playhead (" + juce::String (stoppedAt, 3) + " s for 1.24); "
                "playing, it plays along, " + juce::String (drift * 1000.0, 1) + " ms from the sound after 1.5 s; stopped again, back to "
                "the playhead; with no video, a message" + (failed.isEmpty() ? juce::String() : " (failed: " + failed.joinIntoString (", ") + ")"));
+    }
+
+    // A session's mix into its video: from the video's start for its length. A stereo tone from
+    // 1 s in, the video starting at 0.5 s, so the tone comes in half a second into the new video.
+    if (made.count ("mov") > 0)
+    {
+        SessionState state;
+        state.sampleRate = rate;
+        juce::AudioBuffer<float> tone (2, 3 * 48000);
+
+        for (int i = 0; i < tone.getNumSamples(); ++i)
+        {
+            tone.setSample (0, i, (float) (0.4 * std::sin (juce::MathConstants<double>::twoPi * 440.0 * i / rate)));
+            tone.setSample (1, i, (float) (0.3 * std::sin (juce::MathConstants<double>::twoPi * 550.0 * i / rate)));
+        }
+
+        SessionClip clip;
+        clip.id = state.nextId++;
+        clip.name = "tone";
+        clip.audio = AudioEdits::fromBuffer (std::move (tone));
+        clip.position = 48000;
+        clip.length = clip.audio->getNumFrames();
+        state.addTrack().clips.push_back (clip);
+        state.video = made["mov"];
+        state.videoStart = 0.5;
+
+        const auto target = folder.getChildFile ("Clip (mix).mov");
+        const auto error = Video::saveMixInto (state, nullptr, ffmpeg, target, formats);
+        const auto back = AudioFileIO::load (target, formats);
+        juce::AudioBuffer<float> expected;
+        OfflineRender::mixSession (state, { 24000, 24000 + n }, expected, nullptr, {});
+
+        auto worst = 1.0;
+        auto firstSound = -1;
+
+        if (back.snapshot != nullptr && back.snapshot->getNumFrames() == n && expected.getNumSamples() == n)
+        {
+            worst = 0.0;
+            juce::AudioBuffer<float> b (2, n);
+            back.snapshot->read (b, 0, 0, n);
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < n; ++i)
+                {
+                    worst = juce::jmax (worst, std::abs ((double) b.getSample (ch, i) - expected.getSample (ch, i)));
+
+                    if (firstSound < 0 && std::abs (b.getSample (ch, i)) > 1.0e-4f)
+                        firstSound = i;
+                }
+        }
+
+        check (error.isEmpty() && worst <= 1.0 / 8388608.0 && firstSound >= 24000 && firstSound < 24000 + 48
+                   && pictureHash (ffmpeg, target).isNotEmpty() && pictureHash (ffmpeg, target) == pictureHash (ffmpeg, made["mov"]),
+               "session video: the mix from the video's start (0.5 s) for its 2 s goes into a copy with the picture's packets unchanged "
+               "(same MD5), the session's own mix of that time within 1 step of 24 bits (worst " + juce::String (worst * 8388608.0, 2)
+                   + " steps), the tone coming in at frame " + juce::String (firstSound) + " (24000 is 0.5 s)"
+                   + (error.isNotEmpty() ? " (" + error + ")" : juce::String()));
+
+        const auto stoppedTarget = folder.getChildFile ("Clip (stopped).mov");
+        const auto stopped = Video::saveMixInto (state, nullptr, ffmpeg, stoppedTarget, formats, [] (float) { return false; });
+        auto missing = state;
+        missing.video = folder.getChildFile ("Gone.mov");
+        const auto sameName = Video::saveMixInto (state, nullptr, ffmpeg, made["mov"], formats);
+        check (stopped == "Stopped." && ! stoppedTarget.exists() && Video::saveMixInto (missing, nullptr, ffmpeg, target, formats).isNotEmpty()
+                   && sameName.isNotEmpty() && pictureHash (ffmpeg, made["mov"]).isNotEmpty(),
+               "session video: stopping writes nothing, and a missing video or writing over the video itself is refused");
     }
 
     Video::setPreviewFolder ({});

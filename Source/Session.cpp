@@ -2380,6 +2380,14 @@ juce::String save (const SessionState& state, const juce::File& target,
     if (state.notes.isNotEmpty())
         root.createNewChildElement ("NOTES")->addTextElement (state.notes);
 
+    if (state.video != juce::File())
+    {
+        auto* video = root.createNewChildElement ("VIDEO");
+        video->setAttribute ("file", state.video.getRelativePathFrom (target.getParentDirectory()));
+        video->setAttribute ("absolute", state.video.getFullPathName());
+        video->setAttribute ("start", state.videoStart);
+    }
+
     for (auto& m : state.markers)
     {
         auto* marker = root.createNewChildElement ("MARKER");
@@ -2610,6 +2618,17 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
     if (auto* notesXml = root->getChildByName ("NOTES"))
         state.notes = notesXml->getAllSubText();
+
+    // The relative path first, as for audio; a video not found is kept, for the panel to say so.
+    if (auto* videoXml = root->getChildByName ("VIDEO"))
+    {
+        state.video = file.getParentDirectory().getChildFile (videoXml->getStringAttribute ("file"));
+
+        if (! state.video.existsAsFile() && videoXml->getStringAttribute ("absolute").isNotEmpty())
+            state.video = juce::File (videoXml->getStringAttribute ("absolute"));
+
+        state.videoStart = juce::jmax (0.0, videoXml->getDoubleAttribute ("start"));
+    }
 
     for (auto* markerXml : root->getChildWithTagNameIterator ("MARKER"))
     {
