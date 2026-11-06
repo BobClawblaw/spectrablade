@@ -131,7 +131,7 @@ public:
     void mouseMove (const juce::MouseEvent&) override;
     void mouseExit (const juce::MouseEvent&) override;
 
-    static constexpr int height = 30;
+    static constexpr int height = 24;
     static constexpr int widest = 220, narrowest = 70;
 
 private:

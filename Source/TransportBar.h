@@ -67,7 +67,9 @@ namespace TransportBar
         IconButton& getButton (int commandId);
         juce::String getTimeText() const                     { return timeText; }
 
+        /** The width the buttons and the time take at the bar's height. */
         int getIdealWidth() const;
+        static constexpr int height = 28, timeWidth = 170;
         void paint (juce::Graphics&) override;
         void resized() override;
 

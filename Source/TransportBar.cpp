@@ -277,7 +277,7 @@ void Bar::update (bool playing, bool recording, bool looping, const juce::String
 
 int Bar::getIdealWidth() const
 {
-    return (transport.size() + zoom.size()) * 38 + 12 + 190 + 24;
+    return (transport.size() + zoom.size()) * (height + 4) + 8 + timeWidth + 12;
 }
 
 void Bar::paint (juce::Graphics& g)
@@ -305,7 +305,7 @@ void Bar::resized()
     }
 
     r.removeFromLeft (8);
-    timeArea = r.removeFromLeft (190);
+    timeArea = r.removeFromLeft (timeWidth);
     r.removeFromLeft (12);
 
     for (auto* b : zoom)

@@ -638,8 +638,8 @@ public:
             }
 
             g.setColour (front ? Palette::text : Palette::dimText);
-            g.setFont (juce::FontOptions (13.0f));
-            auto textArea = r.reduced (10, 0);
+            g.setFont (juce::FontOptions (12.0f));
+            auto textArea = r.reduced (8, 0);
 
             if (area.host.isMovable (tabs[i]))
             {
@@ -874,8 +874,8 @@ private:
         for (int i = 0; i < tabs.size(); ++i)
         {
             const auto title = area.host.getTitle (tabs[i]);
-            const auto w = juce::GlyphArrangement::getStringWidthInt (juce::Font (juce::FontOptions (13.0f)), title) + 20
-                           + (area.host.isMovable (tabs[i]) ? 18 : 0);
+            const auto w = juce::GlyphArrangement::getStringWidthInt (juce::Font (juce::FontOptions (12.0f)), title) + 16
+                           + (area.host.isMovable (tabs[i]) ? 16 : 0);
 
             if (i == index)
                 return { x, 0, w, tabHeight };
@@ -889,7 +889,7 @@ private:
     juce::Rectangle<int> closeBounds (int index) const
     {
         const auto r = tabBounds (index);
-        return { r.getRight() - 24, (tabHeight - 16) / 2, 16, 16 };
+        return { r.getRight() - 20, (tabHeight - 14) / 2, 14, 14 };
     }
 
     int tabAt (juce::Point<int> p) const

@@ -208,7 +208,7 @@ namespace Dock
         void resized() override;
         void paint (juce::Graphics&) override;
 
-        static constexpr int tabHeight = 26;
+        static constexpr int tabHeight = 22;
         static constexpr int barSize = 6;
         static constexpr int minimumPane = 60;
 

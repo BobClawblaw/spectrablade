@@ -285,7 +285,7 @@ int FileTabs::tabWidth (int index) const
     {
         const auto name = files.nameAt (i) + " *";
         return juce::jlimit (narrowest, widest,
-                             juce::GlyphArrangement::getStringWidthInt (juce::Font (juce::FontOptions (Theme::bodyText)), name) + 44);
+                             juce::GlyphArrangement::getStringWidthInt (juce::Font (juce::FontOptions (12.0f)), name) + 38);
     };
 
     auto total = 0;
@@ -315,7 +315,7 @@ juce::Rectangle<int> FileTabs::getTabBounds (int index) const
 juce::Rectangle<int> FileTabs::getCloseBounds (int index) const
 {
     const auto tab = getTabBounds (index);
-    return tab.isEmpty() ? tab : juce::Rectangle<int> (tab.getRight() - 24, tab.getCentreY() - 8, 16, 16);
+    return tab.isEmpty() ? tab : juce::Rectangle<int> (tab.getRight() - 20, tab.getCentreY() - 7, 14, 14);
 }
 
 int FileTabs::tabAt (juce::Point<int> p) const
@@ -350,9 +350,9 @@ void FileTabs::paint (juce::Graphics& g)
             g.fillRect (tab.withHeight (2).withTrimmedRight (1));
         }
 
-        auto text = tab.withTrimmedLeft (12).withTrimmedRight (28);
+        auto text = tab.withTrimmedLeft (10).withTrimmedRight (24);
         g.setColour (active ? Theme::textStrong : Theme::dimText);
-        g.setFont (juce::FontOptions (Theme::bodyText, active ? juce::Font::bold : juce::Font::plain));
+        g.setFont (juce::FontOptions (12.0f, active ? juce::Font::bold : juce::Font::plain));
         g.drawText (files.nameAt (i), text, juce::Justification::centredLeft, true);
 
         // The ×, or a dot in its place while unsaved and not under the mouse.

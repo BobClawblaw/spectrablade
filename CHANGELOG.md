@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 208: A denser layout**
+- More room for the audio: the window's margins went from 10 to 6 pixels and the gaps around the panels from 8 to 4; the toolbar is 30 pixels high (34 before), with the transport and zoom buttons 28 square and the time 170 wide (190); panel tabs are 22 high (26) and the file tabs over the editor 24 (30), both in 12-point text with smaller close buttons; the devices and status lines take 46 pixels (52).
+- Measured by the tests: the transport bar's ideal width holds its ten buttons and the time with no more than a gap to spare, each button as tall as the bar, and the tab heights. The whole suite passed (874 checks).
+- Together the waveform gains 36 pixels of height in a window of the same size (26 from the margins, gaps, toolbar and status lines, 4 from the panel tabs and 6 from the file tabs). Seen in a capture of the window: the Editing workspace with two files.
 
 ## Released
 

@@ -1099,10 +1099,10 @@ void MainComponent::paint (juce::Graphics& g)
 
 void MainComponent::resized()
 {
-    auto r = getLocalBounds().reduced (10);
+    auto r = getLocalBounds().reduced (6);
 
     // Top: the mode and Open, the transport with the time and zoom in the middle, then the setup buttons.
-    auto toolbar = r.removeFromTop (34);
+    auto toolbar = r.removeFromTop (30);
     multitrackButton.setBounds (toolbar.removeFromLeft (96).reduced (0, 2));
     toolbar.removeFromLeft (6);
     openButton.setBounds (toolbar.removeFromLeft (76).reduced (0, 2));
@@ -1112,12 +1112,12 @@ void MainComponent::resized()
     toolbar.removeFromRight (12);
     toolbar.removeFromLeft (12);
     const auto barWidth = juce::jmin (toolbar.getWidth(), transportBar->getIdealWidth());
-    transportBar->setBounds (toolbar.withSizeKeepingCentre (barWidth, toolbar.getHeight()));
+    transportBar->setBounds (toolbar.withSizeKeepingCentre (barWidth, TransportBar::Bar::height));
 
     // Bottom: the devices and the file over its status line, the selection and view beside them.
-    r.removeFromTop (8);
-    auto bottom = r.removeFromBottom (52);
-    auto devices = bottom.removeFromTop (26).reduced (0, 1);
+    r.removeFromTop (4);
+    auto bottom = r.removeFromBottom (46);
+    auto devices = bottom.removeFromTop (24).reduced (0, 1);
     outputLabel.setBounds (devices.removeFromLeft (52));
     outputPair.setBounds (devices.removeFromLeft (juce::jmin (200, devices.getWidth() / 4)));
     devices.removeFromLeft (6);
@@ -1132,7 +1132,7 @@ void MainComponent::resized()
     deviceLabel.setBounds (status.removeFromRight (status.getWidth() / 3));
     selectionLabel.setBounds (status.removeFromRight (status.getWidth() / 2));
     fileLabel.setBounds (status);
-    r.removeFromBottom (8);
+    r.removeFromBottom (4);
 
     if (dock != nullptr)
         dock->setBounds (r);

@@ -3,6 +3,9 @@
 #include "../Source/WaveformView.h"
 #include "../Source/AudioEdits.h"
 #include "../Source/AudioEngine.h"
+#include "../Source/TransportBar.h"
+#include "../Source/OpenFiles.h"
+#include "../Source/Dock.h"
 #include "TestUtils.h"
 #include "ThemeTests.h"
 
@@ -141,10 +144,24 @@ namespace
         for (auto* c : std::initializer_list<juce::Component*> { &button, &box, &field, &bar })
             c->setLookAndFeel (nullptr);
     }
+
+    void testDensity()
+    {
+        juce::ApplicationCommandManager commands;
+        TransportBar::Bar bar (commands, { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 });
+        bar.setBounds (0, 0, bar.getIdealWidth(), TransportBar::Bar::height);
+        const auto last = bar.getButton (10).getBounds();
+        check (last.getRight() <= bar.getWidth() && bar.getWidth() - last.getRight() <= 4 && last.getHeight() == TransportBar::Bar::height
+                   && bar.getButton (1).getX() == 0,
+               "layout: the transport bar's ideal width holds its ten buttons and the time with no more than a gap to spare, each button as tall as the bar");
+        check (Dock::Area::tabHeight == 22 && FileTabs::height == 24 && TransportBar::Bar::height == 28,
+               "layout: panel tabs 22 pixels high, file tabs 24 and the transport 28");
+    }
 }
 
 void runThemeTests()
 {
+    testDensity();
     testContrast();
     testSwitching();
     testControls();
