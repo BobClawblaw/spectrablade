@@ -241,7 +241,20 @@ void runLossyFilesTests()
         write (*snapshot, rate, b, {});
         write (*snapshot, rate, c, { Kind::aac, 256 });
         write (*snapshot, rate, e, { Kind::aac, 256 });
-        check (a.hasIdenticalContentTo (b) && c.hasIdenticalContentTo (e), "lossy files: writing again gives the same bytes, MP3 and AAC");
+        // The .m4a header holds the time it was written, so for AAC compare the audio data.
+        const auto mdat = [] (const juce::File& file)
+        {
+            juce::MemoryBlock data;
+            file.loadFileAsData (data);
+            const auto* bytes = (const char*) data.getData();
+            const auto* end = bytes + data.getSize();
+            const char* type = "mdat";
+            const auto* at = std::search (bytes, end, type, type + 4);
+            return at == end ? juce::MemoryBlock() : juce::MemoryBlock (at, (size_t) (end - at));
+        };
+
+        check (a.hasIdenticalContentTo (b) && mdat (c).getSize() > 1000 && mdat (c) == mdat (e),
+               "lossy files: writing again gives the same bytes (MP3) and the same audio data (AAC)");
     }
 
     // 96 kHz comes down to 48, and mono stays mono.

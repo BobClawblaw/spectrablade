@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "Markers.h"
+#include "FileInfo.h"
 
 //==============================================================================
 /** Immutable multichannel audio. Edits never change a block; they make new snapshots
@@ -71,13 +72,16 @@ public:
     using Snapshot = std::shared_ptr<const AudioSnapshot>;
 
     /** Replaces everything (new file); clears undo history. */
-    void reset (Snapshot initial, double sampleRate, const juce::File& file, int sourceBitDepth, Markers = {});
+    void reset (Snapshot initial, double sampleRate, const juce::File& file, int sourceBitDepth, Markers = {}, FileInfo = {});
 
     Snapshot getSnapshot() const;
     juce::uint32 getVersion() const noexcept      { return version.load(); }
 
     /** Message thread only. */
     const Markers& getMarkers() const noexcept    { return history[(size_t) position].markers; }
+
+    /** The file's title, artist and so on, and its broadcast details. Message thread only. */
+    const FileInfo& getInfo() const noexcept      { return history[(size_t) position].info; }
 
     /** Increments each time a different file (or a new empty document) is loaded. */
     int getResetCount() const noexcept            { return resetCount; }
@@ -100,6 +104,9 @@ public:
 
     /** Changes only the markers, as one undoable step. */
     void setMarkers (Markers, const juce::String& description);
+
+    /** Changes only the file info, as one undoable step. */
+    void setInfo (FileInfo, const juce::String& description);
 
     bool canUndo() const noexcept                 { return position > 0; }
     bool canRedo() const noexcept                 { return position + 1 < (int) history.size(); }
@@ -134,10 +141,11 @@ private:
         Markers markers;
         double sampleRate;
         juce::String description;
+        FileInfo info {};
     };
 
     void setCurrent (const Entry&);
-    void push (Entry);
+    void push (Entry, bool keepInfo = true);
     void retire (Snapshot);
 
     mutable juce::SpinLock lock;

@@ -130,7 +130,7 @@ namespace
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
-        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg
+        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -141,7 +141,7 @@ namespace
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
-            || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg;
+            || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1172,7 +1172,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdExportFfmpeg; ++id)
+    for (int id = cmdOpen; id <= cmdFileInfo; ++id)
         ids.add (id);
 }
 
@@ -1441,6 +1441,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdSpectralRemove: info.setInfo ("Remove Frequencies", "Remove what is inside the box, lasso or brush selection in the spectrogram", "Effects", 0);
                             info.addDefaultKeypress (juce::KeyPress::backspaceKey, alt);
                             info.setActive (hasSpectral); break;
+        case cmdFileInfo: info.setInfo ("File Info...", "See and change the file's title, artist, album and other details, and its broadcast-wave details", "File", 0);
+                          info.setActive (hasAudio); break;
         case cmdExportFfmpeg: info.setInfo ("Export with ffmpeg...", "Write the file, or the selection, as Opus, Apple Lossless, WavPack or AC-3 through an installed ffmpeg", "File", 0);
                               info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdExportLossy: info.setInfo ("Export as MP3 or AAC...", "Write the file, or the selection, to an MP3 or AAC (.m4a) file", "File", 0);
@@ -2197,6 +2199,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSpectralHeal: healSpectral(); break;
         case cmdExportLossy: exportLossy(); break;
         case cmdExportFfmpeg: exportWithFfmpeg(); break;
+        case cmdFileInfo: showFileInfo(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
         case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
@@ -2293,7 +2296,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdExportLossy, cmdExportFfmpeg, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdExportLossy, cmdExportFfmpeg, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -4082,7 +4085,7 @@ void MainComponent::saveSelectionAs()
             return;
 
         if (const auto error = AudioFileIO::saveRange (*d.getSnapshot(), d.getSampleRate(), sel.getStart(), sel.getEnd(), file, depth,
-                                                        engine.formatManager, d.getMarkers()); error.isNotEmpty())
+                                                        engine.formatManager, d.getMarkers(), d.getInfo()); error.isNotEmpty())
             showError ("Save failed", error);
     });
 }
@@ -4224,11 +4227,12 @@ void MainComponent::askLossySettings (const juce::File& file, juce::Range<juce::
         const auto snapshot = onlySelection ? AudioEdits::crop (*d.getSnapshot(), selection.getStart(), selection.getEnd()) : d.getSnapshot();
         const auto sampleRate = d.getSampleRate();
         auto error = std::make_shared<juce::String>();
+        const auto info = d.getInfo();
 
         backgroundJob = std::make_unique<BackgroundJob> (*this, "Exporting...",
-            [snapshot, sampleRate, file, settings, error] (const std::function<bool (float)>& progress)
+            [snapshot, sampleRate, file, settings, error, info] (const std::function<bool (float)>& progress)
             {
-                *error = LossyFiles::write (*snapshot, sampleRate, file, settings, progress);
+                *error = LossyFiles::write (*snapshot, sampleRate, file, settings, progress, info);
                 return *error != "Stopped.";
             },
             [error]
@@ -4320,15 +4324,16 @@ void MainComponent::exportWithFfmpeg()
             const auto snapshot = onlySelection ? AudioEdits::crop (*current.getSnapshot(), selection.getStart(), selection.getEnd()) : current.getSnapshot();
             const auto sampleRate = current.getSampleRate();
             auto error = std::make_shared<juce::String>();
+            const auto info = current.getInfo();
 
             backgroundJob = std::make_unique<BackgroundJob> (*this, "Exporting with ffmpeg...",
-                [this, snapshot, sampleRate, ffmpeg, file, target, kbps, error] (const std::function<bool (float)>& progress)
+                [this, snapshot, sampleRate, ffmpeg, file, target, kbps, error, info] (const std::function<bool (float)>& progress)
                 {
                     juce::TemporaryFile wav (".wav");
                     *error = AudioFileIO::save (*snapshot, sampleRate, wav.getFile(), 32, engine.formatManager);
 
                     if (error->isEmpty() && progress (0.3f))
-                        *error = Ffmpeg::encode (ffmpeg, wav.getFile(), file, target, kbps, [&progress] { return progress (0.3f); });
+                        *error = Ffmpeg::encode (ffmpeg, wav.getFile(), file, target, kbps, [&progress] { return progress (0.3f); }, info);
 
                     return *error != "Stopped.";
                 },
@@ -4340,6 +4345,52 @@ void MainComponent::exportWithFfmpeg()
             backgroundJob->launchThread();
             commands.commandStatusChanged();
         });
+    }), true);
+}
+
+void MainComponent::showFileInfo()
+{
+    const auto& doc = engine.document;
+    const auto current = doc.getInfo();
+
+    struct Field { const char* key; const char* label; juce::String FileInfo::* field; int limit; };
+    static const Field fields[] {
+        { "title", "Title", &FileInfo::title, 0 }, { "artist", "Artist", &FileInfo::artist, 0 }, { "album", "Album", &FileInfo::album, 0 },
+        { "genre", "Genre", &FileInfo::genre, 0 }, { "year", "Year", &FileInfo::year, 0 }, { "track", "Track (3 or 3/12)", &FileInfo::track, 0 },
+        { "comment", "Comment", &FileInfo::comment, 0 },
+        { "description", "Broadcast: description", &FileInfo::description, 256 }, { "originator", "Broadcast: originator", &FileInfo::originator, 32 },
+        { "reference", "Broadcast: originator reference", &FileInfo::originatorReference, 32 },
+        { "date", "Broadcast: origination date (yyyy-mm-dd)", &FileInfo::originationDate, 10 },
+        { "time", "Broadcast: origination time (hh:mm:ss)", &FileInfo::originationTime, 8 } };
+
+    auto* box = new juce::AlertWindow ("File Info", "WAV files keep all of these (the broadcast details in their bext chunk); MP3 and AAC exports, and "
+                                                    "those through ffmpeg, keep the first seven. Time reference: "
+                                                    + juce::String (current.timeReference) + " frames since midnight.",
+                                       juce::MessageBoxIconType::NoIcon);
+
+    for (const auto& f : fields)
+    {
+        box->addTextEditor (f.key, current.*f.field, f.label);
+
+        if (f.limit > 0)
+            box->getTextEditor (f.key)->setInputRestrictions (f.limit);
+    }
+
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, current] (int result)
+    {
+        if (result != 1)
+            return;
+
+        auto next = current;
+
+        for (const auto& f : fields)
+            next.*f.field = box->getTextEditorContents (f.key).trim();
+
+        if (next != current)
+            engine.document.setInfo (next, "File Info");
     }), true);
 }
 
@@ -4398,7 +4449,7 @@ void MainComponent::writeFile (const juce::File& file, int bitDepth, std::functi
 {
     auto& doc = engine.document;
     const auto error = AudioFileIO::save (*doc.getSnapshot(), doc.getSampleRate(), file, bitDepth, engine.formatManager,
-                                          doc.getMarkers());
+                                          doc.getMarkers(), doc.getInfo());
 
     if (error.isNotEmpty())
     {
@@ -4411,6 +4462,9 @@ void MainComponent::writeFile (const juce::File& file, int bitDepth, std::functi
         if (! doc.getMarkers().empty() && ! AudioFileIO::canStoreMarkers (file))
             showError ("Markers not saved", file.getFileExtension().toUpperCase().trimCharactersAtStart (".")
                                               + " files cannot hold markers. Save as WAV to keep them.");
+        else if (! doc.getInfo().isEmpty() && ! AudioFileIO::canStoreInfo (file))
+            showError ("File info not saved", file.getFileExtension().toUpperCase().trimCharactersAtStart (".")
+                                                  + " files here don't keep the title, artist and so on. Save as WAV, or export as MP3 or AAC, to keep them.");
     }
 
     if (done != nullptr)

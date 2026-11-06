@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioDocument.h"
+#include "FileInfo.h"
 
 /** Writing MP3 files (with LAME) and AAC in MPEG-4 files (.m4a, with the system's encoder). */
 namespace LossyFiles
@@ -31,7 +32,8 @@ namespace LossyFiles
 
     /** Writes the audio through a temporary file, then replaces the target. One or two channels only.
         progress (if given) is called between blocks with the fraction done, and stops the writing by
-        returning false. Returns an error message, or empty on success. */
+        returning false. The info's tags go in as ID3v2 (MP3) or iTunes-style tags (.m4a). Returns an
+        error message, or empty on success. */
     juce::String write (const AudioSnapshot&, double sampleRate, const juce::File& target, const Settings&,
-                        const std::function<bool (float)>& progress = {});
+                        const std::function<bool (float)>& progress = {}, const FileInfo& info = {});
 }

@@ -115,6 +115,7 @@ target_sources(SpectraBlade PRIVATE
     Source/LossyFiles.cpp
     Source/AacWriter.cpp
     Source/Ffmpeg.cpp
+    Source/FileInfo.cpp
     Source/OpenFiles.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
@@ -208,6 +209,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/GeneratorTests.cpp
     Tests/LossyFilesTests.cpp
     Tests/FfmpegTests.cpp
+    Tests/FileInfoTests.cpp
     Tests/SpectralShapeTests.cpp
     Tests/DuckingTests.cpp
     Tests/FadeHandleTests.cpp
@@ -256,6 +258,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/LossyFiles.cpp
     Source/AacWriter.cpp
     Source/Ffmpeg.cpp
+    Source/FileInfo.cpp
     Source/OpenFiles.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp

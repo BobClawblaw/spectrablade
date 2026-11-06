@@ -1793,7 +1793,7 @@ namespace
             loadGo.wait (5000);
             juce::AudioBuffer<float> b (1, 300);
             b.clear();
-            return AudioFileIO::Loaded { AudioEdits::fromBuffer (std::move (b)), 48000.0, 24, {}, {} };
+            return AudioFileIO::Loaded { AudioEdits::fromBuffer (std::move (b)), 48000.0, 24, {}, {}, {} };
         });
         loadFast = juce::Time::getMillisecondCounterHiRes() - t0 < 50.0;
         const auto notYet = ! arrived;

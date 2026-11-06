@@ -10,7 +10,7 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 ## Features
 
-- **Editing audio files:** waveform and spectrogram views; cut, copy, paste, paste mix and paste to fill; silence, insert and trim silence, crop, reverse, invert, swap, copy or silence one channel, mix to mono and make stereo; gain, normalize (each channel or each region on its own), fades with shapes (or dragged straight from handles on the waveform, curve and all), gain and pan ramps, balance and stereo width; markers and regions, with lists, CSV import and export, and saving regions or the pieces between markers as files; an undo history.
+- **Editing audio files:** waveform and spectrogram views; cut, copy, paste, paste mix and paste to fill; silence, insert and trim silence, crop, reverse, invert, swap, copy or silence one channel, mix to mono and make stereo; gain, normalize (each channel or each region on its own), fades with shapes (or dragged straight from handles on the waveform, curve and all), gain and pan ramps, balance and stereo width; markers and regions, with lists, CSV import and export, and saving regions or the pieces between markers as files; file info (title, artist and so on, and broadcast-wave details); an undo history.
 - **Repair and analysis:** spectral selection (box, lasso and brush) and attenuation, healing a drawn spot from the sound around it, noise reduction, click and pop repair, hum removal (50 or 60 Hz and its harmonics), clipped-peak repair, tone, sweep and noise generators, Repair Selection, DC offset removal, a noise gate; finding clipping, silences and sounds; EBU R128 loudness with Match Loudness and true-peak limiting; stereo correlation; sample-rate conversion.
 - **Effects:** parametric, graphic (10 and 31 bands) and single-band EQ, compressor, multiband compressor, de-esser, limiter, chorus, flanger, phaser, tremolo, echo, reverb and convolution reverb, each applied to the selection with a preview and presets, and most of them also live in the effects rack and on tracks; VST3 and Audio Unit plug-ins, each checked when it is scanned.
 - **Recording:** from the cursor, or punched in over a selection with pre-roll and post-roll; loop recording into takes; several tracks at once; input monitoring through a track's effects; a metronome and count-in.
@@ -32,6 +32,8 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 | Opus, WavPack, AC-3 | Through ffmpeg | File > Export with ffmpeg |
 | WMA, E-AC-3, Monkey's Audio, TTA, MKA, MP2, AMR, DTS | Through ffmpeg | No |
 | The sound of a video (MP4, MOV, MKV, WebM, AVI) | Through ffmpeg: its first audio stream | No |
+
+File > File Info shows and changes the title, artist, album, genre, year, track and comment, and the broadcast-wave (BWF) details. WAV keeps all of them; MP3 (ID3v2), AAC (.m4a) and the ffmpeg exports keep the tags; they are read from WAV, MP3, MPEG-4, FLAC and Ogg files. AIFF and FLAC files saved here don't keep them.
 
 MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz is written at 44.1 or 48 kHz. Both keep the audio's exact length and start, through the encoder-delay information players read.
 

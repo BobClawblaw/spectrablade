@@ -27,12 +27,12 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         if (ffmpeg == juce::File())
             return { nullptr, 0.0, 0, Ffmpeg::importExtensions().contains (file.getFileExtension().substring (1).toLowerCase())
                                           ? "Opening " + file.getFileExtension() + " files needs ffmpeg, which isn't installed."
-                                          : "Unsupported or unreadable audio file.", {} };
+                                          : "Unsupported or unreadable audio file.", {}, {} };
 
         juce::TemporaryFile wav (".wav");
 
         if (const auto error = Ffmpeg::decode (ffmpeg, file, wav.getFile()); error.isNotEmpty())
-            return { nullptr, 0.0, 0, error, {} };
+            return { nullptr, 0.0, 0, error, {}, {} };
 
         auto loaded = load (wav.getFile(), formats);
         loaded.markers = {};
@@ -40,13 +40,13 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     }
 
     if (reader == nullptr)
-        return { nullptr, 0.0, 0, "Unsupported or unreadable audio file.", {} };
+        return { nullptr, 0.0, 0, "Unsupported or unreadable audio file.", {}, {} };
 
     const auto channels = (int) reader->numChannels;
     const auto total = reader->lengthInSamples;
 
     if (channels <= 0 || total < 0)
-        return { nullptr, 0.0, 0, "The file has no audio channels.", {} };
+        return { nullptr, 0.0, 0, "The file has no audio channels.", {}, {} };
 
     std::vector<AudioSnapshot::Segment> segments;
 
@@ -56,14 +56,14 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         juce::AudioBuffer<float> buffer (channels, count);
 
         if (! reader->read (&buffer, 0, count, pos, true, true))
-            return { nullptr, 0.0, 0, "Reading failed at frame " + juce::String (pos) + ".", {} };
+            return { nullptr, 0.0, 0, "Reading failed at frame " + juce::String (pos) + ".", {}, {} };
 
         segments.push_back ({ std::make_shared<const AudioBlock> (std::move (buffer)), 0, count });
     }
 
     const auto bitDepth = reader->usesFloatingPointData ? 32 : (int) reader->bitsPerSample;
     return { std::make_shared<const AudioSnapshot> (channels, std::move (segments)), reader->sampleRate, bitDepth, {},
-             MarkerEdits::fromMetadata (reader->metadataValues, total) };
+             MarkerEdits::fromMetadata (reader->metadataValues, total), FileInfoIO::read (file, reader->metadataValues) };
 }
 
 juce::Array<int> bitDepthsFor (const juce::File& file, juce::AudioFormatManager& formats)
@@ -81,13 +81,18 @@ juce::Array<int> bitDepthsFor (const juce::File& file, juce::AudioFormatManager&
     return result;
 }
 
+bool canStoreInfo (const juce::File& file)
+{
+    return file.hasFileExtension ("wav;wave;bwf");
+}
+
 bool canStoreMarkers (const juce::File& file)
 {
     return file.hasFileExtension ("wav;wave;bwf;aif;aiff;aifc");
 }
 
 juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce::File& target, int bitDepth,
-                   juce::AudioFormatManager& formats, const Markers& markers)
+                   juce::AudioFormatManager& formats, const Markers& markers, const FileInfo& info)
 {
     auto* format = formatFor (target, formats);
 
@@ -117,7 +122,19 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
                                                       : juce::AudioFormatWriterOptions::SampleFormat::integral);
 
         if (canStoreMarkers (target))
-            options = options.withMetadataValues (MarkerEdits::toMetadata (markers));
+        {
+            auto metadata = MarkerEdits::toMetadata (markers);
+
+            if (canStoreInfo (target))
+            {
+                const auto broadcast = FileInfoIO::broadcastMetadata (info);
+
+                for (int i = 0; i < broadcast.size(); ++i)
+                    metadata[broadcast.getAllKeys()[i]] = broadcast.getAllValues()[i];
+            }
+
+            options = options.withMetadataValues (metadata);
+        }
 
         auto writer = format->createWriterFor (stream, options);
 
@@ -148,6 +165,10 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
         }
     }
 
+    if (canStoreInfo (target))
+        if (const auto error = FileInfoIO::appendRiffInfo (temp.getFile(), info); error.isNotEmpty())
+            return error;
+
     if (! temp.overwriteTargetFileWithTemporary())
         return "Could not replace " + target.getFullPathName();
 
@@ -155,9 +176,9 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
 }
 
 juce::String saveRange (const AudioSnapshot& snapshot, double sampleRate, juce::int64 start, juce::int64 end, const juce::File& target,
-                        int bitDepth, juce::AudioFormatManager& formats, const Markers& markers)
+                        int bitDepth, juce::AudioFormatManager& formats, const Markers& markers, const FileInfo& info)
 {
-    return save (*AudioEdits::crop (snapshot, start, end), sampleRate, target, bitDepth, formats, MarkerEdits::afterCrop (markers, start, end));
+    return save (*AudioEdits::crop (snapshot, start, end), sampleRate, target, bitDepth, formats, MarkerEdits::afterCrop (markers, start, end), info);
 }
 
 juce::Array<juce::File> filesIn (const juce::String& commandLine)

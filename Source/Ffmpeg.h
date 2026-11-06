@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "FileInfo.h"
 
 /** Opening and writing the formats SpectraBlade doesn't read or write itself, through an ffmpeg
     the user has installed (it is not part of SpectraBlade). */
@@ -31,8 +32,8 @@ namespace Ffmpeg
     /** The formats offered to export through ffmpeg. */
     const std::vector<Target>& targets();
 
-    /** Encodes a WAV into target with ffmpeg (kbps for the lossy ones), through a temporary file
-        beside the target. Returns an error message, or empty on success. */
+    /** Encodes a WAV into target with ffmpeg (kbps for the lossy ones), with the info's tags, through a
+        temporary file beside the target. Returns an error message, or empty on success. */
     juce::String encode (const juce::File& ffmpeg, const juce::File& wav, const juce::File& target, const Target&, int kbps,
-                         const std::function<bool()>& keepGoing = {});
+                         const std::function<bool()>& keepGoing = {}, const FileInfo& info = {});
 }

@@ -167,6 +167,7 @@ private:
     void exportLossy();
     void askLossySettings (const juce::File&, juce::Range<juce::int64> selection);
     void exportWithFfmpeg();
+    void showFileInfo();
     void insertGenerated (const juce::AudioBuffer<float>&, const juce::String& name);
     int toneWave = 0;                // the generators' last settings
     double toneHz = 1000.0, toneEndHz = 1000.0, toneLevelDb = -12.0, toneSeconds = 1.0, toneFadeMs = 5.0;

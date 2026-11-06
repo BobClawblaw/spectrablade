@@ -222,14 +222,14 @@ void AudioDocument::retire (Snapshot s)
         pendingRelease.push_back (std::move (s));
 }
 
-void AudioDocument::reset (Snapshot initial, double rate, const juce::File& f, int bitDepth, Markers markers)
+void AudioDocument::reset (Snapshot initial, double rate, const juce::File& f, int bitDepth, Markers markers, FileInfo info)
 {
     for (auto& e : history)
         retire (std::move (e.snapshot));
 
     MarkerEdits::sort (markers);
     history.clear();
-    history.push_back ({ std::move (initial), std::move (markers), rate, {} });
+    history.push_back ({ std::move (initial), std::move (markers), rate, {}, std::move (info) });
     position = savedPosition = 0;
     file = f;
     sourceBitDepth = bitDepth;
@@ -257,8 +257,17 @@ void AudioDocument::setMarkers (Markers markers, const juce::String& description
     push ({ getSnapshot(), std::move (markers), sampleRate.load(), description });
 }
 
-void AudioDocument::push (Entry entry)
+void AudioDocument::setInfo (FileInfo info, const juce::String& description)
 {
+    push ({ getSnapshot(), getMarkers(), sampleRate.load(), description, std::move (info) }, false);
+}
+
+void AudioDocument::push (Entry entry, bool keepInfo)
+{
+    // Edits other than setInfo carry the info on as it is.
+    if (keepInfo)
+        entry.info = getInfo();
+
     // A new edit after undo discards the redo branch.
     for (auto i = (size_t) position + 1; i < history.size(); ++i)
         retire (std::move (history[i].snapshot));

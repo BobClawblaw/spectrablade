@@ -647,7 +647,7 @@ juce::String AudioEngine::adoptFile (const juce::File& file, AudioFileIO::Loaded
         return loaded.error;
 
     player->pause();
-    document.reset (std::move (loaded.snapshot), loaded.sampleRate, file, loaded.bitDepth, std::move (loaded.markers));
+    document.reset (std::move (loaded.snapshot), loaded.sampleRate, file, loaded.bitDepth, std::move (loaded.markers), std::move (loaded.info));
     player->resetSource();
     sendChangeMessage();
     return {};

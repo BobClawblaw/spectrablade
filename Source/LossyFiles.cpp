@@ -56,7 +56,7 @@ namespace
     }
 
     juce::String writeMp3 (const AudioSnapshot& snapshot, double sampleRate, const juce::File& file, const Settings& settings,
-                           const std::function<bool (float)>& progress)
+                           const std::function<bool (float)>& progress, const FileInfo& info)
     {
         const auto channels = snapshot.getNumChannels();
         std::unique_ptr<lame_global_flags, decltype (&lame_close)> lame (lame_init(), &lame_close);
@@ -88,6 +88,12 @@ namespace
         if (out.failedToOpen() || ! out.truncate().wasOk())
             return "Cannot write to " + file.getParentDirectory().getFullPathName();
 
+        // The tags first; LAME's tag frame comes straight after them.
+        const auto id3 = FileInfoIO::id3v2 (info);
+
+        if (! out.write (id3.getData(), id3.getSize()))
+            return "Writing failed (disk full?).";
+
         std::vector<unsigned char> encoded ((size_t) (framesPerWrite * 5 / 4 + 7200));
         auto failed = false;
 
@@ -110,11 +116,11 @@ namespace
 
         // The first frame was kept free for the tag that tells players the encoder's delay and padding,
         // so they can play the audio from its first sample to its last.
-        std::array<unsigned char, 2880> tag {};
-        const auto tagBytes = lame_get_lametag_frame (g, tag.data(), tag.size());
+        std::array<unsigned char, 2880> lameTag {};
+        const auto tagBytes = lame_get_lametag_frame (g, lameTag.data(), lameTag.size());
 
-        if (tagBytes > 0 && tagBytes <= tag.size())
-            if (! out.setPosition (0) || ! out.write (tag.data(), tagBytes))
+        if (tagBytes > 0 && tagBytes <= lameTag.size())
+            if (! out.setPosition ((juce::int64) id3.getSize()) || ! out.write (lameTag.data(), tagBytes))
                 return "Writing failed (disk full?).";
 
         out.flush();
@@ -122,14 +128,21 @@ namespace
     }
 
     juce::String writeAac (const AudioSnapshot& snapshot, double sampleRate, const juce::File& file, const Settings& settings,
-                           const std::function<bool (float)>& progress)
+                           const std::function<bool (float)>& progress, const FileInfo& info)
     {
         const auto channels = snapshot.getNumChannels();
         const auto total = snapshot.getNumFrames();
         juce::int64 pos = 0;
 
+        // The file keeps room for the tags (about 180 bytes per second reserved), which go in afterwards.
+        auto tagBytes = 0;
+
+        for (const auto* t : { &info.title, &info.artist, &info.album, &info.genre, &info.year, &info.track, &info.comment })
+            tagBytes += (int) t->getNumBytesAsUTF8() + 32;
+
+        const auto tagRoom = info.hasTags() ? 10.0 + tagBytes / 100.0 : 0.0;
         const auto error = AacWriter::write (file.getFullPathName().toRawUTF8(), sampleRate, outputRate (sampleRate), (unsigned) channels,
-                                             settings.kbps, (double) total / sampleRate, [&] (float* const* dest, int maxFrames)
+                                             settings.kbps, (double) total / sampleRate + tagRoom, [&] (float* const* dest, int maxFrames)
         {
             if (progress != nullptr && ! progress ((float) ((double) pos / (double) total)))
                 return -1;
@@ -141,7 +154,10 @@ namespace
             return count;
         });
 
-        return juce::String::fromUTF8 (error.c_str());
+        if (! error.empty())
+            return juce::String::fromUTF8 (error.c_str());
+
+        return FileInfoIO::addMp4Tags (file, info);
     }
 }
 
@@ -179,7 +195,7 @@ double outputRate (double sampleRate)
 }
 
 juce::String write (const AudioSnapshot& snapshot, double sampleRate, const juce::File& target, const Settings& settings,
-                    const std::function<bool (float)>& progress)
+                    const std::function<bool (float)>& progress, const FileInfo& info)
 {
     if (! settings.isValid())
         return "Those encoding settings aren't offered.";
@@ -192,8 +208,8 @@ juce::String write (const AudioSnapshot& snapshot, double sampleRate, const juce
         return "The sample rate is too low: " + juce::String (sampleRate) + " Hz.";
 
     juce::TemporaryFile temp (target);
-    const auto error = settings.kind == Kind::mp3 ? writeMp3 (snapshot, sampleRate, temp.getFile(), settings, progress)
-                                                  : writeAac (snapshot, sampleRate, temp.getFile(), settings, progress);
+    const auto error = settings.kind == Kind::mp3 ? writeMp3 (snapshot, sampleRate, temp.getFile(), settings, progress, info)
+                                                  : writeAac (snapshot, sampleRate, temp.getFile(), settings, progress, info);
 
     if (error.isNotEmpty())
         return error;

@@ -20,6 +20,12 @@ namespace
         // Read as it goes, so a chatty ffmpeg never blocks on a full pipe.
         for (;;)
         {
+            if (keepGoing != nullptr && ! keepGoing())
+            {
+                process.kill();
+                return "Stopped.";
+            }
+
             const auto n = process.readProcessOutput (buffer, sizeof (buffer));
 
             if (n > 0)
@@ -30,12 +36,6 @@ namespace
 
             if (! process.isRunning())
                 break;
-
-            if (keepGoing != nullptr && ! keepGoing())
-            {
-                process.kill();
-                return "Stopped.";
-            }
 
             juce::Thread::sleep (50);
         }
@@ -70,8 +70,11 @@ const juce::StringArray& importExtensions()
 
 juce::String decode (const juce::File& ffmpeg, const juce::File& source, const juce::File& wav, const std::function<bool()>& keepGoing)
 {
-    return run (ffmpeg, { "-i", source.getFullPathName(), "-map", "0:a:0", "-vn", "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav",
-                          wav.getFullPathName() }, keepGoing);
+    // The tags go into the WAV's INFO chunk. Ogg files (Opus among them) keep them on the audio stream
+    // rather than on the file.
+    const auto tagsFrom = source.hasFileExtension ("opus;ogg;oga;spx") ? "0:s:a:0" : "0";
+    return run (ffmpeg, { "-i", source.getFullPathName(), "-map", "0:a:0", "-map_metadata", tagsFrom, "-vn", "-c:a", "pcm_f32le", "-rf64", "auto",
+                          "-f", "wav", wav.getFullPathName() }, keepGoing);
 }
 
 const std::vector<Target>& targets()
@@ -86,13 +89,15 @@ const std::vector<Target>& targets()
 }
 
 juce::String encode (const juce::File& ffmpeg, const juce::File& wav, const juce::File& target, const Target& t, int kbps,
-                     const std::function<bool()>& keepGoing)
+                     const std::function<bool()>& keepGoing, const FileInfo& info)
 {
     juce::TemporaryFile temp (target);
     juce::StringArray arguments { "-i", wav.getFullPathName(), "-c:a", t.codec };
 
     if (t.hasBitRate)
         arguments.addArray ({ "-b:a", juce::String (kbps) + "k" });
+
+    arguments.addArray (FileInfoIO::ffmpegArguments (info));
 
     // Name the container rather than leave ffmpeg to guess it from the file name.
     arguments.addArray ({ "-f", t.extension == "m4a" ? "ipod" : t.extension, temp.getFile().getFullPathName() });
