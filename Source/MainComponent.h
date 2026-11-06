@@ -172,6 +172,16 @@ private:
     void askForBatchSettings (const juce::Array<juce::File>&);
     void runBatch (const juce::Array<juce::File>&, const Batch::Settings&);
     void showBatchReport (const std::vector<Batch::Outcome>&);
+
+    // Recorded command sequences
+    Sequences::Result runStep (const Sequences::Step&);   // a command's edit, through the step that plays it back
+    void recordStep (const Sequences::Step&);              // after the edit is applied
+    void noticeUnrecordedEdits();
+    void toggleSequenceRecording();
+    void choosePlaySequence();
+    void playSequence (const Sequences::Sequence&);
+    Sequences::Recorder sequenceRecorder;
+    int sequencePosition = 0, sequenceResetCount = 0;      // where the document was after the last recorded step
     void showFileInfo();
     void insertGenerated (const juce::AudioBuffer<float>&, const juce::String& name);
     int toneWave = 0;                // the generators' last settings

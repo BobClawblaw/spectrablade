@@ -3,12 +3,13 @@
 #include <JuceHeader.h>
 #include "LossyFiles.h"
 #include "Ffmpeg.h"
+#include "Sequences.h"
 
 /** Batch processing: the same steps run over many files, each written as a new file.
 
     Each file is read whole (any type the app opens, through ffmpeg where it must), then, in
     order: run through the effects rack (fresh plug-ins, latency compensated, as Apply Rack does),
-    converted to another sample rate, fitted to one or two channels, brought to a level (its peak,
+    played through a recorded sequence (on the whole file), converted to another sample rate, fitted to one or two channels, brought to a level (its peak,
     or its integrated loudness under a true-peak ceiling), and written in the chosen type. Markers,
     tags and cover art go with it where the new type holds them. The source is never changed:
     the new file goes in the chosen folder (or beside the source), named after the source with
@@ -20,6 +21,7 @@ namespace Batch
     struct Settings
     {
         bool applyRack = false;        // the rack as it was when the batch started
+        std::shared_ptr<const Sequences::Sequence> sequence;   // none: no sequence
         double sampleRate = 0.0;       // 0 keeps each file's own
         int channels = 0;              // 0 keeps each file's own; 1 or 2
         Level level = Level::none;

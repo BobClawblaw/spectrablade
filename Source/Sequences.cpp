@@ -1,0 +1,535 @@
+#include "Sequences.h"
+#include "AudioEdits.h"
+#include "Dynamics.h"
+#include "Equalizer.h"
+#include "Loudness.h"
+#include "Modulation.h"
+#include "Multiband.h"
+#include "OfflineRender.h"
+#include "Reverb.h"
+#include "SampleRateConverter.h"
+
+namespace Sequences
+{
+namespace
+{
+    using Snapshot = AudioDocument::Snapshot;
+
+    double get (const Values& v, const char* id)
+    {
+        const auto it = v.find (id);
+        return it != v.end() ? it->second : 0.0;
+    }
+
+    struct Kind
+    {
+        const char* id;
+        const char* name;
+        std::vector<const char*> values;   // the settings it needs
+    };
+
+    // In menu order. The names are the commands' undo names.
+    const std::vector<Kind>& table()
+    {
+        static const std::vector<Kind> list {
+            { "gain", "Gain", { "db" } },
+            { "normalize", "Normalize", { "db", "apart" } },
+            { "matchLoudness", "Match Loudness", { "target", "ceiling", "limit" } },
+            { "invert", "Invert", {} },
+            { "reverse", "Reverse", {} },
+            { "removeDc", "Remove DC Offset", {} },
+            { "swapChannels", "Swap Channels", {} },
+            { "invertLeft", "Invert Left Channel", {} },
+            { "invertRight", "Invert Right Channel", {} },
+            { "leftToRight", "Copy Left to Right", {} },
+            { "rightToLeft", "Copy Right to Left", {} },
+            { "mono", "Mix to Mono", {} },
+            { "stereo", "Make Stereo", {} },
+            { "balance", "Balance", { "pan" } },
+            { "stereoWidth", "Stereo Width", { "width" } },
+            { "echo", "Echo", { "delay", "feedback" } },
+            { "tremolo", "Tremolo", { "rate", "depth" } },
+            { "eqBand", "EQ Band", { "type", "frequency", "gain", "q" } },
+            { "compressor", "Compressor", { "threshold", "ratio", "knee", "attack", "release", "makeup" } },
+            { "limiter", "Limiter", { "gain", "ceiling", "release", "lookahead", "peaks" } },
+            { "deEsser", "De-esser", { "frequency", "threshold", "reduction", "mode" } },
+            { "chorus", "Chorus", { "rate", "delay", "depth", "feedback", "mix", "spread" } },
+            { "flanger", "Flanger", { "rate", "delay", "depth", "feedback", "mix", "spread" } },
+            { "phaser", "Phaser", { "rate", "low", "high", "stages", "feedback", "mix", "spread" } },
+            { "reverb", "Reverb", { "preDelay", "decay", "size", "damping", "width", "mix" } },
+            { "convertRate", "Convert Sample Rate", { "rate" } },
+            { "rack", "Apply Effects Rack", {} },
+        };
+        return list;
+    }
+
+    const Kind* find (const juce::String& id)
+    {
+        for (auto& k : table())
+            if (id == k.id)
+                return &k;
+
+        return nullptr;
+    }
+
+    Dynamics::Compressor compressorOf (const Values& v)
+    {
+        return { get (v, "threshold"), get (v, "ratio"), get (v, "knee"), get (v, "attack"), get (v, "release"), get (v, "makeup") };
+    }
+
+    Dynamics::Limiter limiterOf (const Values& v)
+    {
+        return { get (v, "gain"), get (v, "ceiling"), get (v, "release"), get (v, "lookahead"), get (v, "peaks") > 0.5 };
+    }
+
+    Multiband::DeEsser deEsserOf (const Values& v)
+    {
+        return { get (v, "frequency"), get (v, "threshold"), get (v, "reduction"), juce::roundToInt (get (v, "mode")) == 1 };
+    }
+
+    Modulation::Delay delayOf (const Values& v)
+    {
+        return { get (v, "rate"), get (v, "delay"), get (v, "depth"), get (v, "feedback"), get (v, "mix"), get (v, "spread") };
+    }
+
+    Modulation::Phaser phaserOf (const Values& v)
+    {
+        return { get (v, "rate"), get (v, "low"), get (v, "high"), 2 * ((int) std::lround (get (v, "stages")) + 1),
+                 get (v, "feedback"), get (v, "mix"), get (v, "spread") };
+    }
+
+    RoomReverb::Settings reverbOf (const Values& v)
+    {
+        return { get (v, "preDelay"), get (v, "decay"), get (v, "size"), get (v, "damping"), get (v, "width"), get (v, "mix") };
+    }
+
+    Equalizer::Band bandOf (const Values& v)
+    {
+        return { (Equalizer::BandType) juce::jlimit (0, 4, (int) get (v, "type")), get (v, "frequency"), get (v, "gain"), get (v, "q") };
+    }
+
+    juce::String number (double x)
+    {
+        auto s = juce::String (x, 3);
+
+        if (s.containsChar ('.'))
+            s = s.trimCharactersAtEnd ("0").trimCharactersAtEnd (".");
+
+        return s == "-0" ? juce::String ("0") : s;
+    }
+}
+
+const juce::StringArray& kinds()
+{
+    static const juce::StringArray list = []
+    {
+        juce::StringArray ids;
+
+        for (auto& k : table())
+            ids.add (k.id);
+
+        return ids;
+    }();
+    return list;
+}
+
+juce::String Step::name() const
+{
+    if (kind == "gain")
+        return "Gain " + juce::String ((float) get (values, "db"), 2) + " dB";
+
+    if (kind == "matchLoudness")
+        return "Match Loudness " + Loudness::format (get (values, "target"), "LUFS");
+
+    if (kind == "convertRate")
+        return "Convert to " + juce::String (get (values, "rate") / 1000.0, 1) + " kHz";
+
+    const auto* k = find (kind);
+    return k != nullptr ? juce::String (k->name) : kind;
+}
+
+juce::String Step::settingsText() const
+{
+    if (kind == "rack")
+    {
+        const auto slots = rack != nullptr ? rack->getNumChildElements() : 0;
+        return juce::String (slots) + (slots == 1 ? " effect" : " effects");
+    }
+
+    juce::StringArray parts;
+
+    if (const auto* k = find (kind))
+        for (auto* id : k->values)
+            parts.add (juce::String (id) + " " + number (get (values, id)));
+
+    return parts.joinIntoString (", ");
+}
+
+juce::String problem (const Step& step, double rate)
+{
+    const auto* k = find (step.kind);
+
+    if (k == nullptr)
+        return "\"" + step.kind + "\" isn't a step this version knows.";
+
+    for (auto* id : k->values)
+        if (step.values.count (id) == 0 || ! std::isfinite (step.values.at (id)))
+            return "it has no " + juce::String (id) + " setting.";
+
+    const auto& v = step.values;
+    const auto bad = [] { return juce::String ("a setting is out of range."); };
+
+    if (step.kind == "rack" && step.rack == nullptr)
+        return "it has no rack.";
+
+    if (step.kind == "convertRate" && (get (v, "rate") < 8000.0 || get (v, "rate") > 384000.0))
+        return bad();
+
+    if (step.kind == "matchLoudness" && (get (v, "target") < -70.0 || get (v, "target") > 0.0 || get (v, "ceiling") < -30.0 || get (v, "ceiling") > 0.0))
+        return bad();
+
+    if ((step.kind == "balance" && std::abs (get (v, "pan")) > 100.0) || (step.kind == "stereoWidth" && (get (v, "width") < 0.0 || get (v, "width") > 200.0))
+        || (step.kind == "echo" && (get (v, "delay") < 1.0 || get (v, "delay") > 5000.0 || get (v, "feedback") < 0.0 || get (v, "feedback") > 95.0))
+        || (step.kind == "tremolo" && (get (v, "rate") < 0.1 || get (v, "rate") > 50.0 || get (v, "depth") < 0.0 || get (v, "depth") > 100.0))
+        || (step.kind == "eqBand" && ! Equalizer::isValid (bandOf (v), rate))
+        || (step.kind == "compressor" && ! Dynamics::isValid (compressorOf (v)))
+        || (step.kind == "limiter" && ! Dynamics::isValid (limiterOf (v)))
+        || (step.kind == "deEsser" && ! Multiband::isValid (deEsserOf (v), rate))
+        || ((step.kind == "chorus" || step.kind == "flanger") && ! Modulation::isValid (delayOf (v)))
+        || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
+        || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v))))
+        return bad();
+
+    return {};
+}
+
+Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::int64 end, double rate,
+              const Markers& markers, juce::AudioPluginFormatManager* plugins, const std::function<bool (float)>& progress)
+{
+    Result out;
+    out.sampleRate = rate;
+    out.markers = markers;
+    start = juce::jlimit ((juce::int64) 0, audio->getNumFrames(), start);
+    end = juce::jlimit (start, audio->getNumFrames(), end);
+    out.start = start;
+    out.end = end;
+
+    if (out.error = problem (step, rate); out.error.isNotEmpty())
+        return out;
+
+    const auto& s = *audio;
+    const auto& v = step.values;
+    const auto& k = step.kind;
+
+    if (k == "gain")                out.snapshot = AudioEdits::gain (s, start, end, (float) get (v, "db"));
+    else if (k == "invert")         out.snapshot = AudioEdits::invert (s, start, end);
+    else if (k == "reverse")        out.snapshot = AudioEdits::reverse (s, start, end);
+    else if (k == "removeDc")       out.snapshot = AudioEdits::removeDcOffset (s, start, end);
+    else if (k == "swapChannels")   out.snapshot = AudioEdits::swapChannels (s, start, end);
+    else if (k == "invertLeft")     out.snapshot = AudioEdits::invertChannel (s, start, end, 0);
+    else if (k == "invertRight")    out.snapshot = AudioEdits::invertChannel (s, start, end, 1);
+    else if (k == "leftToRight")    out.snapshot = AudioEdits::copyChannel (s, start, end, 0, 1);
+    else if (k == "rightToLeft")    out.snapshot = AudioEdits::copyChannel (s, start, end, 1, 0);
+    else if (k == "eqBand")         out.snapshot = Equalizer::apply (s, start, end, rate, { bandOf (v) });
+    else if (k == "compressor")     out.snapshot = Dynamics::compress (s, start, end, rate, compressorOf (v));
+    else if (k == "limiter")        out.snapshot = Dynamics::limit (s, start, end, rate, limiterOf (v));
+    else if (k == "deEsser")        out.snapshot = Multiband::deEss (s, start, end, rate, deEsserOf (v));
+    else if (k == "chorus" || k == "flanger") out.snapshot = Modulation::sweptDelay (s, start, end, rate, delayOf (v));
+    else if (k == "phaser")         out.snapshot = Modulation::phaser (s, start, end, rate, phaserOf (v));
+    else if (k == "reverb")         out.snapshot = RoomReverb::apply (s, start, end, rate, reverbOf (v));
+    else if (k == "normalize")
+    {
+        const auto db = juce::jmin ((float) get (v, "db"), 0.0f);
+        out.snapshot = get (v, "apart") > 0.5 ? AudioEdits::normalizeChannels (s, start, end, db) : AudioEdits::normalize (s, start, end, db);
+
+        if (out.snapshot == nullptr)
+            out.notes.add ("silent, so not normalized");
+    }
+    else if (k == "balance")
+    {
+        if (const auto pan = juce::roundToInt (get (v, "pan")); pan != 0 && end > start)
+            out.snapshot = AudioEdits::balance (s, start, end, (float) pan / 100.0f);
+    }
+    else if (k == "stereoWidth")
+    {
+        if (const auto width = juce::roundToInt (get (v, "width")); width != 100 && end > start)
+            out.snapshot = AudioEdits::stereoWidth (s, start, end, (float) width / 100.0f);
+    }
+    else if (k == "echo")
+    {
+        const auto feedback = juce::roundToInt (get (v, "feedback"));
+        const auto delay = (juce::int64) std::llround (juce::roundToInt (get (v, "delay")) / 1000.0 * rate);
+
+        if (feedback > 0 && end > start)
+            out.snapshot = AudioEdits::echo (s, start, end, delay, (float) feedback / 100.0f);
+    }
+    else if (k == "tremolo")
+    {
+        if (const auto depth = juce::roundToInt (get (v, "depth")); depth > 0 && end > start)
+            out.snapshot = AudioEdits::tremolo (s, start, end, rate, get (v, "rate"), (float) depth / 100.0f);
+    }
+    else if (k == "mono" || k == "stereo")
+    {
+        const auto channels = k == "mono" ? 1 : 2;
+
+        if (s.getNumFrames() > 0 && s.getNumChannels() != channels)
+            out.snapshot = AudioEdits::convertChannels (s, channels);
+    }
+    else if (k == "matchLoudness")
+    {
+        const auto target = get (v, "target"), ceiling = get (v, "ceiling");
+        const auto measured = Loudness::measure (s, start, end, rate);
+
+        if (! measured.has_value() || ! std::isfinite (measured->integrated))
+        {
+            out.notes.add ("nothing above the -70 LUFS gate, so its loudness wasn't changed");
+        }
+        else
+        {
+            const auto wanted = target - measured->integrated;
+            const auto gain = juce::jmin (wanted, ceiling - measured->truePeak);
+
+            if (get (v, "limit") > 0.5 && gain < wanted)
+            {
+                auto matched = Dynamics::matchLoudness (s, start, end, rate, measured->integrated, target, ceiling);
+                out.snapshot = std::move (matched.snapshot);
+                out.notes.add ("limited, with " + juce::String (matched.gainDb, 1) + " dB of gain into the limiter");
+
+                if (std::abs (matched.integrated - target) > 0.05)
+                    out.notes.add ("reached " + Loudness::format (matched.integrated, "LUFS"));
+            }
+            else
+            {
+                out.snapshot = AudioEdits::gain (s, start, end, (float) gain);
+
+                if (gain < wanted - 0.05)
+                    out.notes.add ("the true-peak ceiling allowed " + juce::String (gain, 1) + " dB, so it is at "
+                                   + Loudness::format (measured->integrated + gain, "LUFS"));
+            }
+        }
+    }
+    else if (k == "convertRate")
+    {
+        const auto newRate = get (v, "rate");
+
+        if (! juce::exactlyEqual (newRate, rate))
+        {
+            out.snapshot = SampleRateConverter::convert (s, rate, newRate, progress);
+
+            if (out.snapshot == nullptr)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+
+            const auto scale = [&] (juce::int64 frame) { return (juce::int64) std::llround ((double) frame * newRate / rate); };
+            out.markers = SampleRateConverter::convert (markers, rate, newRate);
+            out.sampleRate = newRate;
+            out.start = scale (start);
+            out.end = scale (end);
+        }
+    }
+    else if (k == "rack")
+    {
+        if (plugins == nullptr)
+        {
+            out.error = "Apply Effects Rack can't run here.";
+            return out;
+        }
+
+        if (step.rack->getNumChildElements() == 0 || end <= start)
+            return out;
+
+        juce::AudioBuffer<float> buffer (s.getNumChannels(), (int) (end - start));
+        s.read (buffer, 0, start, buffer.getNumSamples());
+
+        if (const auto error = OfflineRender::processThroughRack (*step.rack, *plugins, rate, buffer, progress); error.isNotEmpty())
+        {
+            out.error = error;
+            return out;
+        }
+
+        AudioClip rendered { buffer.getNumChannels(), rate, AudioEdits::fromBuffer (std::move (buffer))->getSegments() };
+        out.snapshot = AudioEdits::replaceWithClip (s, start, end, rendered);
+    }
+
+    return out;
+}
+
+Result run (const Sequence& sequence, const Snapshot& audio, juce::int64 start, juce::int64 end, double rate,
+            const Markers& markers, juce::AudioPluginFormatManager* plugins, const std::function<bool (float)>& progress)
+{
+    Result out;
+    out.snapshot = audio;
+    out.sampleRate = rate;
+    out.markers = markers;
+    out.start = start;
+    out.end = end;
+    const auto count = (float) juce::jmax ((size_t) 1, sequence.steps.size());
+
+    for (size_t i = 0; i < sequence.steps.size(); ++i)
+    {
+        const auto& step = sequence.steps[i];
+        const auto stepProgress = [&progress, i, count] (float p) { return progress == nullptr || progress (((float) i + p) / count); };
+
+        // Stopped or refused, nothing is changed.
+        const auto fail = [&] (const juce::String& error)
+        {
+            Result failed;
+            failed.snapshot = audio;
+            failed.sampleRate = rate;
+            failed.markers = markers;
+            failed.start = start;
+            failed.end = end;
+            failed.error = error;
+            return failed;
+        };
+
+        if (! stepProgress (0.0f))
+            return fail ("Stopped.");
+
+        auto r = apply (step, out.snapshot, out.start, out.end, out.sampleRate, out.markers, plugins, stepProgress);
+
+        if (r.error.isNotEmpty())
+            return fail (r.error == "Stopped." ? r.error : step.name() + ": " + r.error);
+
+        for (auto& n : r.notes)
+            out.notes.add (step.name() + ": " + n);
+
+        if (r.snapshot != nullptr)
+            out.snapshot = std::move (r.snapshot);
+
+        out.sampleRate = r.sampleRate;
+        out.markers = std::move (r.markers);
+        out.start = r.start;
+        out.end = r.end;
+    }
+
+    return out;
+}
+
+std::unique_ptr<juce::XmlElement> toXml (const Sequence& sequence)
+{
+    auto xml = std::make_unique<juce::XmlElement> ("SPECTRABLADE_SEQUENCE");
+    xml->setAttribute ("version", 1);
+    xml->setAttribute ("name", sequence.name);
+
+    for (auto& step : sequence.steps)
+    {
+        auto* e = xml->createNewChildElement ("STEP");
+        e->setAttribute ("kind", step.kind);
+
+        for (auto& [id, value] : step.values)
+        {
+            auto* value_ = e->createNewChildElement ("VALUE");
+            value_->setAttribute ("id", id);
+            value_->setAttribute ("value", value);
+        }
+
+        if (step.rack != nullptr)
+            e->addChildElement (new juce::XmlElement (*step.rack));
+    }
+
+    return xml;
+}
+
+std::optional<Sequence> fromXml (const juce::XmlElement& xml)
+{
+    if (! xml.hasTagName ("SPECTRABLADE_SEQUENCE"))
+        return std::nullopt;
+
+    Sequence sequence;
+    sequence.name = xml.getStringAttribute ("name");
+
+    for (auto* e : xml.getChildWithTagNameIterator ("STEP"))
+    {
+        Step step;
+        step.kind = e->getStringAttribute ("kind");
+
+        if (find (step.kind) == nullptr)
+            return std::nullopt;
+
+        for (auto* value : e->getChildWithTagNameIterator ("VALUE"))
+            step.values[value->getStringAttribute ("id")] = value->getDoubleAttribute ("value");
+
+        if (auto* rack = e->getChildByName ("SPECTRABLADE_RACK"))
+            step.rack = std::make_shared<const juce::XmlElement> (*rack);
+
+        sequence.steps.push_back (std::move (step));
+    }
+
+    return sequence;
+}
+
+Store::Store (juce::File f) : folder (std::move (f)) {}
+
+juce::File Store::fileFor (const juce::String& name) const
+{
+    return folder.getChildFile (juce::File::createLegalFileName (name) + ".sbsequence");
+}
+
+juce::StringArray Store::names() const
+{
+    juce::StringArray list;
+
+    for (auto& f : folder.findChildFiles (juce::File::findFiles, false, "*.sbsequence"))
+        if (auto xml = juce::XmlDocument::parse (f))
+            if (auto s = fromXml (*xml); s.has_value() && s->name.isNotEmpty())
+                list.addIfNotAlreadyThere (s->name);
+
+    list.sortNatural();
+    return list;
+}
+
+std::optional<Sequence> Store::load (const juce::String& name) const
+{
+    if (auto xml = juce::XmlDocument::parse (fileFor (name)))
+        return fromXml (*xml);
+
+    return std::nullopt;
+}
+
+bool Store::contains (const juce::String& name) const    { return fileFor (name).existsAsFile(); }
+
+bool Store::save (const Sequence& sequence)
+{
+    if (sequence.name.trim().isEmpty() || ! folder.createDirectory())
+        return false;
+
+    return toXml (sequence)->writeTo (fileFor (sequence.name));
+}
+
+bool Store::remove (const juce::String& name)    { return fileFor (name).deleteFile(); }
+
+Store& userStore()
+{
+    static Store store (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                            .getChildFile ("SpectraBlade").getChildFile ("Sequences"));
+    return store;
+}
+
+void Recorder::start()
+{
+    recording = true;
+    recorded.clear();
+    notRecorded.clear();
+}
+
+void Recorder::add (Step step)
+{
+    if (recording)
+        recorded.push_back (std::move (step));
+}
+
+void Recorder::skip (const juce::String& edit)
+{
+    if (recording)
+        notRecorded.add (edit);
+}
+
+Sequence Recorder::stop()
+{
+    recording = false;
+    return { {}, recorded };
+}
+}

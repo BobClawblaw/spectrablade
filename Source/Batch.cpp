@@ -1,8 +1,6 @@
 #include "Batch.h"
 #include "AudioFileIO.h"
 #include "AudioEdits.h"
-#include "Dynamics.h"
-#include "Loudness.h"
 #include "OfflineRender.h"
 #include "SampleRateConverter.h"
 
@@ -131,7 +129,7 @@ Outcome process (const juce::File& source, const Settings& settings, juce::Audio
         audio->read (buffer, 0, 0, buffer.getNumSamples());
 
         if (const auto error = OfflineRender::processThroughRack (*rack, *plugins, rate, buffer,
-                                                                  [&keepGoing] (float p) { return keepGoing (0.1f + 0.4f * p); });
+                                                                  [&keepGoing] (float p) { return keepGoing (0.1f + 0.3f * p); });
             error.isNotEmpty())
         {
             out.error = "The effects rack: " + error;
@@ -139,6 +137,24 @@ Outcome process (const juce::File& source, const Settings& settings, juce::Audio
         }
 
         audio = AudioEdits::fromBuffer (std::move (buffer));
+    }
+
+    // The sequence, on the whole file. A rate change in it moves the markers.
+    if (settings.sequence != nullptr && ! settings.sequence->steps.empty())
+    {
+        auto played = Sequences::run (*settings.sequence, audio, 0, audio->getNumFrames(), rate, markers, plugins,
+                                      [&keepGoing] (float p) { return keepGoing (0.4f + 0.1f * p); });
+
+        if (played.error.isNotEmpty())
+        {
+            out.error = played.error == "Stopped." ? played.error : "The sequence: " + played.error;
+            return out;
+        }
+
+        audio = played.snapshot;
+        rate = played.sampleRate;
+        markers = std::move (played.markers);
+        out.notes.addArray (played.notes);
     }
 
     // The sample rate, with the markers moved to match.
@@ -170,48 +186,25 @@ Outcome process (const juce::File& source, const Settings& settings, juce::Audio
     // The level, last, so it is what the file ends up with.
     const auto frames = audio->getNumFrames();
 
-    if (settings.level == Level::peak)
+    // The level, as Normalize and Match Loudness do it.
+    if (settings.level != Level::none)
     {
-        if (auto normalized = AudioEdits::normalize (*audio, 0, frames, settings.peakDb))
-            audio = std::move (normalized);
-        else
-            out.notes.add ("silent, so not normalized");
-    }
-    else if (settings.level == Level::loudness)
-    {
-        const auto measured = Loudness::measure (*audio, 0, frames, rate);
+        const auto step = settings.level == Level::peak
+                              ? Sequences::Step { "normalize", { { "db", settings.peakDb }, { "apart", 0.0 } }, nullptr }
+                              : Sequences::Step { "matchLoudness", { { "target", settings.lufs }, { "ceiling", settings.ceilingDbtp },
+                                                                     { "limit", settings.limit ? 1.0 : 0.0 } }, nullptr };
+        auto levelled = Sequences::apply (step, audio, 0, frames, rate, markers, nullptr);
 
-        if (! measured.has_value() || ! std::isfinite (measured->integrated))
+        if (levelled.error.isNotEmpty())
         {
-            out.notes.add ("nothing above the -70 LUFS gate, so its loudness wasn't changed");
+            out.error = levelled.error;
+            return out;
         }
-        else
-        {
-            const auto wanted = settings.lufs - measured->integrated;
-            const auto gain = juce::jmin (wanted, settings.ceilingDbtp - measured->truePeak);
 
-            if (settings.limit && gain < wanted)
-            {
-                const auto matched = Dynamics::matchLoudness (*audio, 0, frames, rate, measured->integrated, settings.lufs, settings.ceilingDbtp);
+        if (levelled.snapshot != nullptr)
+            audio = std::move (levelled.snapshot);
 
-                if (matched.snapshot != nullptr)
-                {
-                    audio = matched.snapshot;
-                    out.notes.add ("limited, with " + juce::String (matched.gainDb, 1) + " dB of gain into the limiter");
-
-                    if (std::abs (matched.integrated - settings.lufs) > 0.05)
-                        out.notes.add ("reached " + Loudness::format (matched.integrated, "LUFS"));
-                }
-            }
-            else
-            {
-                audio = AudioEdits::gain (*audio, 0, frames, (float) gain);
-
-                if (gain < wanted - 0.05)
-                    out.notes.add ("the true-peak ceiling allowed " + juce::String (gain, 1) + " dB, so it is at "
-                                   + Loudness::format (measured->integrated + gain, "LUFS"));
-            }
-        }
+        out.notes.addArray (levelled.notes);
     }
 
     if (! keepGoing (0.8f))

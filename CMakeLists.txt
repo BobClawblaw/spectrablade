@@ -75,6 +75,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Metronome.cpp
     Source/AudioEdits.cpp
     Source/Batch.cpp
+    Source/Sequences.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
@@ -193,6 +194,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/BusTests.cpp
     Tests/SidechainTests.cpp
     Tests/BatchTests.cpp
+    Tests/SequencesTests.cpp
     Tests/AutomationTests.cpp
     Tests/MultitrackViewTests.cpp
     Tests/MixDownTests.cpp
@@ -221,6 +223,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Metronome.cpp
     Source/AudioEdits.cpp
     Source/Batch.cpp
+    Source/Sequences.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp

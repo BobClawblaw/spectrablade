@@ -130,7 +130,7 @@ namespace
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
-        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess
+        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -141,7 +141,8 @@ namespace
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
-            || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo;
+            || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
+            || id == cmdRecordSequence || id == cmdPlaySequence;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -564,6 +565,7 @@ public:
                 AudioClip rendered { audio.getNumChannels(), sampleRate, AudioEdits::fromBuffer (std::move (audio))->getSegments() };
                 owner.applyEdit (AudioEdits::replaceWithClip (*snapshot, range.getStart(), range.getEnd(), rendered),
                                  "Apply Effects Rack", { range.getStart(), range.getStart() + length });
+                owner.recordStep ({ "rack", {}, std::make_shared<const juce::XmlElement> (*rackXml) });
             }
         }
         else if (! userPressedCancel)
@@ -1172,7 +1174,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdBatchProcess; ++id)
+    for (int id = cmdOpen; id <= cmdPlaySequence; ++id)
         ids.add (id);
 }
 
@@ -1445,6 +1447,13 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                           info.setActive (hasAudio); break;
         case cmdBatchProcess: info.setInfo ("Batch Process...", "Put many files through the same steps (the effects rack, sample rate, channels, level) and write each as a new file", "File", 0);
                               info.setActive (backgroundJob == nullptr); break;
+        case cmdRecordSequence:
+            info.setInfo (sequenceRecorder.isRecording() ? "Stop Recording Sequence..." : "Record Sequence",
+                          "Record the effects you apply, with their settings, as a sequence to play on other files or in a batch", "Sequences", 0);
+            info.setTicked (sequenceRecorder.isRecording());
+            break;
+        case cmdPlaySequence: info.setInfo ("Play Sequence...", "Play a recorded sequence on the selection, or the whole file", "Sequences", 0);
+                              info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdExportFfmpeg: info.setInfo ("Export with ffmpeg...", "Write the file, or the selection, as Opus, Apple Lossless, WavPack or AC-3 through an installed ffmpeg", "File", 0);
                               info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdExportLossy: info.setInfo ("Export as MP3 or AAC...", "Write the file, or the selection, to an MP3 or AAC (.m4a) file", "File", 0);
@@ -1900,8 +1909,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdStereoWidth: showStereoWidth(); break;
         case cmdCropMargins: showCropMargins(); break;
         case cmdSilence:    applySimpleEffect ("Silence", &AudioEdits::silence, true); break;
-        case cmdInvert:     applySimpleEffect ("Invert", &AudioEdits::invert, false); break;
-        case cmdReverse:    applySimpleEffect ("Reverse", &AudioEdits::reverse, false); break;
+        case cmdInvert:     runStep ({ "invert", {}, nullptr }); break;
+        case cmdReverse:    runStep ({ "reverse", {}, nullptr }); break;
         case cmdReverseRegions:
         {
             auto skipped = 0;
@@ -1914,21 +1923,17 @@ bool MainComponent::perform (const InvocationInfo& info)
                                                       + " left as they were: one frame long, or overlapping a region before.");
             break;
         }
-        case cmdRemoveDc:   applySimpleEffect ("Remove DC Offset", &AudioEdits::removeDcOffset, false); break;
+        case cmdRemoveDc:   runStep ({ "removeDc", {}, nullptr }); break;
         case cmdBalance:    showBalance(); break;
         case cmdSilenceLeft: applySimpleEffect ("Silence Left Channel", [] (const AudioSnapshot& s, juce::int64 a, juce::int64 b)
                                                    { return AudioEdits::silenceChannel (s, a, b, 0); }, true); break;
         case cmdSilenceRight: applySimpleEffect ("Silence Right Channel", [] (const AudioSnapshot& s, juce::int64 a, juce::int64 b)
                                                     { return AudioEdits::silenceChannel (s, a, b, 1); }, true); break;
-        case cmdLeftToRight: applySimpleEffect ("Copy Left to Right", [] (const AudioSnapshot& s, juce::int64 a, juce::int64 b)
-                                                   { return AudioEdits::copyChannel (s, a, b, 0, 1); }, false); break;
-        case cmdRightToLeft: applySimpleEffect ("Copy Right to Left", [] (const AudioSnapshot& s, juce::int64 a, juce::int64 b)
-                                                   { return AudioEdits::copyChannel (s, a, b, 1, 0); }, false); break;
-        case cmdInvertLeft: applySimpleEffect ("Invert Left Channel", [] (const AudioSnapshot& s, juce::int64 a, juce::int64 b)
-                                                  { return AudioEdits::invertChannel (s, a, b, 0); }, false); break;
-        case cmdInvertRight: applySimpleEffect ("Invert Right Channel", [] (const AudioSnapshot& s, juce::int64 a, juce::int64 b)
-                                                   { return AudioEdits::invertChannel (s, a, b, 1); }, false); break;
-        case cmdSwapChannels: applySimpleEffect ("Swap Channels", &AudioEdits::swapChannels, false); break;
+        case cmdLeftToRight: runStep ({ "leftToRight", {}, nullptr }); break;
+        case cmdRightToLeft: runStep ({ "rightToLeft", {}, nullptr }); break;
+        case cmdInvertLeft: runStep ({ "invertLeft", {}, nullptr }); break;
+        case cmdInvertRight: runStep ({ "invertRight", {}, nullptr }); break;
+        case cmdSwapChannels: runStep ({ "swapChannels", {}, nullptr }); break;
         case cmdInsertSilence: showInsertSilence(); break;
         case cmdGenerateTone: showGenerateTone(); break;
         case cmdGenerateNoise: showGenerateNoise(); break;
@@ -2203,6 +2208,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdExportFfmpeg: exportWithFfmpeg(); break;
         case cmdFileInfo: showFileInfo(); break;
         case cmdBatchProcess: batchProcess(); break;
+        case cmdRecordSequence: toggleSequenceRecording(); break;
+        case cmdPlaySequence: choosePlaySequence(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
         case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
@@ -2311,7 +2318,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
             add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack });
+                       cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
         case 3:
@@ -2396,6 +2403,9 @@ void MainComponent::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     if (source == &engine.document || source == &engine.session)
     {
+        if (source == &engine.document)
+            noticeUnrecordedEdits();
+
         refreshTitle();
         commands.commandStatusChanged();
         return;
@@ -2552,6 +2562,11 @@ void MainComponent::refreshTitle()
                                                                             : juce::String (doc.getSourceBitDepth()) + "-bit")
                                       : juce::String(),
                        juce::dontSendNotification);
+
+    if (sequenceRecorder.isRecording())
+        fileLabel.setText (fileLabel.getText() + "  |  Recording a sequence: " + juce::String ((int) sequenceRecorder.steps().size())
+                               + (sequenceRecorder.steps().size() == 1 ? " step" : " steps"),
+                           juce::dontSendNotification);
 
     if (onTitleChanged != nullptr)
         onTitleChanged ((doc.isDirty() ? "* " : "") + name + " - SpectraBlade");
@@ -4503,6 +4518,10 @@ void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
         rackChoices.add ("Through the effects rack (" + juce::String (rackSlots) + (rackSlots == 1 ? " effect)" : " effects)"));
 
     box->addComboBox ("rack", rackChoices, "Effects");
+
+    juce::StringArray sequenceChoices { "None" };
+    sequenceChoices.addArray (Sequences::userStore().names());
+    box->addComboBox ("sequence", sequenceChoices, "Recorded sequence (on the whole file)");
     box->addComboBox ("rate", { "Keep each file's", "44.1 kHz", "48 kHz", "88.2 kHz", "96 kHz", "192 kHz" }, "Sample rate");
     box->addComboBox ("channels", { "Keep each file's", "Mono", "Stereo" }, "Channels");
     box->addComboBox ("level", { "Leave it", "Normalize the peak", "Match loudness, stopping at the ceiling", "Match loudness, limiting at the ceiling" }, "Level");
@@ -4529,6 +4548,7 @@ void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
 
     const auto pick = [box] (const char* name, int index) { box->getComboBoxComponent (name)->setSelectedItemIndex (juce::jmax (0, index)); };
     pick ("rack", juce::jmin (rackChoices.size() - 1, settings->getIntValue ("batchRack", 0)));
+    pick ("sequence", sequenceChoices.indexOf (settings->getValue ("batchSequence")));
     pick ("rate", rates.indexOf (settings->getDoubleValue ("batchRate", 0.0)));
     pick ("channels", settings->getIntValue ("batchChannels", 0));
     pick ("level", settings->getIntValue ("batchLevel", 0));
@@ -4563,6 +4583,21 @@ void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
         s.ffmpegKbps = s.lossy.kbps;
         s.suffix = box->getTextEditorContents ("suffix");
 
+        if (index ("sequence") > 0)
+        {
+            const auto name = box->getComboBoxComponent ("sequence")->getText();
+            const auto sequence = Sequences::userStore().load (name);
+
+            if (! sequence.has_value())
+            {
+                showError ("Batch Process", name + " can't be read: it may hold a step from a later version.");
+                return;
+            }
+
+            s.sequence = std::make_shared<const Sequences::Sequence> (*sequence);
+        }
+
+        settings->setValue ("batchSequence", index ("sequence") > 0 ? box->getComboBoxComponent ("sequence")->getText() : juce::String());
         settings->setValue ("batchRack", index ("rack"));
         settings->setValue ("batchRate", s.sampleRate);
         settings->setValue ("batchChannels", s.channels);
@@ -4663,6 +4698,275 @@ void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes
         if (result == 1)
             firstWritten.revealToUser();
     }), true);
+}
+
+Sequences::Result MainComponent::runStep (const Sequences::Step& step)
+{
+    auto& doc = engine.document;
+    const auto r = selectionOrAll();
+    auto result = Sequences::apply (step, doc.getSnapshot(), r.getStart(), r.getEnd(), doc.getSampleRate(), doc.getMarkers(), nullptr);
+
+    if (result.error.isNotEmpty())
+    {
+        showError (step.name(), result.error);
+        return result;
+    }
+
+    if (result.snapshot != nullptr)
+    {
+        applyEdit (result.snapshot, step.name(), waveform.getSelection());
+        recordStep (step);
+    }
+
+    return result;
+}
+
+void MainComponent::recordStep (const Sequences::Step& step)
+{
+    if (! sequenceRecorder.isRecording())
+        return;
+
+    sequenceRecorder.add (step);
+    sequencePosition = engine.document.getPosition();
+    sequenceResetCount = engine.document.getResetCount();
+    refreshTitle();
+}
+
+void MainComponent::noticeUnrecordedEdits()
+{
+    auto& doc = engine.document;
+
+    if (! sequenceRecorder.isRecording())
+        return;
+
+    // Another file: what it has done before isn't part of the recording.
+    if (doc.getResetCount() != sequenceResetCount)
+    {
+        sequenceResetCount = doc.getResetCount();
+        sequencePosition = doc.getPosition();
+        return;
+    }
+
+    const auto position = doc.getPosition();
+
+    if (position > sequencePosition)
+    {
+        const auto history = doc.getHistory();
+
+        for (int i = sequencePosition + 1; i <= position && i < history.size(); ++i)
+            sequenceRecorder.skip (history[i]);
+    }
+    else if (position < sequencePosition)
+    {
+        sequenceRecorder.skip ("Undo " + doc.getRedoDescription());
+    }
+
+    sequencePosition = position;
+}
+
+void MainComponent::toggleSequenceRecording()
+{
+    if (! sequenceRecorder.isRecording())
+    {
+        sequenceRecorder.start();
+        sequencePosition = engine.document.getPosition();
+        sequenceResetCount = engine.document.getResetCount();
+        refreshTitle();
+        commands.commandStatusChanged();
+        return;
+    }
+
+    const auto skipped = sequenceRecorder.skipped();
+    auto sequence = sequenceRecorder.stop();
+    refreshTitle();
+    commands.commandStatusChanged();
+
+    juce::String unrecorded;
+
+    if (! skipped.isEmpty())
+        unrecorded = "\n\nNot recorded (these commands can't be): " + skipped.joinIntoString (", ") + ".";
+
+    if (sequence.steps.empty())
+    {
+        showNote ("Record Sequence", "No steps were recorded." + unrecorded);
+        return;
+    }
+
+    juce::StringArray lines;
+
+    for (auto& step : sequence.steps)
+        lines.add (step.name() + (step.settingsText().isNotEmpty() ? " (" + step.settingsText() + ")" : juce::String()));
+
+    auto* box = new juce::AlertWindow ("Save Sequence", juce::String ((int) sequence.steps.size()) + (sequence.steps.size() == 1 ? " step: " : " steps: ")
+                                                             + lines.joinIntoString ("; ") + "." + unrecorded,
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("name", "Sequence " + juce::String (Sequences::userStore().names().size() + 1), "Name");
+    box->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Discard", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, sequence] (int result) mutable
+    {
+        if (result != 1)
+            return;
+
+        sequence.name = box->getTextEditorContents ("name").trim();
+
+        if (sequence.name.isEmpty())
+        {
+            showError ("Save Sequence", "A sequence needs a name.");
+            return;
+        }
+
+        const auto save = [sequence]
+        {
+            if (! Sequences::userStore().save (sequence))
+                showError ("Save Sequence", "The sequence couldn't be saved.");
+        };
+
+        if (! Sequences::userStore().contains (sequence.name))
+        {
+            save();
+            return;
+        }
+
+        juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Save Sequence",
+                                            "There is already a sequence called " + sequence.name + ". Replace it?", "Replace", "Cancel", this,
+                                            juce::ModalCallbackFunction::create ([save] (int replace) { if (replace == 1) save(); }));
+    }), true);
+}
+
+void MainComponent::choosePlaySequence()
+{
+    auto& store = Sequences::userStore();
+    const auto names = store.names();
+
+    if (names.isEmpty())
+    {
+        showNote ("Play Sequence", "There are no sequences yet. Effects > Record Sequence records one: the effects you apply until you "
+                                   "stop it, with their settings.");
+        return;
+    }
+
+    auto* box = new juce::AlertWindow ("Play Sequence", "It plays on the selection, or on the whole file without one, as one step to undo.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addComboBox ("sequence", names, "Sequence");
+    auto* steps = new juce::TextEditor();
+    steps->setMultiLine (true);
+    steps->setReadOnly (true);
+    steps->setSize (460, 160);
+    box->addCustomComponent (steps);
+
+    auto* combo = box->getComboBoxComponent ("sequence");
+    const auto show = [combo, steps]
+    {
+        juce::StringArray lines;
+
+        if (const auto seq = Sequences::userStore().load (combo->getText()))
+            for (auto& step : seq->steps)
+                lines.add (step.name() + (step.settingsText().isNotEmpty() ? " (" + step.settingsText() + ")" : juce::String()));
+        else
+            lines.add ("This sequence can't be read.");
+
+        steps->setText (lines.joinIntoString ("\n"));
+    };
+    combo->onChange = show;
+    combo->setSelectedItemIndex (juce::jmax (0, names.indexOf (appProperties.getUserSettings()->getValue ("lastSequence"))));
+    show();
+
+    box->addButton ("Play", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Delete", 2);
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, steps] (int result)
+    {
+        const auto name = box->getComboBoxComponent ("sequence")->getText();
+        delete steps;
+
+        if (result == 2)
+        {
+            juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Delete Sequence", "Delete " + name + "?", "Delete", "Cancel", this,
+                                                juce::ModalCallbackFunction::create ([name] (int sure)
+                                                {
+                                                    if (sure == 1)
+                                                        Sequences::userStore().remove (name);
+                                                }));
+            return;
+        }
+
+        if (result != 1)
+            return;
+
+        appProperties.getUserSettings()->setValue ("lastSequence", name);
+
+        if (const auto seq = Sequences::userStore().load (name))
+            playSequence (*seq);
+        else
+            showError ("Play Sequence", name + " can't be read: it may hold a step from a later version.");
+    }), true);
+}
+
+void MainComponent::playSequence (const Sequences::Sequence& sequence)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio() || backgroundJob != nullptr || sequence.steps.empty())
+        return;
+
+    engine.getPlayer().pause();
+    const auto range = selectionOrAll();
+    const auto hadSelection = ! waveform.getSelection().isEmpty();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto version = doc.getVersion();
+    const auto markers = doc.getMarkers();
+    auto result = std::make_shared<Sequences::Result>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Playing " + sequence.name + "...",
+        [this, result, sequence, snapshot, range, rate, markers] (const std::function<bool (float)>& progress)
+        {
+            *result = Sequences::run (sequence, snapshot, range.getStart(), range.getEnd(), rate, markers, &engine.pluginFormatManager, progress);
+            return result->error != "Stopped.";
+        },
+        [this, result, sequence, version, hadSelection, rate, snapshot]
+        {
+            auto& d = engine.document;
+
+            if (result->error.isNotEmpty())
+            {
+                showError ("Play Sequence", result->error + " Nothing was changed.");
+                return;
+            }
+
+            if (d.getVersion() != version)
+            {
+                showError ("Play Sequence", "The audio changed while the sequence played, so the result was discarded.");
+                return;
+            }
+
+            if (result->snapshot == snapshot)
+            {
+                showNote ("Play Sequence", "The sequence left the audio as it was." + (result->notes.isEmpty() ? juce::String()
+                                                                                                                 : "\n\n" + result->notes.joinIntoString ("\n")));
+                return;
+            }
+
+            const auto description = "Sequence: " + sequence.name;
+            stopPreview();
+
+            if (! juce::exactlyEqual (result->sampleRate, rate))
+                d.applyNewRate (result->snapshot, result->sampleRate, result->markers, description);
+            else
+                d.apply (result->snapshot, description, result->markers);
+
+            waveform.setSelection (hadSelection ? juce::Range<juce::int64> (result->start, result->end) : juce::Range<juce::int64>());
+
+            // Played while recording, its steps go into the recording.
+            for (auto& step : sequence.steps)
+                recordStep (step);
+
+            if (! result->notes.isEmpty())
+                showNote ("Play Sequence", result->notes.joinIntoString ("\n"));
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::showFileInfo()
@@ -5430,11 +5734,9 @@ void MainComponent::showBalance()
     box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
     {
         const auto pan = juce::jlimit (-100, 100, box->getTextEditorContents ("pan").getIntValue());
-        const auto r = selectionOrAll();
 
-        if (result == 1 && pan != 0 && ! r.isEmpty())
-            applyEdit (AudioEdits::balance (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), (float) pan / 100.0f),
-                       "Balance", waveform.getSelection());
+        if (result == 1)
+            runStep ({ "balance", { { "pan", (double) pan } }, nullptr });
     }), true);
 }
 
@@ -5454,11 +5756,7 @@ void MainComponent::showStereoWidth()
             return;
 
         stereoWidthPercent = juce::jlimit (0, 200, box->getTextEditorContents ("width").getIntValue());
-        const auto r = selectionOrAll();
-
-        if (stereoWidthPercent != 100 && ! r.isEmpty())
-            if (auto next = AudioEdits::stereoWidth (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), (float) stereoWidthPercent / 100.0f))
-                applyEdit (std::move (next), "Stereo Width", waveform.getSelection());
+        runStep ({ "stereoWidth", { { "width", (double) stereoWidthPercent } }, nullptr });
     }), true);
 }
 
@@ -5637,12 +5935,7 @@ void MainComponent::showEcho()
 
         echoDelayMs = juce::jlimit (1, 5000, box->getTextEditorContents ("delay").getIntValue());
         echoFeedbackPercent = juce::jlimit (0, 95, box->getTextEditorContents ("feedback").getIntValue());
-        const auto r = selectionOrAll();
-        const auto delay = (juce::int64) std::llround (echoDelayMs / 1000.0 * engine.document.getSampleRate());
-
-        if (echoFeedbackPercent > 0 && ! r.isEmpty())
-            if (auto next = AudioEdits::echo (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), delay, (float) echoFeedbackPercent / 100.0f))
-                applyEdit (std::move (next), "Echo", waveform.getSelection());
+        runStep ({ "echo", { { "delay", (double) echoDelayMs }, { "feedback", (double) echoFeedbackPercent } }, nullptr });
     }), true);
 }
 
@@ -5748,10 +6041,7 @@ void MainComponent::showEqBand()
                           eqBandHz = band.frequency;
                           eqBandGainDb = band.gainDb;
                           eqBandQ = band.q;
-                          const auto r = selectionOrAll();
-
-                          if (auto next = Equalizer::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), { band }))
-                              applyEdit (std::move (next), "EQ Band", waveform.getSelection());
+                          runStep ({ "eqBand", v, nullptr });
                       });
 }
 
@@ -5875,10 +6165,7 @@ void MainComponent::showCompressor()
                       [this, toSettings] (const EffectValues& v)
                       {
                           compressorSettings = toSettings (v);
-                          const auto r = selectionOrAll();
-
-                          if (auto next = Dynamics::compress (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), compressorSettings))
-                              applyEdit (std::move (next), "Compressor", waveform.getSelection());
+                          runStep ({ "compressor", v, nullptr });
                       });
 }
 
@@ -5998,10 +6285,7 @@ void MainComponent::showDeEsser()
                       [this, toSettings] (const EffectValues& v)
                       {
                           deEsserSettings = toSettings (v);
-                          const auto r = selectionOrAll();
-
-                          if (auto next = Multiband::deEss (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), deEsserSettings))
-                              applyEdit (std::move (next), "De-esser", waveform.getSelection());
+                          runStep ({ "deEsser", v, nullptr });
                       });
 }
 
@@ -6040,10 +6324,7 @@ void MainComponent::showLimiter()
                       [this, toSettings] (const EffectValues& v)
                       {
                           limiterSettings = toSettings (v);
-                          const auto r = selectionOrAll();
-
-                          if (auto next = Dynamics::limit (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), limiterSettings))
-                              applyEdit (std::move (next), "Limiter", waveform.getSelection());
+                          runStep ({ "limiter", v, nullptr });
                       });
 }
 
@@ -6207,10 +6488,7 @@ void MainComponent::showSweptDelay (bool flanger)
                       {
                           const auto settings = toDelay (v);
                           (flanger ? flangerSettings : chorusSettings) = settings;
-                          const auto r = selectionOrAll();
-
-                          if (auto next = Modulation::sweptDelay (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), settings))
-                              applyEdit (std::move (next), title, waveform.getSelection());
+                          runStep ({ flanger ? "flanger" : "chorus", v, nullptr });
                       });
 }
 
@@ -6247,10 +6525,7 @@ void MainComponent::showPhaser()
                       [this, toPhaser] (const EffectValues& v)
                       {
                           phaserSettings = toPhaser (v);
-                          const auto r = selectionOrAll();
-
-                          if (auto next = Modulation::phaser (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), phaserSettings))
-                              applyEdit (std::move (next), "Phaser", waveform.getSelection());
+                          runStep ({ "phaser", v, nullptr });
                       });
 }
 
@@ -6285,10 +6560,7 @@ void MainComponent::showReverb()
                       [this, toSettings] (const EffectValues& v)
                       {
                           reverbSettings = toSettings (v);
-                          const auto r = selectionOrAll();
-
-                          if (auto next = RoomReverb::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), reverbSettings))
-                              applyEdit (std::move (next), "Reverb", waveform.getSelection());
+                          runStep ({ "reverb", v, nullptr });
                       });
 }
 
@@ -6475,12 +6747,7 @@ void MainComponent::showTremolo()
 
         tremoloRateHz = juce::jlimit (0.1, 50.0, box->getTextEditorContents ("rate").getDoubleValue());
         tremoloDepthPercent = juce::jlimit (0, 100, box->getTextEditorContents ("depth").getIntValue());
-        const auto r = selectionOrAll();
-
-        if (tremoloDepthPercent > 0 && ! r.isEmpty())
-            applyEdit (AudioEdits::tremolo (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(),
-                                            tremoloRateHz, (float) tremoloDepthPercent / 100.0f),
-                       "Tremolo", waveform.getSelection());
+        runStep ({ "tremolo", { { "rate", tremoloRateHz }, { "depth", (double) tremoloDepthPercent } }, nullptr });
     }), true);
 }
 
@@ -6577,8 +6844,7 @@ void MainComponent::convertChannels (int numChannels)
     auto& doc = engine.document;
 
     if (doc.hasAudio() && doc.getNumChannels() != numChannels)
-        applyEdit (AudioEdits::convertChannels (*doc.getSnapshot(), numChannels), numChannels == 1 ? "Mix to Mono" : "Make Stereo",
-                   waveform.getSelection());
+        runStep ({ numChannels == 1 ? "mono" : "stereo", {}, nullptr });
 }
 
 void MainComponent::selectBetweenMarkers()
@@ -6898,9 +7164,7 @@ void MainComponent::applyGain()
 
     askForDecibels ("Gain", "Gain (dB)", 0.0f, [this] (float db)
     {
-        const auto r = selectionOrAll();
-        applyEdit (AudioEdits::gain (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), db),
-                   "Gain " + juce::String (db, 2) + " dB", waveform.getSelection());
+        runStep ({ "gain", { { "db", db } }, nullptr });
     });
 }
 
@@ -6942,15 +7206,8 @@ void MainComponent::applyNormalize()
 
         normalizeChannelsApart = apart->getToggleState();
         const auto db = juce::jmin (box->getTextEditorContents ("db").getFloatValue(), 0.0f);
-        const auto r = selectionOrAll();
-        const auto snapshot = engine.document.getSnapshot();
-        auto next = normalizeChannelsApart ? AudioEdits::normalizeChannels (*snapshot, r.getStart(), r.getEnd(), db)
-                                           : AudioEdits::normalize (*snapshot, r.getStart(), r.getEnd(), db);
-
-        if (next == nullptr)
+        if (runStep ({ "normalize", { { "db", db }, { "apart", normalizeChannelsApart ? 1.0 : 0.0 } }, nullptr }).snapshot == nullptr)
             showError ("Normalize", "The selection is silent.");
-        else
-            applyEdit (std::move (next), "Normalize", waveform.getSelection());
     }), true);
 }
 
@@ -7093,6 +7350,7 @@ void MainComponent::matchLoudness (double target, double ceiling, bool limitToTa
                 return;
 
             applyEdit (std::move (matched.snapshot), "Match Loudness " + Loudness::format (target, "LUFS"), waveform.getSelection());
+            recordStep ({ "matchLoudness", { { "target", target }, { "ceiling", ceiling }, { "limit", limitToTarget ? 1.0 : 0.0 } }, nullptr });
 
             if (std::abs (matched.integrated - target) > 0.05)
                 showError ("Match Loudness", "With " + juce::String (matched.gainDb, 1) + " dB of gain into the limiter, the result is "
@@ -7103,6 +7361,7 @@ void MainComponent::matchLoudness (double target, double ceiling, bool limitToTa
 
         applyEdit (AudioEdits::gain (*engine.document.getSnapshot(), range.getStart(), range.getEnd(), (float) gain),
                    "Match Loudness " + Loudness::format (target, "LUFS"), waveform.getSelection());
+        recordStep ({ "matchLoudness", { { "target", target }, { "ceiling", ceiling }, { "limit", limitToTarget ? 1.0 : 0.0 } }, nullptr });
 
         if (gain < wanted - 0.05)
             showError ("Match Loudness", "The true peak ceiling of " + Loudness::format (ceiling, "dBTP") + " allowed only "
@@ -7478,6 +7737,7 @@ void MainComponent::convertSampleRate (double newRate)
             d.applyNewRate (*result, newRate, SampleRateConverter::convert (d.getMarkers(), oldRate, newRate),
                             "Convert to " + juce::String (newRate / 1000.0, 1) + " kHz");
             waveform.setSelection ({ scale (sel.getStart()), scale (sel.getEnd()) });
+            recordStep ({ "convertRate", { { "rate", newRate } }, nullptr });
         });
     backgroundJob->launchThread();
 }
