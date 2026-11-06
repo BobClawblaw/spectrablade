@@ -125,6 +125,7 @@ private:
     // Spectrogram
     void setDisplay (WaveformView::Display);
     void applySpectral (float gainDb);
+    void healSpectral();   // the drawn shape, or the box, healed from the sound around it
 
     // Markers
     void addMarker();

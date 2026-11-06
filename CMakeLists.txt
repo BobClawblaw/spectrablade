@@ -174,6 +174,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/NavigationTests.cpp
     Tests/RestorationTests.cpp
     Tests/GeneratorTests.cpp
+    Tests/SpectralShapeTests.cpp
     Tests/FadeHandleTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp

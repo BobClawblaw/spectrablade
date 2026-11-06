@@ -4,11 +4,13 @@
 #include "OpenFiles.h"
 #include "FileFades.h"
 #include "Spectrogram.h"
+#include "SpectralEdit.h"
 
 /** The editor view: time ruler, marker lane, one lane per channel, selection, cursor and playhead.
     Drag to select, shift-click to extend, wheel or pinch to zoom, horizontal scroll to pan.
     Each channel shows its waveform, its spectrogram, or both. Option-drag in a spectrogram selects
-    a box of time and frequency for spectral edits.
+    a box of time and frequency for spectral edits; with the lasso or brush tool, a plain drag in a
+    spectrogram draws an outline or paints (Shift adds to what is drawn).
     In the marker lane, click a marker to jump to it (a region selects its range), drag to move it,
     double-click to rename, right-click for more. Dropping a file opens it. */
 class WaveformView final : public juce::Component,
@@ -40,6 +42,20 @@ public:
     /** The frequency range (Hz) of a box selected in the spectrogram; empty when the selection
         covers all frequencies. */
     juce::Range<double> getSpectralBand() const         { return band; }
+
+    /** What a drag in a spectrogram does: the box tool selects time (Option-drag a box of time and
+        frequency), the lasso draws an outline, the brush paints. The drawing is the selection:
+        its span in time is the time selection, and any other change of selection clears it. */
+    enum class SpectralTool { box, lasso, brush };
+    void setSpectralTool (SpectralTool);
+    SpectralTool getSpectralTool() const                { return tool; }
+
+    /** The brush's radius on screen, 3 to 60 pixels. */
+    void setBrushRadius (float);
+    float getBrushRadius() const                        { return brushRadius; }
+    static constexpr float minBrushRadius = 3.0f, maxBrushRadius = 60.0f;
+
+    const SpectralEdit::Shape& getSpectralShape() const { return shape; }
 
     /** Empty when there is no selection. */
     juce::Range<juce::int64> getSelection() const       { return selection; }
@@ -142,6 +158,17 @@ private:
     juce::int64 dragAnchor = 0;
     Display display = Display::waveform;
     juce::Range<double> band;
+    SpectralTool tool = SpectralTool::box;
+    SpectralEdit::Shape shape;
+    float brushRadius = 12.0f;
+    int shapeLane = -1;                       // channel whose spectrogram a lasso or brush drag started in
+    juce::Point<float> lastDrawn, brushHover { -1.0f, -1.0f };
+    juce::Point<double> toShapePoint (juce::Point<float>, juce::Rectangle<int> spectrum) const;   // (frame, octave)
+    double octavesPerPixel (juce::Rectangle<int> spectrum) const;
+    void drawAt (juce::Point<float>, juce::Rectangle<int> spectrum);
+    juce::Range<juce::int64> shapeSpan() const;
+    juce::Rectangle<int> spectrumAt (juce::Point<float>, int& channel) const;   // a spectrogram (in view coordinates) under a point
+    void drawShape (juce::Graphics&);   // the drawing, on every channel's spectrogram, and the brush under the mouse
     double bandAnchor = 0.0;
     int bandLane = -1;               // channel whose spectrogram an Option-drag started in
     double waveShare = 0.35;

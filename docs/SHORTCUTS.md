@@ -31,6 +31,10 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Undo | `Cmd-Z` |
 | Redo | `Shift-Cmd-Z` |
 | Repeat the last effect | `Shift-R` |
+| Box Selection tool | `E` |
+| Lasso Selection tool | `D` |
+| Brush Selection tool | `P` |
+| Smaller Brush, Larger Brush | `[`, `]` |
 
 ## View
 
@@ -75,6 +79,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 |---|---|
 | Apply Effects Rack | `Cmd-R` |
 | Remove Frequencies | `Option-Delete` |
+| Heal | `Shift-Cmd-H` |
 | Capture Noise Print | `Shift-P` |
 | Noise Reduction... | `Shift-Cmd-P` |
 
@@ -125,6 +130,8 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 |---|---|
 | Select the whole file | Double-click the waveform or spectrogram |
 | Select a band of frequencies | Option-drag in the spectrogram |
+| Draw round frequencies (lasso tool) | Drag in the spectrogram; Shift-drag adds |
+| Paint over frequencies (brush tool) | Drag in the spectrogram; Shift-drag adds |
 | Fade in or out | Drag the handle at the waveform's top-left or top-right corner; drag up or down to bend the curve |
 | Remove a fade | Double-click its handle |
 | Rename a marker | Double-click it |

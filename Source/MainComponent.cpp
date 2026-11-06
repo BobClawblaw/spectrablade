@@ -126,7 +126,8 @@ namespace
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
-        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise
+        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
+        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -136,7 +137,8 @@ namespace
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
-            || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise;
+            || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
+            || (id >= cmdBoxTool && id <= cmdSpectralHeal);
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1161,7 +1163,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdGenerateNoise; ++id)
+    for (int id = cmdOpen; id <= cmdSpectralHeal; ++id)
         ids.add (id);
 }
 
@@ -1181,6 +1183,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
     const auto alt = juce::ModifierKeys::altModifier;
     const auto& doc = engine.document;
     const auto hasAudio = doc.hasAudio();
+    const auto hasSpectral = ! waveform.getSpectralShape().isEmpty() || (! waveform.getSelection().isEmpty() && ! waveform.getSpectralBand().isEmpty());
     const auto hasSelection = ! waveform.getSelection().isEmpty();
 
     switch (id)
@@ -1422,11 +1425,35 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdShowBoth:   info.setInfo ("Waveform and Spectrogram", "Show both, one above the other", "View", 0);
                             info.addDefaultKeypress ('3', cmd);
                             info.setTicked (waveform.getDisplay() == WaveformView::Display::both); break;
-        case cmdSpectralAttenuate: info.setInfo ("Attenuate Frequencies...", "Lower the level inside the box selected in the spectrogram", "Effects", 0);
-                            info.setActive (hasSelection && ! waveform.getSpectralBand().isEmpty()); break;
-        case cmdSpectralRemove: info.setInfo ("Remove Frequencies", "Remove what is inside the box selected in the spectrogram", "Effects", 0);
+        case cmdSpectralAttenuate: info.setInfo ("Attenuate Frequencies...", "Lower the level inside the box, lasso or brush selection in the spectrogram", "Effects", 0);
+                            info.setActive (hasSpectral); break;
+        case cmdSpectralRemove: info.setInfo ("Remove Frequencies", "Remove what is inside the box, lasso or brush selection in the spectrogram", "Effects", 0);
                             info.addDefaultKeypress (juce::KeyPress::backspaceKey, alt);
-                            info.setActive (hasSelection && ! waveform.getSpectralBand().isEmpty()); break;
+                            info.setActive (hasSpectral); break;
+        case cmdSpectralHeal: info.setInfo ("Heal", "Replace what is inside the box, lasso or brush selection in the spectrogram with the sound around it", "Effects", 0);
+                            info.addDefaultKeypress ('h', cmd | shift);
+                            info.setActive (hasSpectral); break;
+        case cmdBoxTool:
+        case cmdLassoTool:
+        case cmdBrushTool:
+        {
+            const auto t = id == cmdBoxTool ? WaveformView::SpectralTool::box : id == cmdLassoTool ? WaveformView::SpectralTool::lasso
+                                                                                                 : WaveformView::SpectralTool::brush;
+            info.setInfo (id == cmdBoxTool ? "Box Selection" : id == cmdLassoTool ? "Lasso Selection" : "Brush Selection",
+                          id == cmdBoxTool ? "Drag to select time; Option-drag in a spectrogram selects a box of time and frequency"
+                          : id == cmdLassoTool ? "Drag in a spectrogram to draw round what to select; Shift adds to it"
+                                               : "Drag in a spectrogram to paint over what to select; Shift adds to it", "Edit", 0);
+            info.addDefaultKeypress (id == cmdBoxTool ? 'e' : id == cmdLassoTool ? 'd' : 'p', 0);
+            info.setTicked (waveform.getSpectralTool() == t);
+            info.setActive (! multitrackMode);
+            break;
+        }
+        case cmdBrushLarger:
+        case cmdBrushSmaller:
+            info.setInfo (id == cmdBrushLarger ? "Larger Brush" : "Smaller Brush", "Change the selection brush's size", "Edit", 0);
+            info.addDefaultKeypress (id == cmdBrushLarger ? ']' : '[', 0);
+            info.setActive (! multitrackMode && waveform.getSpectralTool() == WaveformView::SpectralTool::brush);
+            break;
 
         case cmdLoudnessStats: info.setInfo ("Loudness Statistics...", "Measure loudness (EBU R128) and true peak of the selection or file", "Effects", 0);
             info.setActive (hasAudio && backgroundJob == nullptr); break;
@@ -2147,6 +2174,12 @@ bool MainComponent::perform (const InvocationInfo& info)
             askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
             break;
         case cmdSpectralRemove: applySpectral (-std::numeric_limits<float>::infinity()); break;
+        case cmdSpectralHeal: healSpectral(); break;
+        case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
+        case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
+        case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
+        case cmdBrushLarger: waveform.setBrushRadius (waveform.getBrushRadius() * 1.25f); break;
+        case cmdBrushSmaller: waveform.setBrushRadius (waveform.getBrushRadius() / 1.25f); break;
         case cmdLoudnessStats: showLoudness(); break;
         case cmdMatchLoudness: askForLoudnessTarget(); break;
         case cmdCaptureNoisePrint: captureNoisePrint(); break;
@@ -2239,7 +2272,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
-        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
             add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
@@ -2250,7 +2283,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
             add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack });
+                       cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack });
             break;
         }
         case 3:
@@ -4187,15 +4220,37 @@ void MainComponent::applySpectral (float gainDb)
 {
     const auto sel = waveform.getSelection();
     const auto band = waveform.getSpectralBand();
-
-    if (sel.isEmpty() || band.isEmpty())
-        return;
-
+    const auto& shape = waveform.getSpectralShape();
     auto& doc = engine.document;
     const auto name = std::isinf (gainDb) ? juce::String ("Remove Frequencies")
                                           : "Attenuate Frequencies " + juce::String (gainDb, 1) + " dB";
-    applyEdit (SpectralEdit::changeBand (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), band, doc.getSampleRate(), gainDb),
-               name, sel);
+
+    if (! shape.isEmpty())
+        applyEdit (SpectralEdit::changeShape (*doc.getSnapshot(), shape, doc.getSampleRate(), gainDb), name, sel);
+    else if (! sel.isEmpty() && ! band.isEmpty())
+        applyEdit (SpectralEdit::changeBand (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), band, doc.getSampleRate(), gainDb),
+                   name, sel);
+}
+
+void MainComponent::healSpectral()
+{
+    const auto sel = waveform.getSelection();
+    const auto band = waveform.getSpectralBand();
+    auto shape = waveform.getSpectralShape();
+
+    // A box heals as the outline of itself.
+    if (shape.isEmpty() && ! sel.isEmpty() && ! band.isEmpty())
+    {
+        const auto lo = std::log2 (juce::jmax (1.0, band.getStart())), hi = std::log2 (band.getEnd());
+        shape.lassos.push_back ({ { (double) sel.getStart(), lo }, { (double) sel.getEnd(), lo },
+                                  { (double) sel.getEnd(), hi }, { (double) sel.getStart(), hi } });
+    }
+
+    if (shape.isEmpty())
+        return;
+
+    auto& doc = engine.document;
+    applyEdit (SpectralEdit::heal (*doc.getSnapshot(), shape, doc.getSampleRate()), "Heal", sel);
 }
 
 void MainComponent::addMarker()

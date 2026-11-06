@@ -1,5 +1,6 @@
 #pragma once
 
+#include "SpectralEdit.h"
 #include "AudioEngine.h"
 
 /** Where the editor was in a file: the selection, cursor, zoom and spectral band, put back when
@@ -10,6 +11,7 @@ struct FilePlace
     juce::int64 cursor = 0;
     double viewStart = 0.0, framesPerPixel = 0.0;
     juce::Range<double> band;
+    SpectralEdit::Shape shape;   // a lasso or brush drawing, when there is one
 };
 
 /** The files open in the editor. One is in the engine's document, the others are kept aside, each

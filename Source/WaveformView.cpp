@@ -207,6 +207,11 @@ void WaveformView::setSelection (juce::Range<juce::int64> r)
 
     if (r.isEmpty())
         band = {};
+
+    // A drawing is the selection while its span is: any other selection replaces it.
+    if (shapeLane < 0 && (r.isEmpty() || r != shapeSpan()))
+        shape = {};
+
     repaint();
 
     if (onSelectionChanged != nullptr)
@@ -229,7 +234,7 @@ void WaveformView::showFrame (juce::int64 frame)
 
 FilePlace WaveformView::getPlace() const
 {
-    return { selection, cursor, viewStart, framesPerPixel, band };
+    return { selection, cursor, viewStart, framesPerPixel, band, shape };
 }
 
 void WaveformView::setPlace (const FilePlace& place)
@@ -248,6 +253,7 @@ void WaveformView::setPlace (const FilePlace& place)
     setView (place.viewStart, place.framesPerPixel);
     setSelection (place.selection);
     band = place.selection.isEmpty() ? juce::Range<double>() : place.band;
+    shape = place.selection.isEmpty() ? SpectralEdit::Shape() : place.shape;
     cursor = juce::jlimit ((juce::int64) 0, engine.document.getNumFrames(), place.cursor);
     repaint();
 }
@@ -255,6 +261,7 @@ void WaveformView::setPlace (const FilePlace& place)
 void WaveformView::selectAll()
 {
     band = {};
+    shape = {};
     setSelection ({ 0, engine.document.getNumFrames() });
 }
 
@@ -522,12 +529,12 @@ void WaveformView::paint (juce::Graphics& g)
         const auto x2 = (float) juce::jmin ((double) getWidth(), frameToX (selection.getEnd()));
         const auto w = juce::jmax (1.0f, x2 - x1);
 
-        if (band.isEmpty())
+        if (band.isEmpty() && shape.isEmpty())
         {
             g.setColour (Theme::accent.withAlpha (0.2f));
             g.fillRect (juce::Rectangle<float> (x1, (float) area.getY(), w, (float) area.getHeight()));
         }
-        else
+        else if (! band.isEmpty())
         {
             // A spectral box: drawn on every channel's spectrogram, since edits apply to all channels.
             const auto channels = engine.document.getNumChannels();
@@ -551,6 +558,7 @@ void WaveformView::paint (juce::Graphics& g)
         }
     }
 
+    drawShape (g);
     drawFades (g, area);
 
     g.setColour (cursorColour);
@@ -845,6 +853,30 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     bandLane = -1;
     band = {};
 
+    // The lasso and brush draw in a spectrogram; Shift adds to what is drawn.
+    if (tool != SpectralTool::box)
+    {
+        int channel = -1;
+        const auto spectrum = spectrumAt (e.position, channel);
+
+        if (channel >= 0)
+        {
+            if (! e.mods.isShiftDown())
+                shape = {};
+
+            if (tool == SpectralTool::lasso)
+                shape.lassos.emplace_back();
+
+            dragAnchor = xToFrame (e.position.x);
+            shapeLane = channel;
+            lastDrawn = { -1.0f, -1.0f };
+            drawAt (e.position, spectrum);
+            return;
+        }
+    }
+
+    shape = {};
+
     const auto frame = xToFrame (e.position.x);
 
     if (e.mods.isShiftDown())
@@ -908,6 +940,13 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
     else if (e.position.x > (float) getWidth())
         setView (viewStart + (e.position.x - (float) getWidth()) * framesPerPixel * 0.1, framesPerPixel);
 
+    if (shapeLane >= 0)
+    {
+        const auto area = getWaveArea();
+        drawAt (e.position, getLane (shapeLane, engine.document.getNumChannels()).spectrum.translated (area.getX(), area.getY()));
+        return;
+    }
+
     const auto frame = xToFrame (e.position.x);
 
     if (bandLane >= 0)
@@ -924,6 +963,19 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
 void WaveformView::mouseUp (const juce::MouseEvent&)
 {
+    if (shapeLane >= 0)
+    {
+        shapeLane = -1;
+        std::erase_if (shape.lassos, [] (auto& l) { return l.size() < 3; });
+
+        if (shape.isEmpty())
+            setCursor (dragAnchor);
+        else
+            setSelection (shapeSpan());
+
+        return;
+    }
+
     if (fadeDragged >= 0)
     {
         applyPendingFade();
@@ -976,7 +1028,18 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
         return;
     }
 
+    int channel = -1;
+    const auto overSpectrum = ! spectrumAt (e.position, channel).isEmpty();
+    const auto hover = tool == SpectralTool::brush && overSpectrum && ! e.mods.isAltDown() ? e.position : juce::Point<float> (-1.0f, -1.0f);
+
+    if (hover != brushHover)
+    {
+        brushHover = hover;
+        repaint();
+    }
+
     setMouseCursor (fadeHandleAt (e.position) >= 0 ? juce::MouseCursor::UpDownLeftRightResizeCursor
+                    : tool != SpectralTool::box && overSpectrum ? juce::MouseCursor::CrosshairCursor
                     : dividerAt (e.position) >= 0 ? juce::MouseCursor::UpDownResizeCursor
                     : markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor
                                                  : juce::MouseCursor::NormalCursor);
@@ -1138,3 +1201,180 @@ void WaveformView::timerCallback()
 
     repaint();
 }
+
+//==============================================================================
+void WaveformView::setSpectralTool (SpectralTool t)
+{
+    tool = t;
+    brushHover = { -1.0f, -1.0f };
+    repaint();
+}
+
+void WaveformView::setBrushRadius (float r)
+{
+    brushRadius = juce::jlimit (minBrushRadius, maxBrushRadius, r);
+    repaint();
+}
+
+juce::Rectangle<int> WaveformView::spectrumAt (juce::Point<float> p, int& channel) const
+{
+    const auto channels = engine.document.getNumChannels();
+    const auto area = getWaveArea();
+
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        const auto spectrum = getLane (ch, channels).spectrum.translated (area.getX(), area.getY());
+
+        if (! spectrum.isEmpty() && spectrum.contains (p.toInt()))
+        {
+            channel = ch;
+            return spectrum;
+        }
+    }
+
+    channel = -1;
+    return {};
+}
+
+double WaveformView::octavesPerPixel (juce::Rectangle<int> spectrum) const
+{
+    return std::log2 (0.5 * engine.document.getSampleRate() / Spectrogram::minFrequency) / juce::jmax (1, spectrum.getHeight());
+}
+
+juce::Point<double> WaveformView::toShapePoint (juce::Point<float> p, juce::Rectangle<int> spectrum) const
+{
+    const auto y = juce::jlimit ((float) spectrum.getY(), (float) spectrum.getBottom(), p.y) - (float) spectrum.getY();
+    const auto frequency = Spectrogram::yToFrequency (y, engine.document.getSampleRate(), spectrum.getHeight());
+    return { viewStart + (double) p.x * framesPerPixel, std::log2 (frequency) };
+}
+
+void WaveformView::drawAt (juce::Point<float> p, juce::Rectangle<int> spectrum)
+{
+    if (tool == SpectralTool::lasso)
+    {
+        if (shape.lassos.empty())
+            shape.lassos.emplace_back();
+
+        if (lastDrawn.x < 0.0f || p.getDistanceFrom (lastDrawn) >= 2.0f)
+        {
+            shape.lassos.back().push_back (toShapePoint (p, spectrum));
+            lastDrawn = p;
+        }
+    }
+    else if (tool == SpectralTool::brush)
+    {
+        const auto dab = [this, spectrum] (juce::Point<float> at)
+        {
+            const auto c = toShapePoint (at, spectrum);
+            shape.dabs.push_back ({ c.x, c.y, (double) brushRadius * framesPerPixel, (double) brushRadius * octavesPerPixel (spectrum) });
+        };
+
+        // Dabs a third of the radius apart along the stroke, so it paints a smooth band.
+        const auto step = juce::jmax (1.0f, brushRadius / 3.0f);
+
+        if (lastDrawn.x < 0.0f)
+        {
+            dab (p);
+            lastDrawn = p;
+        }
+        else
+        {
+            const auto distance = p.getDistanceFrom (lastDrawn);
+
+            if (distance >= step)
+            {
+                const auto steps = (int) (distance / step);
+
+                for (int i = 1; i <= steps; ++i)
+                    dab (lastDrawn + (p - lastDrawn) * ((float) i * step / distance));
+
+                lastDrawn = lastDrawn + (p - lastDrawn) * ((float) steps * step / distance);
+            }
+        }
+
+        brushHover = p;
+    }
+
+    if (! shape.isEmpty())
+        setSelection (shapeSpan());
+    else
+        repaint();
+}
+
+juce::Range<juce::int64> WaveformView::shapeSpan() const
+{
+    if (shape.isEmpty())
+        return {};
+
+    const auto span = shape.frames();
+    const auto length = engine.document.getNumFrames();
+    return { juce::jlimit ((juce::int64) 0, length, (juce::int64) std::floor (span.getStart())),
+             juce::jlimit ((juce::int64) 0, length, (juce::int64) std::ceil (span.getEnd())) };
+}
+
+void WaveformView::drawShape (juce::Graphics& g)
+{
+    const auto channels = engine.document.getNumChannels();
+    const auto rate = engine.document.getSampleRate();
+    const auto wave = getWaveArea();
+    const auto hasShape = std::any_of (shape.lassos.begin(), shape.lassos.end(), [] (auto& l) { return l.size() >= 2; }) || ! shape.dabs.empty();
+
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        const auto spectrum = getLane (ch, channels).spectrum.translated (wave.getX(), wave.getY());
+
+        if (spectrum.isEmpty())
+            continue;
+
+        juce::Graphics::ScopedSaveState state (g);
+        g.reduceClipRegion (spectrum);
+        const auto toScreen = [&] (juce::Point<double> p)
+        {
+            return juce::Point<float> ((float) ((p.x - viewStart) / framesPerPixel),
+                                       (float) spectrum.getY() + Spectrogram::frequencyToY (std::exp2 (p.y), rate, spectrum.getHeight()));
+        };
+
+        if (hasShape)
+        {
+            juce::Path fill, outline;
+
+            for (auto& lasso : shape.lassos)
+            {
+                if (lasso.size() < 2)
+                    continue;
+
+                juce::Path p;
+                p.startNewSubPath (toScreen (lasso.front()));
+
+                for (size_t i = 1; i < lasso.size(); ++i)
+                    p.lineTo (toScreen (lasso[i]));
+
+                p.closeSubPath();
+                fill.addPath (p);
+                outline.addPath (p);
+            }
+
+            const auto pixelsPerOctave = 1.0 / octavesPerPixel (spectrum);
+
+            for (auto& d : shape.dabs)
+            {
+                const auto c = toScreen ({ d.frame, d.octave });
+                const auto rx = (float) (d.frameRadius / framesPerPixel), ry = (float) (d.octaveRadius * pixelsPerOctave);
+                fill.addEllipse (c.x - rx, c.y - ry, 2.0f * rx, 2.0f * ry);
+            }
+
+            fill.setUsingNonZeroWinding (true);
+            g.setColour (juce::Colours::white.withAlpha (0.22f));
+            g.fillPath (fill);
+            g.setColour (juce::Colours::white.withAlpha (0.9f));
+            g.strokePath (outline, juce::PathStrokeType (1.0f));
+        }
+
+        if (tool == SpectralTool::brush && brushHover.x >= 0.0f && spectrum.toFloat().contains (brushHover))
+        {
+            g.setColour (juce::Colours::white.withAlpha (0.8f));
+            g.drawEllipse (juce::Rectangle<float> (2.0f * brushRadius, 2.0f * brushRadius).withCentre (brushHover), 1.0f);
+        }
+    }
+}
+

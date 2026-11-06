@@ -49,7 +49,7 @@ namespace
         load (engine, "a.wav", 1000, 0.25f);
         doc.apply (AudioEdits::gain (*doc.getSnapshot(), 0, 1000, 6.0f), "Gain");
         const auto aSnapshot = doc.getSnapshot();
-        FilePlace aPlace { { 100, 200 }, 100, 50.0, 2.0, {} };
+        FilePlace aPlace { { 100, 200 }, 100, 50.0, 2.0, {}, {} };
 
         files.prepareForAnother (aPlace);
         const auto emptied = ! doc.hasAudio() && doc.getFile() == juce::File() && ! doc.canUndo();
@@ -63,7 +63,7 @@ namespace
                "open files: the first is kept aside as it was, its edit and undo step included");
         check (files.unsaved() == juce::Array<int> { 0 }, "open files: the one with unsaved changes is listed");
 
-        FilePlace bPlace { { 10, 20 }, 10, 0.0, 1.5, {} };
+        FilePlace bPlace { { 10, 20 }, 10, 0.0, 1.5, {}, {} };
         const auto back = files.activate (0, bPlace);
         check (back.has_value() && back->selection == aPlace.selection && juce::exactlyEqual (back->framesPerPixel, 2.0)
                    && doc.getSnapshot() == aSnapshot && doc.getFile() == fileNamed ("a.wav") && doc.isDirty()
