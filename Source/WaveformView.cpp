@@ -1,4 +1,5 @@
 #include "WaveformView.h"
+#include "Surround.h"
 #include "Theme.h"
 
 namespace
@@ -522,6 +523,29 @@ void WaveformView::paint (juce::Graphics& g)
 
     g.drawImageAt (waveformImage, area.getX(), area.getY());
     drawMarkers (g);
+
+    // Which channel each lane is, past mono (L R, or L R C LFE Ls Rs for 5.1), at its bottom left,
+    // clear of the fade handles in the top corners.
+    if (const auto channels = engine.document.getNumChannels(); channels > 1)
+    {
+        g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            const auto lane = getLane (ch, channels);
+            const auto box = (lane.wave.isEmpty() ? lane.spectrum : lane.wave).translated (area.getX(), area.getY());
+            const auto text = Surround::channelName (channels, ch);
+
+            if (box.getHeight() < 18 || text.isEmpty())
+                continue;
+
+            const auto label = juce::Rectangle<int> (box.getX() + 4, box.getBottom() - 17, 10 + 7 * text.length(), 14);
+            g.setColour (Theme::base.withAlpha (0.7f));
+            g.fillRoundedRectangle (label.toFloat(), 3.0f);
+            g.setColour (Theme::text);
+            g.drawText (text, label, juce::Justification::centred, false);
+        }
+    }
 
     if (! selection.isEmpty())
     {

@@ -27,6 +27,7 @@
 #include "UndoHistory.h"
 #include "LevelsPanel.h"
 #include "Analysis.h"
+#include "Surround.h"
 
 namespace
 {
@@ -130,7 +131,8 @@ namespace
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
-        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence
+        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
+        cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -142,7 +144,7 @@ namespace
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
-            || id == cmdRecordSequence || id == cmdPlaySequence;
+            || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -954,6 +956,7 @@ void MainComponent::finishOpeningDevice (const juce::XmlElement* savedDevice)
         juce::Logger::writeToLog ("Audio device: none");
 
     engine.setOutputPair (settings->getIntValue (outputPairKey, 0));
+    engine.setSurroundOutputs (settings->getBoolValue ("surroundOutputs", false));
 
     if (const auto count = settings->getIntValue (inputCountKey, 0); count > 0)
         if (const auto error = engine.setInput (settings->getIntValue (inputFirstKey, 0), count); error.isNotEmpty())
@@ -1174,7 +1177,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdPlaySequence; ++id)
+    for (int id = cmdOpen; id <= cmdNewFromChannels; ++id)
         ids.add (id);
 }
 
@@ -1338,8 +1341,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (hasAudio); break;
         case cmdMixToMono:  info.setInfo ("Mix to Mono", "Average the channels into one", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() > 1); break;
-        case cmdMakeStereo: info.setInfo ("Make Stereo", "Copy the one channel to left and right", "Effects", 0);
-                            info.setActive (hasAudio && doc.getNumChannels() == 1); break;
+        case cmdMakeStereo: info.setInfo ("Make Stereo", "Copy the one channel to left and right, or fold 5.1 down to stereo", "Effects", 0);
+                            if (hasAudio && doc.getNumChannels() == Surround::fiveOneChannels)
+                                info.shortName = "Fold Down to Stereo";
+                            info.setActive (hasAudio && (doc.getNumChannels() == 1 || doc.getNumChannels() == Surround::fiveOneChannels)); break;
         case cmdTrimSilence: info.setInfo ("Trim Silence...", "Remove what is below a level from the start and end of the file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdGenerateTone: info.setInfo ("Generate Tone...", "Put a tone or sweep in at the cursor, or the start of the selection", "Effects", 0);
@@ -1452,6 +1457,20 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                           "Record the effects you apply, with their settings, as a sequence to play on other files or in a batch", "Sequences", 0);
             info.setTicked (sequenceRecorder.isRecording());
             break;
+        case cmdSurroundFoldDown:
+            info.setInfo ("Play Surround Folded Down", "Play a 5.1 file folded down to stereo on the output pair (centre and surrounds at -3 dB, "
+                                                       "LFE left out); other files past stereo play their first two channels", "Transport", 0);
+            info.setTicked (! engine.getSurroundOutputs());
+            break;
+        case cmdSurroundOutputs:
+            info.setInfo ("Play Surround to Separate Outputs", "Play a file's first two channels on the output pair and the rest on the outputs "
+                                                               "after it, one each (5.1: C, LFE, Ls, Rs), up to 8 channels", "Transport", 0);
+            info.setTicked (engine.getSurroundOutputs());
+            break;
+        case cmdSaveChannels: info.setInfo ("Save Channels as Mono Files...", "Write each channel to a mono WAV file of its own (5.1: L, R, C, LFE, Ls, Rs)", "File", 0);
+                              info.setActive (hasAudio && doc.getNumChannels() > 1 && backgroundJob == nullptr); break;
+        case cmdNewFromChannels: info.setInfo ("New File from Mono Files...", "Put several files' channels side by side as one file, such as six mono files as 5.1", "File", 0);
+                                 info.setActive (backgroundJob == nullptr); break;
         case cmdPlaySequence: info.setInfo ("Play Sequence...", "Play a recorded sequence on the selection, or the whole file", "Sequences", 0);
                               info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdExportFfmpeg: info.setInfo ("Export with ffmpeg...", "Write the file, or the selection, as Opus, Apple Lossless, WavPack or AC-3 through an installed ffmpeg", "File", 0);
@@ -2210,6 +2229,13 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdBatchProcess: batchProcess(); break;
         case cmdRecordSequence: toggleSequenceRecording(); break;
         case cmdPlaySequence: choosePlaySequence(); break;
+        case cmdSurroundFoldDown: case cmdSurroundOutputs:
+            engine.setSurroundOutputs (info.commandID == cmdSurroundOutputs);
+            appProperties.getUserSettings()->setValue ("surroundOutputs", engine.getSurroundOutputs());
+            commands.commandStatusChanged();
+            break;
+        case cmdSaveChannels: saveChannels(); break;
+        case cmdNewFromChannels: newFileFromChannels(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
         case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
@@ -2306,7 +2332,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdExportLossy, cmdExportFfmpeg, 0, cmdBatchProcess, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2351,7 +2377,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
-        case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdPreviousEdge, cmdNextEdge, cmdGoToTime }); break;
+        case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdPreviousEdge, cmdNextEdge, cmdGoToTime, 0, cmdSurroundFoldDown, cmdSurroundOutputs }); break;
         case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdRegionsOverSounds, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, cmdMarkersToZero, 0, cmdMoveMarkersInSelection, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
         case 7:
         {
@@ -2668,6 +2694,7 @@ void MainComponent::setMultitrack (bool on)
     engine.getPlayer().pause();
     multitrackMode = on;
     engine.getPlayer().setMode (on ? DocumentPlayerProcessor::Mode::session : DocumentPlayerProcessor::Mode::document);
+    engine.useDeviceOutputs();
     waveform.setVisible (! on);
     multitrack.setVisible (on);
     overview.setVisible (on);
@@ -4967,6 +4994,178 @@ void MainComponent::playSequence (const Sequences::Sequence& sequence)
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
+}
+
+void MainComponent::saveChannels()
+{
+    const auto& doc = engine.document;
+
+    if (! doc.hasAudio() || doc.getNumChannels() < 2 || backgroundJob != nullptr)
+        return;
+
+    const auto start = doc.getFile() != juce::File() ? doc.getFile().getParentDirectory()
+                                                     : juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+    chooser = std::make_unique<juce::FileChooser> ("Save Channels as Mono Files: the folder to write into", start);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto folder = fc.getResult();
+        const auto& d = engine.document;
+
+        if (! folder.isDirectory() || ! d.hasAudio() || backgroundJob != nullptr)
+            return;
+
+        const auto snapshot = d.getSnapshot();
+        const auto rate = d.getSampleRate();
+        const auto markers = d.getMarkers();
+        const auto info = d.getInfo();
+        const auto stem = d.getFile() != juce::File() ? d.getFile().getFileNameWithoutExtension() : juce::String ("Untitled");
+        const auto depths = AudioFileIO::bitDepthsFor (folder.getChildFile ("x.wav"), engine.formatManager);
+        const auto depth = depths.contains (d.getSourceBitDepth()) ? d.getSourceBitDepth() : 24;
+        auto written = std::make_shared<juce::StringArray>();
+        auto error = std::make_shared<juce::String>();
+
+        backgroundJob = std::make_unique<BackgroundJob> (*this, "Saving channels...",
+            [this, snapshot, rate, markers, info, stem, depth, folder, written, error] (const std::function<bool (float)>& progress)
+            {
+                const auto channels = snapshot->getNumChannels();
+
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    if (! progress ((float) ch / (float) channels))
+                        return false;
+
+                    const auto name = Surround::channelFileName (stem, channels, ch);
+                    auto target = folder.getChildFile (name + ".wav");
+
+                    for (int n = 2; target.exists(); ++n)
+                        target = folder.getChildFile (name + " " + juce::String (n) + ".wav");
+
+                    *error = AudioFileIO::save (*AudioEdits::extractChannel (*snapshot, ch), rate, target, depth, engine.formatManager, markers, info);
+
+                    if (error->isNotEmpty())
+                        return true;
+
+                    written->add (target.getFileName());
+                }
+
+                return true;
+            },
+            [written, error, folder]
+            {
+                if (error->isNotEmpty())
+                    showError ("Save Channels as Mono Files", *error + (written->isEmpty() ? juce::String() : "\n\nWritten before that: " + written->joinIntoString (", ")));
+                else
+                    showNote ("Save Channels as Mono Files", "Written in " + folder.getFileName() + ": " + written->joinIntoString (", ") + ".");
+            });
+        backgroundJob->launchThread();
+        commands.commandStatusChanged();
+    });
+}
+
+void MainComponent::newFileFromChannels()
+{
+    if (backgroundJob != nullptr || isRecording())
+        return;
+
+    const auto start = engine.document.getFile() != juce::File() ? engine.document.getFile().getParentDirectory()
+                                                                 : juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+    chooser = std::make_unique<juce::FileChooser> ("New File from Mono Files: choose the files", start, openWildcard());
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::canSelectMultipleItems,
+                          [this] (const juce::FileChooser& fc)
+    {
+        const auto files = Surround::orderForCombining (fc.getResults());
+
+        if (files.isEmpty() || backgroundJob != nullptr)
+            return;
+
+        if (files.size() < 2)
+        {
+            showError ("New File from Mono Files", "Choose two or more files: their channels go side by side, in name order "
+                                                   "(or 5.1 order, for six named ... L, R, C, LFE, Ls and Rs).");
+            return;
+        }
+
+        auto loaded = std::make_shared<std::vector<AudioFileIO::Loaded>>();
+
+        backgroundJob = std::make_unique<BackgroundJob> (*this, "Reading files...",
+            [this, files, loaded] (const std::function<bool (float)>& progress)
+            {
+                for (int i = 0; i < files.size(); ++i)
+                {
+                    if (! progress ((float) i / (float) files.size()))
+                        return false;
+
+                    loaded->push_back (AudioFileIO::load (files[i], engine.formatManager));
+                }
+
+                return true;
+            },
+            [this, files, loaded] { combineLoaded (files, *loaded); });
+        backgroundJob->launchThread();
+        commands.commandStatusChanged();
+    });
+}
+
+void MainComponent::combineLoaded (const juce::Array<juce::File>& files, const std::vector<AudioFileIO::Loaded>& loaded)
+{
+    std::vector<const AudioSnapshot*> parts;
+    int channels = 0, depth = 0;
+    juce::int64 shortest = std::numeric_limits<juce::int64>::max(), longest = 0;
+
+    for (size_t i = 0; i < loaded.size(); ++i)
+    {
+        const auto& l = loaded[i];
+        const auto name = files[(int) i].getFileName();
+
+        if (l.snapshot == nullptr)
+        {
+            showError ("New File from Mono Files", name + ": " + l.error);
+            return;
+        }
+
+        if (! juce::exactlyEqual (l.sampleRate, loaded[0].sampleRate))
+        {
+            showError ("New File from Mono Files", name + " is at " + juce::String (l.sampleRate / 1000.0, 1) + " kHz and "
+                                                       + files[0].getFileName() + " at " + juce::String (loaded[0].sampleRate / 1000.0, 1)
+                                                       + " kHz. Convert them to one rate first.");
+            return;
+        }
+
+        parts.push_back (l.snapshot.get());
+        channels += l.snapshot->getNumChannels();
+        depth = juce::jmax (depth, l.bitDepth);
+        shortest = juce::jmin (shortest, l.snapshot->getNumFrames());
+        longest = juce::jmax (longest, l.snapshot->getNumFrames());
+    }
+
+    if (channels > SessionTrack::maxDeviceOutputs)
+    {
+        showError ("New File from Mono Files", "That makes " + juce::String (channels) + " channels; a file here has at most "
+                                                   + juce::String (SessionTrack::maxDeviceOutputs) + ".");
+        return;
+    }
+
+    auto combined = AudioEdits::combineChannels (parts);
+
+    if (combined == nullptr)
+        return;
+
+    // An empty file first, then the channels as one step, so the new file has changes to save.
+    AudioFileIO::Loaded blank;
+    blank.snapshot = AudioEdits::fromBuffer (juce::AudioBuffer<float> (channels, 0));
+    blank.sampleRate = loaded[0].sampleRate;
+    blank.bitDepth = depth;
+    stopPreview();
+    openFiles.prepareForAnother (waveform.getPlace());
+    engine.adoptFile ({}, std::move (blank));
+    engine.document.apply (std::move (combined), "New File from " + juce::String (files.size()) + " Files");
+    setMultitrack (false);
+    refreshTitle();
+
+    if (shortest != longest)
+        showNote ("New File from Mono Files", "The files aren't the same length: the shorter ones end in silence.");
 }
 
 void MainComponent::showFileInfo()

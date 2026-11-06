@@ -45,6 +45,7 @@
 #include "SidechainTests.h"
 #include "BatchTests.h"
 #include "SequencesTests.h"
+#include "SurroundTests.h"
 #include "AutomationTests.h"
 #include "MultitrackViewTests.h"
 #include "MixDownTests.h"
@@ -195,7 +196,9 @@ namespace
             const auto busId = s.addBus().id;
             SessionEdits::setTrackDeviceOutput (s, trackId, 6);
             SessionEdits::setTrackDeviceOutput (s, busId, 30);
+            engine.getPlayer().setMode (DocumentPlayerProcessor::Mode::session);   // connected while the session plays
             engine.session.reset (s, {});
+            engine.useDeviceOutputs();
             TestUtils::runUntil ([&] { return engine.playsOutOf (6) && engine.playsOutOf (7); }, 5000);
             const auto on = engine.deviceManager.getCurrentAudioDevice()->getActiveOutputChannels();
             const auto connected = engine.playsOutOf (6) && engine.playsOutOf (7) && on[6] && on[7] && ! engine.playsOutOf (5) && ! engine.playsOutOf (8);
@@ -209,6 +212,8 @@ namespace
                    "interface outputs: a track set to outputs 7/8 of the " + juce::String (names.size()) + "-output interface turns them on "
                    "and is connected to them; a pair it doesn't have is left out; back to the mix, disconnected");
             engine.session.reset (SessionState(), {});
+            engine.getPlayer().setMode (DocumentPlayerProcessor::Mode::document);
+            engine.useDeviceOutputs();
         }
     }
 
@@ -540,6 +545,7 @@ int main (int argc, char* argv[])
         runSidechainTests();
         runBatchTests (engine);
         runSequencesTests (engine);
+        runSurroundTests (engine);
         runAutomationTests (engine.formatManager);
         runMultitrackViewTests (engine);
         runMixDownTests (engine);
@@ -573,6 +579,7 @@ int main (int argc, char* argv[])
         testPluginMenu (found);
 
         testDevice (engine);
+        runSurroundDeviceTests (engine);
         if (liveInput)
             testLiveInput (engine);
         testRack (engine, found);

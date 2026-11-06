@@ -1,4 +1,5 @@
 #include "AudioEdits.h"
+#include "Surround.h"
 
 #include "SessionMixer.h"
 
@@ -87,6 +88,20 @@ juce::AudioBuffer<float> matchChannels (const juce::AudioBuffer<float>& source, 
     juce::AudioBuffer<float> out (numChannels, source.getNumSamples());
     out.clear();
 
+    // 5.1 to stereo or mono: folded down (mono is the average of the two sides).
+    if (srcChannels == Surround::fiveOneChannels && numChannels <= 2)
+    {
+        juce::AudioBuffer<float> sides (2, source.getNumSamples());
+        Surround::foldDown (source.getArrayOfReadPointers(), sides.getWritePointer (0), sides.getWritePointer (1), source.getNumSamples());
+
+        if (numChannels == 2)
+            return sides;
+
+        out.addFrom (0, 0, sides, 0, 0, sides.getNumSamples(), 0.5f);
+        out.addFrom (0, 0, sides, 1, 0, sides.getNumSamples(), 0.5f);
+        return out;
+    }
+
     if (numChannels == 1)
     {
         for (int ch = 0; ch < srcChannels; ++ch)
@@ -115,6 +130,74 @@ Snapshot convertChannels (const AudioSnapshot& s, int numChannels)
     }
 
     return std::make_shared<const AudioSnapshot> (numChannels, std::move (segments));
+}
+
+Snapshot extractChannel (const AudioSnapshot& s, int channel)
+{
+    if (! juce::isPositiveAndBelow (channel, s.getNumChannels()))
+        return nullptr;
+
+    constexpr juce::int64 blockSize = 65536;
+    std::vector<AudioSnapshot::Segment> segments;
+
+    for (juce::int64 start = 0; start < s.getNumFrames(); start += blockSize)
+    {
+        const auto all = readRange (s, start, juce::jmin (s.getNumFrames(), start + blockSize));
+        juce::AudioBuffer<float> one (1, all.getNumSamples());
+        one.copyFrom (0, 0, all, channel, 0, all.getNumSamples());
+        const auto block = fromBuffer (std::move (one));
+        segments.insert (segments.end(), block->getSegments().begin(), block->getSegments().end());
+    }
+
+    return std::make_shared<const AudioSnapshot> (1, std::move (segments));
+}
+
+Snapshot combineChannels (const std::vector<const AudioSnapshot*>& parts)
+{
+    int channels = 0;
+    juce::int64 length = 0;
+
+    for (auto* p : parts)
+    {
+        if (p == nullptr || p->getNumChannels() < 1)
+            return nullptr;
+
+        channels += p->getNumChannels();
+        length = juce::jmax (length, p->getNumFrames());
+    }
+
+    if (channels == 0)
+        return nullptr;
+
+    constexpr juce::int64 blockSize = 65536;
+    std::vector<AudioSnapshot::Segment> segments;
+
+    for (juce::int64 start = 0; start < length; start += blockSize)
+    {
+        juce::AudioBuffer<float> block (channels, (int) juce::jmin (blockSize, length - start));
+        block.clear();
+        int at = 0;
+
+        for (auto* p : parts)
+        {
+            const auto n = (int) juce::jlimit ((juce::int64) 0, (juce::int64) block.getNumSamples(), p->getNumFrames() - start);
+
+            if (n > 0)
+            {
+                const auto part = readRange (*p, start, start + n);
+
+                for (int ch = 0; ch < part.getNumChannels(); ++ch)
+                    block.copyFrom (at + ch, 0, part, ch, 0, n);
+            }
+
+            at += p->getNumChannels();
+        }
+
+        const auto made = fromBuffer (std::move (block));
+        segments.insert (segments.end(), made->getSegments().begin(), made->getSegments().end());
+    }
+
+    return std::make_shared<const AudioSnapshot> (channels, std::move (segments));
 }
 
 Snapshot replaceWithClip (const AudioSnapshot& s, juce::int64 start, juce::int64 end, const AudioClip& clip)

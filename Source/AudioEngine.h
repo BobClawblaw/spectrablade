@@ -20,7 +20,12 @@ public:
     /** Plays [start, end) over and over once it gets there (end <= start: no loop). */
     void setLoop (juce::int64 start, juce::int64 end)         { loopStart = start; loopEnd = end; }
 
-    void prepareToPlay (int, double) override                 {}
+    /** A file with more than two channels: -1 folds 5.1 down to the first two channels (others play
+        their first two); otherwise its channels after the first two go to the buffer's channels from
+        this one on, one each, up to Surround::maxPlayedChannels in all. */
+    void setSeparateOutputs (int firstChannel)                { separateFirst = firstChannel; }
+
+    void prepareToPlay (int blockSize, double) override;
     void releaseResources() override                          {}
     void getNextAudioBlock (const juce::AudioSourceChannelInfo&) override;
 
@@ -34,8 +39,11 @@ private:
     AudioDocument::Snapshot snapshot;      // audio thread's own reference
     juce::uint32 snapshotVersion = 0;
     std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
+    std::atomic<int> separateFirst { -1 };
+    juce::AudioBuffer<float> wide;         // a file past stereo is read through this
 
     void readRun (juce::AudioBuffer<float>&, int destStart, juce::int64 start, int numFrames);
+    void readWide (juce::AudioBuffer<float>&, int destStart, juce::int64 start, int numFrames);
 };
 
 //==============================================================================
@@ -110,6 +118,11 @@ public:
     /** Switches between playing the document and the session; stops and goes to the start. */
     void setMode (Mode);
     Mode getMode() const noexcept                 { return mode; }
+
+    /** A document past stereo plays its channels after the first two to these player channels
+        (see DocumentSource::setSeparateOutputs), or -1 to fold 5.1 down. Turning it on or off
+        stops playback. */
+    void setSeparateOutputs (int firstChannel);
 
     /** Call after the document or session is replaced (its sample rate may have changed). */
     void resetSource();
@@ -209,6 +222,7 @@ public:
 private:
     juce::AudioTransportSource transport;
     juce::int64 stopAt = -1;
+    int separateOutputs = -1;   // see setSeparateOutputs
     double sourceRate = 0.0;
     std::atomic<juce::int64> playedFrame { 0 };
     juce::TimeSliceThread auditionThread { "Audition" };
@@ -294,6 +308,17 @@ public:
 
     /** The interface outputs a session's tracks and buses play out of. */
     static juce::BigInteger deviceOutputsOf (const SessionState&);
+
+    /** A file with more than two channels: false folds 5.1 down to the output pair (other files play
+        their first two channels there); true plays the first two on the pair and the rest on the
+        outputs after it, one each (5.1: C, LFE, Ls and Rs), straight from the player, past the rack. */
+    void setSurroundOutputs (bool separate);
+    bool getSurroundOutputs() const noexcept      { return surroundOutputs; }
+
+    /** Connects the interface outputs that the session's tracks, or the file's channels past the
+        first two, play out of, turning them on in the device. Call after switching between file
+        and session. */
+    void useDeviceOutputs();
 
     /** True when what the session plays out of this device output (from 0) is connected to it. */
     bool playsOutOf (int deviceChannel) const;
@@ -415,8 +440,8 @@ private:
     class MasterMeter;
     std::vector<Node::Ptr> rack;
     int outputPairFirstChannel = 0;
-    juce::BigInteger usedDeviceOutputs;   // the interface outputs the session's tracks play out of
-    void useDeviceOutputs();
+    juce::BigInteger usedDeviceOutputs;   // the interface outputs the session's tracks, or the file's extra channels, play out of
+    bool surroundOutputs = false;
     int inputFirstChannel = 0, inputNumChannels = 0;
     std::unique_ptr<Recorder> recorder;
     std::vector<std::pair<TrackInput, std::unique_ptr<Recorder>>> extraRecorders;

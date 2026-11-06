@@ -181,6 +181,11 @@ private:
     void choosePlaySequence();
     void playSequence (const Sequences::Sequence&);
     Sequences::Recorder sequenceRecorder;
+
+    // Surround files
+    void saveChannels();
+    void newFileFromChannels();
+    void combineLoaded (const juce::Array<juce::File>&, const std::vector<AudioFileIO::Loaded>&);
     int sequencePosition = 0, sequenceResetCount = 0;      // where the document was after the last recorded step
     void showFileInfo();
     void insertGenerated (const juce::AudioBuffer<float>&, const juce::String& name);

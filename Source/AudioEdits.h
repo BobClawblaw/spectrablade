@@ -239,7 +239,15 @@ namespace AudioEdits
     /** The whole file with numChannels channels, fitted as matchChannels does. */
     Snapshot convertChannels (const AudioSnapshot&, int numChannels);
 
-    /** Fits a buffer to a channel count: mono is copied to every channel, more channels
-        than needed are averaged into mono or truncated. */
+    /** One channel of the whole file, as a mono file. Nullptr for a channel it doesn't have. */
+    Snapshot extractChannel (const AudioSnapshot&, int channel);
+
+    /** The parts' channels side by side, in order, as long as the longest part (the others end in
+        silence). Nullptr when there are none, or one has no channels. */
+    Snapshot combineChannels (const std::vector<const AudioSnapshot*>& parts);
+
+    /** Fits a buffer to a channel count: mono is copied to every channel; 5.1 is folded down to
+        stereo or mono (as Surround::foldDown does); otherwise more channels than needed are
+        averaged into mono or truncated. */
     juce::AudioBuffer<float> matchChannels (const juce::AudioBuffer<float>&, int numChannels);
 }

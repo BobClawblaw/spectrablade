@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "Surround.h"
 #include "Analysis.h"
 
 #include "BuiltInEffects.h"
@@ -61,10 +62,56 @@ void DocumentSource::readRun (juce::AudioBuffer<float>& buffer, int destStart, j
     if (stop >= 0)
         count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) numFrames, stop - start);
 
-    snapshot->read (buffer, destStart, start, count);
+    if (snapshot->getNumChannels() > 2)
+        readWide (buffer, destStart, start, count);
+    else
+        snapshot->read (buffer, destStart, start, count);
 
     if (count < numFrames)
         buffer.clear (destStart + count, numFrames - count);
+}
+
+void DocumentSource::prepareToPlay (int blockSize, double)
+{
+    wide.setSize (Surround::maxPlayedChannels, juce::jmax (16384, 4 * blockSize));
+}
+
+void DocumentSource::readWide (juce::AudioBuffer<float>& buffer, int destStart, juce::int64 start, int numFrames)
+{
+    const auto first = separateFirst.load();
+    const auto channels = juce::jmin (snapshot->getNumChannels(), Surround::maxPlayedChannels);
+
+    for (int done = 0; done < numFrames;)
+    {
+        const auto at = destStart + done;
+        const auto n = juce::jmin (numFrames - done, wide.getNumSamples());
+
+        if (n <= 0)   // not prepared: silence
+        {
+            buffer.clear (at, numFrames - done);
+            return;
+        }
+
+        buffer.clear (at, n);
+
+        snapshot->read (wide, 0, start + done, n);
+
+        if (first < 0 && snapshot->getNumChannels() == Surround::fiveOneChannels && buffer.getNumChannels() >= 2)
+        {
+            Surround::foldDown (wide.getArrayOfReadPointers(), buffer.getWritePointer (0, at), buffer.getWritePointer (1, at), n);
+        }
+        else
+        {
+            for (int ch = 0; ch < juce::jmin (2, buffer.getNumChannels()); ++ch)
+                buffer.copyFrom (ch, at, wide, ch, 0, n);
+
+            if (first >= 0)
+                for (int ch = 2; ch < channels && first + ch - 2 < buffer.getNumChannels(); ++ch)
+                    buffer.copyFrom (first + ch - 2, at, wide, ch, 0, n);
+        }
+
+        done += n;
+    }
 }
 
 //==============================================================================
@@ -259,6 +306,20 @@ double DocumentPlayerProcessor::modeRate() const
     return mode == Mode::session ? session.getSampleRate() : document.getSampleRate();
 }
 
+void DocumentPlayerProcessor::setSeparateOutputs (int firstChannel)
+{
+    source.setSeparateOutputs (firstChannel);
+
+    // Separate outputs need the interface channels through the transport; the mix alone doesn't.
+    if ((firstChannel >= 0) != (separateOutputs >= 0))
+    {
+        separateOutputs = firstChannel;
+        resetSource();
+    }
+
+    separateOutputs = firstChannel;
+}
+
 void DocumentPlayerProcessor::setMode (Mode m)
 {
     if (m == mode)
@@ -276,7 +337,7 @@ void DocumentPlayerProcessor::resetSource()
     // goes out of each interface pair; a document, the mix alone.
     sourceRate = modeRate();
     transport.setSource (mode == Mode::session ? static_cast<juce::PositionableAudioSource*> (&sessionSource) : &source,
-                         0, nullptr, sourceRate, mode == Mode::session ? clickChannel : 2);
+                         0, nullptr, sourceRate, mode == Mode::session || separateOutputs >= 0 ? clickChannel : 2);
     transport.setPosition (0.0);
     stopAt = -1;
     source.setStopFrame (-1);
@@ -379,8 +440,9 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
         sessionSource.renderLive (info);
 
-    // A document has nothing for the interface pairs (the transport read the mix alone).
-    if (mode != Mode::session)
+    // A document has nothing for the interface pairs (the transport read the mix alone), unless
+    // its channels past the first two play out of their own outputs.
+    if (mode != Mode::session && separateOutputs < 0)
         for (int ch = 2; ch < juce::jmin (clickChannel, buffer.getNumChannels()); ++ch)
             buffer.clear (ch, 0, numFrames);
 
@@ -892,6 +954,7 @@ void AudioEngine::setOutputPair (int firstChannel)
         deviceManager.setAudioDeviceSetup (setup, true);
     }
 
+    useDeviceOutputs();   // a file's extra channels follow the pair
     rebuildConnections();
     sendChangeMessage();
 }
@@ -935,9 +998,18 @@ bool AudioEngine::playsOutOf (int deviceChannel) const
                                 { outputNode->nodeID, graphChannelOf (device->getActiveOutputChannels(), deviceChannel) } });
 }
 
+void AudioEngine::setSurroundOutputs (bool separate)
+{
+    surroundOutputs = separate;
+    useDeviceOutputs();
+}
+
 void AudioEngine::useDeviceOutputs()
 {
-    const auto used = deviceOutputsOf (*session.getState());
+    const auto fileMode = player->getMode() != DocumentPlayerProcessor::Mode::session;
+    player->setSeparateOutputs (surroundOutputs ? DocumentPlayerProcessor::firstInterfaceChannel + outputPairFirstChannel + 2 : -1);
+    const auto used = fileMode ? Surround::extraOutputs (document.getNumChannels(), outputPairFirstChannel, surroundOutputs)
+                               : deviceOutputsOf (*session.getState());
 
     if (used == usedDeviceOutputs)
         return;
@@ -970,7 +1042,7 @@ void AudioEngine::useDeviceOutputs()
 
 void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
-    if (source == &session)
+    if (source == &session || source == &document)
         useDeviceOutputs();
 
     if (source == &document || source == &session)
