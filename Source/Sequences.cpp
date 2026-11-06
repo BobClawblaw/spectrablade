@@ -1,6 +1,7 @@
 #include "Sequences.h"
 #include "TimeStretch.h"
 #include "AudioEdits.h"
+#include "CentreChannel.h"
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Dynamics.h"
@@ -50,6 +51,7 @@ namespace
             { "stereo", "Make Stereo", {} },
             { "balance", "Balance", { "pan" } },
             { "stereoWidth", "Stereo Width", { "width" } },
+            { "centre", "Centre Channel", { "keep", "low", "high", "reduction" } },
             { "echo", "Echo", { "delay", "feedback" } },
             { "tremolo", "Tremolo", { "rate", "depth" } },
             { "eqBand", "EQ Band", { "type", "frequency", "gain", "q" } },
@@ -105,6 +107,11 @@ namespace
                  get (v, "feedback"), get (v, "mix"), get (v, "spread") };
     }
 
+    CentreChannel::Settings centreOf (const Values& v)
+    {
+        return { get (v, "keep") > 0.5, (float) get (v, "low"), (float) get (v, "high"), (float) get (v, "reduction") };
+    }
+
     Leveller::Settings levellerOf (const Values& v)
     {
         return { (float) get (v, "target"), (float) get (v, "boost"), (float) get (v, "cut"), (float) get (v, "silence") };
@@ -158,6 +165,9 @@ juce::String Step::name() const
 
     if (kind == "levelSpeech")
         return "Level Speech to " + Loudness::format (get (values, "target"), "LUFS");
+
+    if (kind == "centre")
+        return juce::String (get (values, "keep") > 0.5 ? "Extract" : "Remove") + " Centre " + juce::String (get (values, "reduction"), 1) + " dB";
 
     if (kind == "dereverb")
         return "Reduce Reverb " + juce::String (get (values, "reduction"), 1) + " dB";
@@ -230,6 +240,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
         || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v)))
         || (step.kind == "levelSpeech" && ! Leveller::isValid (levellerOf (v)))
+        || (step.kind == "centre" && ! CentreChannel::isValid (centreOf (v)))
         || (step.kind == "dereverb" && ! Dereverb::isValid ({ (float) get (v, "time"), (float) get (v, "reduction") })))
         return bad();
 
@@ -275,6 +286,23 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
         if (end > start)
         {
             out.snapshot = Leveller::level (s, start, end, rate, levellerOf (v), progress);
+
+            if (out.snapshot == nullptr)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+        }
+    }
+    else if (k == "centre")
+    {
+        if (s.getNumChannels() != 2)
+        {
+            out.notes.add ("not stereo, so its centre wasn't changed");
+        }
+        else if (end > start && get (v, "reduction") > 0.0)
+        {
+            out.snapshot = CentreChannel::process (s, start, end, rate, centreOf (v), progress);
 
             if (out.snapshot == nullptr)
             {

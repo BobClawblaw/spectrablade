@@ -19,6 +19,7 @@
 #include "../Source/TimeStretch.h"
 #include "../Source/Dereverb.h"
 #include "../Source/Leveller.h"
+#include "../Source/CentreChannel.h"
 #include "TestUtils.h"
 #include "SequencesTests.h"
 
@@ -125,6 +126,8 @@ void runSequencesTests (AudioEngine& engine)
             { { "mono", {}, nullptr }, AudioEdits::convertChannels (s, 1) },
             { { "balance", { { "pan", -40.0 } }, nullptr }, AudioEdits::balance (s, a, b, -0.4f) },
             { { "stereoWidth", { { "width", 150.0 } }, nullptr }, AudioEdits::stereoWidth (s, a, b, 1.5f) },
+            { { "centre", { { "keep", 1.0 }, { "low", 150.0 }, { "high", 6000.0 }, { "reduction", 15.0 } }, nullptr },
+              CentreChannel::process (s, a, b, rate, { true, 150.0f, 6000.0f, 15.0f }) },
             { { "echo", { { "delay", 250.0 }, { "feedback", 40.0 } }, nullptr }, AudioEdits::echo (s, a, b, 12000, 0.4f) },
             { { "tremolo", { { "rate", 4.5 }, { "depth", 60.0 } }, nullptr }, AudioEdits::tremolo (s, a, b, rate, 4.5, 0.6f) },
             { { "eqBand", { { "type", (double) band.type }, { "frequency", 4000.0 }, { "gain", 3.5 }, { "q", 0.71 } }, nullptr },
@@ -198,8 +201,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 31,
-               "sequences: each of the 31 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 32,
+               "sequences: each of the 32 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

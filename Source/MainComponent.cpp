@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "Navigation.h"
 #include "Restoration.h"
+#include "CentreChannel.h"
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Generator.h"
@@ -139,7 +140,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -152,7 +153,7 @@ namespace
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
-            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech;
+            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1185,7 +1186,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDetachVideo; ++id)
+    for (int id = cmdOpen; id <= cmdCentreChannel; ++id)
         ids.add (id);
 }
 
@@ -1542,6 +1543,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setActive (waveform.getSelection().getLength() >= NoiseReduction::frameSize); break;
         case cmdLevelSpeech: info.setInfo ("Level Speech...", "Even out the level of speech in the selection or file, raising quiet passages and lowering loud ones", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdCentreChannel: info.setInfo ("Centre Channel...", "Remove what is panned to the middle of a stereo file, or keep it alone, in the selection or file", "Effects", 0);
+                            info.setActive (hasAudio && engine.document.getNumChannels() == 2 && backgroundJob == nullptr); break;
         case cmdDereverb:   info.setInfo ("Reduce Reverb...", "Lower the room's reverberation in the selection or file, keeping the direct sound", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdNoiseReduction: info.setInfo ("Noise Reduction...", "Reduce the captured noise in the selection or file", "Effects", 0);
@@ -2316,6 +2319,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCaptureNoisePrint: captureNoisePrint(); break;
         case cmdNoiseReduction: askForNoiseReduction(); break;
         case cmdDereverb:   askToReduceReverb(); break;
+        case cmdCentreChannel: askForCentreChannel(); break;
         case cmdLevelSpeech: askToLevelSpeech(); break;
         case cmdClickRepair: askForClickRepair(); break;
         case cmdRemoveHum:  showRemoveHum(); break;
@@ -2415,7 +2419,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
+            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
@@ -4977,6 +4981,53 @@ void MainComponent::askToLevelSpeech()
         settings->setValue ("levelSilence", s.silenceLufs);
         runStepInBackground ({ "levelSpeech", { { "target", s.targetLufs }, { "boost", s.maxBoostDb }, { "cut", s.maxCutDb }, { "silence", s.silenceLufs } }, nullptr },
                              "Levelling speech...");
+    }), true);
+}
+
+void MainComponent::askForCentreChannel()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Centre Channel",
+                                       "Finds what is panned to the middle of the mix (a voice, dialogue, a lead instrument) band by band, "
+                                       "from what the two channels share, and either removes it or keeps it alone, lowering the rest. "
+                                       "Only the frequencies between the low and high are changed. A sound off to the side at the same "
+                                       "moment and pitch can't be told apart fully, so some of each stays with the other.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addComboBox ("mode", { "Remove the centre", "Keep the centre alone" }, "Centre");
+    box->getComboBoxComponent ("mode")->setSelectedItemIndex (settings->getBoolValue ("centreKeep", false) ? 1 : 0);
+    box->addTextEditor ("low", juce::String (settings->getDoubleValue ("centreLow", 100.0), 0), "Low (Hz, from 20)");
+    box->addTextEditor ("high", juce::String (settings->getDoubleValue ("centreHigh", 8000.0), 0), "High (Hz, to 20000)");
+    box->addTextEditor ("reduction", juce::String (settings->getDoubleValue ("centreReduction", 20.0), 1), "Reduction (dB, 0 to 40)");
+
+    for (auto* name : { "low", "high", "reduction" })
+        box->getTextEditor (name)->setInputRestrictions (8, ".0123456789");
+
+    box->addButton ("Apply", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const CentreChannel::Settings s { box->getComboBoxComponent ("mode")->getSelectedItemIndex() == 1,
+                                          box->getTextEditorContents ("low").getFloatValue(), box->getTextEditorContents ("high").getFloatValue(),
+                                          box->getTextEditorContents ("reduction").getFloatValue() };
+
+        if (! CentreChannel::isValid (s))
+        {
+            showError ("Centre Channel", "The low and high must be from 20 to 20000 Hz with the low below the high, and the reduction "
+                                         "from 0 to 40 dB.");
+            return;
+        }
+
+        settings->setValue ("centreKeep", s.keepCentre);
+        settings->setValue ("centreLow", s.lowHz);
+        settings->setValue ("centreHigh", s.highHz);
+        settings->setValue ("centreReduction", s.reductionDb);
+
+        if (s.reductionDb > 0.0f)
+            runStepInBackground ({ "centre", { { "keep", s.keepCentre ? 1.0 : 0.0 }, { "low", s.lowHz }, { "high", s.highHz }, { "reduction", s.reductionDb } }, nullptr },
+                                 s.keepCentre ? "Extracting the centre..." : "Removing the centre...");
     }), true);
 }
 

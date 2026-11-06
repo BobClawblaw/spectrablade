@@ -183,6 +183,7 @@ private:
     void askToStretch();
     void askToShiftPitch();
     void askToReduceReverb();
+    void askForCentreChannel();
     void askToLevelSpeech();
     void askForVideoStart();
     void detachVideo();

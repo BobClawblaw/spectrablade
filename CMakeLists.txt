@@ -102,6 +102,7 @@ target_sources(SpectraBlade PRIVATE
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
+    Source/CentreChannel.cpp
     Source/Leveller.cpp
     Source/Scrubber.cpp
     Source/ClickRepair.cpp
@@ -198,6 +199,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/AuditionTests.cpp
     Tests/NoiseTests.cpp
     Tests/DereverbTests.cpp
+    Tests/CentreChannelTests.cpp
     Tests/LevellerTests.cpp
     Tests/ScrubberTests.cpp
     Tests/ClickTests.cpp
@@ -266,6 +268,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
+    Source/CentreChannel.cpp
     Source/Leveller.cpp
     Source/Scrubber.cpp
     Source/ClickRepair.cpp
