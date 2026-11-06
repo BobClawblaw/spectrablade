@@ -1666,7 +1666,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo (frozen ? "Unfreeze Track" : "Freeze Track",
                           "Render the selected track through its effects to a file it plays instead, freeing the CPU; or play its clips live again", "Multitrack", 0);
             info.setTicked (frozen);
-            info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || ! track->clips.empty()));
+            info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || (! track->clips.empty() && ! track->fiveOne)));
             break;
         }
         case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip right after it", "Multitrack", 0);
@@ -3268,7 +3268,9 @@ void MainComponent::bounceTrack()
                                                                       + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"),
                                                                   ".wav", false);
     auto alone = std::make_shared<SessionState> (Bounce::isolate (*state, trackId));
-    alone->surround = false;   // the track's own stereo sound: the new track takes its surround pan
+    // The track's own stereo sound, which the new track's surround pan places; a 5.1 track's
+    // six channels in a 5.1 master.
+    alone->surround = state->surround && track.fiveOne;
     auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
 
     for (auto& t : alone->tracks)   // the track's, and its keys'

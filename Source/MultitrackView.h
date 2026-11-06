@@ -319,6 +319,10 @@ public:
     bool clearAllMutes();
     void setTrackPolarityInverted (juce::uint32 trackId, bool inverted);
 
+    /** Makes a track a 5.1 track or a stereo one, as an undo step ("5.1 Track" or "Stereo Track");
+        nothing for a bus, folder or frozen track. */
+    void setTrackFiveOne (juce::uint32 trackId, bool fiveOne);
+
     /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */
     void moveTrack (int from, int to);
 

@@ -36,6 +36,12 @@
     to there is as in a stereo master. What plays into a bus, or out of an interface pair, stays
     stereo. The master then goes to dest as Buffers::surroundChannel says.
 
+    A 5.1 track (SessionTrack::fiveOne) plays its clips' six channels through its polarity, volume
+    and ducking, without pan or effects, straight into a 5.1 master's channels; everything else it
+    feeds (sends, a bus, an interface pair, keys, its meter, a stereo master) gets them folded
+    down to stereo (Surround::foldDown), after its polarity and, past its pre-fader sends, its
+    volume, as a stereo track's would.
+
     A sidechain feeds a key track's output (after its volume, as ducking hears it) into an
     effect's sidechain input on a track or bus. Keys are mixed first, and a key is read ahead far
     enough that its output, held back, lines up with the audio going into that effect, whatever
@@ -144,6 +150,7 @@ namespace SessionMixer
         int interfaceChannel = 2;
 
         juce::AudioBuffer<float> master, panIn;   // a 5.1 master, and what is panned into it
+        juce::AudioBuffer<float> wide, wideClip, wideHeld;   // a 5.1 track's six channels, its clips', and held back
 
         // Ducking: each key track's output for the block, and each ducked track's detector.
         struct Duck
@@ -166,7 +173,8 @@ namespace SessionMixer
             for (auto* b : { &clip, &track, &held, &discard, &automation, &clipGains, &keyHeld, &duckGains, &panIn })
                 b->setSize (2, frames);
 
-            master.setSize (6, frames);
+            for (auto* b : { &master, &wide, &wideClip, &wideHeld })
+                b->setSize (6, frames);
 
             order.reserve (64);
             keyAudio.reserve (16);

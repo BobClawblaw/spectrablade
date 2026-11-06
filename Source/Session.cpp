@@ -1,4 +1,5 @@
 #include "Session.h"
+#include "Surround.h"
 
 #include <numeric>
 #include <set>
@@ -413,7 +414,7 @@ juce::uint32 addClip (SessionState& s, int track, const juce::File& source, Audi
 {
     if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
     {
-        s.addTrack();
+        s.addTrack().fiveOne = s.surround && audio != nullptr && audio->getNumChannels() == Surround::fiveOneChannels;
         track = (int) s.tracks.size() - 1;
     }
 
@@ -1493,7 +1494,7 @@ bool freezeTrack (SessionState& s, juce::uint32 trackId, const juce::File& file,
 {
     const auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
 
-    if (track == s.tracks.end() || track->isBus || audio == nullptr)
+    if (track == s.tracks.end() || track->isBus || track->fiveOne || audio == nullptr)
         return false;
 
     track->frozenAudio = std::move (audio);
@@ -1665,6 +1666,17 @@ bool setTrackDeviceOutput (SessionState& s, juce::uint32 trackId, int firstChann
 
     track->outputBusId = 0;
     track->deviceOutput = firstChannel;
+    return true;
+}
+
+bool setTrackFiveOne (SessionState& s, juce::uint32 trackId, bool fiveOne)
+{
+    auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || track->isBus || track->isFolder || track->isFrozen() || track->fiveOne == fiveOne)
+        return false;
+
+    track->fiveOne = fiveOne;
     return true;
 }
 
@@ -2124,6 +2136,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         else if (t.deviceOutput >= 0)
             track->setAttribute ("deviceOutput", t.deviceOutput);
 
+        if (t.fiveOne)
+            track->setAttribute ("fiveOne", true);
+
         if (! t.isFolder && ! t.surroundPan.isDefault())
         {
             track->setAttribute ("surroundX", t.surroundPan.x);
@@ -2384,6 +2399,8 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
         if (const auto pair = trackXml->getIntAttribute ("deviceOutput", -1); ! track.isFolder && pair >= 0 && pair < SessionTrack::maxDeviceOutputs - 1)
             track.deviceOutput = pair;
+
+        track.fiveOne = ! track.isBus && ! track.isFolder && trackXml->getBoolAttribute ("fiveOne");
 
         if (! track.isFolder)
             SessionEdits::setSurroundPan (state, track.id, { (float) trackXml->getDoubleAttribute ("surroundX", 0.0),

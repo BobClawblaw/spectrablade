@@ -15,7 +15,8 @@ namespace Bounce
     /** Puts a bounce into the session: a new track right after the source, named after it, with
         the audio as one clip at position (the file is the clip's source), the source's sends,
         which now carry the bounced audio, its output (a bus or an interface pair), its surround pan
-        and its folder; the source is muted.
+        and its folder, and a 5.1 track's 5.1-ness when the bounce has six channels; the source is
+        muted.
         Returns the new track's id, or 0 when the source track is no longer there. */
     juce::uint32 land (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot, juce::int64 position);
 

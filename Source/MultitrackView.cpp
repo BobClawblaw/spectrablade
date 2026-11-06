@@ -226,11 +226,15 @@ public:
         automationButton.setToggleState (t.isAutomated(), juce::dontSendNotification);
         const auto writing = view.isWritingAutomation();
         gain.setEnabled (! volumeAutomated || writing);
-        pan.setEnabled (! panAutomated || writing);
+        pan.setEnabled ((! panAutomated || writing) && ! t.fiveOne);
         const juce::String automatedTip = writing ? " follows its envelope; drag while playing to write it" : " follows its envelope (A to edit it)";
         gain.setTooltip (isFolder ? "Folder volume: added to the volume of each track and bus in it"
                          : volumeAutomated ? "Volume" + automatedTip : writing ? "Track volume; drag while playing to write automation" : "Track volume");
-        pan.setTooltip (panAutomated ? "Pan" + automatedTip : writing ? "Pan; drag while playing to write automation" : "Pan");
+        pan.setTooltip (t.fiveOne ? "A 5.1 track plays its channels to their own speakers: it has no pan"
+                        : panAutomated ? "Pan" + automatedTip : writing ? "Pan; drag while playing to write automation" : "Pan");
+
+        if (t.fiveOne)
+            effectsButton.setTooltip ("A 5.1 track's effects don't run: track effects are stereo");
 
         const auto frame = view.controlFrame();
 
@@ -519,6 +523,9 @@ public:
 
         if (! t->isFolder)
             menu.addItem ("Invert Polarity", true, t->invertPolarity, [this, on = t->invertPolarity] { view.setTrackPolarityInverted (trackId, ! on); });
+
+        if (! t->isFolder && ! t->isBus)
+            menu.addItem ("5.1 Track", ! t->isFrozen(), t->fiveOne, [this, on = t->fiveOne] { view.setTrackFiveOne (trackId, ! on); });
 
         menu.addSubMenu ("Colour", colours);
         menu.addItem ("Note...", [this] { view.askForTrackNote (trackId); });
@@ -3707,6 +3714,14 @@ void MultitrackView::setTrackColour (juce::uint32 trackId, int colour)
 {
     editTrack (trackId, "Track Colour", false,
                [colour] (SessionTrack& t) { t.colour = juce::isPositiveAndBelow (colour, (int) TrackColours::palette.size()) ? colour : -1; });
+}
+
+void MultitrackView::setTrackFiveOne (juce::uint32 trackId, bool fiveOne)
+{
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::setTrackFiveOne (next, trackId, fiveOne))
+        engine.session.apply (std::move (next), fiveOne ? "5.1 Track" : "Stereo Track");
 }
 
 void MultitrackView::setTrackPolarityInverted (juce::uint32 trackId, bool inverted)

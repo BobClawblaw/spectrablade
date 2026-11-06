@@ -248,8 +248,12 @@ public:
         if (! readout.isBeingEdited())
             readout.setText (juce::String (db, 1) + " dB", juce::dontSendNotification);
 
-        // The surround controls, in a 5.1 master.
-        const auto showSurround = view.engine.session.getState()->surround && ! isFolder;
+        // The surround controls, in a 5.1 master; a 5.1 track has neither them nor a pan.
+        const auto showSurround = view.engine.session.getState()->surround && ! isFolder && ! t.fiveOne;
+        pan.setEnabled (! panAutomated && ! t.fiveOne);
+
+        if (t.fiveOne)
+            pan.setTooltip ("A 5.1 track plays its channels to their own speakers: it has no pan");
 
         if (surroundPad.isVisible() != showSurround)
         {

@@ -1,4 +1,5 @@
 #include "Bounce.h"
+#include "Surround.h"
 
 namespace Bounce
 {
@@ -35,11 +36,13 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
     const auto outputBusId = source->outputBusId;
     const auto deviceOutput = source->deviceOutput;
     const auto surroundPan = source->surroundPan;
+    const auto fiveOne = source->fiveOne && audio != nullptr && audio->getNumChannels() == Surround::fiveOneChannels;
     source->mute = true;
 
     auto& added = s.addTrack();
     added.name = name;
     added.surroundPan = surroundPan;
+    added.fiveOne = fiveOne;
     const auto id = added.id;
     SessionEdits::addClip (s, (int) s.tracks.size() - 1, file, std::move (audio), position);
 

@@ -152,10 +152,16 @@ namespace
         return inserts != nullptr && inserts->isActive (id) ? inserts->getLatency (id) : 0;
     }
 
-    /** A track's own latency: none when it is frozen, as its effects don't run. */
+    /** True when a track's effects run: not when it is frozen or a 5.1 track. */
+    bool runsEffects (const SessionTrack& track)
+    {
+        return ! track.isFrozen() && ! track.fiveOne;
+    }
+
+    /** A track's own latency: none when its effects don't run. */
     int latencyOf (Inserts* inserts, const SessionTrack& track)
     {
-        return track.isFrozen() ? 0 : latencyOf (inserts, track.id);
+        return runsEffects (track) ? latencyOf (inserts, track.id) : 0;
     }
 
     /** A frozen track's audio from frame start, into frames [0, numFrames) of out. */
@@ -236,7 +242,7 @@ namespace
 
         for (auto& t : state.tracks)
         {
-            if (t.isFolder || t.isFrozen() || t.id == track.id)
+            if (t.isFolder || (! t.isBus && ! runsEffects (t)) || t.id == track.id)
                 continue;
 
             for (auto& chain : t.sidechains)
@@ -257,10 +263,11 @@ namespace
         return most;
     }
 
-    /** Adds the first n frames of src, held back by frames, times gain, into dest from destStart.
-        The delay line is the path's own, so it carries over from block to block. */
+    /** Adds the first n frames of src's first channels (two, or six for a 5.1 track's), held back
+        by frames, times gain, into dest from destStart. The delay line is the path's own, so it
+        carries over from block to block. */
     void addHeld (Buffers& buffers, std::pair<juce::uint32, juce::uint32> path, int frames, const juce::AudioBuffer<float>& src,
-                  int n, juce::AudioBuffer<float>& dest, int destStart, float gain, int destChannel = 0)
+                  int n, juce::AudioBuffer<float>& dest, int destStart, float gain, int destChannel = 0, int channels = 2)
     {
         const juce::AudioBuffer<float>* from = &src;
 
@@ -268,22 +275,26 @@ namespace
         {
             auto& delay = buffers.delays[path];
 
-            if (delay.frames != frames)
+            if (delay.frames != frames || delay.ring.getNumChannels() != channels)
             {
-                delay.ring.setSize (2, juce::nextPowerOfTwo (frames + 1));
+                delay.ring.setSize (channels, juce::nextPowerOfTwo (frames + 1));
                 delay.ring.clear();
                 delay.frames = frames;
                 delay.write = 0;
             }
 
-            grow (buffers.held, n);
+            auto& held = channels == 2 ? buffers.held : buffers.wideHeld;
+
+            if (held.getNumChannels() < channels || held.getNumSamples() < n)
+                held.setSize (channels, n, false, false, true);
+
             const auto mask = delay.ring.getNumSamples() - 1;
 
-            for (int ch = 0; ch < 2; ++ch)
+            for (int ch = 0; ch < channels; ++ch)
             {
                 auto* ring = delay.ring.getWritePointer (ch);
                 const auto* in = src.getReadPointer (ch);
-                auto* out = buffers.held.getWritePointer (ch);
+                auto* out = held.getWritePointer (ch);
 
                 for (int i = 0; i < n; ++i)
                 {
@@ -294,10 +305,10 @@ namespace
             }
 
             delay.write = (delay.write + n) & mask;
-            from = &buffers.held;
+            from = &held;
         }
 
-        for (int ch = 0; ch < 2; ++ch)
+        for (int ch = 0; ch < channels; ++ch)
             dest.addFrom (destChannel + ch, destStart, *from, ch, 0, n, gain);
     }
 
@@ -379,6 +390,79 @@ namespace
         }
     }
 
+    /** Reads count frames of a clip from session frame from into scratch (as many channels as
+        scratch has), with its fades and gain envelope; returns the channels it has there. */
+    int readClip (const SessionClip& clip, juce::int64 from, int count, juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains)
+    {
+        const auto channels = juce::jmin (scratch.getNumChannels(), clip.audio->getNumChannels());
+        clip.audio->read (scratch, 0, clip.offset + (from - clip.position), count);
+
+        if (clip.fadeIn > 0 || clip.fadeOut > 0)
+        {
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                auto* s = scratch.getWritePointer (ch);
+
+                for (int i = 0; i < count; ++i)
+                {
+                    const auto inClip = from - clip.position + i;
+                    s[i] *= FadeShapes::level (clip.fadeInShape, inClip, clip.fadeIn)
+                            * FadeShapes::level (clip.fadeOutShape, clip.length - 1 - inClip, clip.fadeOut);
+                }
+            }
+        }
+
+        // The gain envelope, read at the clip's audio frames.
+        if (! clip.gainEnvelope.isEmpty())
+        {
+            grow (gains, count);
+            auto* g = gains.getWritePointer (0);
+            clip.gainEnvelope.fill (clip.offset + (from - clip.position), g, count);
+
+            for (int i = 0; i < count; ++i)
+                g[i] = juce::Decibels::decibelsToGain (g[i], -150.0f);
+
+            for (int ch = 0; ch < channels; ++ch)
+                juce::FloatVectorOperations::multiply (scratch.getWritePointer (ch), g, count);
+        }
+
+        return channels;
+    }
+
+    /** Where a source channel plays on a 5.1 track: mono to C, stereo to L and R, others in order. */
+    int fiveOneChannel (int sourceChannels, int channel)
+    {
+        return sourceChannels == 1 ? 2 : channel;
+    }
+
+    /** A 5.1 track's clips, six channels, before its volume, into frames [0, numFrames) of out. */
+    void renderFiveOne (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
+                        juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains)
+    {
+        out.clear (0, numFrames);
+        const auto end = start + numFrames;
+
+        for (auto& clip : track.clips)
+        {
+            const auto from = juce::jmax (start, clip.position);
+            const auto to = juce::jmin (end, clip.getEnd());
+
+            if (to <= from || clip.audio == nullptr || clip.muted)
+                continue;
+
+            const auto count = (int) (to - from);
+
+            if (scratch.getNumChannels() < 6 || scratch.getNumSamples() < count)
+                scratch.setSize (6, count, false, false, true);
+
+            const auto channels = readClip (clip, from, count, scratch, gains);
+            const auto clipGain = juce::Decibels::decibelsToGain (clip.gainDb, -150.0f);
+
+            for (int ch = 0; ch < channels; ++ch)
+                out.addFrom (fiveOneChannel (channels, ch), (int) (from - start), scratch, ch, 0, count, clipGain);
+        }
+    }
+
     /** The track's clips, panned, before its effects and volume, into frames [0, numFrames) of out.
         pans, when the pan is automated, holds the pan for each of those frames. */
     void renderTrack (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
@@ -397,38 +481,8 @@ namespace
                 continue;
 
             const auto count = (int) (to - from);
-            const auto channels = juce::jmin (2, clip.audio->getNumChannels());
             grow (scratch, count);
-            clip.audio->read (scratch, 0, clip.offset + (from - clip.position), count);
-
-            if (clip.fadeIn > 0 || clip.fadeOut > 0)
-            {
-                for (int ch = 0; ch < channels; ++ch)
-                {
-                    auto* s = scratch.getWritePointer (ch);
-
-                    for (int i = 0; i < count; ++i)
-                    {
-                        const auto inClip = from - clip.position + i;
-                        s[i] *= FadeShapes::level (clip.fadeInShape, inClip, clip.fadeIn)
-                                * FadeShapes::level (clip.fadeOutShape, clip.length - 1 - inClip, clip.fadeOut);
-                    }
-                }
-            }
-
-            // The gain envelope, read at the clip's audio frames.
-            if (! clip.gainEnvelope.isEmpty())
-            {
-                grow (gains, count);
-                auto* g = gains.getWritePointer (0);
-                clip.gainEnvelope.fill (clip.offset + (from - clip.position), g, count);
-
-                for (int i = 0; i < count; ++i)
-                    g[i] = juce::Decibels::decibelsToGain (g[i], -150.0f);
-
-                for (int ch = 0; ch < channels; ++ch)
-                    juce::FloatVectorOperations::multiply (scratch.getWritePointer (ch), g, count);
-            }
+            const auto channels = juce::jmin (2, readClip (clip, from, count, scratch, gains));
 
             const auto clipGain = juce::Decibels::decibelsToGain (clip.gainDb, -150.0f);
             const auto offset = (int) (from - start);
@@ -576,7 +630,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         const auto own = latencyOf (inserts, track);
         const auto ahead = aheadOf (state, track, inserts);
-        const auto panAutomated = ! track.panEnvelope.isEmpty();
+        const auto fiveOne = track.fiveOne && ! track.isFrozen();
+        const auto panAutomated = ! track.panEnvelope.isEmpty() && ! fiveOne;
 
         // The clips are read at start + own + ahead, so that is where their pan is taken from.
         if (panAutomated)
@@ -586,6 +641,16 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         // output at start + ahead.
         if (track.isFrozen())
             readFrozen (track, start + ahead, buffers.track, numFrames);
+        else if (fiveOne)
+        {
+            if (buffers.wide.getNumChannels() < 6 || buffers.wide.getNumSamples() < numFrames)
+                buffers.wide.setSize (6, numFrames, false, false, true);
+
+            if (live == nullptr || live->clips)
+                renderFiveOne (track, start + ahead, buffers.wide, numFrames, buffers.wideClip, buffers.clipGains);
+            else
+                buffers.wide.clear (0, numFrames);
+        }
         else if (live == nullptr || live->clips)
             renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, buffers.clipGains, panAutomated ? pans : nullptr);
         else
@@ -595,15 +660,39 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             for (int i = 0; i < live->count; ++i)
                 if (const auto& in = live->inputs[(size_t) i]; in.trackId == track.id && in.numChannels > 0
                                                                 && in.firstChannel + in.numChannels <= live->audio->getNumChannels())
-                    addLive (in, *live->audio, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
+                {
+                    if (fiveOne)
+                        for (int ch = 0; ch < juce::jlimit (1, 2, in.numChannels); ++ch)
+                            buffers.wide.addFrom (fiveOneChannel (juce::jlimit (1, 2, in.numChannels), ch), 0, *live->audio, in.firstChannel + ch, 0, numFrames);
+                    else
+                        addLive (in, *live->audio, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
+                }
 
-        if (inserts != nullptr && ! track.isFrozen() && inserts->isActive (track.id))
+        if (inserts != nullptr && runsEffects (track) && inserts->isActive (track.id))
             inserts->process (track, start + own + ahead, buffers.track, numFrames,
                               sidechainKeys (state, track, own + ahead, numFrames, buffers, inserts));
 
         if (track.invertPolarity)
+            for (int ch = 0; ch < (fiveOne ? 6 : 2); ++ch)
+            {
+                auto& b = fiveOne ? buffers.wide : buffers.track;
+                juce::FloatVectorOperations::negate (b.getWritePointer (ch), b.getReadPointer (ch), numFrames);
+            }
+
+        // A 5.1 track: folded down into the track buffer for all it feeds but a 5.1 master, its
+        // volume and ducking applied to both.
+        if (fiveOne)
+            Surround::foldDown (buffers.wide.getArrayOfReadPointers(), buffers.track.getWritePointer (0), buffers.track.getWritePointer (1), numFrames);
+
+        const auto applyGains = [&] (const float* gains)
+        {
             for (int ch = 0; ch < 2; ++ch)
-                juce::FloatVectorOperations::negate (buffers.track.getWritePointer (ch), buffers.track.getReadPointer (ch), numFrames);
+                juce::FloatVectorOperations::multiply (buffers.track.getWritePointer (ch), gains, numFrames);
+
+            if (fiveOne)
+                for (int ch = 0; ch < 6; ++ch)
+                    juce::FloatVectorOperations::multiply (buffers.wide.getWritePointer (ch), gains, numFrames);
+        };
 
         // The track's output is now the audio at start + ahead.
         const auto send = [&] (const SessionSend& s, float volume)
@@ -636,9 +725,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             for (int i = 0; i < numFrames; ++i)
                 volumes[i] = juce::Decibels::decibelsToGain (volumes[i], -150.0f);
 
-            for (int ch = 0; ch < 2; ++ch)
-                juce::FloatVectorOperations::multiply (buffers.track.getWritePointer (ch), volumes, numFrames);
-
+            applyGains (volumes);
             volume = 1.0f;
         }
 
@@ -661,9 +748,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
             auto* gains = buffers.duckGains.getWritePointer (0);
             duckGains (track.ducking, state.sampleRate, buffers.ducks[track.id], *lined, gains, numFrames);
-
-            for (int ch = 0; ch < 2; ++ch)
-                juce::FloatVectorOperations::multiply (buffers.track.getWritePointer (ch), gains, numFrames);
+            applyGains (gains);
         }
 
         // Its folder's volume scales what it sends on after its own.
@@ -692,8 +777,13 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         }
         else if (state.surround && track.deviceOutput < 0)
         {
-            // As it starts, the pan is left to L and right to R: straight there, as in a stereo master.
-            if (track.surroundPan.isDefault())
+            // A 5.1 track's channels go to their own; as it starts, a pan is left to L and right
+            // to R: straight there, as in a stereo master.
+            if (fiveOne)
+            {
+                addHeld (buffers, { track.id, 0 }, ahead, buffers.wide, numFrames, buffers.master, 0, volume, 0, 6);
+            }
+            else if (track.surroundPan.isDefault())
             {
                 addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, buffers.master, 0, volume);
             }
