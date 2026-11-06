@@ -18,6 +18,7 @@
 #include "../Source/Sequences.h"
 #include "../Source/TimeStretch.h"
 #include "../Source/Dereverb.h"
+#include "../Source/Leveller.h"
 #include "TestUtils.h"
 #include "SequencesTests.h"
 
@@ -144,6 +145,8 @@ void runSequencesTests (AudioEngine& engine)
             { { "stretch", { { "percent", 120.0 } }, nullptr }, TimeStretch::stretchRange (s, a, b, 1.2, rate) },
             { { "pitch", { { "semitones", -3.0 } }, nullptr }, TimeStretch::shiftRange (s, a, b, -3.0, rate) },
             { { "dereverb", { { "time", 1.5 }, { "reduction", 9.0 } }, nullptr }, Dereverb::reduce (s, a, b, rate, { 1.5f, 9.0f }) },
+            { { "levelSpeech", { { "target", -18.0 }, { "boost", 9.0 }, { "cut", 6.0 }, { "silence", -55.0 } }, nullptr },
+              Leveller::level (s, a, b, rate, { -18.0f, 9.0f, 6.0f, -55.0f }) },
         };
 
         juce::StringArray wrong, covered;
@@ -195,8 +198,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 30,
-               "sequences: each of the 30 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 31,
+               "sequences: each of the 31 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

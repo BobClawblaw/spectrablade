@@ -2,6 +2,7 @@
 #include "Navigation.h"
 #include "Restoration.h"
 #include "Dereverb.h"
+#include "Leveller.h"
 #include "Generator.h"
 #include "LossyFiles.h"
 #include "Ffmpeg.h"
@@ -138,7 +139,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1183,7 +1184,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDereverb; ++id)
+    for (int id = cmdOpen; id <= cmdLevelSpeech; ++id)
         ids.add (id);
 }
 
@@ -1534,6 +1535,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdCaptureNoisePrint: info.setInfo ("Capture Noise Print", "Learn the noise from a selection of noise alone", "Effects", 0);
             info.addDefaultKeypress ('p', juce::ModifierKeys::shiftModifier);
             info.setActive (waveform.getSelection().getLength() >= NoiseReduction::frameSize); break;
+        case cmdLevelSpeech: info.setInfo ("Level Speech...", "Even out the level of speech in the selection or file, raising quiet passages and lowering loud ones", "Effects", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdDereverb:   info.setInfo ("Reduce Reverb...", "Lower the room's reverberation in the selection or file, keeping the direct sound", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdNoiseReduction: info.setInfo ("Noise Reduction...", "Reduce the captured noise in the selection or file", "Effects", 0);
@@ -2299,6 +2302,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCaptureNoisePrint: captureNoisePrint(); break;
         case cmdNoiseReduction: askForNoiseReduction(); break;
         case cmdDereverb:   askToReduceReverb(); break;
+        case cmdLevelSpeech: askToLevelSpeech(); break;
         case cmdClickRepair: askForClickRepair(); break;
         case cmdRemoveHum:  showRemoveHum(); break;
         case cmdDeclip:     showDeclip(); break;
@@ -2390,7 +2394,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLevelSpeech, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -4917,6 +4921,48 @@ void MainComponent::askToShiftPitch()
 
         if (std::abs (semitones) >= 0.005)
             runStepInBackground ({ "pitch", { { "semitones", semitones } }, nullptr }, "Shifting the pitch...");
+    }), true);
+}
+
+void MainComponent::askToLevelSpeech()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Level Speech",
+                                       "Raises quiet passages and lowers loud ones towards the target, smoothly over about a second. Pauses "
+                                       "quieter than the silence threshold take the gain of the speech around them rather than being raised "
+                                       "themselves, and no sample comes out above -1 dBFS.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("target", juce::String (settings->getDoubleValue ("levelTarget", -20.0), 1), "Target (LUFS, -40 to -5)");
+    box->addTextEditor ("boost", juce::String (settings->getDoubleValue ("levelBoost", 12.0), 1), "Largest boost (dB, 0 to 30)");
+    box->addTextEditor ("cut", juce::String (settings->getDoubleValue ("levelCut", 12.0), 1), "Largest cut (dB, 0 to 30)");
+    box->addTextEditor ("silence", juce::String (settings->getDoubleValue ("levelSilence", -50.0), 1), "Silence below (LUFS, -80 to -20)");
+
+    for (auto* name : { "target", "boost", "cut", "silence" })
+        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
+
+    box->addButton ("Level", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const Leveller::Settings s { box->getTextEditorContents ("target").getFloatValue(), box->getTextEditorContents ("boost").getFloatValue(),
+                                     box->getTextEditorContents ("cut").getFloatValue(), box->getTextEditorContents ("silence").getFloatValue() };
+
+        if (! Leveller::isValid (s))
+        {
+            showError ("Level Speech", "The target must be from -40 to -5 LUFS, the boost and cut from 0 to 30 dB, and the silence "
+                                       "threshold from -80 to -20 LUFS.");
+            return;
+        }
+
+        settings->setValue ("levelTarget", s.targetLufs);
+        settings->setValue ("levelBoost", s.maxBoostDb);
+        settings->setValue ("levelCut", s.maxCutDb);
+        settings->setValue ("levelSilence", s.silenceLufs);
+        runStepInBackground ({ "levelSpeech", { { "target", s.targetLufs }, { "boost", s.maxBoostDb }, { "cut", s.maxCutDb }, { "silence", s.silenceLufs } }, nullptr },
+                             "Levelling speech...");
     }), true);
 }
 

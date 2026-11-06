@@ -235,6 +235,61 @@ std::optional<Result> measure (const AudioSnapshot& snapshot, juce::int64 start,
     return r;
 }
 
+std::optional<std::vector<double>> stepPowers (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate,
+                                               int stepFrames, const std::function<bool (float)>& progress)
+{
+    constexpr int chunk = 1 << 16;
+    const auto channels = snapshot.getNumChannels();
+    std::vector<std::pair<Biquad, Biquad>> filters;
+    std::vector<double> powers;
+
+    if (end <= start || stepFrames <= 0)
+        return powers;
+
+    for (int ch = 0; ch < channels; ++ch)
+        filters.push_back (kWeighting (sampleRate));
+
+    juce::AudioBuffer<float> buffer (channels, chunk);
+    double sum = 0.0;
+    int fill = 0;
+
+    for (auto pos = start; pos < end; pos += chunk)
+    {
+        const auto count = (int) juce::jmin ((juce::int64) chunk, end - pos);
+        snapshot.read (buffer, 0, pos, count);
+
+        for (int i = 0; i < count; ++i)
+        {
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                const auto w = channelWeight (ch, channels);
+
+                if (w <= 0.0)
+                    continue;
+
+                auto& [shelf, highPass] = filters[(size_t) ch];
+                const auto y = highPass.process (shelf.process ((double) buffer.getSample (ch, i)));
+                sum += w * y * y;
+            }
+
+            if (++fill == stepFrames)
+            {
+                powers.push_back (sum / stepFrames);
+                sum = 0.0;
+                fill = 0;
+            }
+        }
+
+        if (progress != nullptr && ! progress ((float) ((double) (pos + count - start) / (double) (end - start))))
+            return std::nullopt;
+    }
+
+    if (fill > 0)
+        powers.push_back (sum / fill);
+
+    return powers;
+}
+
 Result measure (const juce::AudioBuffer<float>& buffer, double sampleRate)
 {
     std::vector<AudioSnapshot::Segment> segments;

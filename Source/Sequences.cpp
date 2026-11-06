@@ -2,6 +2,7 @@
 #include "TimeStretch.h"
 #include "AudioEdits.h"
 #include "Dereverb.h"
+#include "Leveller.h"
 #include "Dynamics.h"
 #include "Equalizer.h"
 #include "Loudness.h"
@@ -60,6 +61,7 @@ namespace
             { "phaser", "Phaser", { "rate", "low", "high", "stages", "feedback", "mix", "spread" } },
             { "reverb", "Reverb", { "preDelay", "decay", "size", "damping", "width", "mix" } },
             { "dereverb", "Reduce Reverb", { "time", "reduction" } },
+            { "levelSpeech", "Level Speech", { "target", "boost", "cut", "silence" } },
             { "stretch", "Stretch", { "percent" } },
             { "pitch", "Shift Pitch", { "semitones" } },
             { "convertRate", "Convert Sample Rate", { "rate" } },
@@ -101,6 +103,11 @@ namespace
     {
         return { get (v, "rate"), get (v, "low"), get (v, "high"), 2 * ((int) std::lround (get (v, "stages")) + 1),
                  get (v, "feedback"), get (v, "mix"), get (v, "spread") };
+    }
+
+    Leveller::Settings levellerOf (const Values& v)
+    {
+        return { (float) get (v, "target"), (float) get (v, "boost"), (float) get (v, "cut"), (float) get (v, "silence") };
     }
 
     RoomReverb::Settings reverbOf (const Values& v)
@@ -148,6 +155,9 @@ juce::String Step::name() const
 
     if (kind == "convertRate")
         return "Convert to " + juce::String (get (values, "rate") / 1000.0, 1) + " kHz";
+
+    if (kind == "levelSpeech")
+        return "Level Speech to " + Loudness::format (get (values, "target"), "LUFS");
 
     if (kind == "dereverb")
         return "Reduce Reverb " + juce::String (get (values, "reduction"), 1) + " dB";
@@ -219,6 +229,7 @@ juce::String problem (const Step& step, double rate)
         || ((step.kind == "chorus" || step.kind == "flanger") && ! Modulation::isValid (delayOf (v)))
         || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
         || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v)))
+        || (step.kind == "levelSpeech" && ! Leveller::isValid (levellerOf (v)))
         || (step.kind == "dereverb" && ! Dereverb::isValid ({ (float) get (v, "time"), (float) get (v, "reduction") })))
         return bad();
 
@@ -259,6 +270,19 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
     else if (k == "chorus" || k == "flanger") out.snapshot = Modulation::sweptDelay (s, start, end, rate, delayOf (v));
     else if (k == "phaser")         out.snapshot = Modulation::phaser (s, start, end, rate, phaserOf (v));
     else if (k == "reverb")         out.snapshot = RoomReverb::apply (s, start, end, rate, reverbOf (v));
+    else if (k == "levelSpeech")
+    {
+        if (end > start)
+        {
+            out.snapshot = Leveller::level (s, start, end, rate, levellerOf (v), progress);
+
+            if (out.snapshot == nullptr)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+        }
+    }
     else if (k == "dereverb")
     {
         if (end > start && get (v, "reduction") > 0.0)

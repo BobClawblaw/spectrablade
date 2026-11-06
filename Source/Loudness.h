@@ -27,6 +27,13 @@ namespace Loudness
     /** For a buffer (tests). */
     Result measure (const juce::AudioBuffer<float>&, double sampleRate);
 
+    /** The K-weighted power of frames [start, end) in steps of stepFrames (the last one may be
+        shorter), summed over channels with BS.1770's weights: -0.691 + 10 log10 of a mean of
+        these is loudness in LUFS. Outside the snapshot counts as silence. progress as above;
+        nothing when cancelled. */
+    std::optional<std::vector<double>> stepPowers (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate,
+                                                   int stepFrames, const std::function<bool (float)>& progress = {});
+
     /** "-23.0 LUFS", or "-inf" when there is nothing above the gate. */
     juce::String format (double value, const juce::String& unit);
 }
