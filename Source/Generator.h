@@ -27,6 +27,37 @@ namespace Generator
         juce::int64 seed = 1;           // the same seed gives the same noise
     };
 
+    /** Telephone signalling: each character a pair of tones played together.
+        DTMF (touch-tone): 0-9, * and #, and A-D, a row tone (697, 770, 852 or 941 Hz) with a column
+        tone (1209, 1336, 1477 or 1633 Hz). MF (R1, between exchanges): 0-9, K for KP (start) and S
+        for ST (end), two of 700, 900, 1100, 1300, 1500 and 1700 Hz. A comma is a pause as long as
+        a tone. */
+    enum class Signalling { dtmf, mf };
+
+    struct ToneSequence
+    {
+        Signalling kind = Signalling::dtmf;
+        juce::String characters;        // the digits to play, from 1 to maxCharacters
+        double toneMs = 100.0;          // each pair, from 20 to 2000 ms
+        double gapMs = 100.0;           // silence between them, from 0 to 2000 ms
+        double levelDb = -6.0;          // the pair's peak, -96 to 0 dBFS: each tone at half of it
+
+        static constexpr int maxCharacters = 256;
+        static constexpr double rampMs = 2.0;   // each pair rises and falls over this (raised cosine)
+    };
+
+    /** The pair of frequencies a character stands for, or nothing for one the kind doesn't have
+        (a comma included). */
+    std::optional<std::pair<double, double>> frequenciesOf (Signalling, juce::juce_wchar);
+
+    /** Characters all of the kind's (or commas, not only commas), timings and level in range, and the
+        highest tone below half the sample rate. */
+    bool isValid (const ToneSequence&, double sampleRate);
+
+    /** numChannels channels of the sequence, every channel the same: each pair toneMs long, a gap
+        after each but the last. Empty when invalid. */
+    juce::AudioBuffer<float> toneSequence (const ToneSequence&, int numChannels, double sampleRate);
+
     /** The loudest RMS level allowed: white noise peaks 4.8 dB above its RMS at most, so -6 dBFS
         peaks at -1.2; pink and brown peak about 13 dB above it over seconds and more over hours,
         so -20 dBFS leaves them room. */

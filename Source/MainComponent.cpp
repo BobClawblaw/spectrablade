@@ -141,7 +141,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -154,7 +154,7 @@ namespace
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
-            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection;
+            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1187,7 +1187,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdPhaseCorrection; ++id)
+    for (int id = cmdOpen; id <= cmdGenerateTones; ++id)
         ids.add (id);
 }
 
@@ -1363,6 +1363,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (hasAudio); break;
         case cmdGenerateTone: info.setInfo ("Generate Tone...", "Put a tone or sweep in at the cursor, or the start of the selection", "Effects", 0);
                               info.setActive (hasAudio); break;
+        case cmdGenerateTones: info.setInfo ("Generate DTMF Tones...", "Put telephone signalling tones (DTMF or MF) for typed digits in at the cursor, or the start of the selection", "Effects", 0);
+                               info.setActive (hasAudio); break;
         case cmdGenerateNoise: info.setInfo ("Generate Noise...", "Put white, pink or brown noise in at the cursor, or the start of the selection", "Effects", 0);
                                info.setActive (hasAudio); break;
         case cmdInsertSilence: info.setInfo ("Insert Silence...", "Put a chosen length of silence in at the cursor, or the start of the selection", "Effects", 0);
@@ -2009,6 +2011,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdInsertSilence: showInsertSilence(); break;
         case cmdGenerateTone: showGenerateTone(); break;
         case cmdGenerateNoise: showGenerateNoise(); break;
+        case cmdGenerateTones: showGenerateTones(); break;
         case cmdSelectAudible: selectAudibleSpan(); break;
         case cmdFindClipping: findNextClipping(); break;
         case cmdMarkClipping: addMarkersAtClipping(); break;
@@ -2423,7 +2426,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
+            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
@@ -6313,6 +6316,59 @@ void MainComponent::showGenerateTone()
                           toneFadeMs = t.fadeMs;
                           insertGenerated (Generator::tone (t, channels, (int) std::round (toneSeconds * rate), rate), "Generate Tone");
                       });
+}
+
+void MainComponent::showGenerateTones()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Generate DTMF Tones",
+                                       "Puts a pair of tones for each digit in at the cursor, or the start of the selection, the same on every "
+                                       "channel, moving what follows on. DTMF (touch-tone) has 0-9, * and #, and A-D; MF (R1, between "
+                                       "exchanges) has 0-9, K for KP and S for ST. A comma is a pause as long as a tone. The level is the "
+                                       "pair's peak, each tone at half of it; each pair rises and falls over 2 ms.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addComboBox ("kind", { "DTMF", "MF (R1)" }, "Signalling");
+    box->getComboBoxComponent ("kind")->setSelectedItemIndex (settings->getIntValue ("tonesKind", 0) == 1 ? 1 : 0);
+    box->addTextEditor ("characters", settings->getValue ("tonesCharacters", "5551234"), "Digits");
+    box->getTextEditor ("characters")->setInputRestrictions (Generator::ToneSequence::maxCharacters, "0123456789*#ABCDabcdKSks,");
+    box->addTextEditor ("tone", juce::String (settings->getDoubleValue ("tonesToneMs", 100.0), 0), "Each tone (ms, 20 to 2000)");
+    box->addTextEditor ("gap", juce::String (settings->getDoubleValue ("tonesGapMs", 100.0), 0), "Between (ms, 0 to 2000)");
+    box->addTextEditor ("level", juce::String (settings->getDoubleValue ("tonesLevel", -6.0), 1), "Level (dBFS peak, -96 to 0)");
+
+    for (auto* name : { "tone", "gap" })
+        box->getTextEditor (name)->setInputRestrictions (7, ".0123456789");
+
+    box->getTextEditor ("level")->setInputRestrictions (7, "-.0123456789");
+    box->addButton ("Generate", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1 || ! engine.document.hasAudio())
+            return;
+
+        const auto rate = engine.document.getSampleRate();
+        Generator::ToneSequence t;
+        t.kind = box->getComboBoxComponent ("kind")->getSelectedItemIndex() == 1 ? Generator::Signalling::mf : Generator::Signalling::dtmf;
+        t.characters = box->getTextEditorContents ("characters").removeCharacters (" ");
+        t.toneMs = box->getTextEditorContents ("tone").getDoubleValue();
+        t.gapMs = box->getTextEditorContents ("gap").getDoubleValue();
+        t.levelDb = box->getTextEditorContents ("level").getDoubleValue();
+
+        if (! Generator::isValid (t, rate))
+        {
+            showError ("Generate DTMF Tones", juce::String (t.kind == Generator::Signalling::dtmf ? "DTMF takes 0-9, *, # and A-D" : "MF takes 0-9, K and S")
+                                                  + " (and commas for pauses), at least one digit; each tone must be from 20 to 2000 ms, the "
+                                                    "time between from 0 to 2000 ms, and the level from -96 to 0 dBFS.");
+            return;
+        }
+
+        settings->setValue ("tonesKind", t.kind == Generator::Signalling::mf ? 1 : 0);
+        settings->setValue ("tonesCharacters", t.characters);
+        settings->setValue ("tonesToneMs", t.toneMs);
+        settings->setValue ("tonesGapMs", t.gapMs);
+        settings->setValue ("tonesLevel", t.levelDb);
+        insertGenerated (Generator::toneSequence (t, engine.document.getSnapshot()->getNumChannels(), rate), "Generate DTMF Tones");
+    }), true);
 }
 
 void MainComponent::showGenerateNoise()

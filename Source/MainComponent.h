@@ -165,6 +165,7 @@ private:
     void showDeclip();
     void showGenerateTone();
     void showGenerateNoise();
+    void showGenerateTones();
     void exportLossy();
     void askLossySettings (const juce::File&, juce::Range<juce::int64> selection);
     void exportWithFfmpeg();

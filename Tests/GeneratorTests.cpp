@@ -208,6 +208,136 @@ namespace
                "generate: put in at a point, the generated audio is there bit for bit, with what was before it and after it unchanged; "
                "a channel count unlike the file's is refused");
     }
+
+    /** A sine's amplitude in [from, from + n) of a channel, through a Hann window (so tones 70 Hz
+        apart don't leak into each other's reading). */
+    double windowedAmplitude (const juce::AudioBuffer<float>& b, int channel, double frequency, int from, int n)
+    {
+        double re = 0.0, im = 0.0, weights = 0.0;
+
+        for (int i = 0; i < n; ++i)
+        {
+            const auto w = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * (i + 0.5) / n);
+            const auto phase = juce::MathConstants<double>::twoPi * frequency * (from + i) / rate;
+            re += w * b.getSample (channel, from + i) * std::cos (phase);
+            im += w * b.getSample (channel, from + i) * std::sin (phase);
+            weights += w;
+        }
+
+        return 2.0 * std::sqrt (re * re + im * im) / weights;
+    }
+
+    /** Reads the characters back from a tone sequence: in each tone's middle (past its ramps), the
+        two loudest of the kind's frequencies, matched to a character. */
+    juce::String decode (const juce::AudioBuffer<float>& b, Generator::Signalling kind, int tone, int gap, double& weakestPair, double& loudestOther)
+    {
+        const std::vector<double> dtmf { 697.0, 770.0, 852.0, 941.0, 1209.0, 1336.0, 1477.0, 1633.0 },
+                                  mf { 700.0, 900.0, 1100.0, 1300.0, 1500.0, 1700.0 };
+        const auto& all = kind == Generator::Signalling::dtmf ? dtmf : mf;
+        const juce::String keys = kind == Generator::Signalling::dtmf ? "0123456789*#ABCD" : "1234567890KS";
+        const auto ramp = (int) std::round (Generator::ToneSequence::rampMs * 0.001 * rate);
+        juce::String out;
+
+        for (int at = 0; at + tone <= b.getNumSamples(); at += tone + gap)
+        {
+            std::vector<std::pair<double, double>> heard;
+
+            for (auto f : all)
+                heard.emplace_back (windowedAmplitude (b, 0, f, at + ramp, tone - 2 * ramp), f);
+
+            std::sort (heard.begin(), heard.end(), std::greater<>());
+
+            if (heard[0].first < 1.0e-6)
+            {
+                out << ",";
+                continue;
+            }
+
+            weakestPair = juce::jmin (weakestPair, heard[1].first);
+            loudestOther = juce::jmax (loudestOther, heard[2].first);
+            const auto lo = juce::jmin (heard[0].second, heard[1].second), hi = juce::jmax (heard[0].second, heard[1].second);
+
+            for (auto c : keys)
+                if (const auto f = Generator::frequenciesOf (kind, c); f.has_value() && juce::exactlyEqual (f->first, lo) && juce::exactlyEqual (f->second, hi))
+                    out << juce::String::charToString (c);
+        }
+
+        return out;
+    }
+
+    void testToneSequences()
+    {
+        Generator::ToneSequence dtmf;
+        dtmf.characters = "123A456B789C*0#D,5";
+        dtmf.toneMs = 70.0;
+        dtmf.gapMs = 50.0;
+        dtmf.levelDb = -6.0;
+        const auto tone = (int) std::round (0.07 * rate), gap = (int) std::round (0.05 * rate);
+        const auto b = Generator::toneSequence (dtmf, 2, rate);
+        auto weakest = 1.0, other = 0.0;
+        const auto heard = decode (b, Generator::Signalling::dtmf, tone, gap, weakest, other);
+
+        // Between the tones (and in the pause) nothing; the peak no higher than the level; both channels alike.
+        auto silentGaps = true, same = true;
+        auto peak = 0.0f;
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const auto inGap = i % (tone + gap) >= tone || (i >= 16 * (tone + gap) && i < 16 * (tone + gap) + tone);
+            silentGaps = silentGaps && (! inGap || b.getSample (0, i) == 0.0f);
+            same = same && juce::exactlyEqual (b.getSample (0, i), b.getSample (1, i));
+            peak = juce::jmax (peak, std::abs (b.getSample (0, i)));
+        }
+
+        const auto each = 0.5 * juce::Decibels::decibelsToGain (-6.0);
+        check (heard == "123A456B789C*0#D,5" && b.getNumSamples() == 18 * tone + 17 * gap && silentGaps && same
+                   && std::abs (db (weakest / each)) < 0.05 && db (other / each) < -40.0 && db (peak) <= -6.0 && db (peak) > -6.5,
+               "generate DTMF: all 16 keys and a pause read back from the tones (" + heard + "), each tone of a pair at half the level (within "
+                   + juce::String (std::abs (db (weakest / each)), 3) + " dB), the other six frequencies " + juce::String (-db (other / each), 1)
+                   + " dB down or more, silent between, the length exact, the peak " + juce::String (db (peak), 2) + " dBFS for -6");
+
+        Generator::ToneSequence mf;
+        mf.kind = Generator::Signalling::mf;
+        mf.characters = "K1234567890S";
+        mf.toneMs = 68.0;
+        mf.gapMs = 68.0;
+        const auto mfTone = (int) std::round (0.068 * rate);
+        auto mfWeakest = 1.0, mfOther = 0.0;
+        const auto mfHeard = decode (Generator::toneSequence (mf, 1, rate), Generator::Signalling::mf, mfTone, mfTone, mfWeakest, mfOther);
+        check (mfHeard == "K1234567890S" && db (mfOther / mfWeakest) < -40.0,
+               "generate MF (R1): KP, the ten digits and ST read back from the tones (" + mfHeard + "), the other four frequencies "
+                   + juce::String (-db (mfOther / mfWeakest), 1) + " dB down or more");
+
+        // Lower case is the same; characters the kind lacks, only pauses, timings or a level out of
+        // range, and a rate too low for the highest tone are refused.
+        Generator::ToneSequence lower = dtmf;
+        lower.characters = "abcd";
+        Generator::ToneSequence upper = dtmf;
+        upper.characters = "ABCD";
+        const auto refused = [] (juce::String chars, Generator::Signalling kind, double toneMs, double gapMs, double level, double r)
+        {
+            Generator::ToneSequence t;
+            t.characters = chars;
+            t.kind = kind;
+            t.toneMs = toneMs;
+            t.gapMs = gapMs;
+            t.levelDb = level;
+            return ! Generator::isValid (t, r) && Generator::toneSequence (t, 1, r).getNumSamples() == 0;
+        };
+        const auto a = Generator::toneSequence (lower, 1, rate), c = Generator::toneSequence (upper, 1, rate);
+        auto alike = a.getNumSamples() == c.getNumSamples() && a.getNumSamples() > 0;
+
+        for (int i = 0; alike && i < a.getNumSamples(); ++i)
+            alike = juce::exactlyEqual (a.getSample (0, i), c.getSample (0, i));
+
+        check (alike && refused ("12x", Generator::Signalling::dtmf, 100.0, 100.0, -6.0, rate) && refused ("*", Generator::Signalling::mf, 100.0, 100.0, -6.0, rate)
+                   && refused (",,", Generator::Signalling::dtmf, 100.0, 100.0, -6.0, rate) && refused ("", Generator::Signalling::dtmf, 100.0, 100.0, -6.0, rate)
+                   && refused ("1", Generator::Signalling::dtmf, 19.0, 100.0, -6.0, rate) && refused ("1", Generator::Signalling::dtmf, 100.0, 2001.0, -6.0, rate)
+                   && refused ("1", Generator::Signalling::dtmf, 100.0, 100.0, 0.5, rate) && refused ("D", Generator::Signalling::dtmf, 100.0, 100.0, -6.0, 3200.0)
+                   && ! refused ("1", Generator::Signalling::dtmf, 100.0, 100.0, -6.0, 3200.0),
+               "generate DTMF: lower-case letters are the same keys; characters the kind lacks, only pauses, timings or a level out of "
+               "range, and a sample rate too low for the highest tone are refused");
+    }
 }
 
 void runGeneratorTests()
@@ -215,4 +345,5 @@ void runGeneratorTests()
     testTones();
     testNoise();
     testInsert();
+    testToneSequences();
 }

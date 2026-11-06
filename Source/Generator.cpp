@@ -41,6 +41,94 @@ namespace Generator
                && t.levelDb >= -96.0 && t.levelDb <= 0.0 && t.fadeMs >= 0.0 && t.fadeMs <= 1000.0;
     }
 
+    std::optional<std::pair<double, double>> frequenciesOf (Signalling kind, juce::juce_wchar c)
+    {
+        if (kind == Signalling::dtmf)
+        {
+            static const juce::String keys ("123A456B789C*0#D");
+            const auto at = keys.indexOfChar (juce::CharacterFunctions::toUpperCase (c));
+
+            if (at < 0)
+                return {};
+
+            static constexpr double rows[] { 697.0, 770.0, 852.0, 941.0 }, columns[] { 1209.0, 1336.0, 1477.0, 1633.0 };
+            return std::pair { rows[at / 4], columns[at % 4] };
+        }
+
+        static const juce::String keys ("1234567890KS");
+        static constexpr double pairs[][2] { { 700.0, 900.0 }, { 700.0, 1100.0 }, { 900.0, 1100.0 }, { 700.0, 1300.0 }, { 900.0, 1300.0 },
+                                             { 1100.0, 1300.0 }, { 700.0, 1500.0 }, { 900.0, 1500.0 }, { 1100.0, 1500.0 }, { 1300.0, 1500.0 },
+                                             { 1100.0, 1700.0 }, { 1500.0, 1700.0 } };
+        const auto at = keys.indexOfChar (juce::CharacterFunctions::toUpperCase (c));
+
+        if (at < 0)
+            return {};
+
+        return std::pair { pairs[at][0], pairs[at][1] };
+    }
+
+    bool isValid (const ToneSequence& t, double sampleRate)
+    {
+        if (sampleRate <= 0.0 || t.characters.isEmpty() || t.characters.length() > ToneSequence::maxCharacters
+            || ! (t.toneMs >= 20.0 && t.toneMs <= 2000.0) || ! (t.gapMs >= 0.0 && t.gapMs <= 2000.0) || ! (t.levelDb >= -96.0 && t.levelDb <= 0.0))
+            return false;
+
+        auto tones = 0;
+
+        for (auto c : t.characters)
+        {
+            if (c == ',')
+                continue;
+
+            const auto f = frequenciesOf (t.kind, c);
+
+            if (! f.has_value() || f->second >= 0.5 * sampleRate)
+                return false;
+
+            ++tones;
+        }
+
+        return tones > 0;
+    }
+
+    juce::AudioBuffer<float> toneSequence (const ToneSequence& t, int numChannels, double sampleRate)
+    {
+        if (! isValid (t, sampleRate))
+            return juce::AudioBuffer<float> (juce::jmax (1, numChannels), 0);
+
+        const auto tone = (int) std::round (t.toneMs * 0.001 * sampleRate), gap = (int) std::round (t.gapMs * 0.001 * sampleRate);
+        const auto count = t.characters.length();
+        juce::AudioBuffer<float> b (juce::jmax (1, numChannels), count * tone + (count - 1) * gap);
+        b.clear();
+
+        const auto each = 0.5 * juce::Decibels::decibelsToGain (t.levelDb, -200.0);
+        const auto ramp = juce::jmin (tone / 2, (int) std::round (ToneSequence::rampMs * 0.001 * sampleRate));
+        auto* out = b.getWritePointer (0);
+        auto at = 0;
+
+        for (auto c : t.characters)
+        {
+            if (const auto f = frequenciesOf (t.kind, c))
+            {
+                for (int i = 0; i < tone; ++i)
+                {
+                    const auto edge = juce::jmin (i, tone - 1 - i);
+                    const auto shape = edge >= ramp ? 1.0 : 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * (edge + 0.5) / ramp);
+                    const auto x = (double) i / sampleRate;
+                    out[at + i] = (float) (each * shape * (std::sin (juce::MathConstants<double>::twoPi * f->first * x)
+                                                           + std::sin (juce::MathConstants<double>::twoPi * f->second * x)));
+                }
+            }
+
+            at += tone + gap;
+        }
+
+        for (int ch = 1; ch < b.getNumChannels(); ++ch)
+            b.copyFrom (ch, 0, b, 0, 0, b.getNumSamples());
+
+        return b;
+    }
+
     double maxLevelDb (Colour c)
     {
         return c == Colour::white ? -6.0 : -20.0;
