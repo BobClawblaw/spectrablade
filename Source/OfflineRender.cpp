@@ -200,10 +200,12 @@ bool mixSession (const SessionState& state, juce::Range<juce::int64> range, juce
                  SessionMixer::Inserts* inserts, const std::function<bool (float)>& progress)
 {
     const auto total = (int) range.getLength();
-    dest.setSize (2, total);
+    dest.setSize (state.surround ? 6 : 2, total);
 
     SessionMixer::Buffers buffers;
     buffers.reserve (blockSize);
+    buffers.surroundChannel = 2;     // a 5.1 master's six channels in file order
+    buffers.interfaceChannel = -1;   // the mix alone
 
     if (inserts != nullptr)
         SessionMixer::prime (state, range.getStart(), buffers, *inserts);

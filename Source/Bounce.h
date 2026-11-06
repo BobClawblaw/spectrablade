@@ -9,13 +9,13 @@ namespace Bounce
     /** The session with only this track in it, sends removed, unmuted and unsoloed, and into the
         mix even if it plays out of an interface pair, with the keys it ducks under and its
         effects' sidechains listen to (SessionEdits::addKeys): mixed, it gives the track's own
-        sound (not through buses). */
+        sound (not through buses), placed by its surround pan in a 5.1 master. */
     SessionState isolate (const SessionState&, juce::uint32 trackId);
 
     /** Puts a bounce into the session: a new track right after the source, named after it, with
         the audio as one clip at position (the file is the clip's source), the source's sends,
-        which now carry the bounced audio, its output (a bus or an interface pair) and its folder;
-        the source is muted.
+        which now carry the bounced audio, its output (a bus or an interface pair), its surround pan
+        and its folder; the source is muted.
         Returns the new track's id, or 0 when the source track is no longer there. */
     juce::uint32 land (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot, juce::int64 position);
 

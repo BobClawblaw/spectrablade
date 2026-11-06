@@ -15,6 +15,15 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
     xml->setAttribute ("bus", t->isBus);
     xml->setAttribute ("gainDb", t->gainDb);
     xml->setAttribute ("pan", t->pan);
+
+    if (! t->surroundPan.isDefault())
+    {
+        xml->setAttribute ("surroundX", t->surroundPan.x);
+        xml->setAttribute ("surroundY", t->surroundPan.y);
+        xml->setAttribute ("surroundWidth", t->surroundPan.width);
+        xml->setAttribute ("lfeDb", t->surroundPan.lfeDb);
+    }
+
     xml->setAttribute ("colour", t->colour);
     xml->setAttribute ("note", t->note);
     xml->setAttribute ("inputFirst", t->input.first);
@@ -58,6 +67,9 @@ Added add (SessionState& s, const juce::XmlElement& xml)
     t.input.first = xml.getIntAttribute ("inputFirst", t.input.first);
     t.input.channels = xml.getIntAttribute ("inputChannels", t.input.channels);
     const auto id = t.id;
+    SessionEdits::setSurroundPan (s, id, { (float) xml.getDoubleAttribute ("surroundX", 0.0), (float) xml.getDoubleAttribute ("surroundY", 1.0),
+                                           (float) xml.getDoubleAttribute ("surroundWidth", 1.0),
+                                           (float) xml.getDoubleAttribute ("lfeDb", SurroundPan::lfeOff) });
 
     if (! t.isBus)
     {

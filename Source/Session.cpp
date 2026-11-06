@@ -1554,6 +1554,7 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
 {
     auto alone = s;
     alone.tracks.clear();
+    alone.surround = false;   // the track's own stereo sound: its surround pan places it afterwards
 
     if (const auto* track = s.findTrack (trackId))
     {
@@ -1664,6 +1665,34 @@ bool setTrackDeviceOutput (SessionState& s, juce::uint32 trackId, int firstChann
 
     track->outputBusId = 0;
     track->deviceOutput = firstChannel;
+    return true;
+}
+
+bool setSurround (SessionState& s, bool fiveOne)
+{
+    if (s.surround == fiveOne)
+        return false;
+
+    s.surround = fiveOne;
+    return true;
+}
+
+bool setSurroundPan (SessionState& s, juce::uint32 trackId, SurroundPan pan)
+{
+    auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || track->isFolder)
+        return false;
+
+    pan.x = juce::jlimit (-1.0f, 1.0f, std::isfinite (pan.x) ? pan.x : 0.0f);
+    pan.y = juce::jlimit (-1.0f, 1.0f, std::isfinite (pan.y) ? pan.y : 1.0f);
+    pan.width = juce::jlimit (0.0f, 1.0f, std::isfinite (pan.width) ? pan.width : 1.0f);
+    pan.lfeDb = ! std::isfinite (pan.lfeDb) || pan.lfeDb < -60.0f ? SurroundPan::lfeOff : juce::jmin (pan.lfeDb, SurroundPan::maxLfeDb);
+
+    if (track->surroundPan == pan)
+        return false;
+
+    track->surroundPan = pan;
     return true;
 }
 
@@ -2064,6 +2093,9 @@ juce::String save (const SessionState& state, const juce::File& target,
     root.setAttribute ("tempo", state.tempo);
     root.setAttribute ("beatsPerBar", state.beatsPerBar);
 
+    if (state.surround)
+        root.setAttribute ("surround", true);
+
     // Sends name their bus by its place in the file, since ids are given out afresh on loading.
     std::map<juce::uint32, int> indexOf;
 
@@ -2091,6 +2123,16 @@ juce::String save (const SessionState& state, const juce::File& target,
             track->setAttribute ("output", indexOf[t.outputBusId]);
         else if (t.deviceOutput >= 0)
             track->setAttribute ("deviceOutput", t.deviceOutput);
+
+        if (! t.isFolder && ! t.surroundPan.isDefault())
+        {
+            track->setAttribute ("surroundX", t.surroundPan.x);
+            track->setAttribute ("surroundY", t.surroundPan.y);
+            track->setAttribute ("surroundWidth", t.surroundPan.width);
+
+            if (t.surroundPan.lfeDb > SurroundPan::lfeOff)
+                track->setAttribute ("lfeDb", t.surroundPan.lfeDb);
+        }
 
         if (t.ducking.isOn() && indexOf.count (t.ducking.keyTrackId) > 0)
         {
@@ -2303,6 +2345,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     state.sampleRate = root->getDoubleAttribute ("sampleRate", 48000.0);
     state.tempo = juce::jlimit (20.0, 400.0, root->getDoubleAttribute ("tempo", 120.0));
     state.beatsPerBar = juce::jlimit (1, 16, root->getIntAttribute ("beatsPerBar", 4));
+    state.surround = root->getBoolAttribute ("surround");
     std::map<juce::String, AudioDocument::Snapshot> audio;   // by full path: each file read once
     std::map<int, juce::uint32> groups;                      // a clip group's saved id, and its id now
 
@@ -2341,6 +2384,12 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
         if (const auto pair = trackXml->getIntAttribute ("deviceOutput", -1); ! track.isFolder && pair >= 0 && pair < SessionTrack::maxDeviceOutputs - 1)
             track.deviceOutput = pair;
+
+        if (! track.isFolder)
+            SessionEdits::setSurroundPan (state, track.id, { (float) trackXml->getDoubleAttribute ("surroundX", 0.0),
+                                                            (float) trackXml->getDoubleAttribute ("surroundY", 1.0),
+                                                            (float) trackXml->getDoubleAttribute ("surroundWidth", 1.0),
+                                                            (float) trackXml->getDoubleAttribute ("lfeDb", SurroundPan::lfeOff) });
 
         if (const auto* duck = trackXml->getChildByName ("DUCKING"))
         {

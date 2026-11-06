@@ -3,7 +3,7 @@
 #include "Session.h"
 
 /** Track templates (.sbtrack): a track's or bus's settings to start new ones from in any
-    session. A template holds its name, whether it is a bus, its volume, pan, colour, input,
+    session. A template holds its name, whether it is a bus, its volume, pan, surround pan, colour, input,
     note, sends and output (by the bus's name, as ids mean nothing in another session) and its effects
     chain; not its clips, envelopes, group, mute or solo. */
 namespace TrackTemplate

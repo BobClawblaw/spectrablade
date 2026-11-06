@@ -31,9 +31,10 @@ namespace OfflineRender
                                    double sampleRate,
                                    TrackEffects& into);
 
-    /** Mixes session frames [range.start, range.end) into dest (resized to two channels) as
-        playback would, primed for the range's start so effects and their delay compensation are
-        already in time. Returns false if progress cancelled it. */
+    /** Mixes session frames [range.start, range.end) into dest as playback would, primed for the
+        range's start so effects and their delay compensation are already in time: resized to two
+        channels, or six (L R C LFE Ls Rs) for a 5.1 master. What plays out of interface pairs is
+        left out. Returns false if progress cancelled it. */
     bool mixSession (const SessionState&, juce::Range<juce::int64> range, juce::AudioBuffer<float>& dest,
                      SessionMixer::Inserts*, const std::function<bool (float progress)>& progress);
 }

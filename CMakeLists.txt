@@ -140,6 +140,7 @@ target_sources(SpectraBlade PRIVATE
     Source/MainComponent.cpp
     Source/WaveformView.cpp
     Source/MixerView.cpp
+    Source/SurroundPad.cpp
     Source/MultitrackView.cpp
     Source/RackView.cpp)
 
@@ -201,6 +202,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/BatchTests.cpp
     Tests/SequencesTests.cpp
     Tests/SurroundTests.cpp
+    Tests/SurroundSessionTests.cpp
     Tests/VideoTests.cpp
     Tests/ProjectTests.cpp
     Tests/AutomationTests.cpp
@@ -295,6 +297,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/ClipProperties.cpp
     Source/PluginScanner.cpp
     Source/MixerView.cpp
+    Source/SurroundPad.cpp
     Source/RackView.cpp
     Source/MultitrackView.cpp)
 # Plug-in bundles that misbehave on purpose, for the scan tests (see Tests/TestBundle.cpp).

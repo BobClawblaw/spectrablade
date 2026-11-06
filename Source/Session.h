@@ -176,6 +176,28 @@ struct Sidechain
     juce::uint32 keyTrackId = 0;           // a track, not a bus or folder
 };
 
+/** Where a track or bus plays in a 5.1 master (SessionState::surround): a point in the room,
+    x from -1 (left) to +1 (right) and y from -1 (behind) to +1 (in front), seen from the middle,
+    and how much goes to the LFE as well. Its direction picks the speakers (L R C Ls Rs); its
+    distance from the middle, up to 1 at the edge, how much stays in them rather than spreading
+    over all five. Ignored in a stereo master. */
+struct SurroundPan
+{
+    float x = 0.0f, y = 1.0f;              // in front, at the edge
+    float width = 1.0f;                    // 1: the left and right channels 30 degrees either side of the point (to L and R
+                                           // from the front); 0: both at the point, as one mono source
+    float lfeDb = lfeOff;                  // the LFE's share, in dB; lfeOff for none
+
+    static constexpr float lfeOff = -150.0f, maxLfeDb = 10.0f;
+
+    bool isDefault() const noexcept        { return *this == SurroundPan {}; }
+    bool operator== (const SurroundPan& o) const noexcept
+    {
+        return juce::exactlyEqual (x, o.x) && juce::exactlyEqual (y, o.y) && juce::exactlyEqual (width, o.width)
+            && juce::exactlyEqual (lfeDb, o.lfeDb);
+    }
+};
+
 struct SessionTrack
 {
     juce::uint32 id = 0;
@@ -207,6 +229,9 @@ struct SessionTrack
         rack): the first channel of the pair, from 0, or -1 for none. Used only with outputBusId 0. */
     int deviceOutput = -1;
     static constexpr int maxDeviceOutputs = 32;   // pairs from 1/2 to 31/32
+
+    /** Where it plays when its output goes to a 5.1 master. */
+    SurroundPan surroundPan;
 
     /** Ducking under another track (tracks only). It acts with the volume: on the track's
         output and post-fader sends, not its pre-fader sends. */
@@ -263,6 +288,10 @@ struct SessionState
     std::vector<SessionTrack> tracks;
     Markers markers;                       // points and regions on the session's time, kept sorted
     juce::uint32 nextId = 1;
+
+    /** The master is 5.1 (L R C LFE Ls Rs) rather than stereo: what goes to the mix is placed by
+        each track's and bus's surroundPan. */
+    bool surround = false;
 
     /** The end of the last clip. */
     juce::int64 getLength() const;
@@ -570,6 +599,14 @@ namespace SessionEdits
         isn't another track, settings out of range, or a key that ducks under this track itself,
         however many steps away. */
     bool setDucking (SessionState&, juce::uint32 trackId, const Ducking&);
+
+    /** Makes the master 5.1 or stereo. False when it is already so. */
+    bool setSurround (SessionState&, bool fiveOne);
+
+    /** Places a track or bus in a 5.1 master; x, y are kept to [-1, 1], width to [0, 1] and the LFE to
+        [-60 dB, maxLfeDb] or off (anything below -60). False for a folder, a track that is gone,
+        or when it is already so. */
+    bool setSurroundPan (SessionState&, juce::uint32 trackId, SurroundPan);
 
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);

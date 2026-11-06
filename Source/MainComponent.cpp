@@ -136,7 +136,8 @@ namespace
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
-        cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory
+        cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
+        cmdSurroundMaster
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1181,7 +1182,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdKeepProjectHistory; ++id)
+    for (int id = cmdOpen; id <= cmdSurroundMaster; ++id)
         ids.add (id);
 }
 
@@ -1463,12 +1464,12 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             break;
         case cmdSurroundFoldDown:
             info.setInfo ("Play Surround Folded Down", "Play a 5.1 file folded down to stereo on the output pair (centre and surrounds at -3 dB, "
-                                                       "LFE left out); other files past stereo play their first two channels", "Transport", 0);
+                                                       "LFE left out), and a session's 5.1 master likewise; other files past stereo play their first two channels", "Transport", 0);
             info.setTicked (! engine.getSurroundOutputs());
             break;
         case cmdSurroundOutputs:
             info.setInfo ("Play Surround to Separate Outputs", "Play a file's first two channels on the output pair and the rest on the outputs "
-                                                               "after it, one each (5.1: C, LFE, Ls, Rs), up to 8 channels", "Transport", 0);
+                                                               "after it, one each (5.1: C, LFE, Ls, Rs), up to 8 channels; a session's 5.1 master likewise", "Transport", 0);
             info.setTicked (engine.getSurroundOutputs());
             break;
         case cmdSaveChannels: info.setInfo ("Save Channels as Mono Files...", "Write each channel to a mono WAV file of its own (5.1: L, R, C, LFE, Ls, Rs)", "File", 0);
@@ -1670,6 +1671,9 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         }
         case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip right after it", "Multitrack", 0);
                             info.addDefaultKeypress ('d', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
+        case cmdSurroundMaster: info.setInfo ("5.1 Master", "Mix the session to 5.1 (L R C LFE Ls Rs) instead of stereo, placing each track "
+                                                    "and bus with the surround pad on its mixer strip", "Multitrack", 0);
+                                info.setTicked (engine.session.getState()->surround); info.setActive (multitrackMode && ! isRecording()); break;
         case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
                             info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
         case cmdTempoChange: info.setInfo ("Tempo Change at Cursor...", "Change the tempo or beats in a bar from the bar the cursor is in, or remove a change there", "Multitrack", 0);
@@ -2214,6 +2218,17 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdTempoChange:
             showTempoDialog (true);
             break;
+        case cmdSurroundMaster:
+        {
+            auto next = *engine.session.getState();
+
+            const auto fiveOne = ! next.surround;
+
+            if (SessionEdits::setSurround (next, fiveOne))
+                engine.session.apply (std::move (next), fiveOne ? "5.1 Master" : "Stereo Master");
+
+            break;
+        }
         case cmdBarsAndBeats:
             multitrack.setShowBars (! multitrack.isShowingBars());
             commands.commandStatusChanged();
@@ -2405,7 +2420,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             menu.addSubMenu ("Theme", themeMenu);
             break;
         }
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
+        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdSurroundMaster, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
         case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdPreviousEdge, cmdNextEdge, cmdGoToTime, 0, cmdSurroundFoldDown, cmdSurroundOutputs }); break;
         case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdRegionsOverSounds, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, cmdMarkersToZero, 0, cmdMoveMarkersInSelection, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
         case 7:
@@ -3253,6 +3268,7 @@ void MainComponent::bounceTrack()
                                                                       + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"),
                                                                   ".wav", false);
     auto alone = std::make_shared<SessionState> (Bounce::isolate (*state, trackId));
+    alone->surround = false;   // the track's own stereo sound: the new track takes its surround pan
     auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
 
     for (auto& t : alone->tracks)   // the track's, and its keys'

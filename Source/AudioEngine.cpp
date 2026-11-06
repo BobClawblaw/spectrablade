@@ -129,6 +129,8 @@ void SessionSource::prepareToPlay (int blockSize, double)
 
 void SessionSource::refreshState()
 {
+    buffers.surroundChannel = surroundChannel.load();
+
     if (const auto v = session.getVersion(); state == nullptr || v != stateVersion)
     {
         state = session.getState();
@@ -309,6 +311,7 @@ double DocumentPlayerProcessor::modeRate() const
 void DocumentPlayerProcessor::setSeparateOutputs (int firstChannel)
 {
     source.setSeparateOutputs (firstChannel);
+    sessionSource.setSurroundChannel (firstChannel);
 
     // Separate outputs need the interface channels through the transport; the mix alone doesn't.
     if ((firstChannel >= 0) != (separateOutputs >= 0))
@@ -959,9 +962,12 @@ void AudioEngine::setOutputPair (int firstChannel)
     sendChangeMessage();
 }
 
-juce::BigInteger AudioEngine::deviceOutputsOf (const SessionState& state)
+juce::BigInteger AudioEngine::deviceOutputsOf (const SessionState& state, int surroundFrom)
 {
     juce::BigInteger used;
+
+    if (state.surround && surroundFrom >= 0)
+        used.setRange (surroundFrom, 4, true);
 
     for (auto& t : state.tracks)
         if (t.deviceOutput >= 0 && t.outputBusId == 0 && ! t.isFolder)
@@ -1009,7 +1015,7 @@ void AudioEngine::useDeviceOutputs()
     const auto fileMode = player->getMode() != DocumentPlayerProcessor::Mode::session;
     player->setSeparateOutputs (surroundOutputs ? DocumentPlayerProcessor::firstInterfaceChannel + outputPairFirstChannel + 2 : -1);
     const auto used = fileMode ? Surround::extraOutputs (document.getNumChannels(), outputPairFirstChannel, surroundOutputs)
-                               : deviceOutputsOf (*session.getState());
+                               : deviceOutputsOf (*session.getState(), surroundOutputs ? outputPairFirstChannel + 2 : -1);
 
     if (used == usedDeviceOutputs)
         return;

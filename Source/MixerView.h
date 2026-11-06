@@ -4,9 +4,11 @@
 
 #include <optional>
 
+class SurroundPad;
+
 /** The session as a mixing desk: a strip for each track and bus, in the session's order, with its
     meter, volume fader, pan, mute, polarity switch and solo, and a master strip metering what goes
-    to the outputs.
+    to the outputs. In a 5.1 master each strip also has a surround pad, width and LFE.
 
     The controls edit the session as the track headers do (each change an undo step, a fader's
     drag one step); an automated volume or pan follows its envelope and can't be moved here.
@@ -33,6 +35,12 @@ public:
         0.1 dB as the fader sets it. Anything else gives nothing. */
     static std::optional<float> parseVolume (const juce::String&);
     juce::Slider* findPan (juce::uint32 trackId) const;
+
+    /** A strip's surround controls, shown in a 5.1 master: the point, the width (0 to 100) and
+        the LFE (-61 for off, then -60 to +10 dB). */
+    SurroundPad* findSurroundPad (juce::uint32 trackId) const;
+    juce::Slider* findSurroundWidth (juce::uint32 trackId) const;
+    juce::Slider* findLfe (juce::uint32 trackId) const;
     juce::Button* findMute (juce::uint32 trackId) const;
     juce::Button* findSolo (juce::uint32 trackId) const;
     juce::Button* findPolarity (juce::uint32 trackId) const;

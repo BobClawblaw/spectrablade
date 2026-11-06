@@ -70,6 +70,10 @@ public:
     /** Meters the tracks and buses into these levels as it mixes. */
     void setLevels (SessionMixer::Levels* levels)             { buffers.levels = levels; }
 
+    /** The channel a 5.1 master's C goes to, then LFE, Ls and Rs (see SessionMixer::Buffers),
+        or -1 to fold it down. */
+    void setSurroundChannel (int first)                       { surroundChannel = first; }
+
     /** The loop set by setLoop (start, end; end <= start: none). */
     std::pair<juce::int64, juce::int64> getLoop() const noexcept { return { loopStart.load(), loopEnd.load() }; }
 
@@ -94,6 +98,7 @@ private:
     SessionMixer::Buffers buffers;
     juce::int64 nextFrame = -1;            // where the last block ended; anything else is a jump
     std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
+    std::atomic<int> surroundChannel { -1 };
 
     // Input monitoring (audio thread): a FIFO of input frames, and a block taken from it.
     SessionMixer::Live live;
@@ -120,8 +125,8 @@ public:
     Mode getMode() const noexcept                 { return mode; }
 
     /** A document past stereo plays its channels after the first two to these player channels
-        (see DocumentSource::setSeparateOutputs), or -1 to fold 5.1 down. Turning it on or off
-        stops playback. */
+        (see DocumentSource::setSeparateOutputs), and a session's 5.1 master its C, LFE, Ls and Rs;
+        or -1 to fold 5.1 down. Turning it on or off stops playback. */
     void setSeparateOutputs (int firstChannel);
 
     /** Call after the document or session is replaced (its sample rate may have changed). */
@@ -306,8 +311,9 @@ public:
     int getOutputPair() const                     { return outputPairFirstChannel; }
     void setOutputPair (int firstChannel);
 
-    /** The interface outputs a session's tracks and buses play out of. */
-    static juce::BigInteger deviceOutputsOf (const SessionState&);
+    /** The interface outputs a session's tracks and buses play out of, and a 5.1 master's C, LFE,
+        Ls and Rs from surroundFrom on (when not -1). */
+    static juce::BigInteger deviceOutputsOf (const SessionState&, int surroundFrom = -1);
 
     /** A file with more than two channels: false folds 5.1 down to the output pair (other files play
         their first two channels there); true plays the first two on the pair and the rest on the

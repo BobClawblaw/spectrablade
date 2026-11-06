@@ -1,4 +1,5 @@
 #include "MixerView.h"
+#include "SurroundPad.h"
 #include "Theme.h"
 #include "TrackColours.h"
 
@@ -139,6 +140,45 @@ public:
             edit ("Track Pan", true, [p] (SessionTrack& t) { t.pan = p; });
         };
 
+        // A 5.1 master's controls: the point, the width and the LFE's share.
+        surroundPad.onChange = [this] (const SurroundPan& p, bool dragging)
+        {
+            edit ("Surround Pan", dragging, [x = p.x, y = p.y] (SessionTrack& t) { t.surroundPan.x = x; t.surroundPan.y = y; });
+        };
+
+        for (auto* s : { &width, &lfe })
+        {
+            s->setSliderStyle (juce::Slider::LinearBar);
+            Theme::follow (*s, juce::Slider::trackColourId, Theme::lineStrong);
+        }
+
+        width.setRange (0.0, 100.0, 1.0);
+        width.setDoubleClickReturnValue (true, 100.0);
+        width.setTooltip ("Surround width: how far apart its left and right channels play (0: together, as mono)");
+        width.textFromValueFunction = [] (double value) { return "W " + juce::String ((int) value) + "%"; };
+        width.onValueChange = [this]
+        {
+            const auto w = (float) width.getValue() / 100.0f;
+            edit ("Surround Width", true, [w] (SessionTrack& t) { t.surroundPan.width = w; });
+        };
+
+        // The far left is off; otherwise -60 to +10 dB.
+        lfe.setRange (-61.0, (double) SurroundPan::maxLfeDb, 1.0);
+        lfe.setDoubleClickReturnValue (true, -61.0);
+        lfe.setTooltip ("How much also goes to the LFE (far left: none)");
+        lfe.textFromValueFunction = [] (double value)
+        {
+            return value < -60.0 ? juce::String ("LFE off") : "LFE " + juce::String ((int) value) + " dB";
+        };
+        lfe.onValueChange = [this]
+        {
+            const auto db = lfe.getValue() < -60.0 ? SurroundPan::lfeOff : (float) lfe.getValue();
+            edit ("LFE Level", true, [db] (SessionTrack& t) { t.surroundPan.lfeDb = db; });
+        };
+
+        for (auto* c : std::initializer_list<juce::Component*> { &surroundPad, &width, &lfe })
+            addChildComponent (c);
+
         for (auto* b : { &mute, &solo })
         {
             b->setClickingTogglesState (true);
@@ -203,6 +243,25 @@ public:
 
         if (! readout.isBeingEdited())
             readout.setText (juce::String (db, 1) + " dB", juce::dontSendNotification);
+
+        // The surround controls, in a 5.1 master.
+        const auto showSurround = view.engine.session.getState()->surround && ! isFolder;
+
+        if (surroundPad.isVisible() != showSurround)
+        {
+            for (auto* c : std::initializer_list<juce::Component*> { &surroundPad, &width, &lfe })
+                c->setVisible (showSurround);
+
+            resized();
+        }
+
+        surroundPad.setPan (t.surroundPan);
+
+        if (! width.isMouseButtonDown())
+            width.setValue (std::round (t.surroundPan.width * 100.0f), juce::dontSendNotification);
+
+        if (! lfe.isMouseButtonDown())
+            lfe.setValue (t.surroundPan.lfeDb > SurroundPan::lfeOff ? std::round (t.surroundPan.lfeDb) : -61.0, juce::dontSendNotification);
 
         repaint();
     }
@@ -279,6 +338,16 @@ public:
 
         pan.setBounds (r.removeFromTop (22));
         r.removeFromTop (4);
+
+        if (surroundPad.isVisible())
+        {
+            surroundPad.setBounds (r.removeFromTop (r.getWidth()));
+            width.setBounds (r.removeFromTop (18));
+            r.removeFromTop (2);
+            lfe.setBounds (r.removeFromTop (18));
+            r.removeFromTop (4);
+        }
+
         auto buttons = r.removeFromTop (22);
         const auto each = (buttons.getWidth() - 4) / 3;
         mute.setBounds (buttons.removeFromLeft (each));
@@ -295,6 +364,8 @@ public:
     const juce::uint32 trackId;
     Meter meter;
     juce::Slider fader, pan;
+    SurroundPad surroundPad;
+    juce::Slider width, lfe;
     juce::TextButton mute { "M" }, solo { "S" }, polarity { juce::String (juce::CharPointer_UTF8 ("\xc3\x98")) };
     juce::Label readout;
 
@@ -412,6 +483,9 @@ std::optional<float> MixerView::parseVolume (const juce::String& text)
 }
 
 juce::Slider* MixerView::findPan (juce::uint32 trackId) const     { auto* s = findStrip (trackId); return s != nullptr ? &s->pan : nullptr; }
+SurroundPad* MixerView::findSurroundPad (juce::uint32 trackId) const { auto* s = findStrip (trackId); return s != nullptr && trackId != 0 ? &s->surroundPad : nullptr; }
+juce::Slider* MixerView::findSurroundWidth (juce::uint32 trackId) const { auto* s = findStrip (trackId); return s != nullptr && trackId != 0 ? &s->width : nullptr; }
+juce::Slider* MixerView::findLfe (juce::uint32 trackId) const     { auto* s = findStrip (trackId); return s != nullptr && trackId != 0 ? &s->lfe : nullptr; }
 juce::Button* MixerView::findMute (juce::uint32 trackId) const    { auto* s = findStrip (trackId); return s != nullptr ? &s->mute : nullptr; }
 juce::Button* MixerView::findPolarity (juce::uint32 trackId) const { auto* s = findStrip (trackId); return s != nullptr ? &s->polarity : nullptr; }
 

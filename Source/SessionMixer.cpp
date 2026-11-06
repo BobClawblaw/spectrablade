@@ -1,4 +1,5 @@
 #include "SessionMixer.h"
+#include "Surround.h"
 
 namespace SessionMixer
 {
@@ -14,6 +15,68 @@ std::pair<float, float> panGains (float pan, int sourceChannels)
     }
 
     return { pan > 0.0f ? std::cos (pan * halfPi) : 1.0f, pan < 0.0f ? std::cos (-pan * halfPi) : 1.0f };
+}
+
+SurroundGains surroundGains (const SurroundPan& pan)
+{
+    // The five speakers round the room by angle (degrees, 0 in front, negative to the left), and
+    // their channels in the master.
+    static constexpr std::array<double, 5> angles { -110.0, -30.0, 0.0, 30.0, 110.0 };
+    static constexpr std::array<int, 5> channels { 4, 0, 2, 1, 5 };
+    constexpr auto halfPi = juce::MathConstants<double>::halfPi;
+
+    SurroundGains gains {};
+    const auto width = (double) juce::jlimit (0.0f, 1.0f, pan.width);
+    const auto offset = width * std::tan (juce::degreesToRadians (30.0));
+    const auto scale = std::cos ((1.0 - width) * juce::MathConstants<double>::pi / 4.0);
+
+    for (int side = 0; side < 2; ++side)
+    {
+        const auto x = juce::jlimit (-1.0, 1.0, (double) pan.x + (side == 0 ? -offset : offset));
+        const auto y = juce::jlimit (-1.0, 1.0, (double) pan.y);
+        const auto d = juce::jmin (1.0, std::hypot (x, y));
+        std::array<double, 5> p {};
+
+        if (d > 0.0)
+        {
+            const auto theta = juce::radiansToDegrees (std::atan2 (x, y));
+
+            for (size_t i = 0; i < angles.size(); ++i)
+            {
+                const auto a = angles[i];
+                const auto b = i + 1 < angles.size() ? angles[i + 1] : angles[0] + 360.0;
+                const auto t = theta < a ? theta + 360.0 : theta;
+
+                if (t < a || t > b)
+                    continue;
+
+                // Within a millionth of the way of a speaker, that speaker alone.
+                const auto f = (t - a) / (b - a);
+                const auto next = (i + 1) % angles.size();
+
+                if (f < 1.0e-6)
+                    p[i] = 1.0;
+                else if (f > 1.0 - 1.0e-6)
+                    p[next] = 1.0;
+                else
+                {
+                    p[i] = std::cos (f * halfPi);
+                    p[next] = std::sin (f * halfPi);
+                }
+
+                break;
+            }
+        }
+
+        const auto spread = (1.0 - d * d) / 5.0;
+
+        for (size_t k = 0; k < p.size(); ++k)
+            gains[(size_t) side][(size_t) channels[k]] = (float) (scale * std::sqrt (d * d * p[k] * p[k] + spread));
+    }
+
+    const auto lfe = pan.lfeDb > SurroundPan::lfeOff ? juce::Decibels::decibelsToGain (pan.lfeDb) * Surround::foldGain : 0.0f;
+    gains[0][3] = gains[1][3] = lfe;
+    return gains;
 }
 
 void Levels::raise (int track, float left, float right) noexcept
@@ -239,14 +302,28 @@ namespace
     }
 
     /** The first of dest's channels a track's or bus's output goes to when it isn't a bus: 0 for
-        the mix, 2 + the first channel of the interface pair it plays out of, or -1 when dest has no
-        channels for that pair (a mixdown, which is the mix alone). */
-    int outputChannel (const SessionTrack& track, const juce::AudioBuffer<float>& dest)
+        the mix, interfaceChannel + the first channel of the interface pair it plays out of, or -1
+        when there is no channel for that pair (a mixdown, which is the mix alone). */
+    int outputChannel (const SessionTrack& track, const juce::AudioBuffer<float>& dest, const Buffers& buffers)
     {
         if (track.deviceOutput < 0)
             return 0;
 
-        return 2 + track.deviceOutput + 2 <= dest.getNumChannels() ? 2 + track.deviceOutput : -1;
+        const auto first = buffers.interfaceChannel + track.deviceOutput;
+        return buffers.interfaceChannel >= 0 && first + 2 <= dest.getNumChannels() ? first : -1;
+    }
+
+    /** Pans the first n frames of panIn into the 5.1 master, and clears panIn for the next. */
+    void addPanned (Buffers& buffers, const SurroundPan& pan, int n)
+    {
+        const auto gains = surroundGains (pan);
+
+        for (int ch = 0; ch < 6; ++ch)
+            for (int side = 0; side < 2; ++side)
+                if (const auto g = gains[(size_t) side][(size_t) ch]; g != 0.0f)
+                    buffers.master.addFrom (ch, 0, buffers.panIn, side, 0, n, g);
+
+        buffers.panIn.clear (0, n);
     }
 
     /** The keys of a track's or bus's sidechains, each held back to line up with the audio going
@@ -452,6 +529,17 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
     grow (buffers.track, numFrames);
     grow (buffers.automation, numFrames);
+
+    if (state.surround)
+    {
+        grow (buffers.panIn, numFrames);
+        buffers.panIn.clear (0, numFrames);
+
+        if (buffers.master.getNumChannels() < 6 || buffers.master.getNumSamples() < numFrames)
+            buffers.master.setSize (6, numFrames, false, false, true);
+
+        buffers.master.clear (0, numFrames);
+    }
     auto* pans = buffers.automation.getWritePointer (0);
     auto* volumes = buffers.automation.getWritePointer (1);
 
@@ -602,7 +690,20 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 addHeld (buffers, { track.id, 0 }, ahead - pathLatency (state, *bus, inserts), buffers.track, numFrames,
                          buffers.buses[bus->id], 0, volume);
         }
-        else if (const auto channel = outputChannel (track, dest); channel >= 0)
+        else if (state.surround && track.deviceOutput < 0)
+        {
+            // As it starts, the pan is left to L and right to R: straight there, as in a stereo master.
+            if (track.surroundPan.isDefault())
+            {
+                addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, buffers.master, 0, volume);
+            }
+            else
+            {
+                addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, buffers.panIn, 0, volume);
+                addPanned (buffers, track.surroundPan, numFrames);
+            }
+        }
+        else if (const auto channel = outputChannel (track, dest, buffers); channel >= 0)
         {
             addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume, channel);
         }
@@ -645,13 +746,23 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         // Its output: the mix or an interface pair, or the bus it plays into (nothing when that
         // bus doesn't play, or in a mixdown for an interface pair).
-        const auto channel = outputChannel (bus, dest);
+        const auto channel = outputChannel (bus, dest, buffers);
         auto* out = channel >= 0 ? &dest : nullptr;
         auto outStart = destStart, outChannel = juce::jmax (0, channel);
 
         if (const auto* next = outputBus (state, bus))
         {
             out = plays (state, *next) ? &buffers.buses[next->id] : nullptr;
+            outStart = outChannel = 0;
+        }
+
+        // Into a 5.1 master: through panIn, then panned; or, with the pan as it starts, straight to L and R.
+        const auto toMaster = state.surround && out == &dest && bus.deviceOutput < 0;
+        const auto panned = toMaster && ! bus.surroundPan.isDefault();
+
+        if (toMaster)
+        {
+            out = panned ? &buffers.panIn : &buffers.master;
             outStart = outChannel = 0;
         }
 
@@ -668,6 +779,9 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
             if (buffers.levels != nullptr)
                 buffers.levels->raise (index, peakOf (input, 0, numFrames) * (volume * left), peakOf (input, 1, numFrames) * (volume * right));
+
+            if (panned)
+                addPanned (buffers, bus.surroundPan, numFrames);
 
             continue;
         }
@@ -704,6 +818,26 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         if (buffers.levels != nullptr)
             buffers.levels->raise (index, peakLeft, peakRight);
+
+        if (panned)
+            addPanned (buffers, bus.surroundPan, numFrames);
+    }
+
+    // A 5.1 master: L and R to the mix, and the rest to their channels, or all folded down.
+    if (state.surround)
+    {
+        const auto first = buffers.surroundChannel;
+
+        if (first >= 0 && first + 4 <= dest.getNumChannels())
+        {
+            for (int ch = 0; ch < 6; ++ch)
+                dest.addFrom (ch < 2 ? ch : first + ch - 2, destStart, buffers.master, ch, 0, numFrames);
+        }
+        else
+        {
+            Surround::foldDown (buffers.master.getArrayOfReadPointers(), dest.getWritePointer (0, destStart),
+                                dest.getWritePointer (1, destStart), numFrames);
+        }
     }
 }
 
