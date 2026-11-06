@@ -1377,4 +1377,3 @@ void WaveformView::drawShape (juce::Graphics& g)
         }
     }
 }
-

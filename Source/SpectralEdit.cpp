@@ -646,4 +646,3 @@ AudioDocument::Snapshot heal (const AudioSnapshot& snapshot, const Shape& shape,
     });
 }
 }
-

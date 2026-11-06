@@ -41,9 +41,9 @@ The formats marked "through ffmpeg" need [ffmpeg](https://ffmpeg.org) installed 
 
 ## Screenshots
 
-![The editor in the Editing workspace: two files open as tabs, a stereo file in the waveform and spectrogram view with its fade handles at the top corners, the Files panel, the effects rack and undo history, and the levels meter](docs/screenshots/editor.png)
+![The editor in the Editing workspace: two files open in the Files panel, a stereo file in the waveform and spectrogram view with its fade handles at the top corners and the time strip under it, the effects rack and undo history, the selection panel, and the levels meter](docs/screenshots/editor.png)
 
-The Editing workspace: two files open as tabs, the Files panel on the left, the effects rack and undo history on the right, and the levels meter below. The small handles at the waveform's top corners drag fades in and out.
+The Editing workspace: two files open in the Files panel on the left (click one to work on it; Window > File Tabs adds tabs over the editor), the effects rack, undo history and selection panel on the right, and the levels meter below. The small handles at the waveform's top corners drag fades in and out; the strip under the waveform shows the cursor, selection and view and holds the zoom controls.
 
 ![A multitrack session: four tracks and a reverb bus, with clips, fades, sends, markers and the mixer](docs/screenshots/multitrack.png)
 
