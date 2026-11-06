@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 242: A six-channel master meter**
+- In a 5.1 master the mixer's master meter has six bars, named L R C LFE Ls Rs, and the master strip is as wide as the others. They show the 5.1 master as mixed: before the effects rack (which is stereo) and before any fold-down, so the centre, LFE and surrounds show even when they are folded into a stereo output. A stereo master's meter is as before: what goes to the outputs, after the rack.
+- A 5.1 track's clips show all their channels in the lane, up to six, each named down the left when there is room; a stereo track still shows the two channels it plays.
+- Measured by the tests: the mixer's peaks of a 5.1 master's six channels equal the peaks of each output channel bit for bit, for each reader on its own and from 0 after each take, the same when folded down; a stereo master raises none; the mixer's master meter has six channels in a 5.1 master and shows each one's level, and two again in a stereo master. The whole suite passed (1142 checks).
+- Not tried by hand: watching the meter while a 5.1 session plays.
+
 **Milestone 241: Surround pan automation**
 - A track's or bus's place in a 5.1 master can follow envelopes: its left-right and front-back position, its width and its LFE share each have one (track automation menu: Show Surround Envelope), drawn and edited in the lane like the volume and pan envelopes, and cleared with Clear Shown Surround Envelope. Left is at the top of the left-right lane and the front at the top of the front-back one; the LFE is off at the bottom (-60 dB).
 - The panner's gains are worked out from the envelopes every 32 frames of session time and go in a straight line between, so a sweep is smooth and plays the same however the audio is split into blocks. With no surround envelope nothing changes: a track with the pan as it starts still goes straight to L and R, bit for bit.

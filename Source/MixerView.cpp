@@ -27,32 +27,68 @@ class MixerView::Meter final : public juce::Component,
 public:
     void push (float left, float right)
     {
+        const float both[] { left, right };
+        push (both, 2);
+    }
+
+    /** Takes in the newest peaks of its channels (2, or a 5.1 master's 6, L R C LFE Ls Rs). */
+    void push (const float* peaks, int count)
+    {
         // Falls by about 4 dB a tick at 30 a second: from full scale to silence in half a second.
         constexpr float fall = 0.63f;
-        shown[0] = juce::jmax (left, shown[0] * fall);
-        shown[1] = juce::jmax (right, shown[1] * fall);
-        clipped = clipped || left > 1.0f || right > 1.0f;
+
+        for (int ch = 0; ch < juce::jmin (count, channels); ++ch)
+        {
+            shown[ch] = juce::jmax (peaks[ch], shown[ch] * fall);
+            clipped = clipped || peaks[ch] > 1.0f;
+        }
+
         repaint();
     }
 
-    float getShown (int channel) const              { return shown[juce::jlimit (0, 1, channel)]; }
+    /** Two bars, or six named ones for a 5.1 master. */
+    void setChannels (int count)
+    {
+        count = count == 6 ? 6 : 2;
+
+        if (count == channels)
+            return;
+
+        channels = count;
+        std::fill (std::begin (shown), std::end (shown), 0.0f);
+        repaint();
+    }
+
+    int getChannels() const noexcept                { return channels; }
+    float getShown (int channel) const              { return shown[juce::jlimit (0, channels - 1, channel)]; }
 
     void paint (juce::Graphics& g) override
     {
         g.fillAll (Theme::inset);
-        const auto barWidth = (getWidth() - 3) / 2;
+        const auto named = channels == 6;
+        const auto labels = named ? 12 : 0;
+        const auto height = getHeight() - labels;
+        const auto barWidth = (getWidth() - 1 - channels) / channels;
 
-        for (int ch = 0; ch < 2; ++ch)
+        for (int ch = 0; ch < channels; ++ch)
         {
-            const auto height = (float) getHeight() * meterProportion (shown[ch]);
-            const auto bar = juce::Rectangle<float> ((float) (1 + ch * (barWidth + 1)), (float) getHeight() - height, (float) barWidth, height);
-            g.setGradientFill (juce::ColourGradient (Theme::meterLow, 0.0f, (float) getHeight(),
-                                                     Theme::meterMid, 0.0f, (float) getHeight() * 0.1f, false));
-            g.fillRect (bar);
+            const auto x = (float) (1 + ch * (barWidth + 1));
+            const auto level = (float) height * meterProportion (shown[ch]);
+            g.setGradientFill (juce::ColourGradient (Theme::meterLow, 0.0f, (float) height,
+                                                     Theme::meterMid, 0.0f, (float) height * 0.1f, false));
+            g.fillRect (juce::Rectangle<float> (x, (float) height - level, (float) barWidth, level));
+
+            if (named)
+            {
+                g.setColour (Theme::dimText);
+                g.setFont (9.0f);
+                g.drawText (juce::StringArray { "L", "R", "C", "LFE", "Ls", "Rs" }[ch],
+                            juce::Rectangle<float> (x - 2.0f, (float) height, (float) barWidth + 4.0f, (float) labels), juce::Justification::centred, false);
+            }
         }
 
         // 0 dB, and a red mark once anything went over it (click to clear).
-        const auto zero = (float) getHeight() * (1.0f - meterProportion (1.0f));
+        const auto zero = (float) height * (1.0f - meterProportion (1.0f));
         g.setColour (clipped ? Theme::danger : Theme::dimText);
         g.fillRect (0.0f, zero - (clipped ? 2.0f : 0.5f), (float) getWidth(), clipped ? 3.0f : 1.0f);
     }
@@ -64,7 +100,8 @@ public:
     }
 
 private:
-    float shown[2] {};
+    float shown[6] {};
+    int channels = 2;
     bool clipped = false;
 };
 
@@ -356,7 +393,7 @@ public:
 
         if (trackId == 0)
         {
-            meter.setBounds (r.withSizeKeepingCentre (24, r.getHeight()));
+            meter.setBounds (r.withSizeKeepingCentre (meter.getChannels() == 6 ? juce::jmin (r.getWidth(), 6 * 15 + 7) : 24, r.getHeight()));
             return;
         }
 
@@ -482,9 +519,15 @@ void MixerView::rebuild()
     for (size_t i = 0; i < strips.size(); ++i)
         strips[i]->update (state->tracks[i], (int) i, frame);
 
-    // A 5.1 master's strips are wider.
+    // A 5.1 master's strips are wider, and its meter has six channels.
     if (std::exchange (shownSurround, state->surround) != state->surround)
+    {
+        master->meter.setChannels (state->surround ? 6 : 2);
+        master->meter.setTooltip (state->surround ? "The 5.1 master's six channels, L R C LFE Ls Rs, as mixed: before the effects rack and any fold-down"
+                                                  : "What goes to the outputs, after the effects rack");
         resized();
+        master->resized();
+    }
 }
 
 MixerView::Strip* MixerView::findStrip (juce::uint32 trackId) const
@@ -546,6 +589,8 @@ float MixerView::getShownLevel (juce::uint32 trackId, int channel) const
     return s != nullptr ? s->meter.getShown (channel) : 0.0f;
 }
 
+int MixerView::getMasterMeterChannels() const   { return master->meter.getChannels(); }
+
 void MixerView::updateMeters()
 {
     auto& levels = engine.getPlayer().getLevels();
@@ -556,8 +601,14 @@ void MixerView::updateMeters()
         strips[i]->meter.push (left, right);
     }
 
+    // A 5.1 master: its six channels as mixed; otherwise what went to the outputs.
     const auto [left, right] = engine.takeMasterPeaks();
-    master->meter.push (left, right);
+    const auto six = levels.takeMaster();
+
+    if (master->meter.getChannels() == 6)
+        master->meter.push (six.data(), 6);
+    else
+        master->meter.push (left, right);
 
     // An automated volume, pan or surround pan moves as the session plays.
     if (engine.getPlayer().isPlaying())
@@ -585,7 +636,7 @@ void MixerView::paint (juce::Graphics& g)
 void MixerView::resized()
 {
     auto r = getLocalBounds();
-    master->setBounds (r.removeFromRight (stripWidth + 12));
+    master->setBounds (r.removeFromRight ((shownSurround ? surroundStripWidth : stripWidth) + 12));
     viewport.setBounds (r);
     const auto each = shownSurround ? surroundStripWidth : stripWidth;
     content.setSize (juce::jmax (r.getWidth(), (int) strips.size() * each), juce::jmax (0, r.getHeight() - viewport.getScrollBarThickness()));

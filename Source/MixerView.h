@@ -50,8 +50,12 @@ public:
         step); empty for an unknown id. */
     juce::PopupMenu getStripMenu (juce::uint32 trackId) const;
 
-    /** The level a meter shows (gain, not dB): a track's or bus's, or with id 0 the master's. */
+    /** The level a meter shows (gain, not dB): a track's or bus's, or with id 0 the master's
+        (channels 0 to 5, L R C LFE Ls Rs, in a 5.1 master). */
     float getShownLevel (juce::uint32 trackId, int channel) const;
+
+    /** How many channels the master's meter shows: 2, or 6 in a 5.1 master. */
+    int getMasterMeterChannels() const;
 
     /** Takes the latest peaks into the meters (the view's timer does this 30 times a second). */
     void updateMeters();

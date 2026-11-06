@@ -116,8 +116,16 @@ namespace SessionMixer
         /** The left and right peaks since this reader's last take. */
         std::pair<float, float> take (int track, int reader = 0) noexcept;
 
+        /** A 5.1 master's six channels (L R C LFE Ls Rs) as mixed, before the effects rack and any
+            fold-down: raised by the audio thread, taken (and started again from 0) per reader. */
+        void raiseMaster (int channel, float peak) noexcept;
+        std::array<float, 6> takeMaster (int reader = 0) noexcept;
+
     private:
         std::array<std::atomic<float>, 2 * maxTracks * readers> peaks {};
+        std::array<std::atomic<float>, 6 * readers> masterPeaks {};
+
+        static void raiseTo (std::atomic<float>&, float) noexcept;
     };
 
     /** Working buffers and the delay lines that line paths up, kept between blocks. Grown as

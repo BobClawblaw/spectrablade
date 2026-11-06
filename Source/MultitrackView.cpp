@@ -2138,10 +2138,12 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
         g.drawRoundedRectangle (box.withTrimmedLeft (6.0f), 3.0f, 1.3f);
     }
 
-    // Waveform: one peak per pixel column, each channel in its own band.
+    // Waveform: one peak per pixel column, each channel in its own band; the channels that play
+    // (the first two, or up to six on a 5.1 track, a 5.1 clip's named down the left).
     if (c.audio != nullptr && body.getHeight() > 4)
     {
-        const auto channels = juce::jmin (2, c.audio->getNumChannels());
+        const auto fiveOne = shown().tracks[(size_t) track].fiveOne;
+        const auto channels = juce::jmin (fiveOne ? 6 : 2, c.audio->getNumChannels());
         const auto clipGain = juce::Decibels::decibelsToGain (c.gainDb);
         const auto left = juce::jmax (body.getX(), headerWidth);
         const auto right = juce::jmin (body.getRight(), timelineArea().getRight());
@@ -2162,6 +2164,15 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
                 const auto top = mid - juce::jlimit (0.0f, 1.0f, peak.getEnd() * clipGain) * bandHeight * 0.5f;
                 const auto bottom = mid - juce::jlimit (-1.0f, 0.0f, peak.getStart() * clipGain) * bandHeight * 0.5f;
                 g.drawVerticalLine (x, top, juce::jmax (top + 1.0f, bottom));
+            }
+
+            if (channels == 6 && bandHeight >= 10.0f)
+            {
+                g.setColour (juce::Colours::white.withAlpha (0.6f));
+                g.setFont (9.0f);
+                g.drawText (juce::StringArray { "L", "R", "C", "LFE", "Ls", "Rs" }[ch],
+                            juce::Rectangle<float> ((float) left + 3.0f, mid - bandHeight * 0.5f, 24.0f, bandHeight), juce::Justification::centredLeft, false);
+                g.setColour (colour.withAlpha (0.9f));
             }
         }
     }

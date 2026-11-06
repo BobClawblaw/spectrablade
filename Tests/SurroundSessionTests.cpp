@@ -818,11 +818,84 @@ namespace
     }
 }
 
+namespace
+{
+    void testMasterMeter (AudioEngine& engine)
+    {
+        // The mixer measures a 5.1 master's six channels as mixed, for each reader on its own.
+        SessionState s;
+        s.sampleRate = rate;
+        s.surround = true;
+        addFiveOneTrack (s, 6, 300, 61);
+        auto& panned = addClipTrack (s, 2, 0, 62);
+        panned.surroundPan = { -0.8f, -0.9f, 0.4f, -6.0f };
+        juce::AudioBuffer<float> out (6, frames);
+        out.clear();
+        SessionMixer::Buffers buffers;
+        buffers.reserve (512);
+        buffers.surroundChannel = 2;
+        buffers.interfaceChannel = -1;
+        SessionMixer::Levels levels;
+        buffers.levels = &levels;
+
+        for (int p = 0; p < frames; p += 512)
+            SessionMixer::render (s, p, out, p, juce::jmin (512, frames - p), buffers);
+
+        const auto mixer = levels.takeMaster (0), again = levels.takeMaster (0), headers = levels.takeMaster (1);
+        auto measured = true;
+
+        for (int ch = 0; ch < 6; ++ch)
+        {
+            const auto range = juce::FloatVectorOperations::findMinAndMax (out.getReadPointer (ch), frames);
+            const auto peak = juce::jmax (-range.getStart(), range.getEnd());
+            measured = measured && peak > 0.0f && mixer[(size_t) ch] == peak && headers[(size_t) ch] == peak && again[(size_t) ch] == 0.0f;
+        }
+
+        // Folded down to stereo, the meter still has the six as mixed; a stereo master has none.
+        juce::AudioBuffer<float> two (2, frames);
+        two.clear();
+        buffers.surroundChannel = -1;
+
+        for (int p = 0; p < frames; p += 512)
+            SessionMixer::render (s, p, two, p, juce::jmin (512, frames - p), buffers);
+
+        const auto folded = levels.takeMaster (0);
+        auto plain = s;
+        plain.surround = false;
+        levels.takeMaster (1);
+
+        for (int p = 0; p < frames; p += 512)
+            SessionMixer::render (plain, p, two, p, juce::jmin (512, frames - p), buffers);
+
+        const auto none = levels.takeMaster (0);
+        check (measured && folded == mixer && std::all_of (none.begin(), none.end(), [] (float v) { return v == 0.0f; }),
+               "master meter: the mixer measures a 5.1 master's six channels as mixed (the peak of each, bit for bit), for each reader "
+               "on its own and from 0 after each take, folded down or not; a stereo master raises none");
+
+        // The mixer's master meter: six named bars in a 5.1 master, two otherwise.
+        engine.session.reset (s, {});
+        MixerView view (engine);
+        view.setSize (900, 400);
+        const auto sixBars = view.getMasterMeterChannels() == 6;
+        engine.getPlayer().getLevels().raiseMaster (4, 0.5f);
+        TestUtils::runUntil ([&] { return view.getShownLevel (0, 4) > 0.4f; }, 2000);
+        const auto shownLs = view.getShownLevel (0, 4), shownC = view.getShownLevel (0, 2);
+        auto stereo = s;
+        stereo.surround = false;
+        engine.session.apply (stereo, "Stereo Master");
+        TestUtils::runUntil ([&] { return view.getMasterMeterChannels() == 2; }, 2000);
+        check (sixBars && shownLs > 0.4f && shownC < 0.01f && view.getMasterMeterChannels() == 2,
+               "master meter: in a 5.1 master the mixer's master meter has six channels and shows each one's level (Ls at "
+               + juce::String (shownLs, 2) + " with C silent); back to a stereo master, two");
+    }
+}
+
 void runSurroundSessionTests (AudioEngine& engine)
 {
     testFiveOneTracks (engine);
     testFiveOneControls (engine);
     testSurroundAutomation (engine);
+    testMasterMeter (engine);
     testGains();
     testMaster();
     testEdits (engine);

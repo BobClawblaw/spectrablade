@@ -88,16 +88,36 @@ void Levels::raise (int track, float left, float right) noexcept
     {
         const auto first = 2 * (reader * maxTracks + track);
 
-        for (auto [slot, value] : { std::pair { first, left }, std::pair { first + 1, right } })
-        {
-            auto& peak = peaks[(size_t) slot];
-            auto current = peak.load (std::memory_order_relaxed);
-
-            while (value > current && ! peak.compare_exchange_weak (current, value, std::memory_order_relaxed))
-            {
-            }
-        }
+        raiseTo (peaks[(size_t) first], left);
+        raiseTo (peaks[(size_t) first + 1], right);
     }
+}
+
+void Levels::raiseTo (std::atomic<float>& peak, float value) noexcept
+{
+    auto current = peak.load (std::memory_order_relaxed);
+
+    while (value > current && ! peak.compare_exchange_weak (current, value, std::memory_order_relaxed))
+    {
+    }
+}
+
+void Levels::raiseMaster (int channel, float peak) noexcept
+{
+    if (juce::isPositiveAndBelow (channel, 6))
+        for (int reader = 0; reader < readers; ++reader)
+            raiseTo (masterPeaks[(size_t) (6 * reader + channel)], peak);
+}
+
+std::array<float, 6> Levels::takeMaster (int reader) noexcept
+{
+    std::array<float, 6> out {};
+
+    if (juce::isPositiveAndBelow (reader, readers))
+        for (int ch = 0; ch < 6; ++ch)
+            out[(size_t) ch] = masterPeaks[(size_t) (6 * reader + ch)].exchange (0.0f);
+
+    return out;
 }
 
 std::pair<float, float> Levels::take (int track, int reader) noexcept
@@ -957,10 +977,14 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             addPanned (buffers, bus, start, numFrames);
     }
 
-    // A 5.1 master: L and R to the mix, and the rest to their channels, or all folded down.
+    // A 5.1 master: metered, then L and R to the mix, and the rest to their channels, or all folded down.
     if (state.surround)
     {
         const auto first = buffers.surroundChannel;
+
+        if (buffers.levels != nullptr)
+            for (int ch = 0; ch < 6; ++ch)
+                buffers.levels->raiseMaster (ch, peakOf (buffers.master, ch, numFrames));
 
         if (first >= 0 && first + 4 <= dest.getNumChannels())
         {
