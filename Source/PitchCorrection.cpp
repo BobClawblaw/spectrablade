@@ -12,6 +12,7 @@ namespace
     constexpr double easeSeconds = 0.01;
     constexpr double stickCents = 10.0;         // past halfway to the next note before a target changes
     constexpr int shortestRun = 3;              // frames: a voiced run shorter than this has no pitch
+    constexpr double hopsPerSecond = 1.0 / hopSeconds;
 
     /** The channels' mix over [from, from + n). */
     std::vector<float> mixOf (const AudioSnapshot& s, juce::int64 from, int n)
@@ -161,6 +162,175 @@ Track detect (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end,
     return track;
 }
 
+namespace
+{
+    /** Moves the pitch over [start, end) by the shift given for each frame of the track (in cents;
+        frames without a pitch, and frames outside the range, are left), by PSOLA. */
+    AudioDocument::Snapshot render (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate, const Track& track,
+                                    std::vector<double> shift, const std::function<bool (float)>& progress)
+    {
+        const auto length = snapshot.getNumFrames();
+        const auto channels = snapshot.getNumChannels();
+        const auto frames = (int) track.hz.size();
+
+        if (end <= start || channels == 0 || frames == 0 || (int) shift.size() != frames)
+            return nullptr;
+
+        const auto workStart = track.first, workEnd = juce::jmin (length, track.first + (juce::int64) frames * track.hop);
+
+        for (int f = 0; f < frames; ++f)
+        {
+            const auto at = track.first + (juce::int64) f * track.hop;
+
+            if (at < start || at >= end || track.hz[(size_t) f] <= 0.0f)
+                shift[(size_t) f] = 0.0;
+        }
+
+        // The audio, with room for the grains either side.
+        const auto unvoiced = juce::jmax (1, (int) std::lround (sampleRate / 200.0));   // marks 5 ms apart where there is no pitch
+        const auto pad = (juce::int64) std::ceil (sampleRate / PitchCorrection::lowestHz) * 2 + 2;
+        const auto bufferStart = workStart - pad;
+        const auto bufferFrames = (int) (workEnd - workStart + 2 * pad);
+        juce::AudioBuffer<float> in (channels, bufferFrames), sum (channels, bufferFrames);
+        snapshot.read (in, 0, bufferStart, bufferFrames);
+        sum.clear();
+        std::vector<float> weights ((size_t) bufferFrames, 0.0f);
+
+        const auto frameAt = [&] (double t) { return juce::jlimit (0, frames - 1, (int) std::lround ((t - (double) track.first) / track.hop)); };
+
+        // Analysis marks. Where there is a pitch, a period apart from the loudest frame of the
+        // channels' mix in the note's first period, so every grain is cut around the same point of
+        // its period, as the voice's pulses are; 5 ms apart where there isn't.
+        struct Mark { double at; int period; bool voiced; };
+        std::vector<Mark> marks;
+        std::vector<float> mix ((size_t) bufferFrames, 0.0f);
+
+        for (int ch = 0; ch < channels; ++ch)
+            juce::FloatVectorOperations::add (mix.data(), in.getReadPointer (ch), bufferFrames);
+
+        const auto loudestIn = [&] (double from, double to)
+        {
+            auto best = (int) std::ceil (from - (double) bufferStart);
+
+            for (auto i = best; i < to - (double) bufferStart; ++i)
+                if (std::abs (mix[(size_t) i]) > std::abs (mix[(size_t) best]))
+                    best = i;
+
+            return (double) best + (double) bufferStart;
+        };
+
+        auto wasVoiced = false;
+
+        for (auto t = (double) workStart; t < (double) workEnd;)
+        {
+            const auto hz = (double) track.hz[(size_t) frameAt (t)];
+
+            if (hz <= 0.0)
+            {
+                marks.push_back ({ t, unvoiced, false });
+                t += unvoiced;
+                wasVoiced = false;
+                continue;
+            }
+
+            const auto period = sampleRate / hz;
+            if (! wasVoiced)
+                t = loudestIn (t, t + period);
+
+            marks.push_back ({ t, juce::jmax (2, (int) std::lround (period)), true });
+            t += period;
+            wasVoiced = true;
+        }
+
+        // The input between frames: a cubic (Catmull-Rom) curve, exact on a frame.
+        const auto read = [&] (int ch, double at)
+        {
+            const auto base = (int) std::floor (at);
+            const auto x = (float) (at - base);
+
+            if (base < 1 || base + 2 >= bufferFrames)
+                return 0.0f;
+
+            const auto* d = in.getReadPointer (ch);
+            const auto p0 = d[base - 1], p1 = d[base], p2 = d[base + 1], p3 = d[base + 2];
+            return p1 + 0.5f * x * (p2 - p0 + x * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3 + x * (3.0f * (p1 - p2) + p3 - p0)));
+        };
+
+        // Synthesis: from each output mark to the next a period of the new pitch, each taking the
+        // grain of the analysis mark nearest it, the grain's centre put exactly at the mark. A note's
+        // first grain goes where it was cut, so the note starts in step with the audio before it.
+        size_t k = 0;
+        auto count = 0;
+        auto inNote = false;
+
+        for (auto t = (double) workStart; t < (double) workEnd; ++count)
+        {
+            while (k + 1 < marks.size() && std::abs (marks[k + 1].at - t) <= std::abs (marks[k].at - t))
+                ++k;
+
+            const auto& m = marks[k];
+
+            if (m.voiced && ! inNote)
+                t = m.at;
+
+            inNote = m.voiced;
+            const auto f = frameAt (t);
+            const auto hz = (double) track.hz[(size_t) f];
+            const auto step = hz > 0.0 ? sampleRate / hz / std::pow (2.0, shift[(size_t) f] / 1200.0) : (double) m.period;
+            const auto centre = t - (double) bufferStart, source = m.at - (double) bufferStart;
+
+            for (auto to = (int) std::ceil (centre - m.period); to < centre + m.period; ++to)
+            {
+                const auto u = (double) to - centre;
+                const auto w = (float) (0.5 + 0.5 * std::cos (juce::MathConstants<double>::pi * u / m.period));
+
+                if (to < 0 || to >= bufferFrames)
+                    continue;
+
+                weights[(size_t) to] += w;
+
+                for (int ch = 0; ch < channels; ++ch)
+                    sum.addSample (ch, to, w * read (ch, source + u));
+            }
+
+            t += step;
+
+            if (progress != nullptr && (count & 1023) == 0 && ! progress ((float) ((t - (double) workStart) / (double) (workEnd - workStart))))
+                return nullptr;
+        }
+
+        // The range: the overlap-add divided by the windows' sum, easing from the audio as it was at
+        // edges inside the file.
+        const auto n = (int) (end - start);
+        juce::AudioBuffer<float> out (channels, n);
+        const auto ease = juce::jmax ((juce::int64) 1, juce::jmin ((juce::int64) std::lround (easeSeconds * sampleRate), (end - start) / 2));
+
+        for (int i = 0; i < n; ++i)
+        {
+            const auto frame = start + i;
+            const auto at = (int) (frame - bufferStart);
+            const auto w = weights[(size_t) at];
+            auto mixIn = 1.0f;
+
+            if (start > 0 && frame - start < ease)
+                mixIn = (float) ((double) (frame - start) / (double) ease);
+            else if (end < length && end - 1 - frame < ease)
+                mixIn = (float) ((double) (end - 1 - frame) / (double) ease);
+
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                const auto was = in.getSample (ch, at);
+                const auto now = w > 0.25f ? sum.getSample (ch, at) / w : was;
+                out.setSample (ch, i, was + (now - was) * mixIn);
+            }
+        }
+
+        std::vector<AudioSnapshot::Segment> segments { { std::make_shared<const AudioBlock> (std::move (out)), 0, (juce::int64) n } };
+        const AudioClip clip { channels, sampleRate, std::move (segments) };
+        return AudioEdits::replaceWithClip (snapshot, start, end, clip);
+    }
+}
+
 AudioDocument::Snapshot correct (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate, Settings settings,
                                  const std::function<bool (float)>& progress)
 {
@@ -217,147 +387,155 @@ AudioDocument::Snapshot correct (const AudioSnapshot& snapshot, juce::int64 star
         shift[(size_t) f] = smoothed;
     }
 
-    // The audio, with room for the grains either side.
-    const auto unvoiced = juce::jmax (1, (int) std::lround (sampleRate / 200.0));   // marks 5 ms apart where there is no pitch
-    const auto pad = (juce::int64) std::ceil (sampleRate / PitchCorrection::lowestHz) * 2 + 2;
-    const auto bufferStart = workStart - pad;
-    const auto bufferFrames = (int) (workEnd - workStart + 2 * pad);
-    juce::AudioBuffer<float> in (channels, bufferFrames), sum (channels, bufferFrames);
-    snapshot.read (in, 0, bufferStart, bufferFrames);
-    sum.clear();
-    std::vector<float> weights ((size_t) bufferFrames, 0.0f);
+    return render (snapshot, start, end, sampleRate, track, std::move (shift), [&] (float p) { return progress == nullptr || progress (0.5f + 0.5f * p); });
+}
 
-    const auto frameAt = [&] (double t) { return juce::jlimit (0, frames - 1, (int) std::lround ((t - (double) track.first) / track.hop)); };
+Track analyse (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+{
+    const auto length = snapshot.getNumFrames();
+    start = juce::jlimit ((juce::int64) 0, length, start);
+    end = juce::jlimit (start, length, end);
 
-    // Analysis marks. Where there is a pitch, a period apart from the loudest frame of the
-    // channels' mix in the note's first period, so every grain is cut around the same point of
-    // its period, as the voice's pulses are; 5 ms apart where there isn't.
-    struct Mark { double at; int period; bool voiced; };
-    std::vector<Mark> marks;
-    std::vector<float> mix ((size_t) bufferFrames, 0.0f);
+    if (end <= start || sampleRate <= 0.0)
+        return {};
 
-    for (int ch = 0; ch < channels; ++ch)
-        juce::FloatVectorOperations::add (mix.data(), in.getReadPointer (ch), bufferFrames);
+    const auto context = (juce::int64) std::lround (contextSeconds * sampleRate);
+    return detect (snapshot, juce::jmax ((juce::int64) 0, start - context), juce::jmin (length, end + context), sampleRate, progress);
+}
 
-    const auto loudestIn = [&] (double from, double to)
+std::vector<Note> findNotes (const Track& track)
+{
+    const auto frames = (int) track.hz.size();
+    const auto steady = juce::jmax (1, (int) std::lround (0.02 * hopsPerSecond));   // 20 ms of frames
+    std::vector<Note> notes;
+
+    const auto midiAt = [&] (int f) { return 69.0 + 12.0 * std::log2 ((double) track.hz[(size_t) f] / 440.0); };
+
+    for (int f = 0; f < frames;)
     {
-        auto best = (int) std::ceil (from - (double) bufferStart);
-
-        for (auto i = best; i < to - (double) bufferStart; ++i)
-            if (std::abs (mix[(size_t) i]) > std::abs (mix[(size_t) best]))
-                best = i;
-
-        return (double) best + (double) bufferStart;
-    };
-
-    auto wasVoiced = false;
-
-    for (auto t = (double) workStart; t < (double) workEnd;)
-    {
-        const auto hz = (double) track.hz[(size_t) frameAt (t)];
-
-        if (hz <= 0.0)
+        if (track.hz[(size_t) f] <= 0.0f)
         {
-            marks.push_back ({ t, unvoiced, false });
-            t += unvoiced;
-            wasVoiced = false;
+            ++f;
             continue;
         }
 
-        const auto period = sampleRate / hz;
-        if (! wasVoiced)
-            t = loudestIn (t, t + period);
+        auto runEnd = f;
 
-        marks.push_back ({ t, juce::jmax (2, (int) std::lround (period)), true });
-        t += period;
-        wasVoiced = true;
-    }
+        while (runEnd < frames && track.hz[(size_t) runEnd] > 0.0f)
+            ++runEnd;
 
-    // The input between frames: a cubic (Catmull-Rom) curve, exact on a frame.
-    const auto read = [&] (int ch, double at)
-    {
-        const auto base = (int) std::floor (at);
-        const auto x = (float) (at - base);
+        // The run's pitch, each frame the median of five around it (within the run).
+        std::vector<double> smooth;
 
-        if (base < 1 || base + 2 >= bufferFrames)
-            return 0.0f;
-
-        const auto* d = in.getReadPointer (ch);
-        const auto p0 = d[base - 1], p1 = d[base], p2 = d[base + 1], p3 = d[base + 2];
-        return p1 + 0.5f * x * (p2 - p0 + x * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3 + x * (3.0f * (p1 - p2) + p3 - p0)));
-    };
-
-    // Synthesis: from each output mark to the next a period of the new pitch, each taking the
-    // grain of the analysis mark nearest it, the grain's centre put exactly at the mark. A note's
-    // first grain goes where it was cut, so the note starts in step with the audio before it.
-    size_t k = 0;
-    auto count = 0;
-    auto inNote = false;
-
-    for (auto t = (double) workStart; t < (double) workEnd; ++count)
-    {
-        while (k + 1 < marks.size() && std::abs (marks[k + 1].at - t) <= std::abs (marks[k].at - t))
-            ++k;
-
-        const auto& m = marks[k];
-
-        if (m.voiced && ! inNote)
-            t = m.at;
-
-        inNote = m.voiced;
-        const auto f = frameAt (t);
-        const auto hz = (double) track.hz[(size_t) f];
-        const auto step = hz > 0.0 ? sampleRate / hz / std::pow (2.0, shift[(size_t) f] / 1200.0) : (double) m.period;
-        const auto centre = t - (double) bufferStart, source = m.at - (double) bufferStart;
-
-        for (auto to = (int) std::ceil (centre - m.period); to < centre + m.period; ++to)
+        for (int g = f; g < runEnd; ++g)
         {
-            const auto u = (double) to - centre;
-            const auto w = (float) (0.5 + 0.5 * std::cos (juce::MathConstants<double>::pi * u / m.period));
+            std::vector<double> around;
 
-            if (to < 0 || to >= bufferFrames)
+            for (int h = juce::jmax (f, g - 2); h <= juce::jmin (runEnd - 1, g + 2); ++h)
+                around.push_back (midiAt (h));
+
+            std::nth_element (around.begin(), around.begin() + (long) around.size() / 2, around.end());
+            smooth.push_back (around[around.size() / 2]);
+        }
+
+        // Splits where the pitch stays away from the note's for long enough.
+        auto noteStart = 0;
+
+        for (int g = 0; g < (int) smooth.size();)
+        {
+            std::vector<double> sofar (smooth.begin() + noteStart, smooth.begin() + g + 1);
+            std::nth_element (sofar.begin(), sofar.begin() + (long) sofar.size() / 2, sofar.end());
+            const auto pitch = sofar[sofar.size() / 2];
+            auto away = g + 1;
+
+            while (away < (int) smooth.size() && std::abs (smooth[(size_t) away] - pitch) > 0.6 && away - g <= steady)
+                ++away;
+
+            if (away - (g + 1) >= steady)
+            {
+                notes.push_back ({ f + noteStart, f + g + 1, 0.0, 0.0 });
+                noteStart = g + 1;
+                g = g + 1;
                 continue;
+            }
 
-            weights[(size_t) to] += w;
-
-            for (int ch = 0; ch < channels; ++ch)
-                sum.addSample (ch, to, w * read (ch, source + u));
+            ++g;
         }
 
-        t += step;
-
-        if (progress != nullptr && (count & 1023) == 0 && ! progress (0.5f + 0.5f * (float) ((t - (double) workStart) / (double) (workEnd - workStart))))
-            return nullptr;
+        notes.push_back ({ f + noteStart, runEnd, 0.0, 0.0 });
+        f = runEnd;
     }
 
-    // The range: the overlap-add divided by the windows' sum, easing from the audio as it was at
-    // edges inside the file.
-    const auto n = (int) (end - start);
-    juce::AudioBuffer<float> out (channels, n);
-    const auto ease = juce::jmax ((juce::int64) 1, juce::jmin ((juce::int64) std::lround (easeSeconds * sampleRate), (end - start) / 2));
-
-    for (int i = 0; i < n; ++i)
+    for (auto& n : notes)
     {
-        const auto frame = start + i;
-        const auto at = (int) (frame - bufferStart);
-        const auto w = weights[(size_t) at];
-        auto mixIn = 1.0f;
+        std::vector<double> pitches;
 
-        if (start > 0 && frame - start < ease)
-            mixIn = (float) ((double) (frame - start) / (double) ease);
-        else if (end < length && end - 1 - frame < ease)
-            mixIn = (float) ((double) (end - 1 - frame) / (double) ease);
+        for (int g = n.first; g < n.end; ++g)
+            pitches.push_back (midiAt (g));
 
-        for (int ch = 0; ch < channels; ++ch)
-        {
-            const auto was = in.getSample (ch, at);
-            const auto now = w > 0.25f ? sum.getSample (ch, at) / w : was;
-            out.setSample (ch, i, was + (now - was) * mixIn);
-        }
+        std::nth_element (pitches.begin(), pitches.begin() + (long) pitches.size() / 2, pitches.end());
+        n.pitch = pitches[pitches.size() / 2];
     }
 
-    std::vector<AudioSnapshot::Segment> segments { { std::make_shared<const AudioBlock> (std::move (out)), 0, (juce::int64) n } };
-    const AudioClip clip { channels, sampleRate, std::move (segments) };
-    return AudioEdits::replaceWithClip (snapshot, start, end, clip);
+    return notes;
+}
+
+std::vector<Note> snapped (std::vector<Note> notes)
+{
+    for (auto& n : notes)
+        n.shiftCents = (std::round (n.pitch) - n.pitch) * 100.0;
+
+    return notes;
+}
+
+std::vector<double> shiftsFor (const Track& track, const std::vector<Note>& notes)
+{
+    const auto frames = (int) track.hz.size();
+    std::vector<double> each ((size_t) frames, 0.0);
+    std::vector<bool> inNote ((size_t) frames, false);
+
+    for (auto& n : notes)
+        for (int f = juce::jmax (0, n.first); f < juce::jmin (frames, n.end); ++f)
+        {
+            each[(size_t) f] = n.shiftCents;
+            inNote[(size_t) f] = true;
+        }
+
+    // Eased where one note meets the next: the mean over five frames (25 ms) of notes only.
+    std::vector<double> out ((size_t) frames, 0.0);
+
+    for (int f = 0; f < frames; ++f)
+    {
+        if (! inNote[(size_t) f])
+            continue;
+
+        double sum = 0.0;
+        auto count = 0;
+
+        for (int g = juce::jmax (0, f - 2); g <= juce::jmin (frames - 1, f + 2); ++g)
+            if (inNote[(size_t) g])
+            {
+                sum += each[(size_t) g];
+                ++count;
+            }
+
+        out[(size_t) f] = sum / count;
+    }
+
+    return out;
+}
+
+AudioDocument::Snapshot moveNotes (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate, const Track& track,
+                                   const std::vector<Note>& notes, const std::function<bool (float)>& progress)
+{
+    const auto length = snapshot.getNumFrames();
+    start = juce::jlimit ((juce::int64) 0, length, start);
+    end = juce::jlimit (start, length, end);
+
+    if (end <= start || sampleRate <= 0.0 || track.hz.empty() || track.first > start
+        || track.first + (juce::int64) track.hz.size() * track.hop < end)
+        return nullptr;
+
+    return render (snapshot, start, end, sampleRate, track, shiftsFor (track, notes), progress);
 }
 }

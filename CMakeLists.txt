@@ -144,6 +144,7 @@ target_sources(SpectraBlade PRIVATE
     Source/ClipProperties.cpp
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
+    Source/PitchEditor.cpp
     Source/WaveformView.cpp
     Source/MixerView.cpp
     Source/SurroundPad.cpp
@@ -275,6 +276,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/CentreChannel.cpp
     Source/PhaseCorrection.cpp
     Source/PitchCorrection.cpp
+    Source/PitchEditor.cpp
     Source/Leveller.cpp
     Source/Scrubber.cpp
     Source/ClickRepair.cpp

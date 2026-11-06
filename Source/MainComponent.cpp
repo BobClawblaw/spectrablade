@@ -4,6 +4,7 @@
 #include "CentreChannel.h"
 #include "PhaseCorrection.h"
 #include "PitchCorrection.h"
+#include "PitchEditor.h"
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Generator.h"
@@ -69,11 +70,11 @@ namespace
         const juce::String editor { "editor" }, rack { "rack" }, selection { "selection" }, mixer { "mixer" },
                            clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
                            history { "history" }, notes { "notes" }, files { "files" }, levels { "levels" },
-                                spectrum { "spectrum" }, phase { "phase" }, video { "video" };
+                                spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" };
 
         juce::StringArray all()
         {
-            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video };
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch };
         }
     }
 
@@ -142,7 +143,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1188,7 +1189,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdPitchCorrection; ++id)
+    for (int id = cmdOpen; id <= cmdShowPitchEditor; ++id)
         ids.add (id);
 }
 
@@ -1495,6 +1496,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                info.setActive (backgroundJob == nullptr); break;
         case cmdKeepProjectHistory: info.setInfo ("Keep Undo History in Projects", "Save each file's undo steps with a project (writing the audio of every version they hold)", "File", 0);
                                     info.setTicked (appProperties.getUserSettings()->getBoolValue (projectHistoryKey, true)); break;
+        case cmdShowPitchEditor: info.setInfo ("Pitch Editor", "Show or hide the panel for moving the notes of a voice or solo line by hand", "Window", 0);
+                           info.setTicked (dock->isShown (Panels::pitch)); break;
         case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's or session's video, following the playhead", "Window", 0);
                            info.setTicked (dock->isShown (Panels::video)); break;
         case cmdAttachVideo: info.setInfo ("Attach Video...", "Choose the video this file's sound goes with, to watch in the Video panel and to put the sound back into", "File", 0);
@@ -2307,6 +2310,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveChannels: saveChannels(); break;
         case cmdNewFromChannels: newFileFromChannels(); break;
         case cmdShowVideo: dock->toggle (Panels::video); break;
+        case cmdShowPitchEditor: dock->toggle (Panels::pitch); break;
         case cmdOpenProject: chooseProject(); break;
         case cmdSaveProject: saveProject (false); break;
         case cmdSaveProjectAs: saveProject (true); break;
@@ -2469,7 +2473,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowVideo, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
 
             juce::PopupMenu workspaceMenu;
 
@@ -5004,6 +5008,45 @@ void MainComponent::askToLevelSpeech()
         runStepInBackground ({ "levelSpeech", { { "target", s.targetLufs }, { "boost", s.maxBoostDb }, { "cut", s.maxCutDb }, { "silence", s.silenceLufs } }, nullptr },
                              "Levelling speech...");
     }), true);
+}
+
+void MainComponent::moveNotesInBackground (const PitchEditor::Source& source, const PitchCorrection::Track& track,
+                                           const std::vector<PitchCorrection::Note>& notes)
+{
+    auto& doc = engine.document;
+
+    if (multitrackMode || ! doc.hasAudio() || backgroundJob != nullptr)
+        return;
+
+    engine.getPlayer().pause();
+    const auto selected = ! waveform.getSelection().isEmpty();
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Moving the notes...",
+        [result, source, track, notes] (const std::function<bool (float)>& progress)
+        {
+            *result = PitchCorrection::moveNotes (*source.audio, source.start, source.end, source.sampleRate, track, notes, progress);
+            return *result != nullptr;
+        },
+        [this, result, source, selected]
+        {
+            auto* panel = dynamic_cast<PitchEditor*> (madePanels.count (Panels::pitch) > 0 ? madePanels[Panels::pitch].get() : nullptr);
+
+            if (engine.document.getVersion() != source.version)
+            {
+                showError ("Pitch Editor", "The audio changed meanwhile, so the result was discarded.");
+                return;
+            }
+
+            if (*result == nullptr)
+                return;
+
+            applyEdit (*result, "Move Notes", selected ? juce::Range<juce::int64> (source.start, source.end) : juce::Range<juce::int64>());
+
+            if (panel != nullptr)
+                panel->clear ("Applied. Analyse again to move more.");
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::askForPitchCorrection()
@@ -9335,6 +9378,26 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
     }
     else if (id == Panels::notes)
         made = std::make_unique<SessionNotes> (engine.session);
+    else if (id == Panels::pitch)
+    {
+        auto panel = std::make_unique<PitchEditor>();
+        panel->readSource = [this]() -> std::optional<PitchEditor::Source>
+        {
+            auto& doc = engine.document;
+
+            if (multitrackMode || ! doc.hasAudio())
+                return std::nullopt;
+
+            const auto range = selectionOrAll();
+            return PitchEditor::Source { doc.getSnapshot(), range.getStart(), range.getEnd(), doc.getSampleRate(), doc.getVersion() };
+        };
+        panel->readVersion = [this] { return engine.document.getVersion(); };
+        panel->apply = [this] (const PitchEditor::Source& source, const PitchCorrection::Track& track, const std::vector<PitchCorrection::Note>& notes)
+        {
+            moveNotesInBackground (source, track, notes);
+        };
+        made = std::move (panel);
+    }
     else if (id == Panels::video)
     {
         auto panel = std::make_unique<Video::Panel>();
@@ -9393,6 +9456,7 @@ juce::String MainComponent::getTitle (const juce::String& id)
     if (id == Panels::spectrum)        return "Frequency Analysis";
     if (id == Panels::phase)           return "Phase Meter";
     if (id == Panels::video)           return "Video";
+    if (id == Panels::pitch)           return "Pitch Editor";
     return id;
 }
 

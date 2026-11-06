@@ -49,6 +49,40 @@ namespace PitchCorrection
     /** Whether a note (in MIDI numbers, 69 = A 440 Hz) is in the scale. */
     bool inScale (int note, const Settings&);
 
+    // ---- By hand: notes found in the pitch, each moved on its own.
+
+    /** A note: a stretch of a track's frames [first, end) holding near one pitch, its pitch the
+        median of theirs (in MIDI numbers, 69 = A 440 Hz, with fractions), and how far it is to be
+        moved, in cents. */
+    struct Note
+    {
+        int first = 0, end = 0;
+        double pitch = 0.0;
+        double shiftCents = 0.0;
+    };
+
+    /** The audio's pitch over [start, end) and 50 ms either side (so the edges have context), as
+        correcting needs it. Empty when cancelled or for an empty range. */
+    Track analyse (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress = {});
+
+    /** The notes in a track: each run of frames with a pitch, split where the pitch (smoothed over
+        five frames) moves more than 0.6 of a semitone from the note's for 20 ms or more, so vibrato
+        and small slides stay in one note and a step to another note starts a new one. */
+    std::vector<Note> findNotes (const Track&);
+
+    /** Each note moved to the nearest semitone (A = 440 Hz). */
+    std::vector<Note> snapped (std::vector<Note>);
+
+    /** The shift for each frame of the track, in cents: each note's own, eased from one note to
+        the next over 25 ms where they touch, 0 elsewhere. */
+    std::vector<double> shiftsFor (const Track&, const std::vector<Note>&);
+
+    /** Moves the notes over [start, end) as their shifts say (the track from analyse over the same
+        range), easing at the range's edges as correct does. nullptr for an empty range, a track
+        that doesn't fit, or when cancelled. */
+    AudioDocument::Snapshot moveNotes (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Track&,
+                                       const std::vector<Note>&, const std::function<bool (float)>& progress = {});
+
     /** Moves the pitch over [start, end) to the scale, easing from the audio as it was over 10 ms at
         the edges of a range that doesn't reach the file's. nullptr for an empty range, invalid
         settings, or when cancelled. */

@@ -30,6 +30,7 @@
 #include "Dock.h"
 #include "Batch.h"
 #include "EditorBar.h"
+#include "PitchEditor.h"
 
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
@@ -187,6 +188,7 @@ private:
     void askForCentreChannel();
     void askForPhaseCorrection();
     void askForPitchCorrection();
+    void moveNotesInBackground (const PitchEditor::Source&, const PitchCorrection::Track&, const std::vector<PitchCorrection::Note>&);
     void askToLevelSpeech();
     void askForVideoStart();
     void detachVideo();

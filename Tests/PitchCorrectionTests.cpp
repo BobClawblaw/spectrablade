@@ -4,6 +4,7 @@
 #include <JuceHeader.h>
 #include "../Source/PitchCorrection.h"
 #include "../Source/AudioEdits.h"
+#include "../Source/PitchEditor.h"
 #include "TestUtils.h"
 #include "PitchCorrectionTests.h"
 
@@ -226,8 +227,179 @@ namespace
     }
 }
 
+namespace
+{
+    /** A melody: A3, B3 with a vibrato of 30 cents at 5 Hz, C4, each 0.5 s and joined; 0.2 s of
+        silence; then 228 Hz for 0.5 s. */
+    double melody (int i)
+    {
+        const auto t = i / rate;
+
+        if (t < 0.5)  return 220.0;
+        if (t < 1.0)  return 246.94 * std::pow (2.0, 0.3 / 12.0 * std::sin (juce::MathConstants<double>::twoPi * 5.0 * t));
+        if (t < 1.5)  return 261.63;
+        if (t < 1.7)  return 0.0;
+        return 228.0;
+    }
+
+    AudioDocument::Snapshot melodySnapshot()
+    {
+        const auto all = buzz ((int) (2.2 * rate), [] (int i) { const auto hz = melody (i); return hz > 0.0 ? hz : 100.0; });
+        juce::AudioBuffer<float> b (2, (int) all->getNumFrames());
+        all->read (b, 0, 0, b.getNumSamples());
+        b.clear ((int) (1.5 * rate), (int) (0.2 * rate));
+        return AudioEdits::fromBuffer (std::move (b));
+    }
+
+    void testNotes()
+    {
+        const auto in = melodySnapshot();
+        const auto length = in->getNumFrames();
+        const auto track = PitchCorrection::analyse (*in, 0, length, rate);
+        const auto notes = PitchCorrection::findNotes (track);
+        juce::StringArray seen;
+        const double wanted[] { 57.0, 59.0, 60.0, 69.0 + 12.0 * std::log2 (228.0 / 440.0) };
+        auto right = notes.size() == 4;
+
+        for (size_t k = 0; k < notes.size(); ++k)
+        {
+            seen.add (juce::String (notes[k].pitch, 2) + " from " + juce::String ((double) (track.first + (juce::int64) notes[k].first * track.hop) / rate, 2) + " s");
+            right = right && k < 4 && std::abs (notes[k].pitch - wanted[k]) < (k == 1 ? 0.15 : 0.05);
+        }
+
+        check (right, "pitch correction by hand: a melody of A3, B3 with vibrato, C4, a pause and a note at 228 Hz is found as four notes, "
+                      "within 5 cents of each (15 for the one with vibrato, whose median over its 2.5 swings isn't its centre: "
+                          + seen.joinIntoString ("; ") + ")");
+
+        if (notes.size() != 4)
+            return;
+
+        // B3 moved up a semitone and the last note snapped to its nearest (A#3): those move, the others stay.
+        auto moved = PitchCorrection::snapped (notes);
+        moved[0].shiftCents = moved[2].shiftCents = 0.0;
+        moved[1].shiftCents = 100.0;
+        const auto out = PitchCorrection::moveNotes (*in, 0, length, rate, track, moved);
+        const auto pitchOf = [&] (const AudioSnapshot& s, double from, double to) { return medianPitch (s, (juce::int64) (from * rate), (juce::int64) (to * rate)); };
+        const auto aSharp = 440.0 * std::pow (2.0, 1.0 / 12.0) / 2.0;
+
+        if (out == nullptr)
+        {
+            check (false, "pitch correction by hand: notes are moved");
+            return;
+        }
+
+        const auto first = cents (pitchOf (*out, 0.1, 0.4), 220.0), raised = cents (pitchOf (*out, 0.6, 0.9), pitchOf (*in, 0.6, 0.9)) - 100.0;
+        const auto third = cents (pitchOf (*out, 1.1, 1.4), 261.63), last = cents (pitchOf (*out, 1.8, 2.1), aSharp);
+        const auto snapCents = moved[3].shiftCents, snapWanted = cents (aSharp, 228.0);
+
+        check (std::abs (first) < 1.0 && std::abs (raised) < 1.0 && std::abs (third) < 1.0 && std::abs (last) < 1.0 && std::abs (snapCents - snapWanted) < 1.0,
+               "pitch correction by hand: B3 (with vibrato) moved up a semitone sounds a semitone higher (" + juce::String (raised, 2) + " cents off), the "
+               "note at 228 Hz snapped to the nearest semitone moves " + juce::String (snapCents, 1) + " cents to A#3 (" + juce::String (last, 2)
+                   + " cents off), and the notes left alone stay (" + juce::String (first, 2) + " and " + juce::String (third, 2) + " cents)");
+
+        // Shifts ease from note to note; a track that doesn't reach the range is refused; nothing
+        // moved, a note sounds as it was.
+        const auto shifts = PitchCorrection::shiftsFor (track, moved);
+        auto eased = true;
+
+        for (size_t f = 1; f < shifts.size(); ++f)
+            if (track.hz[f] > 0.0f && track.hz[f - 1] > 0.0f)
+                eased = eased && std::abs (shifts[f] - shifts[f - 1]) <= 100.0 / 5.0 + 1.0e-9;
+
+        const auto still = PitchCorrection::moveNotes (*in, 0, length, rate, track, notes);
+        const auto stillPitch = still != nullptr ? cents (pitchOf (*still, 1.1, 1.4), 261.63) : 99.0;
+        const auto shortTrack = PitchCorrection::analyse (*in, 0, length / 2, rate);
+
+        check (eased && std::abs (stillPitch) < 1.0 && PitchCorrection::moveNotes (*in, 0, length, rate, shortTrack, moved) == nullptr
+                   && PitchCorrection::moveNotes (*in, 10, 10, rate, track, moved) == nullptr,
+               "pitch correction by hand: from one note to the next the shift changes by at most a fifth of the step a frame (over 25 ms); "
+               "with nothing moved a note stays (" + juce::String (stillPitch, 2) + " cents); a pitch track that doesn't reach the range, "
+               "and an empty range, are refused");
+
+        // 30 s of audio is analysed quickly enough to wait for in the panel.
+        const auto longOne = buzz (30 * second, [] (int) { return 196.0; });
+        const auto began = juce::Time::getMillisecondCounterHiRes();
+        const auto longTrack = PitchCorrection::analyse (*longOne, 0, 30 * second, rate);
+        const auto longNotes = PitchCorrection::findNotes (longTrack);
+        const auto took = (juce::Time::getMillisecondCounterHiRes() - began) / 1000.0;
+        check (took < 3.0 && longNotes.size() == 1,
+               "pitch correction by hand: 30 s of a held note is analysed and found as one note in " + juce::String (took, 2) + " s");
+    }
+}
+
+namespace
+{
+    juce::MouseEvent mouseAt (juce::Component& c, juce::Point<float> at, juce::Point<float> down, juce::ModifierKeys mods = {}, int clicks = 1)
+    {
+        const auto now = juce::Time::getCurrentTime();
+        return { juce::Desktop::getInstance().getMainMouseSource(), at, mods, juce::MouseInputSource::defaultPressure,
+                 juce::MouseInputSource::defaultOrientation, juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                 juce::MouseInputSource::defaultTiltY, &c, &c, now, down, now, clicks, at != down };
+    }
+
+    void testPitchEditor()
+    {
+        const auto audio = melodySnapshot();
+        juce::uint32 version = 7;
+        std::vector<PitchCorrection::Note> handed;
+        PitchEditor editor;
+        editor.setSize (900, 320);
+        editor.readSource = [&] { return std::optional<PitchEditor::Source> ({ audio, 0, audio->getNumFrames(), rate, 7 }); };
+        editor.readVersion = [&] { return version; };
+        editor.apply = [&] (const PitchEditor::Source&, const PitchCorrection::Track&, const std::vector<PitchCorrection::Note>& notes) { handed = notes; };
+        editor.analyse();
+        const auto found = editor.getNotes().size();
+
+        const auto drag = [&] (int note, float dy, juce::ModifierKeys mods)
+        {
+            const auto from = editor.centreOf (note);
+            editor.mouseDown (mouseAt (editor, from, from, mods));
+            editor.mouseDrag (mouseAt (editor, from.translated (0.0f, dy), from, mods));
+            editor.mouseUp (mouseAt (editor, from.translated (0.0f, dy), from, mods));
+            return editor.getNotes()[(size_t) note];
+        };
+
+        // Up about one and a half semitones' worth: to a whole semitone; with Option, by cents.
+        const auto rowHeight = found == 4 ? (editor.centreOf (0).y - editor.centreOf (2).y) / (float) (editor.getNotes()[2].pitch - editor.getNotes()[0].pitch) : 1.0f;
+        const auto whole = found == 4 ? drag (1, -1.4f * rowHeight, {}) : PitchCorrection::Note {};
+        const auto landed = whole.pitch + whole.shiftCents / 100.0;
+        const auto free = found == 4 ? drag (0, -0.37f * rowHeight, juce::ModifierKeys::altModifier) : PitchCorrection::Note {};
+
+        // Double-clicking the last note snaps it to the nearest semitone.
+        if (found == 4)
+            editor.mouseDoubleClick (mouseAt (editor, editor.centreOf (3), editor.centreOf (3), {}, 2));
+
+        const auto snappedLast = found == 4 ? editor.getNotes()[3].shiftCents : 0.0;
+
+        // Apply hands the notes over; once the audio has changed, it asks for a new analysis instead.
+        for (auto* child : editor.getChildren())
+            if (auto* b = dynamic_cast<juce::TextButton*> (child); b != nullptr && b->getButtonText() == "Apply")
+                b->onClick();
+
+        const auto handedOver = handed.size() == found && found == 4 && juce::exactlyEqual (handed[1].shiftCents, whole.shiftCents);
+        handed.clear();
+        version = 8;
+
+        for (auto* child : editor.getChildren())
+            if (auto* b = dynamic_cast<juce::TextButton*> (child); b != nullptr && b->getButtonText() == "Apply")
+                b->onClick();
+
+        const auto refusedStale = handed.empty() && editor.getNotes().empty() && editor.getStatus().contains ("Analyse again");
+
+        check (found == 4 && std::abs (landed - std::round (landed)) < 1.0e-9 && whole.shiftCents > 50.0 && whole.shiftCents < 250.0
+                   && std::abs (free.shiftCents - 37.0) < 3.0 && std::abs (snappedLast - cents (440.0 * std::pow (2.0, 1.0 / 12.0) / 2.0, 228.0)) < 1.0
+                   && handedOver && refusedStale,
+               "pitch editor: analysed, a melody shows its four notes; dragging a note lands it on a whole semitone ("
+                   + juce::String (whole.shiftCents, 1) + " cents), with Option it moves by cents (" + juce::String (free.shiftCents, 1)
+                   + " for 0.37 of a semitone's height), double-clicking snaps one (" + juce::String (snappedLast, 1) + " cents); Apply hands "
+                   "the notes over, and once the audio has changed asks for a new analysis instead");
+    }
+}
+
 void runPitchCorrectionTests()
 {
+    testPitchEditor();
+    testNotes();
     testDetect();
     testScales();
     testGlideAndSpeed();
