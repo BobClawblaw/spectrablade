@@ -346,6 +346,10 @@ juce::Range<float> automationRange (AutomationParameter p)
         case AutomationParameter::volume: return { -60.0f, 12.0f };
         case AutomationParameter::pan:    return { -1.0f, 1.0f };
         case AutomationParameter::effect: return { 0.0f, 1.0f };
+        case AutomationParameter::surroundX:
+        case AutomationParameter::surroundY:     return { -1.0f, 1.0f };
+        case AutomationParameter::surroundWidth: return { 0.0f, 1.0f };
+        case AutomationParameter::lfe:           return { -60.0f, SurroundPan::maxLfeDb };
     }
 
     return {};
@@ -365,9 +369,31 @@ const Envelope& SessionTrack::envelope (const AutomationTarget& t) const
                     return e.envelope;
 
             return none;
+        case AutomationParameter::surroundX:
+        case AutomationParameter::surroundY:
+        case AutomationParameter::surroundWidth:
+        case AutomationParameter::lfe:
+            return surroundEnvelopes[(size_t) ((int) t.parameter - (int) AutomationParameter::surroundX)];
     }
 
     return none;
+}
+
+SurroundPan SessionTrack::surroundPanAt (juce::int64 frame) const
+{
+    auto p = surroundPan;
+    const auto at = [&] (int i, float setting) { return surroundEnvelopes[(size_t) i].isEmpty() ? setting : surroundEnvelopes[(size_t) i].valueAt (frame); };
+    p.x = at (0, p.x);
+    p.y = at (1, p.y);
+    p.width = at (2, p.width);
+
+    if (! surroundEnvelopes[3].isEmpty())
+    {
+        const auto db = surroundEnvelopes[3].valueAt (frame);
+        p.lfeDb = db <= -60.0f ? SurroundPan::lfeOff : db;
+    }
+
+    return p;
 }
 
 float SessionTrack::valueAt (const AutomationTarget& t, juce::int64 frame) const
@@ -377,7 +403,18 @@ float SessionTrack::valueAt (const AutomationTarget& t, juce::int64 frame) const
     if (! e.isEmpty())
         return e.valueAt (frame);
 
-    return t.parameter == AutomationParameter::volume ? gainDb : t.parameter == AutomationParameter::pan ? pan : 0.0f;
+    switch (t.parameter)
+    {
+        case AutomationParameter::volume:        return gainDb;
+        case AutomationParameter::pan:           return pan;
+        case AutomationParameter::surroundX:     return surroundPan.x;
+        case AutomationParameter::surroundY:     return surroundPan.y;
+        case AutomationParameter::surroundWidth: return surroundPan.width;
+        case AutomationParameter::lfe:           return juce::jmax (-60.0f, surroundPan.lfeDb);
+        case AutomationParameter::effect:        break;
+    }
+
+    return 0.0f;
 }
 
 //==============================================================================
@@ -1276,6 +1313,9 @@ namespace
             update (track.volumeEnvelope);
             update (track.panEnvelope);
 
+            for (auto& e : track.surroundEnvelopes)
+                update (e);
+
             for (auto& effect : track.effectEnvelopes)
                 update (effect.envelope);
         }
@@ -1404,6 +1444,9 @@ SessionTime copyTime (const SessionState& s, juce::int64 start, juce::int64 end)
         copy.volume = lineAcross (track.volumeEnvelope, start, end);
         copy.pan = lineAcross (track.panEnvelope, start, end);
 
+        for (size_t e = 0; e < copy.surround.size(); ++e)
+            copy.surround[e] = lineAcross (track.surroundEnvelopes[e], start, end);
+
         for (auto& e : track.effectEnvelopes)
             copy.effects.push_back ({ e.slotId, e.parameterId, lineAcross (e.envelope, start, end) });
     }
@@ -1437,6 +1480,11 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
 
         if (! copied.pan.isEmpty())
             track.panEnvelope = withLine (before[i].panEnvelope, copied.pan, at, t.length, before[i].pan);
+
+        for (size_t e = 0; e < copied.surround.size(); ++e)
+            if (! copied.surround[e].isEmpty())
+                track.surroundEnvelopes[e] = withLine (before[i].surroundEnvelopes[e], copied.surround[e], at, t.length,
+                                                       before[i].valueAt (surroundParameters[e], 0));
 
         for (size_t e = 0; e < track.effectEnvelopes.size(); ++e)
         {
@@ -1821,6 +1869,13 @@ bool setEnvelope (SessionState& s, juce::uint32 trackId, const AutomationTarget&
             else if (target.parameter == AutomationParameter::pan)
             {
                 t.panEnvelope = std::move (e);
+            }
+            else if (target.parameter != AutomationParameter::effect)
+            {
+                if (t.isFolder)
+                    return false;
+
+                t.surroundEnvelopes[(size_t) ((int) target.parameter - (int) AutomationParameter::surroundX)] = std::move (e);
             }
             else
             {
@@ -2228,6 +2283,10 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (auto* xml = writeEnvelope (t.panEnvelope))
             xml->setAttribute ("parameter", "pan");
 
+        for (size_t e = 0; e < t.surroundEnvelopes.size(); ++e)
+            if (auto* xml = writeEnvelope (t.surroundEnvelopes[e]))
+                xml->setAttribute ("parameter", juce::StringArray { "surroundX", "surroundY", "surroundWidth", "lfe" }[(int) e]);
+
         for (auto& e : t.effectEnvelopes)
         {
             if (auto* xml = writeEnvelope (e.envelope))
@@ -2456,6 +2515,8 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
                 target = AutomationParameter::volume;
             else if (name == "pan")
                 target = AutomationParameter::pan;
+            else if (const auto e = juce::StringArray { "surroundX", "surroundY", "surroundWidth", "lfe" }.indexOf (name); e >= 0)
+                target = surroundParameters[(size_t) e];
             else if (name == "effect")
                 target = AutomationTarget::effect ((juce::uint32) envelopeXml->getIntAttribute ("slot"), envelopeXml->getStringAttribute ("id"));
             else

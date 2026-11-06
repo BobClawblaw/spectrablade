@@ -912,6 +912,22 @@ void MultitrackView::showSends (juce::uint32 trackId, juce::Component& target)
     juce::CallOutBox::launchAsynchronously (std::make_unique<SendsPanel> (engine, trackId), target.getScreenBounds(), nullptr);
 }
 
+namespace
+{
+    bool isSurroundParameter (AutomationParameter p)
+    {
+        return std::find (surroundParameters.begin(), surroundParameters.end(), p) != surroundParameters.end();
+    }
+
+    /** A surround envelope's name in the menu and on its lane, saying which way is up. */
+    juce::String surroundEnvelopeName (AutomationParameter p)
+    {
+        return p == AutomationParameter::surroundX ? "Left-Right (left at the top)"
+             : p == AutomationParameter::surroundY ? "Front-Back (front at the top)"
+             : p == AutomationParameter::surroundWidth ? "Width" : "LFE (off at the bottom)";
+    }
+}
+
 void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& target)
 {
     const auto* track = shown().findTrack (trackId);
@@ -919,12 +935,26 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
     if (track == nullptr)
         return;
 
-    enum { showVolume = 1, showPan, hide, clearVolume, clearPan, clearEffect, firstEffect = 1000 };
+    enum { showVolume = 1, showPan, hide, clearVolume, clearPan, clearEffect, clearSurround, firstSurround = 100, firstEffect = 1000 };
     const auto showing = getShownEnvelope (trackId);
     const auto showingEffect = showing.has_value() && showing->parameter == AutomationParameter::effect;
+    const auto showingSurround = showing.has_value() && isSurroundParameter (showing->parameter);
     juce::PopupMenu menu;
     menu.addItem (showVolume, "Show Volume Envelope", true, showing == AutomationParameter::volume);
     menu.addItem (showPan, "Show Pan Envelope", true, showing == AutomationParameter::pan);
+
+    // Where it plays in a 5.1 master (or kept from one): a 5.1 track has no surround pan.
+    if ((shown().surround || track->hasSurroundAutomation()) && ! track->isFolder && ! track->fiveOne)
+    {
+        juce::PopupMenu surround;
+
+        for (size_t i = 0; i < surroundParameters.size(); ++i)
+            surround.addItem (firstSurround + (int) i,
+                              surroundEnvelopeName (surroundParameters[i]) + (track->surroundEnvelopes[i].isEmpty() ? "" : " (automated)"),
+                              true, showing == surroundParameters[i]);
+
+        menu.addSubMenu ("Show Surround Envelope", surround);
+    }
 
     // Each effect's parameters, in the plug-in's order; automated ones say so.
     std::vector<AutomationTarget> effectTargets;
@@ -961,6 +991,9 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
     menu.addItem (clearPan, "Clear Pan Envelope", ! track->panEnvelope.isEmpty());
     menu.addItem (clearEffect, "Clear Shown Effect Envelope", showingEffect && ! track->envelope (*showing).isEmpty());
 
+    if (track->hasSurroundAutomation() || showingSurround)
+        menu.addItem (clearSurround, "Clear Shown Surround Envelope", showingSurround && ! track->envelope (*showing).isEmpty());
+
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
         [this, trackId, showing, effectTargets, safe = juce::Component::SafePointer<MultitrackView> (this)] (int result)
         {
@@ -970,6 +1003,12 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
             if (result >= firstEffect && result - firstEffect < (int) effectTargets.size())
             {
                 showEnvelope (trackId, effectTargets[(size_t) (result - firstEffect)]);
+                return;
+            }
+
+            if (result >= firstSurround && result - firstSurround < (int) surroundParameters.size())
+            {
+                showEnvelope (trackId, surroundParameters[(size_t) (result - firstSurround)]);
                 return;
             }
 
@@ -984,6 +1023,15 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
 
                     if (showing.has_value() && SessionEdits::setEnvelope (next, trackId, *showing, {}))
                         engine.session.apply (std::move (next), "Clear Effect Envelope");
+
+                    break;
+                }
+                case clearSurround:
+                {
+                    auto next = *engine.session.getState();
+
+                    if (showing.has_value() && SessionEdits::setEnvelope (next, trackId, *showing, {}))
+                        engine.session.apply (std::move (next), "Clear Surround Envelope");
 
                     break;
                 }
@@ -1629,8 +1677,8 @@ float MultitrackView::yForValue (int track, const AutomationTarget& p, float val
     const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + laneHeight) - envelopeMargin;
     auto proportion = envelopeScale (p.parameter).convertTo0to1 (automationRange (p.parameter).clipValue (value));
 
-    // Pan: left at the top.
-    if (p.parameter == AutomationParameter::pan)
+    // Pan, and the surround pan's left and right: left at the top.
+    if (p.parameter == AutomationParameter::pan || p.parameter == AutomationParameter::surroundX)
         proportion = 1.0f - proportion;
 
     return bottom - proportion * (bottom - top);
@@ -1641,7 +1689,7 @@ float MultitrackView::valueForY (int track, const AutomationTarget& p, float y) 
     const auto top = (float) laneTop (track) + envelopeMargin, bottom = (float) (laneTop (track) + laneHeight) - envelopeMargin;
     auto proportion = juce::jlimit (0.0f, 1.0f, (bottom - y) / (bottom - top));
 
-    if (p.parameter == AutomationParameter::pan)
+    if (p.parameter == AutomationParameter::pan || p.parameter == AutomationParameter::surroundX)
         proportion = 1.0f - proportion;
 
     return envelopeScale (p.parameter).convertFrom0to1 (proportion);
@@ -1831,9 +1879,19 @@ void MultitrackView::drawEnvelope (juce::Graphics& g, int track, const Automatio
     const auto& points = t.envelope (p).points;
     const auto area = timelineArea();
     const auto colour = p.parameter == AutomationParameter::volume ? juce::Colour (0xff7ee0ff)
-                      : p.parameter == AutomationParameter::pan ? juce::Colour (0xffff9de0) : juce::Colour (0xffb8f07a);
+                      : p.parameter == AutomationParameter::pan ? juce::Colour (0xffff9de0)
+                      : isSurroundParameter (p.parameter) ? juce::Colour (0xffffc46b) : juce::Colour (0xffb8f07a);
     const auto left = (float) area.getX(), right = (float) area.getRight();
     juce::String label = p.parameter == AutomationParameter::volume ? "Volume" : "Pan (left at the top)";
+
+    if (isSurroundParameter (p.parameter))
+    {
+        const auto value = lineValueAt (t, p, controlFrame());
+        const auto text = p.parameter == AutomationParameter::surroundWidth ? juce::String (juce::roundToInt (value * 100.0f)) + "%"
+                        : p.parameter == AutomationParameter::lfe ? (value <= -60.0f ? juce::String ("off") : juce::String (value, 1) + " dB")
+                        : juce::String (value, 2);
+        label = "Surround " + surroundEnvelopeName (p.parameter) + " " + text + (shown().surround ? "" : " (in a 5.1 master)");
+    }
 
     if (p.parameter == AutomationParameter::effect)
     {

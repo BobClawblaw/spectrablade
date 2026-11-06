@@ -263,13 +263,26 @@ public:
             resized();
         }
 
-        surroundPad.setPan (t.surroundPan);
+        // Each part that follows an envelope shows its value at the playhead and can't be set.
+        const auto& envelopes = t.surroundEnvelopes;
+        const auto pointAutomated = ! envelopes[0].isEmpty() || ! envelopes[1].isEmpty();
+        const auto widthAutomated = ! envelopes[2].isEmpty(), lfeAutomated = ! envelopes[3].isEmpty();
+        const auto now = t.surroundPanAt (frame);
+        surroundPad.setEnabled (! pointAutomated);
+        width.setEnabled (! widthAutomated);
+        lfe.setEnabled (! lfeAutomated);
+        surroundPad.setTooltip (pointAutomated ? "Where it plays in the 5.1 master follows its envelopes"
+                                               : "Where it plays in the 5.1 master: drag the point, double-click to put it back in front");
+        width.setTooltip (widthAutomated ? "Surround width follows its envelope"
+                                         : "Surround width: how far apart its left and right channels play (0: together, as mono)");
+        lfe.setTooltip (lfeAutomated ? "The LFE's share follows its envelope" : "How much also goes to the LFE (far left: none)");
+        surroundPad.setPan (now);
 
         if (! width.isMouseButtonDown())
-            width.setValue (std::round (t.surroundPan.width * 100.0f), juce::dontSendNotification);
+            width.setValue (std::round (now.width * 100.0f), juce::dontSendNotification);
 
         if (! lfe.isMouseButtonDown())
-            lfe.setValue (t.surroundPan.lfeDb > SurroundPan::lfeOff ? std::round (t.surroundPan.lfeDb) : -61.0, juce::dontSendNotification);
+            lfe.setValue (now.lfeDb > SurroundPan::lfeOff ? std::round (now.lfeDb) : -61.0, juce::dontSendNotification);
 
         repaint();
     }
@@ -546,14 +559,14 @@ void MixerView::updateMeters()
     const auto [left, right] = engine.takeMasterPeaks();
     master->meter.push (left, right);
 
-    // An automated volume or pan moves as the session plays.
+    // An automated volume, pan or surround pan moves as the session plays.
     if (engine.getPlayer().isPlaying())
     {
         const auto state = engine.session.getState();
         const auto frame = engine.getPlayer().getPositionFrames();
 
         for (size_t i = 0; i < strips.size() && i < state->tracks.size(); ++i)
-            if (! state->tracks[i].volumeEnvelope.isEmpty() || ! state->tracks[i].panEnvelope.isEmpty())
+            if (! state->tracks[i].volumeEnvelope.isEmpty() || ! state->tracks[i].panEnvelope.isEmpty() || state->tracks[i].hasSurroundAutomation())
                 strips[i]->update (state->tracks[i], (int) i, frame);
     }
 }

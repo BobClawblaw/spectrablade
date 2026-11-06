@@ -89,8 +89,13 @@ struct SessionSend
     bool preFader = false;
 };
 
-/** What an envelope automates: a track's volume or pan, or a parameter of one of its effects. */
-enum class AutomationParameter { volume, pan, effect };
+/** What an envelope automates: a track's volume or pan, or a parameter of one of its effects;
+    or where it plays in a 5.1 master: its surround pan's x, y and width, and its LFE share. */
+enum class AutomationParameter { volume, pan, effect, surroundX, surroundY, surroundWidth, lfe };
+
+/** The surround pan's parameters, in SessionTrack::surroundEnvelopes' order. */
+inline constexpr std::array<AutomationParameter, 4> surroundParameters { AutomationParameter::surroundX, AutomationParameter::surroundY,
+                                                                         AutomationParameter::surroundWidth, AutomationParameter::lfe };
 
 /** An envelope's target. For an effect parameter: the effect's slot (its TrackEffects slot id,
     which stays with the effect when the chain is reordered) and the parameter's ID. */
@@ -116,7 +121,8 @@ struct AutomationTarget
 };
 
 /** The values an envelope's points can take: volume in dB (the track fader's range), pan from
-    -1 (left) to +1 (right), an effect parameter from 0 to 1 (its normalised range). */
+    -1 (left) to +1 (right), an effect parameter from 0 to 1 (its normalised range), the surround
+    x and y from -1 to +1, its width from 0 to 1, and the LFE from -60 dB (off there) to +10 dB. */
 juce::Range<float> automationRange (AutomationParameter);
 
 /** An envelope on a parameter of one of a track's effects. */
@@ -266,6 +272,18 @@ struct SessionTrack
     std::vector<SessionClip> clips;
     std::vector<SessionSend> sends;
     Envelope volumeEnvelope, panEnvelope;  // dB, and -1 to +1
+
+    /** The surround pan's envelopes, in surroundParameters' order: x, y, width, LFE (dB, off at -60). */
+    std::array<Envelope, 4> surroundEnvelopes;
+
+    /** True when any part of its surround pan follows an envelope. */
+    bool hasSurroundAutomation() const noexcept
+    {
+        return std::any_of (surroundEnvelopes.begin(), surroundEnvelopes.end(), [] (auto& e) { return ! e.isEmpty(); });
+    }
+
+    /** Its surround pan at a session frame: each part from its envelope, or the setting. */
+    SurroundPan surroundPanAt (juce::int64 frame) const;
     std::vector<EffectEnvelope> effectEnvelopes;   // only ones with points
 
     const SessionSend* findSend (juce::uint32 busId) const;
@@ -281,7 +299,7 @@ struct SessionTrack
     /** True when anything on the track is automated. */
     bool isAutomated() const noexcept
     {
-        return ! volumeEnvelope.isEmpty() || ! panEnvelope.isEmpty() || ! effectEnvelopes.empty();
+        return ! volumeEnvelope.isEmpty() || ! panEnvelope.isEmpty() || ! effectEnvelopes.empty() || hasSurroundAutomation();
     }
 };
 
@@ -357,6 +375,7 @@ struct SessionTime
     {
         std::vector<SessionClip> clips;            // cut to the stretch, unlocked
         Envelope volume, pan;                      // empty where the track had none
+        std::array<Envelope, 4> surround;          // likewise, in surroundParameters' order
         std::vector<EffectEnvelope> effects;
     };
 

@@ -324,15 +324,59 @@ namespace
         return buffers.interfaceChannel >= 0 && first + 2 <= dest.getNumChannels() ? first : -1;
     }
 
-    /** Pans the first n frames of panIn into the 5.1 master, and clears panIn for the next. */
-    void addPanned (Buffers& buffers, const SurroundPan& pan, int n)
+    /** True when a track's or bus's surround pan is as it starts, unautomated: left to L, right to R. */
+    bool plainSurround (const SessionTrack& t)
     {
-        const auto gains = surroundGains (pan);
+        return t.surroundPan.isDefault() && ! t.hasSurroundAutomation();
+    }
 
-        for (int ch = 0; ch < 6; ++ch)
-            for (int side = 0; side < 2; ++side)
-                if (const auto g = gains[(size_t) side][(size_t) ch]; g != 0.0f)
-                    buffers.master.addFrom (ch, 0, buffers.panIn, side, 0, n, g);
+    /** Pans the first n frames of panIn (session frames from start) into the 5.1 master by the
+        track's surround pan, and clears panIn for the next. An automated pan's gains are worked
+        out every surroundStep frames of session time and go in a straight line between, so they
+        are the same however the frames are split into blocks. */
+    void addPanned (Buffers& buffers, const SessionTrack& t, juce::int64 start, int n)
+    {
+        if (! t.hasSurroundAutomation())
+        {
+            const auto gains = surroundGains (t.surroundPan);
+
+            for (int ch = 0; ch < 6; ++ch)
+                for (int side = 0; side < 2; ++side)
+                    if (const auto g = gains[(size_t) side][(size_t) ch]; g != 0.0f)
+                        buffers.master.addFrom (ch, 0, buffers.panIn, side, 0, n, g);
+
+            buffers.panIn.clear (0, n);
+            return;
+        }
+
+        constexpr juce::int64 surroundStep = 32;
+
+        for (int i = 0; i < n;)
+        {
+            const auto frame = start + i;
+            const auto from = (frame >= 0 ? frame / surroundStep : (frame - surroundStep + 1) / surroundStep) * surroundStep;
+            const auto count = (int) juce::jmin ((juce::int64) (n - i), from + surroundStep - frame);
+            const auto a = surroundGains (t.surroundPanAt (from)), b = surroundGains (t.surroundPanAt (from + surroundStep));
+
+            for (int ch = 0; ch < 6; ++ch)
+            {
+                for (int side = 0; side < 2; ++side)
+                {
+                    const auto ga = a[(size_t) side][(size_t) ch], gb = b[(size_t) side][(size_t) ch];
+
+                    if (ga == 0.0f && gb == 0.0f)
+                        continue;
+
+                    const auto* in = buffers.panIn.getReadPointer (side, i);
+                    auto* out = buffers.master.getWritePointer (ch, i);
+
+                    for (int f = 0; f < count; ++f)
+                        out[f] += in[f] * (ga + (gb - ga) * ((float) (frame + f - from) / (float) surroundStep));
+                }
+            }
+
+            i += count;
+        }
 
         buffers.panIn.clear (0, n);
     }
@@ -783,14 +827,14 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             {
                 addHeld (buffers, { track.id, 0 }, ahead, buffers.wide, numFrames, buffers.master, 0, volume, 0, 6);
             }
-            else if (track.surroundPan.isDefault())
+            else if (plainSurround (track))
             {
                 addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, buffers.master, 0, volume);
             }
             else
             {
                 addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, buffers.panIn, 0, volume);
-                addPanned (buffers, track.surroundPan, numFrames);
+                addPanned (buffers, track, start, numFrames);
             }
         }
         else if (const auto channel = outputChannel (track, dest, buffers); channel >= 0)
@@ -848,7 +892,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         // Into a 5.1 master: through panIn, then panned; or, with the pan as it starts, straight to L and R.
         const auto toMaster = state.surround && out == &dest && bus.deviceOutput < 0;
-        const auto panned = toMaster && ! bus.surroundPan.isDefault();
+        const auto panned = toMaster && ! plainSurround (bus);
 
         if (toMaster)
         {
@@ -871,7 +915,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 buffers.levels->raise (index, peakOf (input, 0, numFrames) * (volume * left), peakOf (input, 1, numFrames) * (volume * right));
 
             if (panned)
-                addPanned (buffers, bus.surroundPan, numFrames);
+                addPanned (buffers, bus, start, numFrames);
 
             continue;
         }
@@ -910,7 +954,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             buffers.levels->raise (index, peakLeft, peakRight);
 
         if (panned)
-            addPanned (buffers, bus.surroundPan, numFrames);
+            addPanned (buffers, bus, start, numFrames);
     }
 
     // A 5.1 master: L and R to the mix, and the rest to their channels, or all folded down.

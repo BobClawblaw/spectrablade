@@ -648,10 +648,181 @@ namespace
     }
 }
 
+namespace
+{
+    /** One stereo track with no fades or level, at frame 0, in a 5.1 master. */
+    SessionState surroundTrack (int seed)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.surround = true;
+        auto& t = addClipTrack (s, 2, 0, seed);
+        t.clips[0].fadeIn = t.clips[0].fadeOut = 0;
+        return s;
+    }
+
+    /** What the mixer should give: each frame's input times gains a straight line between those
+        at the 32-frame points on either side, worked out by surroundGains. */
+    juce::AudioBuffer<float> expectedPanned (const SessionTrack& t, const juce::AudioBuffer<float>& in)
+    {
+        juce::AudioBuffer<float> out (6, in.getNumSamples());
+        out.clear();
+
+        for (int i = 0; i < in.getNumSamples(); ++i)
+        {
+            const auto from = (juce::int64) (i / 32) * 32;
+            const auto a = SessionMixer::surroundGains (t.surroundPanAt (from)), b = SessionMixer::surroundGains (t.surroundPanAt (from + 32));
+            const auto f = (float) (i - from) / 32.0f;
+
+            for (int ch = 0; ch < 6; ++ch)
+                for (int side = 0; side < 2; ++side)
+                {
+                    const auto ga = a[(size_t) side][(size_t) ch], gb = b[(size_t) side][(size_t) ch];
+                    out.setSample (ch, i, out.getSample (ch, i) + in.getSample (side, i) * (ga + (gb - ga) * f));
+                }
+        }
+
+        return out;
+    }
+
+    void testSurroundAutomation (AudioEngine& engine)
+    {
+        // A sweep from the left of the room to the right, front to back, narrowing, with the LFE
+        // coming in: what plays follows the envelopes, whatever the block size.
+        auto s = surroundTrack (51);
+        const auto id = s.tracks[0].id;
+        SessionEdits::setEnvelope (s, id, AutomationParameter::surroundX, Envelope { { { 0, -1.0f }, { 3000, 1.0f } } });
+        SessionEdits::setEnvelope (s, id, AutomationParameter::surroundY, Envelope { { { 0, 1.0f }, { 3000, -1.0f } } });
+        SessionEdits::setEnvelope (s, id, AutomationParameter::surroundWidth, Envelope { { { 0, 1.0f }, { 3000, 0.0f } } });
+        SessionEdits::setEnvelope (s, id, AutomationParameter::lfe, Envelope { { { 0, -60.0f }, { 1500, -60.0f }, { 3000, 0.0f } } });
+        const auto big = render (s, 6, 2, -1, 512), small = render (s, 6, 2, -1, 97);
+        juce::AudioBuffer<float> in (2, frames);
+        in.clear();
+        s.tracks[0].clips[0].audio->read (in, 0, 0, 3000);
+        const auto expected = expectedPanned (s.tracks[0], in);
+        auto blocks = true, follows = true;
+
+        for (int ch = 0; ch < 6; ++ch)
+        {
+            blocks = blocks && same (big, ch, small, ch);
+            follows = follows && worst (big, ch, expected, ch) < 1.0e-6f;
+        }
+
+        const auto energy = [&] (int ch, int from, int to)
+        {
+            return big.getRMSLevel (ch, from, to - from);
+        };
+
+        check (blocks && follows, "surround automation: the pan follows its envelopes (gains in a straight line between points 32 frames "
+                                  "apart, within 1e-6), the same in blocks of 97 and 512, bit for bit");
+        check (energy (0, 0, 300) > 4.0f * energy (1, 0, 300) && energy (5, 2700, 3000) > 2.0f * energy (4, 2700, 3000)
+                   && energy (3, 0, 1440) == 0.0f && energy (3, 2700, 3000) > 0.0f,
+               "surround automation: the sweep starts in front on the left, ends behind on the right, and the LFE comes in after half way");
+
+        // An envelope holding the setting's value plays as the setting does; with no surround pan at
+        // all the master is the track's stereo, bit for bit.
+        auto held = surroundTrack (52);
+        held.tracks[0].surroundPan = { 0.3f, -0.2f, 0.6f, -6.0f };
+        auto setting = held;
+        SessionEdits::setEnvelope (held, held.tracks[0].id, AutomationParameter::surroundX, Envelope { { { 0, 0.3f } } });
+        const auto h = render (held, 6, 2, -1), st = render (setting, 6, 2, -1);
+        auto steady = true;
+
+        for (int ch = 0; ch < 6; ++ch)
+            steady = steady && worst (h, ch, st, ch) < 1.0e-6f;
+
+        check (steady, "surround automation: an envelope holding the setting's value plays as the setting does (within 1e-6)");
+
+        // A bus's surround pan follows its envelopes too.
+        auto routed = surroundTrack (53);
+        auto& bus = routed.addBus();
+        const auto busId = bus.id;
+        SessionEdits::setTrackOutput (routed, routed.tracks[0].id, busId);
+        SessionEdits::setEnvelope (routed, busId, AutomationParameter::surroundX, Envelope { { { 0, -1.0f }, { 3000, 1.0f } } });
+        auto direct = surroundTrack (53);
+        direct.tracks[0].surroundEnvelopes = routed.findTrack (busId)->surroundEnvelopes;
+        const auto viaBus = render (routed, 6, 2, -1, 97), viaTrack = render (direct, 6, 2, -1, 97);
+        auto busFollows = true;
+
+        for (int ch = 0; ch < 6; ++ch)
+            busFollows = busFollows && worst (viaBus, ch, viaTrack, ch) < 1.0e-6f;
+
+        check (busFollows, "surround automation: a bus's surround pan follows its envelopes as a track's does");
+
+        // A stereo master and a 5.1 track pay it no attention.
+        auto plain = s;
+        plain.surround = false;
+        auto unpanned = surroundTrack (51);
+        unpanned.surround = false;
+        auto five = surroundTrack (54);
+        five.tracks[0].fiveOne = true;
+        auto fiveAutomated = five;
+        fiveAutomated.tracks[0].surroundEnvelopes = s.tracks[0].surroundEnvelopes;
+        const auto p1 = render (plain, 2, -1), p2 = render (unpanned, 2, -1), f1 = render (five, 6, 2, -1), f2 = render (fiveAutomated, 6, 2, -1);
+        auto ignored = same (p1, 0, p2, 0) && same (p1, 1, p2, 1);
+
+        for (int ch = 0; ch < 6; ++ch)
+            ignored = ignored && same (f1, ch, f2, ch);
+
+        check (ignored, "surround automation: a stereo master and a 5.1 track play as without it, bit for bit");
+
+        // The edits: values kept in range, folders refused, time edits move the points with the rest.
+        auto edits = surroundTrack (55);
+        const auto tid = edits.tracks[0].id;
+        auto& folder = edits.addFolder();
+        const auto folderId = folder.id;
+        SessionEdits::setEnvelope (edits, tid, AutomationParameter::surroundWidth, Envelope { { { 0, 2.0f }, { 100, -1.0f } } });
+        SessionEdits::setEnvelope (edits, tid, AutomationParameter::lfe, Envelope { { { 0, -90.0f }, { 100, 40.0f } } });
+        const auto& w = edits.tracks[0].surroundEnvelopes[2].points;
+        const auto& l = edits.tracks[0].surroundEnvelopes[3].points;
+        const auto clipped = w[0].value == 1.0f && w[1].value == 0.0f && l[0].value == -60.0f && l[1].value == SurroundPan::maxLfeDb
+                             && edits.tracks[0].surroundPanAt (0).lfeDb == SurroundPan::lfeOff;
+        const auto refused = ! SessionEdits::setEnvelope (edits, folderId, AutomationParameter::surroundX, Envelope { { { 0, 0.5f } } });
+        SessionEdits::setEnvelope (edits, tid, AutomationParameter::surroundX, Envelope { { { 1000, -1.0f }, { 2000, 1.0f } } });
+        auto shifted = edits;
+        SessionEdits::insertTime (shifted, 500, 250);
+        const auto copied = SessionEdits::copyTime (edits, 1000, 2000);
+        auto pasted = edits;
+        SessionEdits::pasteTime (pasted, copied, 3000);
+        const auto& moved = shifted.tracks[0].surroundEnvelopes[0].points;
+        check (clipped && refused && moved.size() == 2 && moved[0].frame == 1250 && moved[1].frame == 2250
+                   && std::abs (pasted.tracks[0].surroundPanAt (3500).x) < 1.0e-6f && pasted.tracks[0].surroundPanAt (1500).x == 0.0f
+                   && pasted.tracks[0].surroundPanAt (4000).x == 1.0f,
+               "surround automation edits: values are kept in range (width 0 to 1, LFE -60 to +10 dB, off at -60), folders have none, "
+               "and inserting, copying and pasting time carry the points");
+
+        const juce::TemporaryFile temp (".sbsession");
+        SessionFile::save (s, temp.getFile(), nullptr);
+        const auto loaded = SessionFile::load (temp.getFile(), engine.formatManager);
+        check (loaded.state.tracks.size() == 1 && loaded.state.tracks[0].surroundEnvelopes == s.tracks[0].surroundEnvelopes,
+               "surround automation: the session file keeps its four envelopes");
+
+        // The mixer strip: an automated part shows its value at the play position and can't be set.
+        engine.session.reset (s, {});
+        MixerView mixer (engine);
+        mixer.setSize (MixerView::surroundStripWidth * 3, 500);
+        const auto* pad = mixer.findSurroundPad (id);
+        const auto shown = s.tracks[0].surroundPanAt (0);
+        check (pad != nullptr && ! pad->isEnabled() && ! mixer.findSurroundWidth (id)->isEnabled() && ! mixer.findLfe (id)->isEnabled()
+                   && pad->getPan().x == shown.x && pad->getPan().y == shown.y && mixer.findSurroundWidth (id)->getValue() == 100.0
+                   && mixer.findLfe (id)->getValue() == -61.0,
+               "surround automation: the mixer strip shows each automated part's value at the play position, and it can't be set there");
+
+        auto cleared = s;
+        SessionEdits::setEnvelope (cleared, id, AutomationParameter::surroundX, {});
+        SessionEdits::setEnvelope (cleared, id, AutomationParameter::surroundY, {});
+        engine.session.apply (cleared, "Clear Surround Envelope");
+        TestUtils::runUntil ([&] { return mixer.findSurroundPad (id)->isEnabled(); }, 2000);
+        check (mixer.findSurroundPad (id)->isEnabled() && ! mixer.findSurroundWidth (id)->isEnabled(),
+               "surround automation: with its point's envelopes cleared, the pad can be dragged again (the width still follows its own)");
+    }
+}
+
 void runSurroundSessionTests (AudioEngine& engine)
 {
     testFiveOneTracks (engine);
     testFiveOneControls (engine);
+    testSurroundAutomation (engine);
     testGains();
     testMaster();
     testEdits (engine);

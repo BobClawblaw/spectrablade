@@ -68,16 +68,14 @@ void SurroundPad::paint (juce::Graphics& g)
         g.fillRect (juce::Rectangle<float> (5.0f, 5.0f).withCentre (toPad (e.x, e.y, square)));
     }
 
-    if (! isEnabled())
-        return;
-
-    // Where the left and right channels land, then the point.
+    // Where the left and right channels land, then the point (dimmed when it follows envelopes).
+    const auto alpha = isEnabled() ? 1.0f : 0.6f;
     const auto offset = juce::jlimit (0.0f, 1.0f, pan.width) * std::tan (juce::degreesToRadians (30.0f));
     const auto point = toPad (pan.x, pan.y, square);
 
     if (offset > 0.0f)
     {
-        g.setColour (Theme::accentLight.withAlpha (0.8f));
+        g.setColour (Theme::accentLight.withAlpha (0.8f * alpha));
 
         for (const auto side : { -1.0f, 1.0f })
         {
@@ -87,7 +85,7 @@ void SurroundPad::paint (juce::Graphics& g)
         }
     }
 
-    g.setColour (Theme::accent);
+    g.setColour (Theme::accent.withAlpha (alpha));
     g.fillEllipse (juce::Rectangle<float> (9.0f, 9.0f).withCentre (point));
 }
 
