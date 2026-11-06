@@ -20,6 +20,7 @@
 #include "../Source/Dereverb.h"
 #include "../Source/Leveller.h"
 #include "../Source/CentreChannel.h"
+#include "../Source/PhaseCorrection.h"
 #include "TestUtils.h"
 #include "SequencesTests.h"
 
@@ -179,6 +180,24 @@ void runSequencesTests (AudioEngine& engine)
         if (! identical (flanged.snapshot, Modulation::sweptDelay (s, a, b, rate, flanger)))
             wrong.add ("flanger");
 
+        // Phase correction: on a file whose right channel is its left 13 frames late.
+        juce::AudioBuffer<float> pair (2, 48000);
+        const auto source = readAll (*music (1, 48000, rate, 9));
+
+        for (int i = 0; i < 48000; ++i)
+        {
+            pair.setSample (0, i, source.getSample (0, i));
+            pair.setSample (1, i, i >= 13 ? source.getSample (0, i - 13) : 0.0f);
+        }
+
+        const auto late = AudioEdits::fromBuffer (std::move (pair));
+        const auto lined = Sequences::apply ({ "phase", { { "most", 2.0 }, { "turnOver", 1.0 } }, nullptr }, late, a, b, rate, {}, nullptr);
+        const auto lateFound = PhaseCorrection::measure (*late, a, b, rate, 2.0);
+        covered.add ("phase");
+
+        if (! lateFound.has_value() || ! identical (lined.snapshot, PhaseCorrection::correct (*late, a, b, rate, lateFound->offset, false)))
+            wrong.add ("phase");
+
         covered.add ("rack");
         auto rack = std::shared_ptr<const juce::XmlElement> (compressorRack());
         Sequences::Result racked;
@@ -201,8 +220,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 32,
-               "sequences: each of the 32 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 33,
+               "sequences: each of the 33 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

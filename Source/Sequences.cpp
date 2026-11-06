@@ -2,6 +2,7 @@
 #include "TimeStretch.h"
 #include "AudioEdits.h"
 #include "CentreChannel.h"
+#include "PhaseCorrection.h"
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Dynamics.h"
@@ -52,6 +53,7 @@ namespace
             { "balance", "Balance", { "pan" } },
             { "stereoWidth", "Stereo Width", { "width" } },
             { "centre", "Centre Channel", { "keep", "low", "high", "reduction" } },
+            { "phase", "Automatic Phase Correction", { "most", "turnOver" } },
             { "echo", "Echo", { "delay", "feedback" } },
             { "tremolo", "Tremolo", { "rate", "depth" } },
             { "eqBand", "EQ Band", { "type", "frequency", "gain", "q" } },
@@ -241,6 +243,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v)))
         || (step.kind == "levelSpeech" && ! Leveller::isValid (levellerOf (v)))
         || (step.kind == "centre" && ! CentreChannel::isValid (centreOf (v)))
+        || (step.kind == "phase" && (get (v, "most") < PhaseCorrection::shortestMs || get (v, "most") > PhaseCorrection::longestMs))
         || (step.kind == "dereverb" && ! Dereverb::isValid ({ (float) get (v, "time"), (float) get (v, "reduction") })))
         return bad();
 
@@ -308,6 +311,58 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
             {
                 out.error = "Stopped.";
                 return out;
+            }
+        }
+    }
+    else if (k == "phase")
+    {
+        const auto most = get (v, "most");
+        const auto ms = [rate] (double frames) { return juce::String (std::abs (frames) * 1000.0 / rate, 3) + " ms (" + juce::String (std::abs (frames), 2) + " frames)"; };
+
+        if (s.getNumChannels() != 2)
+        {
+            out.notes.add ("not stereo, so there were no channels to line up");
+        }
+        else if (end > start)
+        {
+            auto stopped = false;
+            const auto found = PhaseCorrection::measure (s, start, end, rate, most, [&] (float p)
+            {
+                if (progress == nullptr || progress (p))
+                    return true;
+
+                stopped = true;
+                return false;
+            });
+
+            if (stopped)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+
+            if (! found.has_value() || std::abs (found->correlation) < PhaseCorrection::weakest)
+            {
+                out.notes.add ("no offset between the channels was found within " + juce::String (most, 1) + " ms (they may be unrelated, too short, "
+                               "silent or further apart), so they were left as they were");
+            }
+            else
+            {
+                const auto upsideDown = found->correlation < 0.0;
+                const auto turnOver = upsideDown && get (v, "turnOver") > 0.5;
+                const auto moved = std::abs (found->offset) >= 0.01;
+
+                out.notes.add (moved ? "the right channel was " + ms (found->offset) + (found->offset > 0.0 ? " late" : " early") + " on the left"
+                                     : juce::String ("the channels were already in line"));
+
+                if (upsideDown)
+                    out.notes.add (turnOver ? juce::String ("the right channel was upside down, and was turned over")
+                                            : juce::String ("the right channel looks upside down; it was left so"));
+
+                out.notes.add ("correlation " + juce::String (std::abs (found->correlation), 2));
+
+                if (moved || turnOver)
+                    out.snapshot = PhaseCorrection::correct (s, start, end, rate, moved ? found->offset : 0.0, turnOver);
             }
         }
     }

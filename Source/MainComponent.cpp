@@ -2,6 +2,7 @@
 #include "Navigation.h"
 #include "Restoration.h"
 #include "CentreChannel.h"
+#include "PhaseCorrection.h"
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Generator.h"
@@ -140,7 +141,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +154,7 @@ namespace
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
-            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel;
+            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1186,7 +1187,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdCentreChannel; ++id)
+    for (int id = cmdOpen; id <= cmdPhaseCorrection; ++id)
         ids.add (id);
 }
 
@@ -1544,6 +1545,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdLevelSpeech: info.setInfo ("Level Speech...", "Even out the level of speech in the selection or file, raising quiet passages and lowering loud ones", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdCentreChannel: info.setInfo ("Centre Channel...", "Remove what is panned to the middle of a stereo file, or keep it alone, in the selection or file", "Effects", 0);
+                            info.setActive (hasAudio && engine.document.getNumChannels() == 2 && backgroundJob == nullptr); break;
+        case cmdPhaseCorrection: info.setInfo ("Automatic Phase Correction...", "Find a time offset between the channels of a stereo file and take it out, in the selection or file", "Effects", 0);
                             info.setActive (hasAudio && engine.document.getNumChannels() == 2 && backgroundJob == nullptr); break;
         case cmdDereverb:   info.setInfo ("Reduce Reverb...", "Lower the room's reverberation in the selection or file, keeping the direct sound", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
@@ -2320,6 +2323,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNoiseReduction: askForNoiseReduction(); break;
         case cmdDereverb:   askToReduceReverb(); break;
         case cmdCentreChannel: askForCentreChannel(); break;
+        case cmdPhaseCorrection: askForPhaseCorrection(); break;
         case cmdLevelSpeech: askToLevelSpeech(); break;
         case cmdClickRepair: askForClickRepair(); break;
         case cmdRemoveHum:  showRemoveHum(); break;
@@ -2419,7 +2423,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
+            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
@@ -4868,12 +4872,23 @@ void MainComponent::runStepInBackground (const Sequences::Step& step, const juce
                 return;
             }
 
-            if (result->snapshot == nullptr)
-                return;
+            if (result->snapshot != nullptr)
+            {
+                applyEdit (result->snapshot, step.name(), selected ? juce::Range<juce::int64> (result->start, result->end) : juce::Range<juce::int64>(),
+                           result->markers);
+                recordStep (step);
+            }
 
-            applyEdit (result->snapshot, step.name(), selected ? juce::Range<juce::int64> (result->start, result->end) : juce::Range<juce::int64>(),
-                       result->markers);
-            recordStep (step);
+            // What the step found or left, each as a sentence.
+            if (! result->notes.isEmpty())
+            {
+                juce::StringArray lines;
+
+                for (auto& note : result->notes)
+                    lines.add (note.substring (0, 1).toUpperCase() + note.substring (1) + ".");
+
+                showNote (step.name(), lines.joinIntoString ("\n"));
+            }
         });
     backgroundJob->launchThread();
 }
@@ -4981,6 +4996,40 @@ void MainComponent::askToLevelSpeech()
         settings->setValue ("levelSilence", s.silenceLufs);
         runStepInBackground ({ "levelSpeech", { { "target", s.targetLufs }, { "boost", s.maxBoostDb }, { "cut", s.maxCutDb }, { "silence", s.silenceLufs } }, nullptr },
                              "Levelling speech...");
+    }), true);
+}
+
+void MainComponent::askForPhaseCorrection()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Automatic Phase Correction",
+                                       "Finds how far the right channel is late or early on the left (as with two microphones at different "
+                                       "distances, or a tape head out of line), to a small fraction of a frame, and moves each channel half of "
+                                       "that so they line up. It looks up to the most offset either way.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("most", juce::String (settings->getDoubleValue ("phaseMost", 5.0), 1), "Most offset (ms, 0.1 to 50)");
+    box->getTextEditor ("most")->setInputRestrictions (6, ".0123456789");
+    box->addComboBox ("turnOver", { "Turn over a channel found upside down", "Leave a channel found upside down" }, "Polarity");
+    box->getComboBoxComponent ("turnOver")->setSelectedItemIndex (settings->getBoolValue ("phaseTurnOver", true) ? 0 : 1);
+    box->addButton ("Correct", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto most = box->getTextEditorContents ("most").getDoubleValue();
+        const auto turnOver = box->getComboBoxComponent ("turnOver")->getSelectedItemIndex() == 0;
+
+        if (most < PhaseCorrection::shortestMs || most > PhaseCorrection::longestMs)
+        {
+            showError ("Automatic Phase Correction", "The most offset must be from 0.1 to 50 ms.");
+            return;
+        }
+
+        settings->setValue ("phaseMost", most);
+        settings->setValue ("phaseTurnOver", turnOver);
+        runStepInBackground ({ "phase", { { "most", most }, { "turnOver", turnOver ? 1.0 : 0.0 } }, nullptr }, "Lining up the channels...");
     }), true);
 }
 
