@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 211: The times under the editor**
+- The strip under the editor shows, left of the zoom controls, the cursor's time, the selection's start, end and length ("none" without one) and the view's start and end, updated ten times a second. Click the cursor's time for Go to Time, or the selection's for Set Selection; their tooltips show the keys. When the strip is narrow the view's field is left out first, then the selection's. The Selection/View panel stays, for those who prefer it.
+- Measured by the tests: the cursor (0:00.025), no selection and the whole view of a 0.1-second file, then a selection from 0:00.020 to 0:00.050 shown with its length and the cursor at its start; the fields left to right before the zoom controls, a click on the cursor's running Go to Time, on the selection's Set Selection and on the view's nothing; and, narrowing the strip a pixel at a time, the view's field going at 848 pixels, the selection's at 680 and the cursor's at 418, none overlapping the controls. The whole suite passed (891 checks).
+- Seen in a capture of the window, in the Light theme. Not tried by hand: clicking the fields in the app, or the times while playing and dragging.
+
 **Milestone 210: Vertical zoom, and zoom controls under the editor**
 - The waveform can be drawn taller than full scale, to see quiet audio: from 1x (full scale reaching the lane's edges) to 64x, peaks beyond the edges clipped there, and the level the edges stand for shown at each lane's top left ("edge -12.0 dB"). With a file showing, View > Zoom In Vertically and Zoom Out Vertically (Option-Cmd-= and Option-Cmd-minus, the keys that make tracks taller and shorter in a session) halve or double it, Full Scale Vertically (Option-Cmd-0) puts it back, and Option-scrolling over the waveform zooms vertically.
 - A strip under the editor holds the zoom controls: zoom out, zoom in and Fit, then the vertical zoom ("Level 1x") with its out, in and full-scale buttons. Each runs its command, and its tooltip shows the keys. The buttons that would do nothing are greyed out. It hides in the multitrack view.

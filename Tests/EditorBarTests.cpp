@@ -99,7 +99,7 @@ namespace
         WaveformView view (engine);
         view.setBounds (0, 0, 800, 300);
         juce::ApplicationCommandManager commands;
-        EditorBar bar (commands, view, { 1, 2, 3, 4, 5, 6 });
+        EditorBar bar (commands, view, engine.document, { 1, 2, 3, 4, 5, 6, 7, 8 });
         juce::Array<int> ran;
         bar.run = [&] (int id) { ran.add (id); };
         bar.setBounds (0, 0, 800, EditorBar::height);
@@ -133,8 +133,87 @@ namespace
     }
 }
 
+namespace
+{
+    void testTimes()
+    {
+        AudioEngine engine;
+        loadSine (engine, 0.5f);   // 4,800 frames at 48 kHz: 0.1 s
+        WaveformView view (engine);
+        view.setBounds (0, 0, 800, 300);
+        view.zoomToFit();
+        juce::ApplicationCommandManager commands;
+        EditorBar bar (commands, view, engine.document, { 1, 2, 3, 4, 5, 6, 7, 8 });
+        juce::Array<int> ran;
+        bar.run = [&] (int id) { ran.add (id); };
+        bar.setBounds (0, 0, 1000, EditorBar::height);
+
+        const auto& f = bar.getFields();
+        const auto settle = [] (std::function<bool()> done)
+        {
+            for (int i = 0; i < 50 && ! done(); ++i)
+                juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        };
+
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (100);   // the file's arrival, which puts the cursor at the start
+        view.setCursor (1200);
+        settle ([&] { return f[0].text == "0:00.025"; });
+        const auto dash = juce::String::fromUTF8 ("\xe2\x80\x93");
+        const auto before = f[0].text + " | " + f[1].text + " | " + f[2].text;
+
+        view.setSelection ({ 960, 2400 });
+        settle ([&] { return f[1].text != "none"; });
+        check (f.size() == 3 && f[0].name == "Cursor" && before == "0:00.025 | none | 0:00.000 " + dash + " 0:00.100"
+                   && f[1].text == "0:00.020 " + dash + " 0:00.050  (0:00.030)" && f[0].text == "0:00.020",
+               "editor bar: shows the cursor, the selection and the view (0:00.025, none, the whole 0.1 s; then with a selection 0:00.020 to 0:00.050, "
+               "0:00.030 long, and the cursor at its start): " + before + " / " + f[0].text + " | " + f[1].text);
+
+        bool ordered = true;
+
+        for (size_t i = 0; i < f.size(); ++i)
+            ordered = ordered && ! f[i].bounds.isEmpty() && (i == 0 || f[i - 1].bounds.getRight() < f[i].bounds.getX())
+                      && f[i].bounds.getRight() < bar.getButton (1).getX();
+
+        const auto now = juce::Time::getCurrentTime();
+        const auto clickAt = [&] (juce::Point<int> p)
+        {
+            bar.mouseUp (juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), p.toFloat(), {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                           &bar, &bar, now, p.toFloat(), now, 1, false));
+        };
+
+        clickAt (f[0].bounds.getCentre());
+        clickAt (f[1].bounds.getCentre());
+        clickAt (f[2].bounds.getCentre());
+        check (ordered && ran == juce::Array<int> { 7, 8 },
+               "editor bar: the fields sit left to right before the zoom controls; a click on the cursor runs Go to Time, on the selection Set Selection, and on the view nothing");
+
+        // Narrowing it a pixel at a time: the fields go from the right, and those left stay clear of the zoom controls.
+        int viewGone = 0, selectionGone = 0, cursorGone = 0;
+        bool clear = true;
+
+        for (int w = 1000; w > 200; --w)
+        {
+            bar.setSize (w, EditorBar::height);
+
+            for (auto& field : f)
+                clear = clear && (field.bounds.isEmpty() || field.bounds.getRight() < bar.getButton (1).getX());
+
+            if (viewGone == 0 && f[2].bounds.isEmpty())      viewGone = w;
+            if (selectionGone == 0 && f[1].bounds.isEmpty()) selectionGone = w;
+            if (cursorGone == 0 && f[0].bounds.isEmpty())    cursorGone = w;
+        }
+
+        check (clear && viewGone > selectionGone && selectionGone > cursorGone && cursorGone > 0,
+               "editor bar: narrowed, the view's field goes first (at " + juce::String (viewGone) + " pixels), then the selection's ("
+                   + juce::String (selectionGone) + "), then the cursor's (" + juce::String (cursorGone) + "), and none overlaps the zoom controls");
+
+        view.setVerticalZoom (1.0);
+    }
+}
+
 void runEditorBarTests()
 {
     testVerticalZoom();
     testBar();
+    testTimes();
 }

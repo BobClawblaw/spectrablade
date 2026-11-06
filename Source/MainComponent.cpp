@@ -764,8 +764,9 @@ MainComponent::MainComponent()
     waveform.onFilesDropped = [this] (const juce::Array<juce::File>& files) { openDocuments (files); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
-    editorBar = std::make_unique<EditorBar> (commands, waveform, EditorBar::Commands { cmdZoomOut, cmdZoomIn, cmdZoomFit,
-                                                                                    cmdShorterTracks, cmdTallerTracks, cmdResetVerticalZoom });
+    editorBar = std::make_unique<EditorBar> (commands, waveform, engine.document,
+                                             EditorBar::Commands { cmdZoomOut, cmdZoomIn, cmdZoomFit, cmdShorterTracks, cmdTallerTracks,
+                                                                   cmdResetVerticalZoom, cmdGoToTime, cmdSetSelection });
     editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, *editorBar, overview, multitrack);
     fileTabs.onChoose = [this] (int index) { switchToFile (index); };
     fileTabs.onClose = [this] (int index) { closeFile (index); };

@@ -284,6 +284,13 @@ namespace
                                  now, at.toFloat(), now, clicks, false);
     }
 
+    /** Runs the message loop until a condition holds, or a second has gone. */
+    void settle (std::function<bool()> done)
+    {
+        for (int i = 0; i < 50 && ! done(); ++i)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+    }
+
     void testMaximise()
     {
         TestHost host;
@@ -319,11 +326,11 @@ namespace
         // Double-clicking a tab maximises its group, and again puts it back.
         auto* editorGroup = host.panels["editor"]->getParentComponent();
         editorGroup->mouseDoubleClick (click (*editorGroup, { 20, Dock::Area::tabHeight / 2 }, 2));
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        settle ([&] { return area.getMaximised().isNotEmpty(); });
         const auto maximised = area.getMaximised() == "editor" && host.panels["editor"]->getParentComponent()->getWidth() == 1000;
         editorGroup = host.panels["editor"]->getParentComponent();
         editorGroup->mouseDoubleClick (click (*editorGroup, { 20, Dock::Area::tabHeight / 2 }, 2));
-        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        settle ([&] { return area.getMaximised().isEmpty(); });
         check (maximised && area.getMaximised().isEmpty() && host.panels["markers"]->getParentComponent() != nullptr,
                "Dock maximise: double-clicking a tab maximises its group, and double-clicking again restores them all");
 

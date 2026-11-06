@@ -2,9 +2,11 @@
 #include "Theme.h"
 #include "TransportBar.h"
 
-EditorBar::EditorBar (juce::ApplicationCommandManager& c, WaveformView& v, Commands commandIds)
-    : commands (c), view (v), ids (commandIds)
+EditorBar::EditorBar (juce::ApplicationCommandManager& c, WaveformView& v, const AudioDocument& d, Commands commandIds)
+    : commands (c), view (v), document (d), ids (commandIds)
 {
+    fields = { { "Cursor", {}, ids.goToTime, {} }, { "Selection", {}, ids.setSelection, {} }, { "View", {}, 0, {} } };
+
     run = [this] (int id) { commands.invokeDirectly (id, true); };
 
     const auto add = [this] (juce::OwnedArray<juce::TextButton>& group, int id, const juce::String& text)
@@ -64,6 +66,38 @@ void EditorBar::timerCallback()
 
 void EditorBar::update()
 {
+    // The times.
+    const auto rate = document.getSampleRate();
+    const auto has = document.hasAudio() && rate > 0.0;
+    const auto time = [rate] (double frames) { return TransportBar::SelectionPanel::format ((juce::int64) std::llround (frames), rate); };
+    const auto dash = juce::String::fromUTF8 ("\xe2\x80\x93");
+    const auto selection = view.getSelection();
+    const auto visible = view.getVisibleFrames();
+    const juce::String texts[] = {
+        has ? time ((double) view.getCursor()) : juce::String ("-"),
+        ! has ? juce::String ("-") : selection.isEmpty() ? juce::String ("none")
+                                   : time ((double) selection.getStart()) + " " + dash + " " + time ((double) selection.getEnd())
+                                         + "  (" + time ((double) selection.getLength()) + ")",
+        has ? time (visible.getStart()) + " " + dash + " " + time (juce::jmin (visible.getEnd(), (double) document.getSnapshot()->getNumFrames()))
+            : juce::String ("-")
+    };
+    bool changed = false;
+
+    for (size_t i = 0; i < fields.size(); ++i)
+    {
+        if (fields[i].text != texts[i])
+        {
+            fields[i].text = texts[i];
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        layOutFields();
+        repaint();
+    }
+
     const auto zoom = view.getVerticalZoom();
     const auto text = verticalText (zoom);
     getButton (ids.verticalOut).setEnabled (zoom > 1.0);
@@ -83,11 +117,73 @@ juce::Rectangle<int> EditorBar::verticalReadout() const
     return { first.getX() - 86, 0, 82, getHeight() };
 }
 
+namespace
+{
+    juce::Font labelFont()   { return juce::FontOptions (Theme::smallText); }
+    juce::Font timeFont()    { return juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::plain); }
+}
+
+void EditorBar::layOutFields()
+{
+    // Left to right while they fit before the zoom controls.
+    const auto limit = horizontal.getFirst()->getX() - 52;
+    int x = 8;
+
+    for (auto& f : fields)
+    {
+        const auto w = juce::GlyphArrangement::getStringWidthInt (labelFont(), f.name) + 6
+                       + juce::GlyphArrangement::getStringWidthInt (timeFont(), f.text) + 8;
+        f.bounds = x + w <= limit ? juce::Rectangle<int> (x, 1, w, getHeight() - 1) : juce::Rectangle<int>();
+        x = f.bounds.isEmpty() ? limit + 1 : x + w + 14;
+    }
+}
+
+void EditorBar::mouseUp (const juce::MouseEvent& e)
+{
+    if (e.mouseWasDraggedSinceMouseDown())
+        return;
+
+    for (auto& f : fields)
+        if (f.command != 0 && f.bounds.contains (e.getPosition()) && run)
+            run (f.command);
+}
+
+void EditorBar::mouseMove (const juce::MouseEvent& e)
+{
+    for (auto& f : fields)
+    {
+        if (f.command != 0 && f.bounds.contains (e.getPosition()))
+        {
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+            setTooltip (TransportBar::tooltipFor (commands, f.command));
+            return;
+        }
+    }
+
+    setMouseCursor (juce::MouseCursor::NormalCursor);
+    setTooltip ({});
+}
+
 void EditorBar::paint (juce::Graphics& g)
 {
     g.fillAll (Theme::surface);
     g.setColour (Theme::line);
     g.fillRect (0, 0, getWidth(), 1);
+
+    for (auto& f : fields)
+    {
+        if (f.bounds.isEmpty())
+            continue;
+
+        auto r = f.bounds;
+        g.setFont (labelFont());
+        g.setColour (Theme::dimText);
+        g.drawText (f.name, r.removeFromLeft (juce::GlyphArrangement::getStringWidthInt (labelFont(), f.name) + 6),
+                    juce::Justification::centredLeft, false);
+        g.setFont (timeFont());
+        g.setColour (Theme::text);
+        g.drawText (f.text, r, juce::Justification::centredLeft, false);
+    }
 
     g.setFont (juce::FontOptions (Theme::smallText));
     g.setColour (Theme::dimText);
@@ -113,4 +209,5 @@ void EditorBar::resized()
     place (getButton (ids.zoomFit), 34);
     place (getButton (ids.zoomIn), 24);
     place (getButton (ids.zoomOut), 24);
+    layOutFields();
 }
