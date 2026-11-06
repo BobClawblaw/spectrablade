@@ -83,6 +83,11 @@ juce::Array<int> bitDepthsFor (const juce::File& file, juce::AudioFormatManager&
 
 bool canStoreInfo (const juce::File& file)
 {
+    return file.hasFileExtension ("wav;wave;bwf;aif;aiff;aifc;flac");
+}
+
+bool canStoreBroadcast (const juce::File& file)
+{
     return file.hasFileExtension ("wav;wave;bwf");
 }
 
@@ -125,7 +130,7 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
         {
             auto metadata = MarkerEdits::toMetadata (markers);
 
-            if (canStoreInfo (target))
+            if (canStoreBroadcast (target))
             {
                 const auto broadcast = FileInfoIO::broadcastMetadata (info);
 
@@ -165,9 +170,16 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
         }
     }
 
+    // The tags, added to the finished file: a LIST INFO chunk, an ID3 chunk or a Vorbis comment block.
     if (canStoreInfo (target))
-        if (const auto error = FileInfoIO::appendRiffInfo (temp.getFile(), info); error.isNotEmpty())
+    {
+        const auto error = canStoreBroadcast (target)                 ? FileInfoIO::appendRiffInfo (temp.getFile(), info)
+                         : target.hasFileExtension ("aif;aiff;aifc") ? FileInfoIO::appendAiffTags (temp.getFile(), info)
+                                                                     : FileInfoIO::addFlacComments (temp.getFile(), info);
+
+        if (error.isNotEmpty())
             return error;
+    }
 
     if (! temp.overwriteTargetFileWithTemporary())
         return "Could not replace " + target.getFullPathName();

@@ -452,6 +452,83 @@ size_t id3v2Size (const void* data, size_t size)
     return 10 + syncsafe (p + 6) + ((p[5] & 0x10) != 0 ? 10 : 0);
 }
 
+namespace
+{
+    /** The tags in an ID3v2.3 or 2.4 tag: its 10-byte header, then body (as much of it as was read). */
+    void parseId3v2 (const juce::uint8* head, Bytes body, FileInfo& info)
+    {
+        if (std::memcmp (head, "ID3", 3) != 0)
+            return;
+
+        const auto version = head[3];
+
+        if (version != 3 && version != 4)
+            return;
+
+        // Version 2.3 unsynchronises the whole tag: every FF 00 stands for FF.
+        if (version == 3 && (head[5] & 0x80) != 0)
+        {
+            Bytes plain;
+
+            for (size_t i = 0; i < body.size(); ++i)
+            {
+                plain.push_back (body[i]);
+
+                if (body[i] == 0xff && i + 1 < body.size() && body[i + 1] == 0)
+                    ++i;
+            }
+
+            body = std::move (plain);
+        }
+
+        size_t at = 0;
+
+        if ((head[5] & 0x40) != 0 && body.size() >= 4)
+            at = version == 3 ? 4 + get32be (body.data()) : syncsafe (body.data());
+
+        auto commentFound = false;
+
+        while (at + 10 <= body.size() && body[at] != 0)
+        {
+            const auto* f = body.data() + at;
+            const auto size = (size_t) (version == 4 ? syncsafe (f + 4) : get32be (f + 4));
+            const juce::String id ((const char*) f, 4);
+
+            if (at + 10 + size > body.size() || size < 1)
+                break;
+
+            const auto* data = f + 10;
+            const int encoding = data[0];
+            juce::String value;
+
+            if (id == "COMM" && ! commentFound && size > 4)
+            {
+                juce::String description;
+                const auto used = id3Decode (encoding, data + 4, size - 4, description);
+                id3Decode (encoding, data + 4 + used, size - 4 - used, value);
+                info.comment = value.trim();
+                commentFound = true;
+            }
+            else if (id.startsWithChar ('T'))
+            {
+                id3Decode (encoding, data + 1, size - 1, value);
+                value = value.trim();
+
+                if (id == "TIT2")                       info.title = value;
+                else if (id == "TPE1")                  info.artist = value;
+                else if (id == "TALB")                  info.album = value;
+                else if (id == "TYER" || id == "TDRC")  info.year = value;
+                else if (id == "TRCK")                  info.track = value;
+                else if (id == "TCON")
+                    info.genre = value.startsWithChar ('(') && value.containsChar (')') && ! value.endsWithChar (')')
+                                     ? value.fromFirstOccurrenceOf (")", false, false) : value;
+            }
+
+            at += 10 + size;
+        }
+    }
+}
+
 void readId3v2 (const juce::File& file, FileInfo& info)
 {
     juce::FileInputStream in (file);
@@ -460,76 +537,238 @@ void readId3v2 (const juce::File& file, FileInfo& info)
     if (! in.openedOk() || in.read (head, 10) != 10 || std::memcmp (head, "ID3", 3) != 0)
         return;
 
-    const auto version = head[3];
-
-    if (version != 3 && version != 4)
-        return;
-
     juce::MemoryBlock block;
     in.readIntoMemoryBlock (block, (ssize_t) syncsafe (head + 6));
-    Bytes body ((const juce::uint8*) block.getData(), (const juce::uint8*) block.getData() + block.getSize());
+    parseId3v2 (head, Bytes ((const juce::uint8*) block.getData(), (const juce::uint8*) block.getData() + block.getSize()), info);
+}
 
-    // Version 2.3 unsynchronises the whole tag: every FF 00 stands for FF.
-    if (version == 3 && (head[5] & 0x80) != 0)
+//==============================================================================
+namespace
+{
+    /** An AIFF or AIFF-C file's chunks after its FORM header: id and the offset and size of its data. */
+    struct IffChunk { juce::String id; juce::int64 offset = 0; juce::uint32 size = 0; };
+
+    std::vector<IffChunk> aiffChunks (juce::FileInputStream& in)
     {
-        Bytes plain;
+        std::vector<IffChunk> chunks;
+        juce::uint8 head[12];
 
-        for (size_t i = 0; i < body.size(); ++i)
+        if (! in.openedOk() || ! in.setPosition (0) || in.read (head, 12) != 12 || std::memcmp (head, "FORM", 4) != 0
+            || (std::memcmp (head + 8, "AIFF", 4) != 0 && std::memcmp (head + 8, "AIFC", 4) != 0))
+            return chunks;
+
+        while (in.getPosition() + 8 <= in.getTotalLength())
         {
-            plain.push_back (body[i]);
+            juce::uint8 h[8];
 
-            if (body[i] == 0xff && i + 1 < body.size() && body[i + 1] == 0)
-                ++i;
+            if (in.read (h, 8) != 8)
+                break;
+
+            const IffChunk chunk { juce::String ((const char*) h, 4), in.getPosition(), get32be (h + 4) };
+            chunks.push_back (chunk);
+
+            if (! in.setPosition (chunk.offset + chunk.size + (chunk.size & 1)))
+                break;
         }
 
-        body = std::move (plain);
+        return chunks;
+    }
+}
+
+void readAiff (const juce::File& file, FileInfo& info)
+{
+    juce::FileInputStream in (file);
+    const auto read = [&in] (const IffChunk& chunk)
+    {
+        juce::MemoryBlock block;
+        in.setPosition (chunk.offset);
+        in.readIntoMemoryBlock (block, (ssize_t) juce::jmin (chunk.size, (juce::uint32) (16 << 20)));
+        return Bytes ((const juce::uint8*) block.getData(), (const juce::uint8*) block.getData() + block.getSize());
+    };
+
+    const auto chunks = aiffChunks (in);
+    Bytes id3;
+
+    for (const auto& chunk : chunks)
+    {
+        if (chunk.id == "NAME" || chunk.id == "AUTH" || (chunk.id == "ANNO" && info.comment.isEmpty()))
+        {
+            const auto text = read (chunk);
+            auto& field = chunk.id == "NAME" ? info.title : chunk.id == "AUTH" ? info.artist : info.comment;
+            field = textFrom (text.data(), text.size());
+        }
+        else if ((chunk.id == "ID3 " || chunk.id == "id3 ") && id3.empty())
+        {
+            id3 = read (chunk);
+        }
     }
 
-    size_t at = 0;
+    // The ID3 tag, when there is one, has the last word.
+    if (id3.size() >= 10)
+        parseId3v2 (id3.data(), Bytes (id3.begin() + 10, id3.end()), info);
+}
 
-    if ((head[5] & 0x40) != 0 && body.size() >= 4)
-        at = version == 3 ? 4 + get32be (body.data()) : syncsafe (body.data());
+juce::String appendAiffTags (const juce::File& file, const FileInfo& info)
+{
+    if (! info.hasTags())
+        return {};
 
-    auto commentFound = false;
-
-    while (at + 10 <= body.size() && body[at] != 0)
     {
-        const auto* f = body.data() + at;
-        const auto size = (size_t) (version == 4 ? syncsafe (f + 4) : get32be (f + 4));
-        const juce::String id ((const char*) f, 4);
+        juce::FileInputStream in (file);
 
-        if (at + 10 + size > body.size() || size < 1)
-            break;
-
-        const auto* data = f + 10;
-        const int encoding = data[0];
-        juce::String value;
-
-        if (id == "COMM" && ! commentFound && size > 4)
-        {
-            juce::String description;
-            const auto used = id3Decode (encoding, data + 4, size - 4, description);
-            id3Decode (encoding, data + 4 + used, size - 4 - used, value);
-            info.comment = value.trim();
-            commentFound = true;
-        }
-        else if (id.startsWithChar ('T'))
-        {
-            id3Decode (encoding, data + 1, size - 1, value);
-            value = value.trim();
-
-            if (id == "TIT2")                       info.title = value;
-            else if (id == "TPE1")                  info.artist = value;
-            else if (id == "TALB")                  info.album = value;
-            else if (id == "TYER" || id == "TDRC")  info.year = value;
-            else if (id == "TRCK")                  info.track = value;
-            else if (id == "TCON")
-                info.genre = value.startsWithChar ('(') && value.containsChar (')') && ! value.endsWithChar (')')
-                                 ? value.fromFirstOccurrenceOf (")", false, false) : value;
-        }
-
-        at += 10 + size;
+        if (aiffChunks (in).empty())
+            return file.getFileName() + " is not an AIFF file.";
     }
+
+    const auto tag = id3v2 (info);
+    const auto length = file.getSize();
+    const auto pad = (length & 1) != 0;
+    Bytes chunk;
+    put4cc (chunk, "ID3 ");
+    put32be (chunk, (juce::uint32) tag.getSize());
+    chunk.insert (chunk.end(), (const juce::uint8*) tag.getData(), (const juce::uint8*) tag.getData() + tag.getSize());
+
+    if ((chunk.size() & 1) != 0)
+        chunk.push_back (0);
+
+    if (length + (pad ? 1 : 0) + (juce::int64) chunk.size() > (juce::int64) 0xffffffff)
+        return "The tags would take " + file.getFileName() + " past 4 GB.";
+
+    juce::FileOutputStream out (file);
+
+    if (out.failedToOpen())
+        return "Couldn't add the tags to " + file.getFileName() + ".";
+
+    if (pad)
+        out.writeByte (0);
+
+    out.write (chunk.data(), chunk.size());
+    const auto total = out.getPosition();
+    Bytes size;
+    put32be (size, (juce::uint32) (total - 8));
+
+    if (! out.setPosition (4) || ! out.write (size.data(), 4))
+        return "Couldn't add the tags to " + file.getFileName() + ".";
+
+    out.flush();
+    return out.getStatus().wasOk() ? juce::String() : "Couldn't add the tags to " + file.getFileName() + ".";
+}
+
+//==============================================================================
+juce::String addFlacComments (const juce::File& file, const FileInfo& info)
+{
+    if (! info.hasTags())
+        return {};
+
+    const auto failed = "Couldn't add the tags to " + file.getFileName() + ".";
+    juce::FileInputStream in (file);
+    char magic[4];
+
+    if (! in.openedOk() || in.read (magic, 4) != 4 || std::memcmp (magic, "fLaC", 4) != 0)
+        return file.getFileName() + " is not a FLAC file.";
+
+    // Its metadata blocks: STREAMINFO first, then the rest; any Vorbis comment is replaced.
+    std::vector<std::pair<int, Bytes>> blocks;
+    Bytes padding;
+    bool hasPadding = false;
+
+    for (bool last = false; ! last;)
+    {
+        juce::uint8 h[4];
+
+        if (in.read (h, 4) != 4)
+            return failed;
+
+        last = (h[0] & 0x80) != 0;
+        const auto type = h[0] & 0x7f;
+        const auto length = (size_t) ((h[1] << 16) | (h[2] << 8) | h[3]);
+        Bytes data (length);
+
+        if (length > 0 && in.read (data.data(), (int) length) != (int) length)
+            return failed;
+
+        if (type == 1)
+        {
+            padding = std::move (data);
+            hasPadding = true;
+        }
+        else if (type != 4)
+        {
+            blocks.emplace_back (type, std::move (data));
+        }
+    }
+
+    if (blocks.empty() || blocks.front().first != 0)
+        return failed;
+
+    // The Vorbis comment: vendor, then FIELD=value entries in UTF-8.
+    Bytes comment;
+    const auto vendor = utf8 ("SpectraBlade");
+    put32le (comment, (juce::uint32) vendor.size());
+    putBytes (comment, vendor);
+    std::vector<Bytes> entries;
+    const auto entry = [&entries] (const char* key, const juce::String& value)
+    {
+        if (value.isNotEmpty())
+            entries.push_back (utf8 (juce::String (key) + "=" + value));
+    };
+
+    entry ("TITLE", info.title);
+    entry ("ARTIST", info.artist);
+    entry ("ALBUM", info.album);
+    entry ("GENRE", info.genre);
+    entry ("DATE", info.year);
+    entry ("TRACKNUMBER", info.track.upToFirstOccurrenceOf ("/", false, false).trim());
+    entry ("TRACKTOTAL", info.track.containsChar ('/') ? info.track.fromFirstOccurrenceOf ("/", false, false).trim() : juce::String());
+    entry ("COMMENT", info.comment);
+    put32le (comment, (juce::uint32) entries.size());
+
+    for (const auto& e : entries)
+    {
+        put32le (comment, (juce::uint32) e.size());
+        putBytes (comment, e);
+    }
+
+    if (comment.size() >= (1u << 24))
+        return "The tags are too long for a FLAC file.";
+
+    blocks.emplace_back (4, std::move (comment));
+
+    if (hasPadding)
+        blocks.emplace_back (1, std::move (padding));
+
+    juce::TemporaryFile temp (file);
+
+    {
+        juce::FileOutputStream out (temp.getFile());
+
+        if (out.failedToOpen())
+            return failed;
+
+        out.write ("fLaC", 4);
+
+        for (size_t i = 0; i < blocks.size(); ++i)
+        {
+            const auto& [type, data] = blocks[i];
+            const juce::uint8 h[4] { (juce::uint8) (type | (i + 1 == blocks.size() ? 0x80 : 0)), (juce::uint8) (data.size() >> 16),
+                                     (juce::uint8) (data.size() >> 8), (juce::uint8) data.size() };
+            out.write (h, 4);
+            out.write (data.data(), data.size());
+        }
+
+        // The audio frames, as they were.
+        const auto rest = in.getTotalLength() - in.getPosition();
+
+        if (out.writeFromInputStream (in, rest) != rest)
+            return failed;
+
+        out.flush();
+
+        if (! out.getStatus().wasOk())
+            return failed;
+    }
+
+    return temp.overwriteTargetFileWithTemporary() ? juce::String() : failed;
 }
 
 //==============================================================================
@@ -855,6 +1094,10 @@ FileInfo read (const juce::File& file, const juce::StringPairArray& metadata)
     {
         readBroadcast (metadata, info);
         readRiffInfo (file, info);
+    }
+    else if (file.hasFileExtension ("aif;aiff;aifc"))
+    {
+        readAiff (file, info);
     }
     else if (file.hasFileExtension ("mp3"))
     {

@@ -4,7 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 226: Tags in AIFF and FLAC files**
+- Saving as AIFF or FLAC now keeps the file info's tags (title, artist, album, genre, year, track and comment): AIFF in an "ID3 " chunk (ID3v2.3) at the end of the file, as Apple's apps and ffmpeg keep them; FLAC in a Vorbis comment block (TITLE, ARTIST, ALBUM, GENRE, DATE, TRACKNUMBER and TRACKTOTAL, COMMENT) after its other metadata blocks and before any padding, replacing one it had. Opening reads them back, and also reads the older NAME, AUTH and ANNO chunks other programs write into AIFF files. The broadcast-wave details stay WAV-only: saving them as AIFF or FLAC keeps the tags and says the broadcast details were left out. Formats that keep neither still say so, now naming WAV, AIFF and FLAC.
+- Measured by the tests (with ffmpeg 9.0.2 as an outside reader): 24-bit AIFF, 16-bit AIFF and 24-bit FLAC files keep every tag, Unicode too, and read back at their full length; tagging a copy of each file saved without info leaves its audio bit for bit; ffmpeg reads the same tags (from FLAC, the track as 3 with a total of 12) and decodes each file without a complaint; tagging a FLAC file again leaves a single Vorbis comment block, with the new tags; files saved with no info have none; the NAME, AUTH and ANNO chunks ffmpeg writes into an AIFF file are read, and so is the ID3v2.4 chunk it writes into a 32-bit float AIFF-C file. The whole suite passed (1026 checks).
+- SpectraBlade itself writes AIFF at 8, 16 or 24 bits only, so it never writes AIFF-C; it reads tags from AIFF-C files others write.
+- Not tried by hand: saving from the app, or opening the files in other players (the Music app, Finder's info).
 
 ## Released
 

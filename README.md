@@ -32,8 +32,8 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 | Format | Open | Write |
 |---|---|---|
 | WAV (RF64 too) | Yes, with markers and regions | Save: 8, 16 or 24-bit (dithered) or 32-bit float, with markers and regions |
-| AIFF | Yes, with markers | Save: 8, 16 or 24-bit (dithered), with markers |
-| FLAC | Yes | Save: 16 or 24-bit (dithered) |
+| AIFF | Yes, with markers and tags | Save: 8, 16 or 24-bit (dithered), with markers and tags |
+| FLAC | Yes, with tags | Save: 16 or 24-bit (dithered), with tags |
 | MP3 | Yes | File > Export as MP3 or AAC: constant 96 to 320 kbps, or variable V0, V2 or V4 (LAME) |
 | AAC (.m4a) | Yes | File > Export as MP3 or AAC: 96 to 320 kbps average (the macOS encoder) |
 | Apple Lossless (.m4a), CAF and the other types macOS reads | Yes | Apple Lossless through ffmpeg |
@@ -42,7 +42,7 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 | WMA, E-AC-3, Monkey's Audio, TTA, MKA, MP2, AMR, DTS | Through ffmpeg | No |
 | The sound of a video (MP4, MOV, MKV, WebM, AVI) | Through ffmpeg: its first audio stream | No |
 
-File > File Info shows and changes the title, artist, album, genre, year, track and comment, and the broadcast-wave (BWF) details. WAV keeps all of them; MP3 (ID3v2), AAC (.m4a) and the ffmpeg exports keep the tags; they are read from WAV, MP3, MPEG-4, FLAC and Ogg files. AIFF and FLAC files saved here don't keep them.
+File > File Info shows and changes the title, artist, album, genre, year, track and comment, and the broadcast-wave (BWF) details. WAV keeps all of them; AIFF (an ID3 chunk), FLAC (Vorbis comments), MP3 (ID3v2), AAC (.m4a) and the ffmpeg exports keep the tags; they are read from WAV, AIFF, MP3, MPEG-4, FLAC and Ogg files.
 
 MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz is written at 44.1 or 48 kHz. Both keep the audio's exact length and start, through the encoder-delay information players read.
 

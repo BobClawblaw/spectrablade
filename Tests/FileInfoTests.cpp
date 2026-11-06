@@ -137,11 +137,134 @@ void runFileInfoTests()
         AudioFileIO::save (*snapshot, rate, plain, 24, formats);
         check (! contains (plain, "INFO") && ! contains (plain, "bext") && AudioFileIO::load (plain, formats).info.isEmpty(),
                "file info: a WAV saved with no info has neither chunk");
+    }
 
-        const auto aiff = folder.getChildFile ("tagged.aif");
-        AudioFileIO::save (*snapshot, rate, aiff, 24, formats, {}, info);
-        check (! AudioFileIO::canStoreInfo (aiff) && AudioFileIO::load (aiff, formats).info.isEmpty() && AudioFileIO::canStoreInfo (file),
-               "file info: AIFF doesn't keep it (only WAV does)");
+    // AIFF and FLAC: the tags (not the broadcast details), the audio as it is saved without them.
+    for (const auto* name : { "tagged.aif", "tagged16.aiff", "tagged.flac" })
+    {
+        const auto file = folder.getChildFile (name);
+        const auto plainFile = folder.getChildFile (juce::String ("plain-") + name);
+        const auto bits = file.getFileName().contains ("16") ? 16 : 24;
+        const auto step = 1.0f / (float) (1 << (bits - 1));
+        const auto error = AudioFileIO::save (*snapshot, rate, file, bits, formats, {}, info);
+        const auto plainError = AudioFileIO::save (*snapshot, rate, plainFile, bits, formats);
+        const auto loaded = AudioFileIO::load (file, formats);
+        const auto plain = AudioFileIO::load (plainFile, formats);
+        auto identical = loaded.snapshot != nullptr && plain.snapshot != nullptr && loaded.snapshot->getNumFrames() == 48000
+                         && plain.snapshot->getNumFrames() == 48000;
+        juce::AudioBuffer<float> a (2, 48000), b (2, 48000);
+
+        if (identical)
+        {
+            loaded.snapshot->read (a, 0, 0, 48000);
+            plain.snapshot->read (b, 0, 0, 48000);
+        }
+
+        // Saving dithers (randomly, by up to a step each way), so the audio is compared to the source within 2 steps.
+        auto worst = 0.0f;
+
+        for (int ch = 0; identical && ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                worst = juce::jmax (worst, std::abs (a.getSample (ch, i) - audio.getSample (ch, i)));
+
+        const auto kind = juce::String (bits) + "-bit " + (file.hasFileExtension ("flac") ? "FLAC" : "AIFF");
+        check (error.isEmpty() && plainError.isEmpty() && loaded.error.isEmpty() && sameTags (loaded.info, info) && ! loaded.info.hasBroadcast()
+                   && plain.info.isEmpty() && identical && worst <= 2.0f * step && file.getSize() > plainFile.getSize(),
+               "file info: " + kind + " keeps the tags (Unicode too) and reads back at its length, the audio within 2 steps ("
+                   + juce::String (worst / step, 2) + "); saved with no info, it has none");
+
+        // Tagging a copy of the file saved without info leaves its audio bit for bit.
+        const auto copy = folder.getChildFile (juce::String ("copy-") + name);
+        plainFile.copyFileTo (copy);
+        const auto tagError = file.hasFileExtension ("flac") ? FileInfoIO::addFlacComments (copy, info) : FileInfoIO::appendAiffTags (copy, info);
+        const auto tagged = AudioFileIO::load (copy, formats);
+        auto same = tagError.isEmpty() && tagged.snapshot != nullptr && tagged.snapshot->getNumFrames() == 48000 && sameTags (tagged.info, info);
+        juce::AudioBuffer<float> c (2, 48000);
+
+        if (same)
+            tagged.snapshot->read (c, 0, 0, 48000);
+
+        for (int ch = 0; same && ch < 2; ++ch)
+            same = std::memcmp (c.getReadPointer (ch), b.getReadPointer (ch), 48000 * sizeof (float)) == 0;
+
+        check (same, "file info: tagging a " + kind + " file leaves its audio bit for bit");
+
+        if (ffmpeg != juce::File())
+        {
+            const auto tags = ffmpegTags (ffmpeg, file);
+            const auto trackOk = file.hasFileExtension ("flac") ? tags["track"] == "3" && tags["tracktotal"] == "12" : tags["track"] == info.track;
+            juce::ChildProcess decode;
+            decode.start (juce::StringArray { ffmpeg.getFullPathName(), "-nostdin", "-v", "error", "-i", file.getFullPathName(), "-f", "null", "-" });
+            const auto complaints = decode.readAllProcessOutput().trim();
+            check (tags["title"] == info.title && tags["artist"] == info.artist && tags["album"] == info.album && tags["genre"] == info.genre
+                       && tags["date"] == info.year && tags["comment"] == info.comment && trackOk && complaints.isEmpty(),
+                   "file info: ffmpeg reads the same tags from the " + kind + " (track \"" + tags["track"] + "\", total \"" + tags["tracktotal"]
+                       + "\") and decodes it without a complaint" + (complaints.isEmpty() ? juce::String() : ": " + complaints));
+        }
+    }
+
+    {
+        const auto flac = folder.getChildFile ("tagged.flac");
+        auto changed = sampleInfo();
+        changed.title = "Second Title";
+        changed.track = "7";
+        changed.comment = {};
+        const auto again = FileInfoIO::addFlacComments (flac, changed);
+        const auto reloaded = AudioFileIO::load (flac, formats);
+        juce::MemoryBlock data;
+        flac.loadFileAsData (data);
+        int comments = 0;
+        const auto* bytes = (const juce::uint8*) data.getData();
+
+        for (size_t p = 4; p + 4 <= data.getSize();)
+        {
+            comments += (bytes[p] & 0x7f) == 4 ? 1 : 0;
+
+            if ((bytes[p] & 0x80) != 0)
+                break;
+
+            p += 4 + (size_t) ((bytes[p + 1] << 16) | (bytes[p + 2] << 8) | bytes[p + 3]);
+        }
+
+        check (again.isEmpty() && comments == 1 && reloaded.info.title == "Second Title" && reloaded.info.track == "7" && reloaded.info.comment.isEmpty()
+                   && reloaded.snapshot != nullptr && reloaded.snapshot->getNumFrames() == 48000,
+               "file info: tagging a FLAC file again replaces its Vorbis comment (one block left) and keeps its audio");
+
+        const auto riff = folder.getChildFile ("x.wav"), aiff = folder.getChildFile ("x.aiff"), mp3 = folder.getChildFile ("x.mp3");
+        check (AudioFileIO::canStoreInfo (riff) && AudioFileIO::canStoreInfo (aiff) && AudioFileIO::canStoreInfo (flac) && ! AudioFileIO::canStoreInfo (mp3)
+                   && AudioFileIO::canStoreBroadcast (riff) && ! AudioFileIO::canStoreBroadcast (aiff) && ! AudioFileIO::canStoreBroadcast (flac),
+               "file info: Save keeps the tags in WAV, AIFF and FLAC, and the broadcast details in WAV only");
+    }
+
+    // AIFF files written by another program: the NAME, AUTH and ANNO chunks, and an ID3 chunk in a
+    // 32-bit float AIFF-C file (ffmpeg writes ID3v2.4).
+    if (ffmpeg != juce::File())
+    {
+        const auto run = [&ffmpeg, &folder] (const juce::StringArray& options, const juce::File& out)
+        {
+            juce::StringArray args { ffmpeg.getFullPathName(), "-nostdin", "-v", "error", "-y", "-i", folder.getChildFile ("plain.wav").getFullPathName() };
+            args.addArray (options);
+            args.add (out.getFullPathName());
+            juce::ChildProcess p;
+            p.start (args);
+            p.readAllProcessOutput();
+        };
+
+        const auto aiff = folder.getChildFile ("old-style.aiff");
+        run ({ "-metadata", "title=Old Title", "-metadata", "author=Old Artist", "-metadata", "comment=Old note", "-c:a", "pcm_s16be" }, aiff);
+        const auto old = AudioFileIO::load (aiff, formats);
+
+        const auto aifc = folder.getChildFile ("id3.aifc");
+        auto args = FileInfoIO::ffmpegArguments (info);
+        args.addArray ({ "-c:a", "pcm_f32be", "-write_id3v2", "1", "-f", "aiff" });
+        run (args, aifc);
+        FileInfo fromId3;
+        FileInfoIO::readAiff (aifc, fromId3);
+
+        check (contains (aiff, "NAME") && contains (aiff, "AUTH") && ! contains (aiff, "ID3 ") && old.info.title == "Old Title"
+                   && old.info.artist == "Old Artist" && old.info.comment == "Old note" && contains (aifc, "AIFC") && contains (aifc, "ID3 ")
+                   && sameTags (fromId3, info),
+               "file info: an AIFF file's NAME, AUTH and ANNO chunks are read, and the ID3 chunk in an AIFF-C file (both as ffmpeg writes them)");
     }
 
     // MP3: an ID3v2.3 tag ahead of LAME's tag frame.

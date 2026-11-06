@@ -4462,9 +4462,13 @@ void MainComponent::writeFile (const juce::File& file, int bitDepth, std::functi
         if (! doc.getMarkers().empty() && ! AudioFileIO::canStoreMarkers (file))
             showError ("Markers not saved", file.getFileExtension().toUpperCase().trimCharactersAtStart (".")
                                               + " files cannot hold markers. Save as WAV to keep them.");
-        else if (! doc.getInfo().isEmpty() && ! AudioFileIO::canStoreInfo (file))
+        else if (doc.getInfo().hasTags() && ! AudioFileIO::canStoreInfo (file))
             showError ("File info not saved", file.getFileExtension().toUpperCase().trimCharactersAtStart (".")
-                                                  + " files here don't keep the title, artist and so on. Save as WAV, or export as MP3 or AAC, to keep them.");
+                                                  + " files here don't keep the title, artist and so on. Save as WAV, AIFF or FLAC, or export as MP3 or AAC, to keep them.");
+        else if (doc.getInfo().hasBroadcast() && ! AudioFileIO::canStoreBroadcast (file))
+            showError ("Broadcast details not saved", file.getFileExtension().toUpperCase().trimCharactersAtStart (".")
+                                                          + " files don't keep the broadcast-wave details (description, originator and so on); "
+                                                            "the tags were saved. Save as WAV to keep them too.");
     }
 
     if (done != nullptr)

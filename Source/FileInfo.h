@@ -46,6 +46,23 @@ namespace FileInfoIO
     size_t id3v2Size (const void* data, size_t size);
 
     //==============================================================================
+    // AIFF and AIFF-C: an ID3v2.3 tag in an "ID3 " chunk, as Apple's apps and ffmpeg keep them; the
+    // older NAME, AUTH and ANNO chunks are read too.
+
+    void readAiff (const juce::File&, FileInfo&);
+
+    /** Adds an "ID3 " chunk with the tags to the end of an AIFF or AIFF-C file and corrects its size.
+        Fails (with a message) on files that would pass 4 GB. */
+    juce::String appendAiffTags (const juce::File&, const FileInfo&);
+
+    //==============================================================================
+    // FLAC: a Vorbis comment block among the metadata blocks at the start.
+
+    /** Rewrites a FLAC file with a Vorbis comment block holding the tags (replacing any it had), after
+        its other metadata blocks and before any padding; the audio frames are copied as they were. */
+    juce::String addFlacComments (const juce::File&, const FileInfo&);
+
+    //==============================================================================
     // MPEG-4 (.m4a): iTunes-style items in moov/udta/meta/ilst.
 
     void readMp4 (const juce::File&, FileInfo&);
@@ -55,7 +72,7 @@ namespace FileInfoIO
     juce::String addMp4Tags (const juce::File&, const FileInfo&);
 
     //==============================================================================
-    // Vorbis comments, read only: in Ogg files (Opus, Vorbis) and in FLAC's metadata.
+    // Vorbis comments: read from Ogg files (Opus, Vorbis) and FLAC's metadata; written to FLAC above.
 
     void readVorbisComments (const juce::File&, FileInfo&);
 
@@ -63,6 +80,6 @@ namespace FileInfoIO
     /** The tags as ffmpeg -metadata arguments. */
     juce::StringArray ffmpegArguments (const FileInfo&);
 
-    /** Reads whatever the file's type holds (WAV, MP3, .m4a, FLAC, Ogg); the broadcast details from metadata. */
+    /** Reads whatever the file's type holds (WAV, AIFF, MP3, .m4a, FLAC, Ogg); the broadcast details from metadata. */
     FileInfo read (const juce::File&, const juce::StringPairArray& metadata);
 }

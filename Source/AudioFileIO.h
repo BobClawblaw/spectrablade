@@ -19,7 +19,7 @@ namespace AudioFileIO
         int bitDepth = 0;              // 32 means 32-bit float
         juce::String error;
         Markers markers;               // WAV cue points and regions, AIFF markers
-        FileInfo info;                 // WAV INFO and bext, MP3 ID3v2, MPEG-4 tags
+        FileInfo info;                 // WAV INFO and bext, AIFF and MP3 ID3v2, MPEG-4 tags, Vorbis comments
     };
 
     /** Reads the whole file into memory, in blocks of a few seconds each. */
@@ -31,8 +31,11 @@ namespace AudioFileIO
     /** True for the file types that can hold markers (WAV, and AIFF without regions). */
     bool canStoreMarkers (const juce::File&);
 
-    /** True for the file types Save keeps the file info in (WAV). */
+    /** True for the file types Save keeps the tags in (WAV, AIFF, FLAC). */
     bool canStoreInfo (const juce::File&);
+
+    /** True for the file types Save keeps the broadcast-wave details in (WAV). */
+    bool canStoreBroadcast (const juce::File&);
 
     /** Writes the snapshot (and markers, where the format holds them) through a temporary file,
         then replaces the target. Integer formats get TPDF dither. Returns an error message, or
