@@ -51,6 +51,37 @@ float SessionState::folderGain (const SessionTrack& t) const
     return folder != nullptr && ! juce::exactlyEqual (folder->gainDb, 0.0f) ? juce::Decibels::decibelsToGain (folder->gainDb, -150.0f) : 1.0f;
 }
 
+const SessionTrack* SessionState::outputBusOf (const SessionTrack& t) const
+{
+    const auto* bus = t.isFolder || t.outputBusId == 0 || t.outputBusId == t.id ? nullptr : findTrack (t.outputBusId);
+    return bus != nullptr && bus->isBus ? bus : nullptr;
+}
+
+bool SessionState::feeds (const SessionTrack& from, juce::uint32 busId) const
+{
+    // Down a chain of outputs from a bus: no longer than the session, so a loop can't hang it.
+    const auto reaches = [this, busId] (const SessionTrack* bus)
+    {
+        for (size_t steps = 0; bus != nullptr && steps <= tracks.size(); ++steps, bus = outputBusOf (*bus))
+            if (bus->id == busId)
+                return true;
+
+        return false;
+    };
+
+    if (reaches (outputBusOf (from)))
+        return true;
+
+    if (from.isBus)
+        return false;
+
+    return std::any_of (from.sends.begin(), from.sends.end(), [&] (auto& send)
+    {
+        const auto* bus = findTrack (send.busId);
+        return bus != nullptr && bus->isBus && reaches (bus);
+    });
+}
+
 bool SessionState::isShown (const SessionTrack& t) const
 {
     const auto* folder = t.folderId != 0 ? findTrack (t.folderId) : nullptr;
@@ -1529,7 +1560,11 @@ bool setTrackOutput (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
     const auto* bus = busId != 0 ? s.findTrack (busId) : nullptr;
     auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
 
-    if (track == s.tracks.end() || track->isBus || track->isFolder || track->outputBusId == busId || (busId != 0 && (bus == nullptr || ! bus->isBus)))
+    if (track == s.tracks.end() || track->isFolder || track->outputBusId == busId || (busId != 0 && (bus == nullptr || ! bus->isBus)))
+        return false;
+
+    // A bus may not play into itself, nor into a bus whose output leads back to it.
+    if (busId != 0 && track->isBus && (busId == trackId || s.feeds (*bus, trackId)))
         return false;
 
     track->outputBusId = busId;

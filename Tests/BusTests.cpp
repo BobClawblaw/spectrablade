@@ -348,7 +348,7 @@ void runBusTests()
                "outputs: with 300, 500 and 64 frames of latency on the track and both buses, the routed mix lines up bit for bit, from the start and after priming");
 
         auto e = out;
-        const auto refused = ! SessionEdits::setTrackOutput (e, e.tracks[2].id, e.tracks[3].id)       // a bus
+        const auto refused = ! SessionEdits::setTrackOutput (e, e.tracks[2].id, e.tracks[2].id)       // a bus into itself
                              && ! SessionEdits::setTrackOutput (e, e.tracks[1].id, e.tracks[0].id)    // to a track
                              && ! SessionEdits::setTrackOutput (e, e.tracks[0].id, e.tracks[3].id)    // already so
                              && ! SessionEdits::setTrackOutput (e, e.tracks[1].id, 9999);
@@ -357,7 +357,7 @@ void runBusTests()
         const auto frozen = SessionEdits::frozenSource (e, e.tracks[0].id);
         SessionEdits::removeTrack (e, 3);
         check (refused && toMix && e.tracks[0].outputBusId == 0 && frozen.tracks.size() == 1 && frozen.tracks[0].outputBusId == 0,
-               "outputs: only a track plays into a bus, and only a bus; back to the mix with 0; deleting the bus sends it to the mix; freezing renders without it");
+               "outputs: only into a bus, not itself; back to the mix with 0; deleting the bus sends it to the mix; freezing renders without it");
 
         auto dir = juce::File::createTempFile ("output");
         dir.createDirectory();
@@ -385,6 +385,106 @@ void runBusTests()
         check (file && made != nullptr && made->outputBusId == other.tracks[3].id && missing.missingBuses.contains ("Bus 2")
                    && noBuses.findTrack (missing.trackId)->outputBusId == 0,
                "outputs: kept in session files; a track template keeps it by the bus's name, and says when there is no such bus");
+    }
+
+    // Bus into bus: X plays into Y in place of the mix; C plays straight into the mix.
+    {
+        auto chain = s;
+        auto& c = chain.addTrack();
+        addNoiseClip (chain, c, 2, 2000, 5);
+        const auto cMix = alone (chain, 4, 0.0f);
+        const auto routedOk = SessionEdits::setTrackOutput (chain, chain.tracks[2].id, chain.tracks[3].id);
+
+        // X's input (A after its volume, B before its) through X's volume and pan, then Y's volume.
+        juce::AudioBuffer<float> fromX (2, length);
+        fromX.clear();
+        add (fromX, aPost, x * xl * y, x * xr * y);
+        add (fromX, bPre, gain (-6.0f) * x * xl * y, gain (-6.0f) * x * xr * y);
+
+        juce::AudioBuffer<float> expected (2, length);
+        expected.clear();
+        add (expected, aPost, 1.0f, 1.0f);
+        add (expected, bPost, 1.0f, 1.0f);
+        add (expected, fromX, 1.0f, 1.0f);
+        add (expected, bPost, gain (-10.0f) * y, gain (-10.0f) * y);
+        auto withC = expected;
+        add (withC, cMix, 1.0f, 1.0f);
+        const auto w = worst (play (chain, 0, length, 512, nullptr), withC);
+
+        // The same with the buses the other way round in the list.
+        auto swapped = chain;
+        std::swap (swapped.tracks[2], swapped.tracks[3]);
+        const auto wSwapped = worst (play (swapped, 0, length, 333, nullptr), withC);
+        check (routedOk && w < 1.0e-6f && wSwapped < 1.0e-6f,
+               "bus into bus: a bus played into another is heard through both, in either order in the list (worst "
+               + juce::String (juce::jmax (w, wSwapped), 9) + ")");
+
+        auto mutedY = chain;
+        mutedY.tracks[3].mute = true;
+        juce::AudioBuffer<float> noY (2, length);
+        noY.clear();
+        add (noY, aPost, 1.0f, 1.0f);
+        add (noY, bPost, 1.0f, 1.0f);
+        add (noY, cMix, 1.0f, 1.0f);
+        const auto wm = worst (play (mutedY, 0, length, 512, nullptr), noY);
+
+        // Soloing either bus brings the other and what feeds them, and leaves C out.
+        auto soloX = chain;
+        soloX.tracks[2].solo = true;
+        auto soloY = chain;
+        soloY.tracks[3].solo = true;
+        const auto wx = worst (play (soloX, 0, length, 512, nullptr), expected);
+        const auto wy = worst (play (soloY, 0, length, 512, nullptr), expected);
+        check (wm < 1.0e-6f && wx < 1.0e-6f && wy < 1.0e-6f,
+               "bus into bus: muting the second bus silences the first; soloing either brings the other and the tracks feeding them (worst "
+               + juce::String (juce::jmax (wm, wx, wy), 9) + ")");
+
+        const auto dry = play (chain, 0, length, length, nullptr);
+        TrackEffects effects;
+        effects.prepare (rate);
+        effects.add (chain.tracks[0].id, std::make_unique<DelayPlugin> (300, 1.0f));
+        effects.add (chain.tracks[2].id, std::make_unique<DelayPlugin> (500, 1.0f));
+        effects.add (chain.tracks[3].id, std::make_unique<DelayPlugin> (64, 1.0f));
+        check (same (play (chain, 0, length, 333, &effects), dry) && same (play (chain, 0, length, 2900, &effects), dry)
+                   && same (play (chain, 2500, 4000, 256, &effects), slice (dry, 2500, 4000)),
+               "bus into bus: with 300, 500 and 64 frames of latency on a track and both buses (564 along the chain), the mix lines up bit for bit, "
+               "in 333- and 2900-frame blocks and after priming");
+
+        // Loops of any length are refused; Z after Y is fine.
+        auto e = chain;
+        const auto& z = e.addBus();
+        const auto zId = z.id, xId = e.tracks[2].id, yId = e.tracks[3].id;
+        const auto twoLoop = ! SessionEdits::setTrackOutput (e, yId, xId);
+        const auto toZ = SessionEdits::setTrackOutput (e, yId, zId);
+        const auto threeLoop = ! SessionEdits::setTrackOutput (e, zId, xId);
+        const auto viaTrack = ! SessionEdits::setTrackOutput (e, zId, e.tracks[0].id);
+        auto removed = e;
+        SessionEdits::removeTrack (removed, 3);   // Y
+        check (twoLoop && toZ && threeLoop && viaTrack && e.outputBusOf (*e.findTrack (yId)) == e.findTrack (zId)
+                   && removed.findTrack (xId)->outputBusId == 0,
+               "bus into bus: loops of two and three buses refused, a chain of three allowed; deleting the bus played into sends the first to the mix");
+
+        auto dir = juce::File::createTempFile ("buschain");
+        dir.createDirectory();
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        auto noClips = chain;
+
+        for (auto& t : noClips.tracks)
+            t.clips.clear();
+
+        const auto target = dir.getChildFile ("chain.sbsession");
+        const auto saved = SessionFile::save (noClips, target).isEmpty();
+        const auto reloaded = SessionFile::load (target, formats);
+        const auto& lt = reloaded.state.tracks;
+        const auto file = saved && lt.size() == 5 && lt[2].outputBusId == lt[3].id && lt[3].outputBusId == 0;
+        dir.deleteRecursively();
+
+        const auto xml = TrackTemplate::create (chain, chain.tracks[2].id, nullptr);
+        auto other = s;
+        const auto* made = other.findTrack (TrackTemplate::add (other, *xml).trackId);
+        check (file && made != nullptr && made->isBus && made->outputBusId == other.tracks[3].id,
+               "bus into bus: kept in session files, and a bus's template keeps its output by the bus's name");
     }
 
     // Session files keep buses and sends, pointing at the right bus.

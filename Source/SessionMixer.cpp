@@ -64,21 +64,17 @@ namespace
         if (! state.anySolo() || state.isSoloed (track) || state.isSoloSafe (track))
             return true;
 
-        // A soloed bus brings the tracks feeding it (by a send or their output); a soloed track
-        // brings the buses it feeds.
-        if (track.isBus)
-            return std::any_of (state.tracks.begin(), state.tracks.end(), [&] (auto& t)
+        // A soloed track or bus brings what it reaches (by a send or an output, through any
+        // buses between), and what reaches it.
+        if (track.isBus && std::any_of (state.tracks.begin(), state.tracks.end(), [&] (auto& t)
             {
-                return state.isSoloed (t) && ! state.isMuted (t) && (t.findSend (track.id) != nullptr || (! t.isBus && t.outputBusId == track.id));
-            });
-
-        if (const auto* out = state.findTrack (track.outputBusId); out != nullptr && out->isBus && state.isSoloed (*out))
+                return &t != &track && state.isSoloed (t) && ! state.isMuted (t) && state.feeds (t, track.id);
+            }))
             return true;
 
-        return std::any_of (track.sends.begin(), track.sends.end(), [&] (auto& send)
+        return std::any_of (state.tracks.begin(), state.tracks.end(), [&] (auto& bus)
         {
-            const auto* bus = state.findTrack (send.busId);
-            return bus != nullptr && state.isSoloed (*bus);
+            return bus.isBus && &bus != &track && state.isSoloed (bus) && state.feeds (track, bus.id);
         });
     }
 
@@ -119,11 +115,35 @@ namespace
             part.copyFrom (1, 0, part, 0, 0, count);
     }
 
-    /** The bus a track's output goes to, or null for the mix. */
+    /** The bus a track's or bus's output goes to, or null for the mix. */
     const SessionTrack* outputBus (const SessionState& state, const SessionTrack& track)
     {
-        const auto* bus = track.isBus || track.outputBusId == 0 ? nullptr : state.findTrack (track.outputBusId);
-        return bus != nullptr && bus->isBus ? bus : nullptr;
+        return state.outputBusOf (track);
+    }
+
+    /** The latency from a bus's input to the mix: its own and that of the buses its output
+        goes through. Its input is the audio at start + this. */
+    int pathLatency (const SessionState& state, const SessionTrack& bus, Inserts* inserts)
+    {
+        int total = 0;
+        const auto* b = &bus;
+
+        for (size_t steps = 0; b != nullptr && steps <= state.tracks.size(); ++steps, b = outputBus (state, *b))
+            total += latencyOf (inserts, b->id);
+
+        return total;
+    }
+
+    /** How many buses a bus's output passes through to the mix: 0 when it plays into the mix.
+        Buses are mixed deepest first, so each comes before the buses it plays into. */
+    int depthOf (const SessionState& state, const SessionTrack& bus)
+    {
+        int depth = 0;
+
+        for (const auto* b = outputBus (state, bus); b != nullptr && depth <= (int) state.tracks.size(); b = outputBus (state, *b))
+            ++depth;
+
+        return depth;
     }
 
     /** The most latency among the buses the track feeds: how far its sends and output must run ahead. */
@@ -132,11 +152,11 @@ namespace
         int most = 0;
 
         if (const auto* bus = outputBus (state, track))
-            most = latencyOf (inserts, bus->id);
+            most = pathLatency (state, *bus, inserts);
 
         for (auto& send : track.sends)
             if (const auto* bus = state.findTrack (send.busId); bus != nullptr && bus->isBus)
-                most = juce::jmax (most, latencyOf (inserts, bus->id));
+                most = juce::jmax (most, pathLatency (state, *bus, inserts));
 
         return most;
     }
@@ -429,7 +449,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 return;
 
             const auto gain = juce::Decibels::decibelsToGain (s.gainDb, -150.0f) * (s.preFader ? 1.0f : volume);
-            addHeld (buffers, { track.id, bus->id }, ahead - latencyOf (inserts, bus->id), buffers.track, numFrames,
+            addHeld (buffers, { track.id, bus->id }, ahead - pathLatency (state, *bus, inserts), buffers.track, numFrames,
                      buffers.buses[bus->id], 0, gain);
         };
 
@@ -502,7 +522,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (const auto* bus = outputBus (state, track))
         {
             if (plays (state, *bus))
-                addHeld (buffers, { track.id, 0 }, ahead - latencyOf (inserts, bus->id), buffers.track, numFrames,
+                addHeld (buffers, { track.id, 0 }, ahead - pathLatency (state, *bus, inserts), buffers.track, numFrames,
                          buffers.buses[bus->id], 0, volume);
         }
         else
@@ -515,30 +535,56 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 send (s, volume);
     }
 
-    // Buses: their input is the audio at start + their latency, so their effects bring it to start.
-    for (auto& bus : state.tracks)
+    // Buses, each before the buses it plays into: their input is the audio at start + the latency
+    // from there to the mix, so their effects bring it to the time their output's input needs.
+    buffers.busOrder.clear();
+
+    for (size_t i = 0; i < state.tracks.size(); ++i)
+        if (state.tracks[i].isBus)
+            buffers.busOrder.emplace_back (-depthOf (state, state.tracks[i]), (int) i);
+
+    std::sort (buffers.busOrder.begin(), buffers.busOrder.end());
+
+    for (const auto [negativeDepth, busIndex] : buffers.busOrder)
     {
-        if (! bus.isBus || ! plays (state, bus))
+        juce::ignoreUnused (negativeDepth);
+        const auto& bus = state.tracks[(size_t) busIndex];
+
+        if (! plays (state, bus))
             continue;
 
         auto& input = buffers.buses[bus.id];
 
         if (inserts != nullptr && inserts->isActive (bus.id))
-            inserts->process (bus, start + latencyOf (inserts, bus.id), input, numFrames);
+            inserts->process (bus, start + pathLatency (state, bus, inserts), input, numFrames);
 
         if (bus.invertPolarity)
             for (int ch = 0; ch < 2; ++ch)
                 juce::FloatVectorOperations::negate (input.getWritePointer (ch), input.getReadPointer (ch), numFrames);
 
-        const auto index = (int) (&bus - state.tracks.data());
+        const auto index = busIndex;
         const auto folder = state.folderGain (bus);
+
+        // Its output: the mix, or the bus it plays into (nothing when that bus doesn't play).
+        auto* out = &dest;
+        auto outStart = destStart;
+
+        if (const auto* next = outputBus (state, bus))
+        {
+            out = plays (state, *next) ? &buffers.buses[next->id] : nullptr;
+            outStart = 0;
+        }
 
         if (bus.volumeEnvelope.isEmpty() && bus.panEnvelope.isEmpty())
         {
             const auto volume = juce::Decibels::decibelsToGain (bus.gainDb, -150.0f) * folder;
             const auto [left, right] = panGains (bus.pan, 2);
-            dest.addFrom (0, destStart, input, 0, 0, numFrames, volume * left);
-            dest.addFrom (1, destStart, input, 1, 0, numFrames, volume * right);
+
+            if (out != nullptr)
+            {
+                out->addFrom (0, outStart, input, 0, 0, numFrames, volume * left);
+                out->addFrom (1, outStart, input, 1, 0, numFrames, volume * right);
+            }
 
             if (buffers.levels != nullptr)
                 buffers.levels->raise (index, peakOf (input, 0, numFrames) * (volume * left), peakOf (input, 1, numFrames) * (volume * right));
@@ -556,8 +602,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         const auto* inLeft = input.getReadPointer (0);
         const auto* inRight = input.getReadPointer (1);
-        auto* outLeft = dest.getWritePointer (0, destStart);
-        auto* outRight = dest.getWritePointer (1, destStart);
+        auto* outLeft = out != nullptr ? out->getWritePointer (0, outStart) : nullptr;
+        auto* outRight = out != nullptr ? out->getWritePointer (1, outStart) : nullptr;
 
         auto peakLeft = 0.0f, peakRight = 0.0f;
 
@@ -565,8 +611,13 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         {
             const auto volume = juce::Decibels::decibelsToGain (volumes[i], -150.0f) * folder;
             const auto [left, right] = panGains (pans[i], 2);
-            outLeft[i] += inLeft[i] * (volume * left);
-            outRight[i] += inRight[i] * (volume * right);
+
+            if (outLeft != nullptr)
+            {
+                outLeft[i] += inLeft[i] * (volume * left);
+                outRight[i] += inRight[i] * (volume * right);
+            }
+
             peakLeft = juce::jmax (peakLeft, std::abs (inLeft[i] * (volume * left)));
             peakRight = juce::jmax (peakRight, std::abs (inRight[i] * (volume * right)));
         }

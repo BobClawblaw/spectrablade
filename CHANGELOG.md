@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 225: Buses into buses**
+- A bus can play into another bus in place of the mix: its header has an Output button (where a track has Sends) with the mix and the buses it may play into. A bus can't play into itself, nor into a bus that already plays into it, through any number of buses. Each bus is mixed before the buses it plays into, whatever their order in the list. A bus's lane says which bus it plays into, and the lane of the bus it plays into lists it as "(output)".
+- Plug-in latency is lined up along the chain: a track feeding a bus is read ahead by that bus's latency plus that of the buses after it. Muting a bus silences the buses played into it; soloing a bus brings the buses it plays into and those that play into it, with the tracks feeding them. Deleting a bus sends the buses that played into it to the mix. Session files keep it, and so do a bus's templates, by the bus's name. Buses still have no sends.
+- Measured by the tests, with a bus played into a second bus beside a track playing straight into the mix: the mix matches sums made by hand (worst difference 1.2e-7), with the buses either way round in the list; muting the second bus silences the first, and soloing either brings both and the tracks feeding them while leaving the other track out (worst 6e-8); with 300, 500 and 64 frames of latency on a track and both buses (564 along the chain), the mix lines up bit for bit with the dry one in 333- and 2900-frame blocks and from 2500 frames after priming; loops of two and three buses are refused and a chain of three allowed; session files and templates keep it. Mixes without bus outputs are unchanged: every earlier bus, latency, ducking and mixer test still passes. The whole suite passed (1015 checks).
+- Not tried by hand: the Output button and list in the app.
+
 **Milestone 224: File info (tags and broadcast-wave details)**
 - File > File Info shows and changes a file's title, artist, album, genre, year, track and comment, and its broadcast-wave details (description, originator, originator reference, origination date and time; the time reference is shown, and kept). A change is an undo step, and other edits carry the info on.
 - Opening reads it from WAV files (their LIST INFO and bext chunks), MP3 (ID3v2.3 and 2.4), MPEG-4 files (.m4a and the like, iTunes-style tags), FLAC and Ogg files such as Opus (Vorbis comments), and through ffmpeg from the formats it opens.

@@ -10,7 +10,8 @@
     track's effects (Inserts), then its volume, and the track goes to the mix. Its sends take the
     signal before the volume (pre-fader) or after it, to buses, which play it through their
     effects, volume and pan (balance) into the mix. A track whose output is a bus goes there,
-    after its volume, in place of the mix.
+    after its volume, in place of the mix; so does a bus whose output is another bus. Each bus is
+    mixed before the buses it plays into.
 
     A volume or pan envelope takes over from the setting, sample by sample: a track's pan
     envelope where its clips are panned, its volume envelope where its volume is applied (after
@@ -19,8 +20,9 @@
     session frame of the audio they process.
 
     Effects delay what passes through them. A track is read ahead by its effects' latency plus
-    the most latency of the buses it sends to, and each of its outputs is held back by what that
-    path lacks, so everything lines up without delaying the mix.
+    the most latency of the paths it feeds (a bus's own, and that of the buses its output goes
+    through on the way to the mix), and each of its outputs is held back by what that path
+    lacks, so everything lines up without delaying the mix.
 
     A track ducking under another comes down while that key track's output (after its volume) is
     above the threshold, following the attack and release; it acts with the volume, so the
@@ -30,8 +32,9 @@
     difference. A key that doesn't play (muted, or left out by a solo) ducks nothing.
 
     Muted tracks and buses play nothing. When anything is soloed, only soloed tracks and buses
-    play, along with the buses a soloed track feeds (by a send or its output) and the tracks
-    that feed a soloed bus. A track whose output bus doesn't play is not heard. */
+    play, along with the buses a soloed track or bus feeds (by a send or an output, through any
+    buses between) and the tracks and buses that feed a soloed bus. A track or bus whose output
+    bus doesn't play is not heard. */
 namespace SessionMixer
 {
     /** Left and right gains for a pan position and a source with this many channels. */
@@ -107,6 +110,7 @@ namespace SessionMixer
         juce::AudioBuffer<float> keyHeld, duckGains;
         std::vector<int> order;            // the tracks in the order they are mixed: keys first
         std::vector<char> marks;
+        std::vector<std::pair<int, int>> busOrder;   // (minus depth, place): each bus before those it plays into
 
         void reserve (int frames)
         {
@@ -115,6 +119,7 @@ namespace SessionMixer
 
             order.reserve (64);
             marks.reserve (64);
+            busOrder.reserve (64);
         }
     };
 

@@ -31,7 +31,7 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
         }
     }
 
-    if (const auto* out = s.findTrack (t->outputBusId); out != nullptr && out->isBus && ! t->isBus)
+    if (const auto* out = s.outputBusOf (*t))
         xml->setAttribute ("output", out->name);
 
     if (effects != nullptr)
@@ -72,16 +72,17 @@ Added add (SessionState& s, const juce::XmlElement& xml)
 
             SessionEdits::setSend (s, id, { bus->id, (float) sendXml->getDoubleAttribute ("gainDb"), sendXml->getBoolAttribute ("preFader") });
         }
+    }
 
-        if (const auto outName = xml.getStringAttribute ("output"); outName.isNotEmpty())
-        {
-            const auto bus = std::find_if (s.tracks.begin(), s.tracks.end(), [&outName] (auto& b) { return b.isBus && b.name == outName; });
+    // The output, by the bus's name (a bus template's own new bus isn't one to play into).
+    if (const auto outName = xml.getStringAttribute ("output"); outName.isNotEmpty())
+    {
+        const auto bus = std::find_if (s.tracks.begin(), s.tracks.end(), [&outName, id] (auto& b) { return b.isBus && b.name == outName && b.id != id; });
 
-            if (bus == s.tracks.end())
-                added.missingBuses.addIfNotAlreadyThere (outName);
-            else
-                SessionEdits::setTrackOutput (s, id, bus->id);
-        }
+        if (bus == s.tracks.end())
+            added.missingBuses.addIfNotAlreadyThere (outName);
+        else
+            SessionEdits::setTrackOutput (s, id, bus->id);
     }
 
     if (const auto* effects = xml.getChildByName ("EFFECTS"))

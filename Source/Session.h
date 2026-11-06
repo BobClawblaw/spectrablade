@@ -137,7 +137,7 @@ struct EffectEnvelope
     effects' parameters. An envelope for an effect that has left the chain is kept but unused.
 
     A bus is a track with no clips that plays what other tracks send it, through its own effects,
-    volume and pan. Buses send nowhere themselves. */
+    volume and pan, into the mix or into another bus (its output). Buses have no sends. */
 /** The device inputs a track records from: a first channel (absolute) and 1 or 2 channels, or
     the recording input chosen in the window (first < 0). */
 struct TrackInput
@@ -191,8 +191,8 @@ struct SessionTrack
     juce::String note;                     // free text, shown in the header's tooltip
     TrackInput input;                      // what it records from (tracks only)
 
-    /** Where a track's output goes: 0 for the mix, or a bus it plays into in place of the mix,
-        after its volume (tracks only). Its sends are as they were. */
+    /** Where a track's or bus's output goes: 0 for the mix, or a bus it plays into in place of
+        the mix, after its volume. A track's sends are as they were. */
     juce::uint32 outputBusId = 0;
 
     /** Ducking under another track (tracks only). It acts with the volume: on the track's
@@ -276,6 +276,13 @@ struct SessionState
 
     /** The track (or bus) with this id, or null. */
     const SessionTrack* findTrack (juce::uint32 trackId) const;
+
+    /** The bus a track's or bus's output goes to, or null for the mix. */
+    const SessionTrack* outputBusOf (const SessionTrack&) const;
+
+    /** True when what a track or bus plays reaches this bus: through a send or its output,
+        then through the outputs of the buses on the way. */
+    bool feeds (const SessionTrack& from, juce::uint32 busId) const;
 
     /** The track and index of the clip with this id, or nothing. */
     std::optional<std::pair<int, int>> findClip (juce::uint32 clipId) const;
@@ -514,8 +521,9 @@ namespace SessionEdits
         another sample rate. */
     bool pasteTime (SessionState&, const SessionTime&, juce::int64 at);
 
-    /** Sends a track's output to a bus in place of the mix, or with busId 0 back to the mix.
-        False for a bus or folder, a bus that isn't one, or when it is already so. */
+    /** Sends a track's or bus's output to a bus in place of the mix, or with busId 0 back to the
+        mix. False for a folder, a destination that isn't a bus, a bus into itself or into a bus
+        that already plays into it (a loop of any length), or when it is already so. */
     bool setTrackOutput (SessionState&, juce::uint32 trackId, juce::uint32 busId);
 
     /** Sets a track's ducking (a key of 0 turns it off). False for a bus or folder, a key that

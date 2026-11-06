@@ -76,7 +76,6 @@ public:
             Theme::follow (*b, juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
         }
 
-        sendsButton.setTooltip ("Send this track to buses, play it into one in place of the mix, or duck it under another track");
         Theme::follow (sendsButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         sendsButton.onClick = [this] { view.showSends (trackId, sendsButton); };
 
@@ -180,15 +179,17 @@ public:
         for (auto* c : std::initializer_list<juce::Component*> { &effectsButton, &pan, &automationButton })
             c->setVisible (! isFolder);
 
-        sendsButton.setVisible (! isBus && ! isFolder);
+        sendsButton.setVisible (! isFolder);
         arm.setVisible (! isBus && ! isFolder);
         arm.setToggleState (view.isArmed (trackId), juce::dontSendNotification);
         inputButton.setVisible (! isBus && ! isFolder);
         inputButton.setButtonText (t.input.isDefault() ? juce::String ("In")
                                    : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
                                                            : juce::String (t.input.first + 1));
-        sendsButton.setButtonText (t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
+        sendsButton.setButtonText (isBus ? juce::String ("Output") : t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
         sendsButton.setToggleState (! t.sends.empty() || t.outputBusId != 0 || t.ducking.isOn(), juce::dontSendNotification);
+        sendsButton.setTooltip (isBus ? "Play this bus into the mix, or into another bus"
+                                      : "Send this track to buses, play it into one in place of the mix, or duck it under another track");
         effectsButton.setTooltip (isBus ? "This bus's effects" : "This track's effects");
         resized();
 
@@ -435,11 +436,11 @@ public:
 
         automationButton.setBounds (bottom.removeFromRight (26));
         bottom.removeFromRight (4);
+        sendsButton.setBounds (bottom.removeFromRight (56));
+        bottom.removeFromRight (4);
 
         if (! isBus)
         {
-            sendsButton.setBounds (bottom.removeFromRight (56));
-            bottom.removeFromRight (4);
             inputButton.setBounds (bottom.removeFromRight (40));
             bottom.removeFromRight (4);
         }
@@ -575,7 +576,8 @@ private:
 //==============================================================================
 /** A track's routing: its output (the mix or a bus), ducking under another track, one row per
     bus for its sends (on/off, level, before or after the track's volume), and a button that
-    makes a new bus with a send to it. Follows the session, so undo shows here too. */
+    makes a new bus with a send to it. A bus's has only its output: the mix, or another bus that
+    doesn't play into it. Follows the session, so undo shows here too. */
 class MultitrackView::SendsPanel final : public juce::Component,
                                          private juce::ChangeListener
 {
@@ -599,7 +601,7 @@ public:
             if (SessionEdits::setTrackOutput (next, trackId, busId))
                 engine.session.apply (std::move (next), "Track Output");
         };
-        output.setTooltip ("Where the track plays: the mix, or a bus in its place");
+        output.setTooltip ("Where it plays: the mix, or a bus in its place");
         addAndMakeVisible (outputLabel);
         addAndMakeVisible (output);
         outputLabel.setText ("Output", juce::dontSendNotification);
@@ -738,14 +740,28 @@ private:
         output.addItem ("Mix", 1);
         outputChoices.clear();
 
+        // A bus can't play into itself, nor into a bus that plays into it.
         for (auto* bus : buses)
         {
+            if (track != nullptr && track->isBus && (bus->id == trackId || current->feeds (*bus, trackId)))
+                continue;
+
             outputChoices.push_back (bus->id);
             output.addItem (bus->name, (int) outputChoices.size() + 1);
         }
 
         const auto out = std::find (outputChoices.begin(), outputChoices.end(), track != nullptr ? track->outputBusId : 0u);
         output.setSelectedItemIndex (out == outputChoices.end() ? 0 : (int) (out - outputChoices.begin()) + 1, juce::dontSendNotification);
+
+        if (track != nullptr && track->isBus)
+        {
+            for (auto* c : std::initializer_list<juce::Component*> { &duckLabel, &duckKey, &duckAmount, &duckThreshold, &duckAttack, &duckRelease, &newBus, &empty })
+                c->setVisible (false);
+
+            rows.clear();
+            setSize (300, 16 + rowHeight);
+            return;
+        }
 
         duckKey.clear (juce::dontSendNotification);
         duckKey.addItem ("None", 1);
@@ -2089,15 +2105,17 @@ void MultitrackView::paint (juce::Graphics& g)
                 for (auto& other : s.tracks)
                     if (other.findSend (track.id) != nullptr)
                         feeders.add (other.name);
-                    else if (! other.isBus && other.outputBusId == track.id)
+                    else if (other.outputBusId == track.id && &other != &track)
                         feeders.add (other.name + " (output)");
 
                 g.setColour (Theme::overlay.withAlpha (0.04f));
                 g.fillRect (lane.reduced (0, 3));
                 g.setColour (Theme::dimText);
                 g.setFont (13.0f);
-                g.drawText (feeders.isEmpty() ? "Bus: nothing plays here yet. Use a track's Sends button."
-                                              : "Bus: from " + feeders.joinIntoString (", "),
+                const auto* into = s.outputBusOf (track);
+                g.drawText ((feeders.isEmpty() ? juce::String ("Bus: nothing plays here yet. Use a track's Sends button.")
+                                               : "Bus: from " + feeders.joinIntoString (", "))
+                                + (into != nullptr ? "; plays into " + into->name : juce::String()),
                             lane.reduced (12, 0), juce::Justification::centredLeft);
             }
 
