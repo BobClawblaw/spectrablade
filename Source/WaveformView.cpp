@@ -825,6 +825,17 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // Dragging along the ruler while stopped scrubs: the sound under the mouse is heard as it moves.
+    if (e.position.y < (float) rulerHeight && ! e.mods.isPopupMenu() && ! engine.getPlayer().isPlaying()
+        && engine.getPlayer().getMode() == DocumentPlayerProcessor::Mode::document)
+    {
+        const auto frame = juce::jlimit ((juce::int64) 0, engine.document.getNumFrames(), xToFrame (e.position.x));
+        scrubbing = true;
+        engine.getPlayer().getScrubber().start (frame);
+        setCursor (frame);
+        return;
+    }
+
     if (const auto index = markerAt (e.position); index >= 0)
     {
         const auto& m = engine.document.getMarkers()[(size_t) index];
@@ -937,6 +948,14 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    if (scrubbing)
+    {
+        const auto frame = juce::jlimit ((juce::int64) 0, engine.document.getNumFrames(), xToFrame (e.position.x));
+        engine.getPlayer().getScrubber().moveTo (frame);
+        setCursor (frame);
+        return;
+    }
+
     if (draggedMarker >= 0)
     {
         if (! markerWasMoved && e.getDistanceFromDragStart() < 3)
@@ -987,6 +1006,13 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
 
 void WaveformView::mouseUp (const juce::MouseEvent&)
 {
+    if (scrubbing)
+    {
+        scrubbing = false;
+        engine.getPlayer().getScrubber().stop();
+        return;
+    }
+
     if (shapeLane >= 0)
     {
         shapeLane = -1;

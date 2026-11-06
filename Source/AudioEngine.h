@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Scrubber.h"
 #include "AudioDocument.h"
 #include "AudioFileIO.h"
 #include "Recorder.h"
@@ -164,6 +165,10 @@ public:
     void audition (std::unique_ptr<juce::AudioFormatReader>);
     bool isAuditioning() const                    { return auditioner.isPlaying(); }
 
+    /** Scrubbing the document while it is stopped (see Scrubber): its sound goes out as the mix,
+        through the effects rack. Playing, or the session shown, it is silent. */
+    Scrubber& getScrubber() noexcept              { return scrubber; }
+
     /** The session's tracks' and buses' levels as they play, by their place in the session. */
     SessionMixer::Levels& getLevels() noexcept    { return levels; }
 
@@ -235,6 +240,9 @@ private:
     juce::AudioTransportSource auditioner;
     juce::AudioBuffer<float> auditionBuffer;
     SessionMixer::Levels levels;
+    Scrubber scrubber;
+    AudioDocument::Snapshot scrubSnapshot;     // audio thread's own reference
+    juce::uint32 scrubVersion = 0;
     std::atomic<bool> metronome { false };
     std::atomic<juce::int64> countInEnd { -1 };
     Session::State clickState;                 // audio thread's own reference, for the tempo

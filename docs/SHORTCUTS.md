@@ -129,6 +129,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Action | How |
 |---|---|
 | Select the whole file | Double-click the waveform or spectrogram |
+| Scrub (hear the sound as you drag over it) | Drag along the ruler above the waveform, while stopped |
 | Select a band of frequencies | Option-drag in the spectrogram |
 | Draw round frequencies (lasso tool) | Drag in the spectrogram; Shift-drag adds |
 | Paint over frequencies (brush tool) | Drag in the spectrogram; Shift-drag adds |

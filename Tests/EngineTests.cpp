@@ -40,6 +40,7 @@
 #include "NoiseTests.h"
 #include "DereverbTests.h"
 #include "LevellerTests.h"
+#include "ScrubberTests.h"
 #include "ClickTests.h"
 #include "SessionTests.h"
 #include "TrackEffectsTests.h"
@@ -545,6 +546,7 @@ int main (int argc, char* argv[])
         runNoiseTests();
         runDereverbTests();
         runLevellerTests();
+        runScrubberTests();
         runClickTests();
         runSessionTests (engine.formatManager);
         runTrackEffectsTests();

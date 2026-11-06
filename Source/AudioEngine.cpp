@@ -377,6 +377,7 @@ void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
     transport.prepareToPlay (blockSize, sampleRate);
     auditioner.prepareToPlay (blockSize, sampleRate);
     auditionBuffer.setSize (2, juce::jmax (8192, 4 * blockSize));
+    scrubber.prepare (blockSize);
 }
 
 void DocumentPlayerProcessor::setMonitoredTracks (const std::vector<MonitoredTrack>& tracks)
@@ -442,6 +443,19 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     // Stopped (the transport read nothing and played silence): the input plays on its own.
     if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
         sessionSource.renderLive (info);
+
+    // Scrubbing a stopped document: its sound as the mix.
+    if (mode == Mode::document && ! playing && scrubber.isSounding())
+    {
+        if (const auto v = document.getVersion(); scrubSnapshot == nullptr || v != scrubVersion)
+        {
+            scrubSnapshot = document.getSnapshot();
+            scrubVersion = v;
+        }
+
+        if (scrubSnapshot != nullptr)
+            scrubber.render (*scrubSnapshot, sourceRate, deviceRate, buffer, 0, numFrames);
+    }
 
     // A document has nothing for the interface pairs (the transport read the mix alone), unless
     // its channels past the first two play out of their own outputs.

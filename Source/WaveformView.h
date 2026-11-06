@@ -195,6 +195,7 @@ private:
 
     // A marker being dragged: the document's markers with that one moved, shown until mouse-up.
     int draggedMarker = -1;
+    bool scrubbing = false;   // dragging along the ruler, heard (Scrubber)
     juce::int64 dragGrabOffset = 0;
     Markers dragMarkers;
     bool markerWasMoved = false;

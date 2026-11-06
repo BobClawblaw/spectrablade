@@ -4,7 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 248: Scrubbing**
+- Dragging along the ruler above the waveform while stopped scrubs: the sound under the mouse plays as it moves, like tape moved by hand past the head. Dragged at normal speed it plays as it is, faster raises its pitch, backwards plays it backwards, and holding still lets it catch up and fall silent. The cursor follows the mouse and stays where you let go. The sound goes out through the effects rack like playback.
+- The sound follows the mouse over about 50 ms, no faster than four times normal speed, with its speed smoothed over 10 ms and the samples read between with a cubic curve; its level follows its speed, and letting go fades it out over 10 ms. It is worked out sample by sample, so the device's block size changes nothing.
+- In the editor only: a multitrack session isn't scrubbed yet.
+- ROADMAP.md lists what comes next again.
+- Measured by the tests, on a 440 Hz tone at 48 kHz: dragged at normal speed it plays at 440.0 Hz and its own level (-0.00 dB), twice as fast at 880.0 Hz, backwards at 440.0 Hz, the sound 47 ms behind the mouse; silent where it starts until the mouse moves, and held still the head catches up and the sound is below -100 dBFS half a second later; a jump 20 s ahead is followed at 3.96 times normal speed over the first second; rendered in blocks of 64 and of 1000 frames the sound is the same bit for bit; let go, it is below -100 dBFS from 50 ms on; a 44.1 kHz file on a 48 kHz device plays at 440.0 Hz; a mono file is the same on both sides; past the end of the file there is silence. The whole suite passed (1177 checks). The drag in the app itself, and how it sounds, were not tried: the tests drive the scrubber the player runs, not the mouse.
 
 ## Released
 
