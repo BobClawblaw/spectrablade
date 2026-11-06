@@ -79,6 +79,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Surround.cpp
     Source/Video.cpp
     Source/Project.cpp
+    Source/PictureMap.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
@@ -234,6 +235,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Surround.cpp
     Source/Video.cpp
     Source/Project.cpp
+    Source/PictureMap.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp

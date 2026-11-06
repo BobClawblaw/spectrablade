@@ -153,17 +153,139 @@ VideoAudio audioForVideo (const juce::File& video)
     return { "aac", "AAC", 320 };
 }
 
+Picture probePicture (const juce::File& ffmpeg, const juce::File& video)
+{
+    // ffmpeg -i with no output describes the file on stderr (and exits with an error).
+    juce::ChildProcess process;
+    Picture p;
+
+    if (! process.start (juce::StringArray { ffmpeg.getFullPathName(), "-hide_banner", "-nostdin", "-i", video.getFullPathName() }))
+        return p;
+
+    const auto text = process.readAllProcessOutput();
+
+    for (auto line : juce::StringArray::fromLines (text))
+    {
+        line = line.trim();
+
+        if (line.startsWith ("Duration:") && p.duration <= 0.0)
+        {
+            const auto t = juce::StringArray::fromTokens (line.fromFirstOccurrenceOf ("Duration:", false, false).upToFirstOccurrenceOf (",", false, false).trim(), ":", {});
+
+            if (t.size() == 3)
+                p.duration = t[0].getDoubleValue() * 3600.0 + t[1].getDoubleValue() * 60.0 + t[2].getDoubleValue();
+        }
+
+        if (line.startsWith ("Stream #") && line.contains ("Video:") && p.width == 0)
+        {
+            for (auto token : juce::StringArray::fromTokens (line.fromFirstOccurrenceOf ("Video:", false, false), ", ", {}))
+            {
+                if (p.width == 0 && token.containsOnly ("0123456789x") && token.contains ("x") && ! token.startsWith ("0x"))
+                {
+                    p.width = token.upToFirstOccurrenceOf ("x", false, false).getIntValue();
+                    p.height = token.fromFirstOccurrenceOf ("x", false, false).getIntValue();
+                }
+            }
+
+            const auto beforeFps = line.upToFirstOccurrenceOf (" fps", false, false);
+
+            if (beforeFps != line)
+                p.frameRate = beforeFps.fromLastOccurrenceOf (",", false, false).trim().getDoubleValue();
+        }
+    }
+
+    return p;
+}
+
+juce::String recutFilter (const PictureMap& map, double soundSeconds, const Picture& picture)
+{
+    // Cut on whole frames: each piece starts at the frame nearest its time, and takes the source's
+    // frames from the one nearest its picture's time, so no rounding builds up from piece to piece.
+    const auto rate = picture.frameRate;
+    const auto rateText = juce::String (rate, 6);
+    const auto frameOf = [rate] (double seconds) { return (juce::int64) std::llround (seconds * rate); };
+    const auto sourceFrames = (juce::int64) std::floor (picture.duration * rate + 1.0e-6);
+    juce::StringArray chains, labels;
+
+    const auto addPicture = [&] (juce::int64 from, juce::int64 count)
+    {
+        const auto label = "[p" + juce::String (labels.size()) + "]";
+        chains.add ("[0:v]fps=" + rateText + ",trim=start_frame=" + juce::String (from) + ":end_frame=" + juce::String (from + count)
+                    + ",setpts=PTS-STARTPTS,scale=" + juce::String (picture.width) + ":" + juce::String (picture.height) + ",setsar=1,format=yuv420p" + label);
+        labels.add (label);
+    };
+
+    const auto addBlack = [&] (juce::int64 count)
+    {
+        const auto label = "[p" + juce::String (labels.size()) + "]";
+        chains.add ("color=c=black:s=" + juce::String (picture.width) + "x" + juce::String (picture.height) + ":r=" + rateText
+                    + ",trim=end_frame=" + juce::String (count) + ",setsar=1,format=yuv420p" + label);
+        labels.add (label);
+    };
+
+    auto pieces = map.getPieces();
+
+    if (pieces.empty())
+        pieces.push_back ({ 0.0, soundSeconds, 0.0 });
+
+    for (size_t i = 0; i < pieces.size(); ++i)
+    {
+        const auto& p = pieces[i];
+        const auto end = juce::jmin (soundSeconds, i + 1 < pieces.size() ? pieces[i + 1].start : soundSeconds);   // the last runs to the sound's end
+        const auto count = frameOf (end) - frameOf (p.start);
+
+        if (count <= 0)
+            continue;
+
+        // The picture there, then black for what runs past the video's end.
+        const auto from = p.picture < 0.0 ? sourceFrames : frameOf (p.picture);
+        const auto shown = juce::jlimit ((juce::int64) 0, count, sourceFrames - from);
+
+        if (shown > 0)
+            addPicture (from, shown);
+
+        if (count > shown)
+            addBlack (count - shown);
+    }
+
+    chains.add (labels.joinIntoString ("") + "concat=n=" + juce::String (labels.size()) + ":v=1:a=0[v]");
+    return chains.joinIntoString (";");
+}
+
 juce::String replaceAudio (const juce::File& ffmpeg, const juce::File& video, const juce::File& wav, const juce::File& target,
-                           const std::function<bool()>& keepGoing)
+                           const std::function<bool()>& keepGoing, const PictureMap& map, double soundSeconds)
 {
     if (target == video)
         return "The new video needs a name of its own: the original is read while it is written.";
 
     const auto audio = audioForVideo (video);
+    const auto extension = video.getFileExtension().substring (1).toLowerCase();
     juce::TemporaryFile temp (target);
-    juce::StringArray arguments { "-i", video.getFullPathName(), "-i", wav.getFullPathName(),
-                                  "-map", "0:v", "-map", "1:a:0", "-map_metadata", "0", "-map_chapters", "0",
-                                  "-c:v", "copy", "-c:a", audio.codec };
+    juce::StringArray arguments { "-i", video.getFullPathName(), "-i", wav.getFullPathName() };
+
+    if (map.isIdentity())
+    {
+        arguments.addArray ({ "-map", "0:v", "-map", "1:a:0", "-map_metadata", "0", "-map_chapters", "0", "-c:v", "copy" });
+    }
+    else
+    {
+        const auto picture = probePicture (ffmpeg, video);
+
+        if (picture.width <= 0 || picture.height <= 0 || picture.frameRate <= 0.0 || picture.duration <= 0.0)
+            return "The picture of " + video.getFileName() + " could not be read.";
+
+        arguments.addArray ({ "-filter_complex", recutFilter (map, soundSeconds, picture), "-map", "[v]", "-map", "1:a:0",
+                              "-map_metadata", "0", "-map_chapters", "-1" });
+
+        if (extension == "webm")
+            arguments.addArray ({ "-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0" });
+        else if (extension == "avi")
+            arguments.addArray ({ "-c:v", "mpeg4", "-q:v", "2" });
+        else
+            arguments.addArray ({ "-c:v", "libx264", "-crf", "18", "-preset", "medium", "-pix_fmt", "yuv420p" });
+    }
+
+    arguments.addArray ({ "-c:a", audio.codec });
 
     if (audio.kbps > 0)
         arguments.addArray ({ "-b:a", juce::String (audio.kbps) + "k" });
@@ -171,7 +293,6 @@ juce::String replaceAudio (const juce::File& ffmpeg, const juce::File& video, co
     if (audio.codec == "flac")
         arguments.addArray ({ "-sample_fmt", "s32", "-bits_per_raw_sample", "24" });
 
-    const auto extension = video.getFileExtension().substring (1).toLowerCase();
     arguments.addArray ({ "-f", extension == "mkv" ? "matroska" : extension == "m4v" ? "mp4" : extension, temp.getFile().getFullPathName() });
 
     if (const auto error = run (ffmpeg, arguments, keepGoing); error.isNotEmpty())

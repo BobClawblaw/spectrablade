@@ -63,9 +63,19 @@ namespace Video
         Panel();
         ~Panel() override;
 
-        /** Where the sound is, in seconds, and whether it plays; nothing while the picture shouldn't
-            follow (the multitrack session is shown). */
-        std::function<std::optional<std::pair<double, bool>>()> readPlayhead;
+        /** Where in the video the playhead is (the sound's place through its PictureMap), whether it
+            plays, and whether the sound there has no picture (shown black). */
+        struct Playhead
+        {
+            double picture = 0.0;
+            bool playing = false, blank = false;
+        };
+
+        /** The playhead now; nothing while the picture shouldn't follow (the multitrack session is shown). */
+        std::function<std::optional<Playhead>()> readPlayhead;
+
+        /** Whether the panel is black because the sound there has no picture. */
+        bool isBlank() const noexcept                  { return blank; }
 
         /** The video to show, asked as it follows (nothing: none). */
         std::function<juce::File()> readVideo;
@@ -101,7 +111,7 @@ namespace Video
 
         class PreviewMaker;
         std::unique_ptr<PreviewMaker> maker;
-        bool usingPreview = false;
+        bool usingPreview = false, blank = false;
 
         juce::File file;
         std::unique_ptr<juce::VideoComponent> player;

@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include "FileInfo.h"
+#include "PictureMap.h"
 
 /** Opening and writing the formats SpectraBlade doesn't read or write itself, through an ffmpeg
     the user has installed (it is not part of SpectraBlade). */
@@ -47,12 +48,30 @@ namespace Ffmpeg
 
     VideoAudio audioForVideo (const juce::File& video);
 
-    /** Writes target, of the video's type: the video's picture streams copied as they are (not
-        re-encoded), with its tags and chapters, and the WAV's audio as its only sound, encoded by
-        audioForVideo. Other sound tracks and subtitles are left out. Through a temporary file beside
-        the target, which must not be the video. Returns an error message, or empty on success. */
+    /** Writes target, of the video's type, with the WAV's audio as its only sound, encoded by
+        audioForVideo, and the video's tags. Other sound tracks and subtitles are left out. The
+        picture:
+        - with the identity map (the sound's length never changed by an edit), the video's picture
+          streams copied as they are (not re-encoded), with its chapters;
+        - otherwise cut to follow the sound by the map, black where the sound has no picture or runs
+          past the video's end, and encoded again (H.264 at CRF 18 in MP4, M4V, MOV and MKV, VP9 in
+          WebM, MPEG-4 Part 2 in AVI), without chapters, which no longer fit.
+        Through a temporary file beside the target, which must not be the video. Returns an error
+        message, or empty on success. */
     juce::String replaceAudio (const juce::File& ffmpeg, const juce::File& video, const juce::File& wav, const juce::File& target,
-                               const std::function<bool()>& keepGoing = {});
+                               const std::function<bool()>& keepGoing = {}, const PictureMap& picture = {}, double soundSeconds = 0.0);
+
+    /** A video's first picture stream: its size, frame rate and length (all 0 when it can't be read). */
+    struct Picture
+    {
+        int width = 0, height = 0;
+        double frameRate = 0.0, duration = 0.0;
+    };
+
+    Picture probePicture (const juce::File& ffmpeg, const juce::File& video);
+
+    /** The filter graph that cuts a video's picture to follow a sound by its map, ending in [v]. */
+    juce::String recutFilter (const PictureMap&, double soundSeconds, const Picture&);
 
     /** A preview of a video's picture that macOS can play, for videos it can't (MKV, WebM): the first
         picture stream as H.264 in MP4, at most 1280 pixels wide, a keyframe every 12 frames so it

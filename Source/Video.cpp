@@ -313,7 +313,25 @@ void Panel::update()
         return;
     }
 
-    const auto [audio, playing] = *playhead;
+    // Sound with no picture: black, the picture stopped until there is one again.
+    if (playhead->blank != blank)
+    {
+        blank = playhead->blank;
+        player->setVisible (! blank);
+        follower.restart();
+        repaint();
+    }
+
+    if (blank)
+    {
+        if (player->isPlaying())
+            player->stop();
+
+        return;
+    }
+
+    const auto audio = playhead->picture;
+    const auto playing = playhead->playing;
     const auto f = follower.next (audio, playing, player->getPlayPosition(), player->isPlaying(), player->getVideoDuration());
 
     if (f.stop)
@@ -330,6 +348,12 @@ void Panel::update()
 void Panel::paint (juce::Graphics& g)
 {
     g.fillAll (Theme::canvas);
+
+    if (blank && player != nullptr)
+    {
+        g.setColour (juce::Colours::black);
+        g.fillRect (player->getBounds());
+    }
 
     if (message.isNotEmpty())
     {

@@ -5253,20 +5253,22 @@ void MainComponent::saveIntoVideo()
 
         const auto snapshot = d.getSnapshot();
         const auto rate = d.getSampleRate();
+        const auto map = d.getPictureMap();
         auto error = std::make_shared<juce::String>();
 
         backgroundJob = std::make_unique<BackgroundJob> (*this, "Saving sound into video...",
-            [this, snapshot, rate, ffmpeg, video, target, error] (const std::function<bool (float)>& progress)
+            [this, snapshot, rate, map, ffmpeg, video, target, error] (const std::function<bool (float)>& progress)
             {
                 juce::TemporaryFile wav (".wav");
                 *error = AudioFileIO::save (*snapshot, rate, wav.getFile(), 32, engine.formatManager);
 
                 if (error->isEmpty() && progress (0.3f))
-                    *error = Ffmpeg::replaceAudio (ffmpeg, video, wav.getFile(), target, [&progress] { return progress (0.3f); });
+                    *error = Ffmpeg::replaceAudio (ffmpeg, video, wav.getFile(), target, [&progress] { return progress (0.3f); },
+                                                   map, (double) snapshot->getNumFrames() / rate);
 
                 return *error != "Stopped.";
             },
-            [error, target, video]
+            [error, target, video, recut = ! map.isIdentity()]
             {
                 const auto audio = Ffmpeg::audioForVideo (video);
 
@@ -5274,7 +5276,8 @@ void MainComponent::saveIntoVideo()
                     showError ("Save Sound into Video", *error);
                 else
                     showNote ("Save Sound into Video", "Written: " + target.getFileName() + ", with the picture of " + video.getFileName()
-                                                         + " as it was and this sound as " + audio.description
+                                                         + (recut ? " cut to follow the edits (and encoded again)" : " as it was")
+                                                         + " and this sound as " + audio.description
                                                          + (audio.kbps > 0 ? " at " + juce::String (audio.kbps) + " kbps." : juce::String (".")));
             });
         backgroundJob->launchThread();
@@ -8720,7 +8723,7 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
     {
         auto panel = std::make_unique<Video::Panel>();
         panel->readVideo = [this] { return engine.document.getVideo(); };
-        panel->readPlayhead = [this]() -> std::optional<std::pair<double, bool>>
+        panel->readPlayhead = [this]() -> std::optional<Video::Panel::Playhead>
         {
             const auto rate = engine.document.getSampleRate();
 
@@ -8729,7 +8732,9 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
 
             auto& player = engine.getPlayer();
             const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::document;
-            return std::pair<double, bool> { (double) (playing ? player.getPositionFrames() : waveform.getCursor()) / rate, playing };
+            const auto sound = (double) (playing ? player.getPositionFrames() : waveform.getCursor()) / rate;
+            const auto picture = engine.document.getPictureMap().pictureAt (sound);
+            return Video::Panel::Playhead { picture.value_or (0.0), playing, ! picture.has_value() };
         };
         made = std::move (panel);
     }

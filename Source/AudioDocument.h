@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "Markers.h"
 #include "FileInfo.h"
+#include "PictureMap.h"
 
 //==============================================================================
 /** Immutable multichannel audio. Edits never change a block; they make new snapshots
@@ -98,6 +99,10 @@ public:
     juce::File getVideo() const                   { return video; }
     void setVideo (const juce::File&);
 
+    /** Which part of the video goes with each stretch of the sound, as edits that change the length
+        have left it (undone and redone with them). Message thread only. */
+    const PictureMap& getPictureMap() const noexcept   { return history[(size_t) position].picture; }
+
     //==============================================================================
     /** Applies a new state as one undoable step. The first form keeps the markers as they are
         (for edits that do not move audio in time). */
@@ -147,10 +152,11 @@ private:
         double sampleRate;
         juce::String description;
         FileInfo info {};
+        PictureMap picture {};
     };
 
     void setCurrent (const Entry&);
-    void push (Entry, bool keepInfo = true);
+    void push (Entry, bool keepInfo = true, bool sameTime = false);
     void retire (Snapshot);
 
     mutable juce::SpinLock lock;

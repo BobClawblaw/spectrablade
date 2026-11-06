@@ -251,7 +251,7 @@ void AudioDocument::apply (Snapshot next, const juce::String& description, Marke
 
 void AudioDocument::applyNewRate (Snapshot next, double newSampleRate, Markers markers, const juce::String& description)
 {
-    push ({ std::move (next), std::move (markers), newSampleRate, description });
+    push ({ std::move (next), std::move (markers), newSampleRate, description }, true, true);   // the same time, in other frames
 }
 
 void AudioDocument::setMarkers (Markers markers, const juce::String& description)
@@ -264,11 +264,17 @@ void AudioDocument::setInfo (FileInfo info, const juce::String& description)
     push ({ getSnapshot(), getMarkers(), sampleRate.load(), description, std::move (info) }, false);
 }
 
-void AudioDocument::push (Entry entry, bool keepInfo)
+void AudioDocument::push (Entry entry, bool keepInfo, bool sameTime)
 {
     // Edits other than setInfo carry the info on as it is.
     if (keepInfo)
         entry.info = getInfo();
+
+    // The picture follows edits that change the length.
+    const auto& before = history[(size_t) position];
+    entry.picture = sameTime || before.snapshot == nullptr || entry.snapshot == nullptr
+                        ? before.picture
+                        : before.picture.afterEdit (*before.snapshot, *entry.snapshot, entry.sampleRate);
 
     // A new edit after undo discards the redo branch.
     for (auto i = (size_t) position + 1; i < history.size(); ++i)

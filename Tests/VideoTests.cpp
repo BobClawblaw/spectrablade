@@ -7,6 +7,7 @@
 #include "../Source/AudioFileIO.h"
 #include "../Source/Ffmpeg.h"
 #include "../Source/Video.h"
+#include "../Source/PictureMap.h"
 #include "TestUtils.h"
 #include "VideoTests.h"
 
@@ -118,6 +119,67 @@ void runVideoTests()
                + juce::String (firstSeeks) + " seeks and stays within " + juce::String (first * 1000.0, 1) + " ms of the sound; played "
                "again, it is within " + juce::String (second * 1000.0, 1) + " ms with one seek; stopped, it shows the frame at the "
                "sound's place when that changes; past its end it stops on its last frame");
+    }
+
+    // The picture following edits that change the sound's length.
+    {
+        const auto rate = 1000.0;   // a frame a millisecond, to read the times easily
+        juce::AudioBuffer<float> b (1, 10000);
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            b.setSample (0, i, (float) std::sin (0.01 * i));
+
+        AudioDocument doc;
+        doc.reset (AudioEdits::fromBuffer (std::move (b)), rate, {}, 24);
+        const auto describe = [] (const PictureMap& m)
+        {
+            if (m.isIdentity())
+                return juce::String ("identity");
+
+            juce::StringArray parts;
+
+            for (auto& p : m.getPieces())
+                parts.add (juce::String (p.start, 1) + "+" + juce::String (p.length, 1) + (p.picture < 0.0 ? juce::String (" black") : "@" + juce::String (p.picture, 1)));
+
+            return parts.joinIntoString (" ");
+        };
+
+        juce::StringArray steps;
+        const auto note = [&] { steps.add (describe (doc.getPictureMap())); };
+
+        doc.apply (AudioEdits::gain (*doc.getSnapshot(), 1000, 2000, -6.0f), "Gain");                 // in place
+        note();
+        doc.apply (AudioEdits::remove (*doc.getSnapshot(), 2000, 3000), "Delete");                    // 2-3 s cut
+        note();
+        doc.apply (AudioEdits::insertSilence (*doc.getSnapshot(), 500, 500), "Insert Silence");        // 0.5 s of nothing at 0.5
+        note();
+        const auto clip = AudioEdits::copy (*doc.getSnapshot(), 8000, 9000, rate);                    // the picture from 8.5 s
+        doc.apply (AudioEdits::replaceWithClip (*doc.getSnapshot(), 0, 0, clip), "Paste");            // pasted at the start
+        note();
+        doc.apply (AudioEdits::fadeOut (*doc.getSnapshot(), 9000, 10500), "Fade Out");                 // in place again
+        note();
+        doc.undo();
+        doc.undo();
+        note();
+        doc.redo();
+        note();
+        doc.applyNewRate (AudioEdits::remove (*doc.getSnapshot(), 0, 0), 2000.0, doc.getMarkers(), "Convert");   // the same time at another rate
+        note();
+        const auto saved = PictureMap::fromString (doc.getPictureMap().toString());
+
+        const auto map = doc.getPictureMap();
+        const auto at = [&] (double t) { const auto p = map.pictureAt (t); return p.has_value() ? juce::String (*p, 2) : juce::String ("black"); };
+
+        check (steps.joinIntoString (" | ") == "identity | 0.0+2.0@0.0 2.0+7.0@3.0 | 0.0+0.5@0.0 0.5+0.5 black 1.0+1.5@0.5 2.5+7.0@3.0"
+                                                " | 0.0+1.0@8.5 1.0+0.5@0.0 1.5+0.5 black 2.0+1.5@0.5 3.5+7.0@3.0"
+                                                " | 0.0+1.0@8.5 1.0+0.5@0.0 1.5+0.5 black 2.0+1.5@0.5 3.5+7.0@3.0"
+                                                " | 0.0+0.5@0.0 0.5+0.5 black 1.0+1.5@0.5 2.5+7.0@3.0"
+                                                " | 0.0+1.0@8.5 1.0+0.5@0.0 1.5+0.5 black 2.0+1.5@0.5 3.5+7.0@3.0"
+                                                " | 0.0+1.0@8.5 1.0+0.5@0.0 1.5+0.5 black 2.0+1.5@0.5 3.5+7.0@3.0"
+                   && saved == map && at (0.25) == "8.75" && at (1.25) == "0.25" && at (1.75) == "black" && at (4.0) == "3.50" && at (12.0) == "11.50",
+               "video: the picture follows edits that change the sound's length: a cut jumps it, inserted silence has none (black), audio "
+               "pasted from elsewhere brings its picture, edits in place and a rate conversion leave it, undo and redo take it back and "
+               "forth, and it is saved and read back as text (steps: " + steps.joinIntoString (" | ") + ")");
     }
 
     // The video a file remembers.
@@ -246,6 +308,86 @@ void runVideoTests()
                + ", " + juce::String (frames) + " frames back of " + juce::String (n) + (error.isNotEmpty() ? " (" + error + ")" : juce::String()));
     }
 
+    // Cut to follow edits: a 4 s, 25 frame-a-second video whose frame N is a flat grey of 30 + 2N (up to 228, inside video's 16-235),
+    // so each frame written can be told by its brightness (black is 16), to within a third of a step.
+    {
+        const auto video = folder.getChildFile ("Counted.mp4");
+        runTool ({ ffmpeg.getFullPathName(), "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=16x16:r=25:d=4",
+                   "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=4", "-ac", "2",
+                   "-vf", "geq=lum='30+2*N':cb=128:cr=128", "-c:v", "libx264", "-qp", "0", "-pix_fmt", "yuv420p", "-c:a", "aac", video.getFullPathName() });
+
+        AudioDocument doc;
+        auto opened = AudioFileIO::load (video, formats);
+        const auto soundRate = opened.sampleRate;
+        doc.reset (opened.snapshot, soundRate, video, 32);
+        const auto f = [&] (double s) { return (juce::int64) std::llround (s * soundRate); };
+        doc.apply (AudioEdits::remove (*doc.getSnapshot(), f (1.0), f (2.0)), "Delete");          // 1-2 s cut
+        doc.apply (AudioEdits::insertSilence (*doc.getSnapshot(), f (0.5), f (0.4)), "Silence");  // 0.4 s of black at 0.5 s
+        const auto map = doc.getPictureMap();
+        const auto seconds = (double) doc.getNumFrames() / soundRate;
+
+        const auto wav = folder.getChildFile ("counted.wav");
+        AudioFileIO::save (*doc.getSnapshot(), soundRate, wav, 32, formats);
+        const auto target = folder.getChildFile ("Counted (new sound).mp4");
+        const auto error = Ffmpeg::replaceAudio (ffmpeg, video, wav, target, {}, map, seconds);
+
+        // Each frame written, as its mean brightness, against what the map says it should show.
+        juce::ChildProcess decode;
+        juce::MemoryOutputStream raw;
+
+        if (decode.start (juce::StringArray { ffmpeg.getFullPathName(), "-v", "error", "-i", target.getFullPathName(), "-map", "0:v",
+                                              "-f", "rawvideo", "-pix_fmt", "gray", "-" }, juce::ChildProcess::wantStdOut))
+        {
+            char buffer[8192];
+
+            for (int got; (got = decode.readProcessOutput (buffer, sizeof (buffer))) > 0;)
+                raw.write (buffer, (size_t) got);
+        }
+
+        const auto frames = (int) (raw.getDataSize() / 256);
+        auto wrong = 0;
+        juce::StringArray firstWrong;
+
+        for (int k = 0; k < frames; ++k)
+        {
+            const auto* px = static_cast<const juce::uint8*> (raw.getData()) + k * 256;
+            auto sum = 0;
+
+            for (int i = 0; i < 256; ++i)
+                sum += px[i];
+
+            const auto mean = sum / 256.0;
+            // The piece this frame is in (each starts at the frame nearest its time), and the source frame
+            // it should show: the one nearest the piece's picture time, counted on from there.
+            const auto frameOf = [] (double s) { return (int) std::llround (s * 25.0); };
+            const PictureMap::Piece* piece = nullptr;
+
+            for (auto& p : map.getPieces())
+                if (frameOf (p.start) <= k)
+                    piece = &p;
+
+            const auto source = piece == nullptr ? k : (piece->picture < 0.0 ? -1 : frameOf (piece->picture) + k - frameOf (piece->start));
+
+            // Video brightness 16-235 read back as full-range grey: (Y - 16) * 255 / 219, 2.33 a frame.
+            const auto luma = source >= 0 ? 30.0 + 2.0 * source : 16.0;
+            const auto expected = (luma - 16.0) * 255.0 / 219.0;
+
+            if (std::abs (mean - expected) > 1.0)
+            {
+                ++wrong;
+
+                if (firstWrong.size() < 4)
+                    firstWrong.add (juce::String (k) + ":" + juce::String (mean, 1) + "/" + juce::String (expected, 1));
+            }
+        }
+
+        check (error.isEmpty() && frames == 85 && wrong == 0 && streams (ffprobe, target) == "video:h264 audio:aac",
+               "video: with 1 s of sound cut and 0.4 s of silence inserted, the picture is cut to follow on whole frames: " + juce::String (frames)
+               + " frames for 3.4 s, each one the source frame the map gives, or black (" + juce::String (wrong) + " wrong, read by brightness), "
+               "encoded again as H.264 with the sound" + (firstWrong.isEmpty() ? juce::String() : " (" + firstWrong.joinIntoString (" ") + ")")
+               + (error.isNotEmpty() ? " (" + error + ")" : juce::String()));
+    }
+
     // Writing over the video itself is refused, and the video is left as it was.
     if (made.count ("mp4") > 0)
     {
@@ -263,7 +405,7 @@ void runVideoTests()
         panel.setSize (400, 320);
         auto audio = 1.0;
         auto playing = false;
-        panel.readPlayhead = [&] { return std::optional<std::pair<double, bool>> ({ audio, playing }); };
+        panel.readPlayhead = [&] { return std::optional<Video::Panel::Playhead> ({ audio, playing, false }); };
 
         juce::StringArray shown, refused;
         auto refusalSaid = true, previewsOk = true;
