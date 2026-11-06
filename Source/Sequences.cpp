@@ -1,6 +1,7 @@
 #include "Sequences.h"
 #include "TimeStretch.h"
 #include "AudioEdits.h"
+#include "Dereverb.h"
 #include "Dynamics.h"
 #include "Equalizer.h"
 #include "Loudness.h"
@@ -58,6 +59,7 @@ namespace
             { "flanger", "Flanger", { "rate", "delay", "depth", "feedback", "mix", "spread" } },
             { "phaser", "Phaser", { "rate", "low", "high", "stages", "feedback", "mix", "spread" } },
             { "reverb", "Reverb", { "preDelay", "decay", "size", "damping", "width", "mix" } },
+            { "dereverb", "Reduce Reverb", { "time", "reduction" } },
             { "stretch", "Stretch", { "percent" } },
             { "pitch", "Shift Pitch", { "semitones" } },
             { "convertRate", "Convert Sample Rate", { "rate" } },
@@ -147,6 +149,9 @@ juce::String Step::name() const
     if (kind == "convertRate")
         return "Convert to " + juce::String (get (values, "rate") / 1000.0, 1) + " kHz";
 
+    if (kind == "dereverb")
+        return "Reduce Reverb " + juce::String (get (values, "reduction"), 1) + " dB";
+
     if (kind == "stretch")
         return "Stretch to " + juce::String (get (values, "percent"), 1) + "%";
 
@@ -213,7 +218,8 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "deEsser" && ! Multiband::isValid (deEsserOf (v), rate))
         || ((step.kind == "chorus" || step.kind == "flanger") && ! Modulation::isValid (delayOf (v)))
         || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
-        || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v))))
+        || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v)))
+        || (step.kind == "dereverb" && ! Dereverb::isValid ({ (float) get (v, "time"), (float) get (v, "reduction") })))
         return bad();
 
     return {};
@@ -253,6 +259,19 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
     else if (k == "chorus" || k == "flanger") out.snapshot = Modulation::sweptDelay (s, start, end, rate, delayOf (v));
     else if (k == "phaser")         out.snapshot = Modulation::phaser (s, start, end, rate, phaserOf (v));
     else if (k == "reverb")         out.snapshot = RoomReverb::apply (s, start, end, rate, reverbOf (v));
+    else if (k == "dereverb")
+    {
+        if (end > start && get (v, "reduction") > 0.0)
+        {
+            out.snapshot = Dereverb::reduce (s, start, end, rate, { (float) get (v, "time"), (float) get (v, "reduction") }, progress);
+
+            if (out.snapshot == nullptr)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+        }
+    }
     else if (k == "normalize")
     {
         const auto db = juce::jmin ((float) get (v, "db"), 0.0f);

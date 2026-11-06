@@ -38,6 +38,7 @@
 #include "MultibandTests.h"
 #include "BuiltInEffectsTests.h"
 #include "NoiseTests.h"
+#include "DereverbTests.h"
 #include "ClickTests.h"
 #include "SessionTests.h"
 #include "TrackEffectsTests.h"
@@ -541,6 +542,7 @@ int main (int argc, char* argv[])
         runEffectPresetsTests();
         runBuiltInEffectsTests (engine);
         runNoiseTests();
+        runDereverbTests();
         runClickTests();
         runSessionTests (engine.formatManager);
         runTrackEffectsTests();

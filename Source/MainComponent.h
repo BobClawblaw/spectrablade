@@ -182,6 +182,7 @@ private:
     void runStepInBackground (const Sequences::Step&, const juce::String& busy);
     void askToStretch();
     void askToShiftPitch();
+    void askToReduceReverb();
     double stretchPercent = 100.0, pitchSemitones = 0.0;   // as last asked
     void recordStep (const Sequences::Step&);              // after the edit is applied
     void noticeUnrecordedEdits();

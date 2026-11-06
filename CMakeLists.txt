@@ -101,6 +101,7 @@ target_sources(SpectraBlade PRIVATE
     Source/EffectPresets.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
+    Source/Dereverb.cpp
     Source/ClickRepair.cpp
     Source/Session.cpp
     Source/SessionMixer.cpp
@@ -194,6 +195,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/BuiltInEffectsTests.cpp
     Tests/AuditionTests.cpp
     Tests/NoiseTests.cpp
+    Tests/DereverbTests.cpp
     Tests/ClickTests.cpp
     Tests/SessionTests.cpp
     Tests/TrackEffectsTests.cpp
@@ -259,6 +261,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/EffectPresets.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
+    Source/Dereverb.cpp
     Source/ClickRepair.cpp
     Source/Session.cpp
     Source/SessionMixer.cpp

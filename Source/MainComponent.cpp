@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "Navigation.h"
 #include "Restoration.h"
+#include "Dereverb.h"
 #include "Generator.h"
 #include "LossyFiles.h"
 #include "Ffmpeg.h"
@@ -137,7 +138,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1182,7 +1183,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdPitch; ++id)
+    for (int id = cmdOpen; id <= cmdDereverb; ++id)
         ids.add (id);
 }
 
@@ -1533,6 +1534,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdCaptureNoisePrint: info.setInfo ("Capture Noise Print", "Learn the noise from a selection of noise alone", "Effects", 0);
             info.addDefaultKeypress ('p', juce::ModifierKeys::shiftModifier);
             info.setActive (waveform.getSelection().getLength() >= NoiseReduction::frameSize); break;
+        case cmdDereverb:   info.setInfo ("Reduce Reverb...", "Lower the room's reverberation in the selection or file, keeping the direct sound", "Effects", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdNoiseReduction: info.setInfo ("Noise Reduction...", "Reduce the captured noise in the selection or file", "Effects", 0);
             info.addDefaultKeypress ('p', cmd | juce::ModifierKeys::shiftModifier);
             info.setActive (hasAudio && noisePrint.has_value() && backgroundJob == nullptr); break;
@@ -2295,6 +2298,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMatchLoudness: askForLoudnessTarget(); break;
         case cmdCaptureNoisePrint: captureNoisePrint(); break;
         case cmdNoiseReduction: askForNoiseReduction(); break;
+        case cmdDereverb:   askToReduceReverb(); break;
         case cmdClickRepair: askForClickRepair(); break;
         case cmdRemoveHum:  showRemoveHum(); break;
         case cmdDeclip:     showDeclip(); break;
@@ -2394,7 +2398,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
             add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
+                       cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
         case 3:
@@ -4913,6 +4917,43 @@ void MainComponent::askToShiftPitch()
 
         if (std::abs (semitones) >= 0.005)
             runStepInBackground ({ "pitch", { { "semitones", semitones } }, nullptr }, "Shifting the pitch...");
+    }), true);
+}
+
+void MainComponent::askToReduceReverb()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Reduce Reverb",
+                                       "Lowers the room's reverberation after each sound by up to the reduction, keeping the sound itself and "
+                                       "notes held steady. The reverb time is how long the room takes to die away: set it longer to take "
+                                       "away more of the tail, shorter to leave more.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("time", juce::String (settings->getDoubleValue ("dereverbTime", 1.0), 2), "Reverb time (s, 0.1 to 10)");
+    box->addTextEditor ("reduction", juce::String (settings->getDoubleValue ("dereverbReduction", 12.0), 1), "Reduction (dB, 0 to 30)");
+
+    for (auto* name : { "time", "reduction" })
+        box->getTextEditor (name)->setInputRestrictions (8, ".0123456789");
+
+    box->addButton ("Reduce", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const Dereverb::Settings s { box->getTextEditorContents ("time").getFloatValue(), box->getTextEditorContents ("reduction").getFloatValue() };
+
+        if (! Dereverb::isValid (s))
+        {
+            showError ("Reduce Reverb", "The reverb time must be from 0.1 to 10 seconds, and the reduction from 0 to 30 dB.");
+            return;
+        }
+
+        settings->setValue ("dereverbTime", s.reverbSeconds);
+        settings->setValue ("dereverbReduction", s.reductionDb);
+
+        if (s.reductionDb > 0.0f)
+            runStepInBackground ({ "dereverb", { { "time", s.reverbSeconds }, { "reduction", s.reductionDb } }, nullptr }, "Reducing reverb...");
     }), true);
 }
 
