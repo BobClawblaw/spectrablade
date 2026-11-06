@@ -8,7 +8,7 @@ class SurroundPad;
 
 /** The session as a mixing desk: a strip for each track and bus, in the session's order, with its
     meter, volume fader, pan, mute, polarity switch and solo, and a master strip metering what goes
-    to the outputs. In a 5.1 master each strip also has a surround pad, width and LFE.
+    to the outputs. In a 5.1 master each strip is wider, with a surround pad, width and LFE beside its fader.
 
     The controls edit the session as the track headers do (each change an undo step, a fader's
     drag one step); an automated volume or pan follows its envelope and can't be moved here.
@@ -23,6 +23,7 @@ public:
     ~MixerView() override;
 
     static constexpr int stripWidth = 84;
+    static constexpr int surroundStripWidth = 132;   // a strip's in a 5.1 master, with its surround pad beside the fader
 
     /** Strips for tracks and buses (the master strip not counted). */
     int getNumStrips() const noexcept               { return (int) strips.size(); }
@@ -73,6 +74,7 @@ private:
     std::vector<std::unique_ptr<Strip>> strips;
     std::unique_ptr<Strip> master;
     std::vector<std::pair<juce::uint32, bool>> shownTracks;   // id and bus-ness of each strip, to see when to rebuild
+    bool shownSurround = false;                               // the strips laid out for a 5.1 master
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MixerView)
 };

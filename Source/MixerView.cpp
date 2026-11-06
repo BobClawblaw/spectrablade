@@ -139,6 +139,7 @@ public:
             const auto p = (float) pan.getValue() / 100.0f;
             edit ("Track Pan", true, [p] (SessionTrack& t) { t.pan = p; });
         };
+        pan.updateText();   // the text box was made before textFromValueFunction: show "C", not "0"
 
         // A 5.1 master's controls: the point, the width and the LFE's share.
         surroundPad.onChange = [this] (const SurroundPan& p, bool dragging)
@@ -175,6 +176,9 @@ public:
             const auto db = lfe.getValue() < -60.0 ? SurroundPan::lfeOff : (float) lfe.getValue();
             edit ("LFE Level", true, [db] (SessionTrack& t) { t.surroundPan.lfeDb = db; });
         };
+
+        width.updateText();
+        lfe.updateText();
 
         for (auto* c : std::initializer_list<juce::Component*> { &surroundPad, &width, &lfe })
             addChildComponent (c);
@@ -328,7 +332,10 @@ public:
         auto r = getLocalBounds().reduced (6);
         name.setBounds (r.removeFromTop (20));
         r.removeFromTop (4);
-        readout.setBounds (r.removeFromBottom (18));
+        const auto surround = surroundPad.isVisible();
+
+        if (! surround)
+            readout.setBounds (r.removeFromBottom (18));
 
         if (trackId == 0)
         {
@@ -338,16 +345,6 @@ public:
 
         pan.setBounds (r.removeFromTop (22));
         r.removeFromTop (4);
-
-        if (surroundPad.isVisible())
-        {
-            surroundPad.setBounds (r.removeFromTop (r.getWidth()));
-            width.setBounds (r.removeFromTop (18));
-            r.removeFromTop (2);
-            lfe.setBounds (r.removeFromTop (18));
-            r.removeFromTop (4);
-        }
-
         auto buttons = r.removeFromTop (22);
         const auto each = (buttons.getWidth() - 4) / 3;
         mute.setBounds (buttons.removeFromLeft (each));
@@ -356,6 +353,28 @@ public:
         buttons.removeFromLeft (2);
         solo.setBounds (buttons);
         r.removeFromTop (6);
+
+        // A 5.1 master's (wider) strip: the fader, meter and readout on the right, and on the left
+        // the surround pad, as large a square as fits over the width and LFE sliders.
+        if (surround)
+        {
+            auto right = r.removeFromRight (44);
+            r.removeFromRight (6);
+            readout.setBounds (right.removeFromBottom (18));
+            right.removeFromBottom (4);
+            meter.setBounds (right.removeFromRight (16));
+            right.removeFromRight (4);
+            fader.setBounds (right);
+
+            lfe.setBounds (r.removeFromBottom (18));
+            r.removeFromBottom (2);
+            width.setBounds (r.removeFromBottom (18));
+            r.removeFromBottom (4);
+            const auto side = juce::jmin (r.getWidth(), r.getHeight());
+            surroundPad.setBounds (r.withSizeKeepingCentre (side, side).withY (r.getY()));
+            return;
+        }
+
         meter.setBounds (r.removeFromRight (16));
         r.removeFromRight (4);
         fader.setBounds (r);
@@ -445,6 +464,10 @@ void MixerView::rebuild()
 
     for (size_t i = 0; i < strips.size(); ++i)
         strips[i]->update (state->tracks[i], (int) i, frame);
+
+    // A 5.1 master's strips are wider.
+    if (std::exchange (shownSurround, state->surround) != state->surround)
+        resized();
 }
 
 MixerView::Strip* MixerView::findStrip (juce::uint32 trackId) const
@@ -547,8 +570,9 @@ void MixerView::resized()
     auto r = getLocalBounds();
     master->setBounds (r.removeFromRight (stripWidth + 12));
     viewport.setBounds (r);
-    content.setSize (juce::jmax (r.getWidth(), (int) strips.size() * stripWidth), juce::jmax (0, r.getHeight() - viewport.getScrollBarThickness()));
+    const auto each = shownSurround ? surroundStripWidth : stripWidth;
+    content.setSize (juce::jmax (r.getWidth(), (int) strips.size() * each), juce::jmax (0, r.getHeight() - viewport.getScrollBarThickness()));
 
     for (size_t i = 0; i < strips.size(); ++i)
-        strips[i]->setBounds ((int) i * stripWidth, 0, stripWidth, content.getHeight());
+        strips[i]->setBounds ((int) i * each, 0, each, content.getHeight());
 }

@@ -357,6 +357,34 @@ namespace
                    && pad->getHeight() > 20 && mixer.findSurroundPad (0) == nullptr,
                "mixer: the surround pad, width and LFE show on each strip once the master is 5.1");
 
+        // At the Multitrack workspace's mixer height (210) the strips widen and the pad sits beside a
+        // full-height fader; sliders at 0 show their text.
+        const auto shown = [] (juce::Slider& slider)
+        {
+            for (auto* c : slider.getChildren())
+                if (auto* label = dynamic_cast<juce::Label*> (c))
+                    return label->getText();
+
+            return juce::String();
+        };
+
+        mixer.setSize (MixerView::surroundStripWidth * 6, 210);
+        const auto shortFader = mixer.findFader (id)->getHeight();
+        const auto shortPad = pad->getHeight();
+        const auto stripWide = pad->getParentComponent()->getWidth();
+        const auto beside = pad->getRight() <= mixer.findFader (id)->getX() && ! pad->getBounds().intersects (mixer.findSurroundWidth (id)->getBounds());
+        mixer.setSize (MixerView::surroundStripWidth * 6, 500);
+        mixer.findSurroundWidth (id)->setValue (0.0, juce::sendNotificationSync);
+        const auto widthText = shown (*mixer.findSurroundWidth (id));
+        mixer.findSurroundWidth (id)->setValue (100.0, juce::sendNotificationSync);
+        engine.session.undo();
+        check (shortFader >= 80 && shortPad >= 56 && stripWide == MixerView::surroundStripWidth && beside
+                   && pad->getHeight() == pad->getWidth() && pad->getWidth() >= shortPad
+                   && shown (*mixer.findPan (id)) == "C" && shown (*mixer.findLfe (id)) == "LFE off" && widthText == "W 0%",
+               "mixer: in a 5.1 master the strips widen to " + juce::String (MixerView::surroundStripWidth) + ", and at the Multitrack workspace's "
+                   "mixer height (210) the surround pad (" + juce::String (shortPad) + " pixels) sits beside the fader (" + juce::String (shortFader)
+                   + " high); the pan, width and LFE show their text at 0 and off");
+
         // A click then a drag on the pad: one undo step, the point where the mouse is, inside the room.
         const auto square = pad->getSquare();
         const auto there = SurroundPad::fromPad (SurroundPad::toPad (-0.5f, -0.5f, square), square);

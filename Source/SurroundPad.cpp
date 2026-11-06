@@ -31,7 +31,7 @@ void SurroundPad::setPan (const SurroundPan& p)
 
 juce::Rectangle<float> SurroundPad::getSquare() const noexcept
 {
-    const auto side = (float) juce::jmin (getWidth(), getHeight()) - 8.0f;
+    const auto side = (float) juce::jmin (getWidth(), getHeight()) - 4.0f;
     return getLocalBounds().toFloat().withSizeKeepingCentre (side, side);
 }
 

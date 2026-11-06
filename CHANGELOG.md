@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 239: Surround strips that fit**
+- In a 5.1 master the mixer's strips are now wider (132 points instead of 84), with the surround pad, width and LFE on the left and the fader, meter and volume readout on the right. Stacked in one column as milestone 238 had them, they left no room for the fader and meter at the Multitrack workspace's mixer height: seen in the app, the strips showed no fader or meter, and the mute, polarity and solo buttons were squashed flat.
+- The strips' pan now shows "C" at the centre, and the width "W 0%", when a strip first shows them; they showed "0" until moved (the pan since the mixer was added).
+- Measured by the tests: at the workspace's mixer height (210 points) the pad is a 70-point square beside a 90-point fader, and the strip is 132 wide; the pan, width and LFE show "C", "W 0%" and "LFE off". A drawing of the mixer from the tests showed every control in place. The whole suite passed (1120 checks).
+- Tried in the app: a 5.1 session opened from Finder showed each track's and bus's pad at its saved place, width and LFE (before this fix, which was then checked in the drawing, not the app).
+
 **Milestone 238: A 5.1 master**
 - Multitrack > 5.1 Master mixes a session to 5.1 (L R C LFE Ls Rs) instead of stereo, as an undo step, and the session file keeps it. Each track and bus going to the mix is placed in the room by a surround pad on its mixer strip: the room seen from above, front at the top, with the five speakers on its edge. Drag the point to move it, and double-click it to put it back in front. Under the pad, Width sets how far apart the left and right channels play (at 100% they sit 30 degrees either side of the point, so in front they go to L and R; at 0 both play at the point, as one mono source), and LFE sends a share to the LFE as well (off at the far left, then -60 to +10 dB).
 - How it pans: each channel's direction from the middle is panned between the two speakers either side of it with constant power, and its distance from the middle keeps that much in those speakers, spreading the rest evenly over all five. With the pan as it starts, a stereo track plays to L and R exactly as in a stereo master.
