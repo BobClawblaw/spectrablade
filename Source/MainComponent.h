@@ -160,6 +160,13 @@ private:
     void showEqBand();
     void showRemoveHum();
     void showDeclip();
+    void showGenerateTone();
+    void showGenerateNoise();
+    void insertGenerated (const juce::AudioBuffer<float>&, const juce::String& name);
+    int toneWave = 0;                // the generators' last settings
+    double toneHz = 1000.0, toneEndHz = 1000.0, toneLevelDb = -12.0, toneSeconds = 1.0, toneFadeMs = 5.0;
+    int noiseColour = 0;
+    double noiseLevelDb = -20.0, noiseSeconds = 1.0, noiseFadeMs = 5.0;
     double declipThreshold = 0.99;   // Repair Clipping's last settings
     bool declipKeepPeak = true;
     bool humIs60 = false;   // Remove Hum's last settings

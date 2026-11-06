@@ -1,6 +1,7 @@
 #include "MainComponent.h"
 #include "Navigation.h"
 #include "Restoration.h"
+#include "Generator.h"
 #include "Theme.h"
 #include "BuiltInEffects.h"
 #include "AudioFileIO.h"
@@ -125,7 +126,7 @@ namespace
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
-        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip
+        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -135,7 +136,7 @@ namespace
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
-            || id == cmdRemoveHum || id == cmdDeclip;
+            || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1160,7 +1161,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdDeclip; ++id)
+    for (int id = cmdOpen; id <= cmdGenerateNoise; ++id)
         ids.add (id);
 }
 
@@ -1327,6 +1328,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (hasAudio && doc.getNumChannels() == 1); break;
         case cmdTrimSilence: info.setInfo ("Trim Silence...", "Remove what is below a level from the start and end of the file", "Effects", 0);
                             info.setActive (hasAudio); break;
+        case cmdGenerateTone: info.setInfo ("Generate Tone...", "Put a tone or sweep in at the cursor, or the start of the selection", "Effects", 0);
+                              info.setActive (hasAudio); break;
+        case cmdGenerateNoise: info.setInfo ("Generate Noise...", "Put white, pink or brown noise in at the cursor, or the start of the selection", "Effects", 0);
+                               info.setActive (hasAudio); break;
         case cmdInsertSilence: info.setInfo ("Insert Silence...", "Put a chosen length of silence in at the cursor, or the start of the selection", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdApplyRack:  info.setInfo ("Apply Effects Rack", "Render the rack's effects into the audio", "Effects", 0);
@@ -1879,6 +1884,8 @@ bool MainComponent::perform (const InvocationInfo& info)
                                                    { return AudioEdits::invertChannel (s, a, b, 1); }, false); break;
         case cmdSwapChannels: applySimpleEffect ("Swap Channels", &AudioEdits::swapChannels, false); break;
         case cmdInsertSilence: showInsertSilence(); break;
+        case cmdGenerateTone: showGenerateTone(); break;
+        case cmdGenerateNoise: showGenerateNoise(); break;
         case cmdSelectAudible: selectAudibleSpan(); break;
         case cmdFindClipping: findNextClipping(); break;
         case cmdMarkClipping: addMarkersAtClipping(); break;
@@ -2242,7 +2249,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
+            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack });
             break;
         }
@@ -4283,6 +4290,99 @@ void MainComponent::showInsertSilence()
         else
             insertSilence (*frames);
     }), true);
+}
+
+void MainComponent::insertGenerated (const juce::AudioBuffer<float>& audio, const juce::String& name)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio() || audio.getNumSamples() == 0)
+        return;
+
+    const auto sel = waveform.getSelection();
+    const auto at = sel.isEmpty() ? waveform.getCursor() : sel.getStart();
+    const auto frames = (juce::int64) audio.getNumSamples();
+
+    if (auto next = Generator::insert (*doc.getSnapshot(), at, audio))
+        applyEdit (std::move (next), name, { at, at + frames }, MarkerEdits::afterReplace (doc.getMarkers(), at, at, frames));
+}
+
+void MainComponent::showGenerateTone()
+{
+    const auto rate = engine.document.getSampleRate();
+    const auto channels = engine.document.getSnapshot()->getNumChannels();
+    const auto toTone = [] (const EffectValues& v)
+    {
+        Generator::Tone t;
+        t.wave = (Generator::Wave) juce::jlimit (0, 3, (int) v.at ("wave"));
+        t.frequency = v.at ("frequency");
+        t.endFrequency = v.at ("end");
+        t.levelDb = v.at ("level");
+        t.fadeMs = v.at ("fade");
+        return t;
+    };
+
+    showEffectDialog ("Generate Tone", "Puts a tone in at the cursor, or the start of the selection, the same on every channel, moving "
+                                       "what follows on. An end frequency unlike the start sweeps evenly in octaves from one to the other. "
+                                       "The level is the peak, from -96 to 0 dBFS; the ends fade over the time given (0 for none, up to "
+                                       "1000 ms). Length up to ten minutes.",
+                      { { "wave", "Wave", (double) toneWave, 0, { "Sine", "Square", "Triangle", "Sawtooth" } },
+                        { "frequency", "Frequency (Hz)", toneHz, 1 }, { "end", "End frequency (Hz)", toneEndHz, 1 },
+                        { "level", "Level (dBFS peak)", toneLevelDb, 1 }, { "length", "Length (s)", toneSeconds, 3 },
+                        { "fade", "Fade ends (ms)", toneFadeMs, 1 } },
+                      "spectrablade:generate-tone", PreviewOwner::none,
+                      [toTone, rate] (const EffectValues& v) { return Generator::isValid (toTone (v), rate) && v.at ("length") > 0.0 && v.at ("length") <= 600.0; },
+                      "The frequencies must be from 1 Hz to below " + juce::String (0.5 * rate, 0) + " Hz, the level from -96 to 0 dBFS, "
+                          "the length above 0 and up to 600 s, and the fade from 0 to 1000 ms.",
+                      nullptr, nullptr,
+                      [this, toTone, rate, channels] (const EffectValues& v)
+                      {
+                          const auto t = toTone (v);
+                          toneWave = (int) t.wave;
+                          toneHz = t.frequency;
+                          toneEndHz = t.endFrequency;
+                          toneLevelDb = t.levelDb;
+                          toneSeconds = v.at ("length");
+                          toneFadeMs = t.fadeMs;
+                          insertGenerated (Generator::tone (t, channels, (int) std::round (toneSeconds * rate), rate), "Generate Tone");
+                      });
+}
+
+void MainComponent::showGenerateNoise()
+{
+    const auto rate = engine.document.getSampleRate();
+    const auto channels = engine.document.getSnapshot()->getNumChannels();
+    const auto toNoise = [] (const EffectValues& v)
+    {
+        Generator::Noise n;
+        n.colour = (Generator::Colour) juce::jlimit (0, 2, (int) v.at ("colour"));
+        n.levelDb = v.at ("level");
+        n.fadeMs = v.at ("fade");
+        return n;
+    };
+
+    showEffectDialog ("Generate Noise", "Puts noise in at the cursor, or the start of the selection, moving what follows on; each channel "
+                                        "gets its own. White is even across frequencies, pink falls 3 dB an octave (as much in every "
+                                        "octave) and brown 6 dB. The level is the RMS: white up to -6 dBFS, pink and brown up to -20, "
+                                        "so the peaks stay below full scale. The ends fade over the time given. Length up to ten minutes.",
+                      { { "colour", "Colour", (double) noiseColour, 0, { "White", "Pink", "Brown" } },
+                        { "level", "Level (dBFS RMS)", noiseLevelDb, 1 }, { "length", "Length (s)", noiseSeconds, 3 },
+                        { "fade", "Fade ends (ms)", noiseFadeMs, 1 } },
+                      "spectrablade:generate-noise", PreviewOwner::none,
+                      [toNoise] (const EffectValues& v) { return Generator::isValid (toNoise (v)) && v.at ("length") > 0.0 && v.at ("length") <= 600.0; },
+                      "The level must be from -96 dBFS to -6 for white noise or -20 for pink and brown, the length above 0 and up to "
+                      "600 s, and the fade from 0 to 1000 ms.",
+                      nullptr, nullptr,
+                      [this, toNoise, rate, channels] (const EffectValues& v)
+                      {
+                          auto n = toNoise (v);
+                          n.seed = juce::Random::getSystemRandom().nextInt64();
+                          noiseColour = (int) n.colour;
+                          noiseLevelDb = n.levelDb;
+                          noiseSeconds = v.at ("length");
+                          noiseFadeMs = n.fadeMs;
+                          insertGenerated (Generator::noise (n, channels, (int) std::round (noiseSeconds * rate), rate), "Generate Noise");
+                      });
 }
 
 void MainComponent::insertSilence (juce::int64 frames)

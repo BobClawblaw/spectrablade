@@ -28,6 +28,7 @@
 #include "EditorBarTests.h"
 #include "NavigationTests.h"
 #include "RestorationTests.h"
+#include "GeneratorTests.h"
 #include "FadeHandleTests.h"
 #include "MultibandTests.h"
 #include "BuiltInEffectsTests.h"
@@ -518,6 +519,7 @@ int main (int argc, char* argv[])
         runEditorBarTests();
         runNavigationTests();
         runRestorationTests();
+        runGeneratorTests();
         runFadeHandleTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.
