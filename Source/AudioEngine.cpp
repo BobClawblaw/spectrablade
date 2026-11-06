@@ -222,6 +222,7 @@ void SessionSource::renderRun (juce::int64 start, const juce::AudioSourceChannel
 //==============================================================================
 DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s, SessionMixer::Inserts& inserts)
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                                       .withOutput ("Interface", juce::AudioChannelSet::discreteChannels (SessionTrack::maxDeviceOutputs), true)
                                        .withOutput ("Click", juce::AudioChannelSet::stereo(), true)),
       document (doc), session (s), sessionSource (s, inserts)
 {
@@ -271,10 +272,11 @@ void DocumentPlayerProcessor::resetSource()
 {
     transport.stop();
     // No read-ahead: the audio is already in memory. The transport resamples from the source's
-    // rate to the device's, so the interface keeps its own rate.
+    // rate to the device's, so the interface keeps its own rate. A session plays the mix and what
+    // goes out of each interface pair; a document, the mix alone.
     sourceRate = modeRate();
     transport.setSource (mode == Mode::session ? static_cast<juce::PositionableAudioSource*> (&sessionSource) : &source,
-                         0, nullptr, sourceRate, 2);
+                         0, nullptr, sourceRate, mode == Mode::session ? clickChannel : 2);
     transport.setPosition (0.0);
     stopAt = -1;
     source.setStopFrame (-1);
@@ -377,10 +379,15 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
         sessionSource.renderLive (info);
 
-    if (buffer.getNumChannels() >= 4)
+    // A document has nothing for the interface pairs (the transport read the mix alone).
+    if (mode != Mode::session)
+        for (int ch = 2; ch < juce::jmin (clickChannel, buffer.getNumChannels()); ++ch)
+            buffer.clear (ch, 0, numFrames);
+
+    if (buffer.getNumChannels() >= clickChannel + 2)
     {
-        buffer.clear (2, 0, numFrames);
-        buffer.clear (3, 0, numFrames);
+        buffer.clear (clickChannel, 0, numFrames);
+        buffer.clear (clickChannel + 1, 0, numFrames);
 
         if (playing && mode == Mode::session && juce::exactlyEqual (sourceRate, deviceRate))
             addClicks (buffer, playedFrame.load(), numFrames);
@@ -389,8 +396,8 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
         {
             juce::AudioSourceChannelInfo heard (&auditionBuffer, 0, numFrames);
             auditioner.getNextAudioBlock (heard);
-            buffer.addFrom (2, 0, auditionBuffer, 0, 0, numFrames);
-            buffer.addFrom (3, 0, auditionBuffer, 1, 0, numFrames);
+            buffer.addFrom (clickChannel, 0, auditionBuffer, 0, 0, numFrames);
+            buffer.addFrom (clickChannel + 1, 0, auditionBuffer, 1, 0, numFrames);
         }
     }
 
@@ -410,8 +417,8 @@ void DocumentPlayerProcessor::addClicks (juce::AudioBuffer<float>& buffer, juce:
     const auto until = countInEnd.load();
     const auto [loopFrom, loopTo] = sessionSource.getLoop();
     const auto map = clickState->tempoMap();
-    auto* left = buffer.getWritePointer (2);
-    auto* right = buffer.getWritePointer (3);
+    auto* left = buffer.getWritePointer (clickChannel);
+    auto* right = buffer.getWritePointer (clickChannel + 1);
 
     for (int i = 0; i < numFrames; ++i)
     {
@@ -889,8 +896,83 @@ void AudioEngine::setOutputPair (int firstChannel)
     sendChangeMessage();
 }
 
+juce::BigInteger AudioEngine::deviceOutputsOf (const SessionState& state)
+{
+    juce::BigInteger used;
+
+    for (auto& t : state.tracks)
+        if (t.deviceOutput >= 0 && t.outputBusId == 0 && ! t.isFolder)
+            used.setRange (t.deviceOutput, 2, true);
+
+    return used;
+}
+
+namespace
+{
+    /** The graph's output channels are the device's active output channels, in order: a device
+        channel's place among them. */
+    int graphChannelOf (const juce::BigInteger& active, int deviceChannel)
+    {
+        int graphChannel = 0;
+
+        for (int before = 0; before < deviceChannel; ++before)
+            if (active[before])
+                ++graphChannel;
+
+        return graphChannel;
+    }
+}
+
+bool AudioEngine::playsOutOf (int deviceChannel) const
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+
+    if (device == nullptr || ! juce::isPositiveAndBelow (deviceChannel, SessionTrack::maxDeviceOutputs)
+        || ! device->getActiveOutputChannels()[deviceChannel])
+        return false;
+
+    return graph.isConnected ({ { playerNode->nodeID, DocumentPlayerProcessor::firstInterfaceChannel + deviceChannel },
+                                { outputNode->nodeID, graphChannelOf (device->getActiveOutputChannels(), deviceChannel) } });
+}
+
+void AudioEngine::useDeviceOutputs()
+{
+    const auto used = deviceOutputsOf (*session.getState());
+
+    if (used == usedDeviceOutputs)
+        return;
+
+    usedDeviceOutputs = used;
+
+    // The device only delivers buffers for active channels, so turn on the ones now used (the
+    // device change then connects them); those no longer used stay on.
+    auto setup = deviceManager.getAudioDeviceSetup();
+    const auto numDeviceOutputs = getDeviceOutputChannelNames().size();
+    auto changed = false;
+
+    for (int ch = 0; ch < juce::jmin (numDeviceOutputs, SessionTrack::maxDeviceOutputs); ++ch)
+    {
+        if (used[ch] && ! setup.outputChannels[ch])
+        {
+            setup.outputChannels.setBit (ch);
+            changed = true;
+        }
+    }
+
+    if (changed)
+    {
+        setup.useDefaultOutputChannels = false;
+        deviceManager.setAudioDeviceSetup (setup, true);
+    }
+
+    rebuildConnections();
+}
+
 void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
+    if (source == &session)
+        useDeviceOutputs();
+
     if (source == &document || source == &session)
     {
         // A conversion (or undoing one), or a new session, changed the rate the player must resample from.
@@ -984,18 +1066,14 @@ void AudioEngine::rebuildConnections()
 
         if (active[outputPairFirstChannel])
         {
-            int graphChannel = 0;
-
-            for (int ch = 0; ch < outputPairFirstChannel; ++ch)
-                if (active[ch])
-                    ++graphChannel;
+            const auto graphChannel = graphChannelOf (active, outputPairFirstChannel);
 
             connectStereo (source, outputNode.get(), graphChannel);
 
             // The metronome's click goes to the same pair past the rack; the graph delays it by the
             // rack's latency, so it stays in time with the music.
             for (int ch = 0; ch < 2; ++ch)
-                graph.addConnection ({ { playerNode->nodeID, 2 + ch }, { outputNode->nodeID, graphChannel + ch } },
+                graph.addConnection ({ { playerNode->nodeID, DocumentPlayerProcessor::clickChannel + ch }, { outputNode->nodeID, graphChannel + ch } },
                                      juce::AudioProcessorGraph::UpdateKind::none);
 
             // A pair whose second channel is inactive (or a mono device) still gets the left side.
@@ -1003,9 +1081,22 @@ void AudioEngine::rebuildConnections()
             {
                 graph.removeConnection ({ { source->nodeID, 1 }, { outputNode->nodeID, graphChannel + 1 } },
                                         juce::AudioProcessorGraph::UpdateKind::none);
-                graph.removeConnection ({ { playerNode->nodeID, 3 }, { outputNode->nodeID, graphChannel + 1 } },
+                graph.removeConnection ({ { playerNode->nodeID, DocumentPlayerProcessor::clickChannel + 1 }, { outputNode->nodeID, graphChannel + 1 } },
                                         juce::AudioProcessorGraph::UpdateKind::none);
             }
+        }
+
+        // Tracks and buses playing out of interface pairs: straight from the player to those
+        // outputs, past the rack and the master meter; the graph delays them by the rack's latency
+        // too. A pair the interface doesn't have stays silent.
+        for (int ch = 0; ch < SessionTrack::maxDeviceOutputs; ++ch)
+        {
+            if (! usedDeviceOutputs[ch] || ! active[ch])
+                continue;
+
+            graph.addConnection ({ { playerNode->nodeID, DocumentPlayerProcessor::firstInterfaceChannel + ch },
+                                   { outputNode->nodeID, graphChannelOf (active, ch) } },
+                                 juce::AudioProcessorGraph::UpdateKind::none);
         }
     }
 

@@ -187,9 +187,10 @@ public:
                                    : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
                                                            : juce::String (t.input.first + 1));
         sendsButton.setButtonText (isBus ? juce::String ("Output") : t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
-        sendsButton.setToggleState (! t.sends.empty() || t.outputBusId != 0 || t.ducking.isOn(), juce::dontSendNotification);
-        sendsButton.setTooltip (isBus ? "Play this bus into the mix, or into another bus"
-                                      : "Send this track to buses, play it into one in place of the mix, or duck it under another track");
+        sendsButton.setToggleState (! t.sends.empty() || t.outputBusId != 0 || t.deviceOutput >= 0 || t.ducking.isOn(), juce::dontSendNotification);
+        sendsButton.setTooltip (isBus ? "Play this bus into the mix, into another bus, or out of a pair of the interface's outputs"
+                                      : "Send this track to buses, play it into one or out of a pair of the interface's outputs in place of the mix, "
+                                        "or duck it under another track");
         effectsButton.setTooltip (isBus ? "This bus's effects" : "This track's effects");
         resized();
 
@@ -594,14 +595,18 @@ public:
 
         output.onChange = [this]
         {
-            const auto index = output.getSelectedItemIndex();
-            const auto busId = index <= 0 ? 0u : outputChoices[(size_t) index - 1];
+            const auto index = output.getSelectedId() - 1;
+
+            if (! juce::isPositiveAndBelow (index, (int) outputChoices.size()))
+                return;
+
+            const auto [busId, pair] = outputChoices[(size_t) index];
             auto next = *engine.session.getState();
 
-            if (SessionEdits::setTrackOutput (next, trackId, busId))
+            if (pair >= 0 ? SessionEdits::setTrackDeviceOutput (next, trackId, pair) : SessionEdits::setTrackOutput (next, trackId, busId))
                 engine.session.apply (std::move (next), "Track Output");
         };
-        output.setTooltip ("Where it plays: the mix, or a bus in its place");
+        output.setTooltip ("Where it plays: the mix, a bus in its place, or a pair of the audio interface's outputs (past the rack, and left out of mixdowns)");
         addAndMakeVisible (outputLabel);
         addAndMakeVisible (output);
         outputLabel.setText ("Output", juce::dontSendNotification);
@@ -690,7 +695,7 @@ private:
     juce::Label outputLabel, duckLabel;
     juce::ComboBox output, duckKey;
     juce::Slider duckAmount, duckThreshold, duckAttack, duckRelease;
-    std::vector<juce::uint32> outputChoices;   // the buses in the output list, after Mix
+    std::vector<std::pair<juce::uint32, int>> outputChoices;   // the output list's items: a bus (0 for the mix) or an interface pair
     std::vector<juce::uint32> keyChoices;      // the tracks in the duck-under list, after None
 
     void applyDucking (const juce::String& description, bool merge)
@@ -737,8 +742,8 @@ private:
                 buses.push_back (&t);
 
         output.clear (juce::dontSendNotification);
+        outputChoices.assign (1, { 0u, -1 });
         output.addItem ("Mix", 1);
-        outputChoices.clear();
 
         // A bus can't play into itself, nor into a bus that plays into it.
         for (auto* bus : buses)
@@ -746,12 +751,32 @@ private:
             if (track != nullptr && track->isBus && (bus->id == trackId || current->feeds (*bus, trackId)))
                 continue;
 
-            outputChoices.push_back (bus->id);
-            output.addItem (bus->name, (int) outputChoices.size() + 1);
+            outputChoices.push_back ({ bus->id, -1 });
+            output.addItem (bus->name, (int) outputChoices.size());
         }
 
-        const auto out = std::find (outputChoices.begin(), outputChoices.end(), track != nullptr ? track->outputBusId : 0u);
-        output.setSelectedItemIndex (out == outputChoices.end() ? 0 : (int) (out - outputChoices.begin()) + 1, juce::dontSendNotification);
+        // The interface's output pairs, past the rack; one the session names that this interface
+        // doesn't have is listed too, so it shows.
+        const auto names = engine.getDeviceOutputChannelNames();
+        const auto pairs = juce::jmin (names.size() / 2, SessionTrack::maxDeviceOutputs / 2);
+        const auto chosen = track != nullptr && track->outputBusId == 0 ? track->deviceOutput : -1;
+        output.addSectionHeading ("Interface outputs");
+
+        for (int p = 0; p < pairs; ++p)
+        {
+            outputChoices.push_back ({ 0u, 2 * p });
+            output.addItem (names[2 * p] + " / " + names[2 * p + 1], (int) outputChoices.size());
+        }
+
+        if (chosen >= 2 * pairs)
+        {
+            outputChoices.push_back ({ 0u, chosen });
+            output.addItem ("Out " + juce::String (chosen + 1) + "/" + juce::String (chosen + 2) + " (not on this interface)", (int) outputChoices.size());
+        }
+
+        const auto now = std::pair<juce::uint32, int> { track != nullptr ? track->outputBusId : 0u, track != nullptr && track->outputBusId == 0 ? track->deviceOutput : -1 };
+        const auto out = std::find (outputChoices.begin(), outputChoices.end(), now);
+        output.setSelectedId (out == outputChoices.end() ? 1 : (int) (out - outputChoices.begin()) + 1, juce::dontSendNotification);
 
         if (track != nullptr && track->isBus)
         {
@@ -2115,7 +2140,9 @@ void MultitrackView::paint (juce::Graphics& g)
                 const auto* into = s.outputBusOf (track);
                 g.drawText ((feeders.isEmpty() ? juce::String ("Bus: nothing plays here yet. Use a track's Sends button.")
                                                : "Bus: from " + feeders.joinIntoString (", "))
-                                + (into != nullptr ? "; plays into " + into->name : juce::String()),
+                                + (into != nullptr ? "; plays into " + into->name
+                                   : track.deviceOutput >= 0 ? "; plays out of interface outputs " + juce::String (track.deviceOutput + 1) + "/" + juce::String (track.deviceOutput + 2)
+                                                             : juce::String()),
                             lane.reduced (12, 0), juce::Justification::centredLeft);
             }
 

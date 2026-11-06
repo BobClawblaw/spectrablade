@@ -33,6 +33,8 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
 
     if (const auto* out = s.outputBusOf (*t))
         xml->setAttribute ("output", out->name);
+    else if (t->deviceOutput >= 0)
+        xml->setAttribute ("deviceOutput", t->deviceOutput);
 
     if (effects != nullptr)
         xml->addChildElement (effects.release());
@@ -84,6 +86,9 @@ Added add (SessionState& s, const juce::XmlElement& xml)
         else
             SessionEdits::setTrackOutput (s, id, bus->id);
     }
+
+    if (xml.hasAttribute ("deviceOutput") && ! xml.hasAttribute ("output"))
+        SessionEdits::setTrackDeviceOutput (s, id, xml.getIntAttribute ("deviceOutput", -1));
 
     if (const auto* effects = xml.getChildByName ("EFFECTS"))
         added.effects = std::make_shared<juce::XmlElement> (*effects);

@@ -199,6 +199,14 @@ private:
     DocumentSource source { document };
     SessionSource sessionSource;
     Mode mode = Mode::document;
+
+public:
+    /** The player's channels: the mix (0 and 1), then one for each interface output (from
+        firstInterfaceChannel), then the click and auditioned file (clickChannel and the next). */
+    static constexpr int firstInterfaceChannel = 2;
+    static constexpr int clickChannel = firstInterfaceChannel + SessionTrack::maxDeviceOutputs;
+
+private:
     juce::AudioTransportSource transport;
     juce::int64 stopAt = -1;
     double sourceRate = 0.0;
@@ -283,6 +291,12 @@ public:
         firstChannel and firstChannel + 1 (absolute channel indices of the device). */
     int getOutputPair() const                     { return outputPairFirstChannel; }
     void setOutputPair (int firstChannel);
+
+    /** The interface outputs a session's tracks and buses play out of. */
+    static juce::BigInteger deviceOutputsOf (const SessionState&);
+
+    /** True when what the session plays out of this device output (from 0) is connected to it. */
+    bool playsOutOf (int deviceChannel) const;
     juce::StringArray getDeviceOutputChannelNames() const;
 
     //==============================================================================
@@ -401,6 +415,8 @@ private:
     class MasterMeter;
     std::vector<Node::Ptr> rack;
     int outputPairFirstChannel = 0;
+    juce::BigInteger usedDeviceOutputs;   // the interface outputs the session's tracks play out of
+    void useDeviceOutputs();
     int inputFirstChannel = 0, inputNumChannels = 0;
     std::unique_ptr<Recorder> recorder;
     std::vector<std::pair<TrackInput, std::unique_ptr<Recorder>>> extraRecorders;

@@ -181,6 +181,32 @@ namespace
 
         engine.setOutputPair (10000);
         check (engine.getOutputPair() == 0, "out-of-range output pair falls back to 1/2");
+
+        if (names.size() >= 8)
+        {
+            // A track out of outputs 7/8 and a bus out of 31/32, which an interface with fewer
+            // outputs doesn't have: the first pair is turned on and connected, the other left out.
+            SessionState s;
+            s.sampleRate = 48000.0;
+            const auto trackId = s.addTrack().id;
+            const auto busId = s.addBus().id;
+            SessionEdits::setTrackDeviceOutput (s, trackId, 6);
+            SessionEdits::setTrackDeviceOutput (s, busId, 30);
+            engine.session.reset (s, {});
+            TestUtils::runUntil ([&] { return engine.playsOutOf (6) && engine.playsOutOf (7); }, 5000);
+            const auto on = engine.deviceManager.getCurrentAudioDevice()->getActiveOutputChannels();
+            const auto connected = engine.playsOutOf (6) && engine.playsOutOf (7) && on[6] && on[7] && ! engine.playsOutOf (5) && ! engine.playsOutOf (8);
+            const auto beyond = names.size() > 31 || (! engine.playsOutOf (30) && ! engine.playsOutOf (31));
+
+            // Back to the mix: disconnected.
+            SessionEdits::setTrackOutput (s, trackId, 0);
+            engine.session.apply (s, "Track Output");
+            TestUtils::runUntil ([&] { return ! engine.playsOutOf (6); }, 5000);
+            check (connected && beyond && ! engine.playsOutOf (6) && ! engine.playsOutOf (7),
+                   "interface outputs: a track set to outputs 7/8 of the " + juce::String (names.size()) + "-output interface turns them on "
+                   "and is connected to them; a pair it doesn't have is left out; back to the mix, disconnected");
+            engine.session.reset (SessionState(), {});
+        }
     }
 
     /** Arms the device's first two inputs and records a second while the document plays,

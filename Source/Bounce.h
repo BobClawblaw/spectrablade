@@ -6,13 +6,15 @@
     automation, into a file that replaces it on a track of its own. */
 namespace Bounce
 {
-    /** The session with only this track in it, sends removed, unmuted and unsoloed: mixed, it
-        gives what the track adds to the mix itself (not through buses). */
+    /** The session with only this track in it, sends removed, unmuted and unsoloed, and into the
+        mix even if it plays out of an interface pair: mixed, it gives the track's own sound (not
+        through buses). */
     SessionState isolate (const SessionState&, juce::uint32 trackId);
 
     /** Puts a bounce into the session: a new track right after the source, named after it, with
         the audio as one clip at position (the file is the clip's source), the source's sends,
-        which now carry the bounced audio, and the source's folder; the source is muted.
+        which now carry the bounced audio, its output (a bus or an interface pair) and its folder;
+        the source is muted.
         Returns the new track's id, or 0 when the source track is no longer there. */
     juce::uint32 land (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot, juce::int64 position);
 
@@ -21,7 +23,8 @@ namespace Bounce
 
     /** A folder and what is in it alone, as Export Folder Stems renders it: its tracks and buses
         as they are set (their own mutes too), sending only to buses in the folder, nothing
-        soloed, and the folder's volume but not its mute. */
+        soloed, any playing out of an interface pair into the stem instead, and the folder's
+        volume but not its mute. */
     SessionState isolateFolder (const SessionState&, juce::uint32 folderId);
 
     /** The folders with a track with clips in them, in the session's order: what Export Folder

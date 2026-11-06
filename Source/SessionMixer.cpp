@@ -164,7 +164,7 @@ namespace
     /** Adds the first n frames of src, held back by frames, times gain, into dest from destStart.
         The delay line is the path's own, so it carries over from block to block. */
     void addHeld (Buffers& buffers, std::pair<juce::uint32, juce::uint32> path, int frames, const juce::AudioBuffer<float>& src,
-                  int n, juce::AudioBuffer<float>& dest, int destStart, float gain)
+                  int n, juce::AudioBuffer<float>& dest, int destStart, float gain, int destChannel = 0)
     {
         const juce::AudioBuffer<float>* from = &src;
 
@@ -202,7 +202,18 @@ namespace
         }
 
         for (int ch = 0; ch < 2; ++ch)
-            dest.addFrom (ch, destStart, *from, ch, 0, n, gain);
+            dest.addFrom (destChannel + ch, destStart, *from, ch, 0, n, gain);
+    }
+
+    /** The first of dest's channels a track's or bus's output goes to when it isn't a bus: 0 for
+        the mix, 2 + the first channel of the interface pair it plays out of, or -1 when dest has no
+        channels for that pair (a mixdown, which is the mix alone). */
+    int outputChannel (const SessionTrack& track, const juce::AudioBuffer<float>& dest)
+    {
+        if (track.deviceOutput < 0)
+            return 0;
+
+        return 2 + track.deviceOutput + 2 <= dest.getNumChannels() ? 2 + track.deviceOutput : -1;
     }
 
     /** A live input, panned like a clip, into frames [0, numFrames) of out. */
@@ -525,9 +536,9 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 addHeld (buffers, { track.id, 0 }, ahead - pathLatency (state, *bus, inserts), buffers.track, numFrames,
                          buffers.buses[bus->id], 0, volume);
         }
-        else
+        else if (const auto channel = outputChannel (track, dest); channel >= 0)
         {
-            addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume);
+            addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume, channel);
         }
 
         for (auto& s : track.sends)
@@ -565,14 +576,16 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         const auto index = busIndex;
         const auto folder = state.folderGain (bus);
 
-        // Its output: the mix, or the bus it plays into (nothing when that bus doesn't play).
-        auto* out = &dest;
-        auto outStart = destStart;
+        // Its output: the mix or an interface pair, or the bus it plays into (nothing when that
+        // bus doesn't play, or in a mixdown for an interface pair).
+        const auto channel = outputChannel (bus, dest);
+        auto* out = channel >= 0 ? &dest : nullptr;
+        auto outStart = destStart, outChannel = juce::jmax (0, channel);
 
         if (const auto* next = outputBus (state, bus))
         {
             out = plays (state, *next) ? &buffers.buses[next->id] : nullptr;
-            outStart = 0;
+            outStart = outChannel = 0;
         }
 
         if (bus.volumeEnvelope.isEmpty() && bus.panEnvelope.isEmpty())
@@ -582,8 +595,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
             if (out != nullptr)
             {
-                out->addFrom (0, outStart, input, 0, 0, numFrames, volume * left);
-                out->addFrom (1, outStart, input, 1, 0, numFrames, volume * right);
+                out->addFrom (outChannel, outStart, input, 0, 0, numFrames, volume * left);
+                out->addFrom (outChannel + 1, outStart, input, 1, 0, numFrames, volume * right);
             }
 
             if (buffers.levels != nullptr)
@@ -602,8 +615,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         const auto* inLeft = input.getReadPointer (0);
         const auto* inRight = input.getReadPointer (1);
-        auto* outLeft = out != nullptr ? out->getWritePointer (0, outStart) : nullptr;
-        auto* outRight = out != nullptr ? out->getWritePointer (1, outStart) : nullptr;
+        auto* outLeft = out != nullptr ? out->getWritePointer (outChannel, outStart) : nullptr;
+        auto* outRight = out != nullptr ? out->getWritePointer (outChannel + 1, outStart) : nullptr;
 
         auto peakLeft = 0.0f, peakRight = 0.0f;
 

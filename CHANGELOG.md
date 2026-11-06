@@ -4,7 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 228: Track outputs to interface outputs**
+- A track's or bus's Output list (under its Sends or Output button) now also lists the pairs of the audio interface's outputs, by their names (for example "Analog 3 / Analog 4"): the track plays out of that pair in place of the mix, for a headphone or cue mix, or outboard gear. Its sends are as they were. It goes past the rack and the master meter, held back by the rack's latency like the click, so it stays in time with the mix; within the session, plug-in latency is lined up as for the mix. The pair is turned on at the interface when it is chosen; a bus's lane says which pair it plays out of. Up to 32 outputs (pairs to 31/32); a pair the interface doesn't have stays silent, and is listed as "not on this interface".
+- What plays out of an interface pair is not in the mixdown (Export Session Mixdown is the mix alone). Stems, Export Folder Stems and Bounce render the track's own sound wherever it plays; the bounced track plays out of the source's pair, or into the source's bus, which Bounce didn't keep before. Kept in session files and track templates; freezing renders the track's own sound, as before.
+- Measured by the tests: a track out of outputs 3/4 is there bit for bit as it would be in the mix, and the mix lacks it (worst difference 8.9e-8); a bus out of 29/30 carries what it would have added to the mix (1.5e-8); with 300, 500 and 64 frames of plug-in latency along the way, the mix and both pairs line up bit for bit; the player puts a track out of 5/6 on those channels as it would be in the mix (worst 0) and nothing on the others. On the development Mac's 30-output interface, choosing outputs 7/8 turned them on and connected them, pair 31/32 was left out, and setting the track back to the mix disconnected them. The whole suite passed (1039 checks).
+- The player now hands the graph the mix and 32 interface channels: a 512-frame block of a playing session took 17.3 microseconds on the development Mac, against 10.0 with the mix alone (a block lasts 10.7 milliseconds at 48 kHz).
+- Not tried by hand: the Output list in the app, and listening on outputs other than 1/2.
 
 ## Released
 

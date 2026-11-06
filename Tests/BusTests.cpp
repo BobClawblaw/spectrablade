@@ -5,6 +5,8 @@
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
 #include "../Source/TrackTemplate.h"
+#include "../Source/Bounce.h"
+#include "../Source/AudioEngine.h"
 #include "TestPlugins.h"
 #include "TestUtils.h"
 #include "BusTests.h"
@@ -115,6 +117,41 @@ namespace
     bool same (const juce::AudioBuffer<float>& a, const juce::AudioBuffer<float>& b)
     {
         return worst (a, b) == 0.0f;
+    }
+
+    /** Plays into the player's channels: the mix, then one for each interface output. */
+    juce::AudioBuffer<float> playWide (const SessionState& s, juce::int64 start, int frames, int blockSize, SessionMixer::Inserts* inserts)
+    {
+        juce::AudioBuffer<float> out (DocumentPlayerProcessor::clickChannel, frames);
+        SessionMixer::Buffers buffers;
+        buffers.reserve (512);
+
+        if (inserts != nullptr)
+            SessionMixer::prime (s, start, buffers, *inserts);
+
+        for (int p = 0; p < frames; p += blockSize)
+            SessionMixer::render (s, start + p, out, p, juce::jmin (blockSize, frames - p), buffers, inserts);
+
+        return out;
+    }
+
+    /** Channels first and first + 1 of b, as a stereo buffer. */
+    juce::AudioBuffer<float> pairOf (const juce::AudioBuffer<float>& b, int first)
+    {
+        juce::AudioBuffer<float> out (2, b.getNumSamples());
+        out.copyFrom (0, 0, b, first, 0, b.getNumSamples());
+        out.copyFrom (1, 0, b, first + 1, 0, b.getNumSamples());
+        return out;
+    }
+
+    /** True when every channel of b but those listed is silent. */
+    bool silentBut (const juce::AudioBuffer<float>& b, std::initializer_list<int> channels)
+    {
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            if (std::find (channels.begin(), channels.end(), ch) == channels.end() && b.getMagnitude (ch, 0, b.getNumSamples()) != 0.0f)
+                return false;
+
+        return true;
     }
 
     juce::AudioBuffer<float> slice (const juce::AudioBuffer<float>& b, int start, int frames)
@@ -508,5 +545,107 @@ void runBusTests()
                         && t[1].sends[0].preFader && t[1].sends[1].busId == t[3].id && t[2].pan == 0.3f;
         check (ok, "session file: buses and sends round-trip");
         dir.deleteRecursively();
+    }
+
+    // Interface outputs: B plays out of outputs 3/4 in place of the mix; its sends are as they were.
+    {
+        auto out = s;
+        const auto bId = out.tracks[1].id, xId = out.tracks[2].id, yId = out.tracks[3].id;
+        const auto routedOk = SessionEdits::setTrackDeviceOutput (out, bId, 2);
+        const auto wide = playWide (out, 0, length, 512, nullptr);
+        const auto bAlone = alone (s, 1, s.tracks[1].gainDb);
+
+        // The mix: everything but B's own output.
+        auto mixLessB = play (s, 0, length, 512, nullptr);
+        add (mixLessB, bAlone, -1.0f, -1.0f);
+        const auto wMix = worst (pairOf (wide, 0), mixLessB);
+        const auto stereo = play (out, 0, length, 512, nullptr);
+        check (routedOk && same (pairOf (wide, 4), bAlone) && wMix < 1.0e-6f && silentBut (wide, { 0, 1, 4, 5 }) && same (stereo, pairOf (wide, 0)),
+               "interface outputs: a track set to outputs 3/4 plays there bit for bit as it would into the mix, and leaves the mix (worst "
+               + juce::String (wMix, 9) + "), its sends as they were; a mixdown (two channels) is the mix alone");
+
+        // Y plays out of 29/30 in place of the mix: there is what Y would add to the mix.
+        auto both = out;
+        SessionEdits::setTrackDeviceOutput (both, yId, 28);
+        auto noY = out;
+        noY.tracks[3].mute = true;
+        auto yPart = play (out, 0, length, 512, nullptr);
+        add (yPart, play (noY, 0, length, 512, nullptr), -1.0f, -1.0f);
+        const auto wideBoth = playWide (both, 0, length, 333, nullptr);
+        const auto wY = worst (pairOf (wideBoth, 30), yPart);
+        const auto wNoY = worst (pairOf (wideBoth, 0), play (noY, 0, length, 512, nullptr));
+        check (yPart.getMagnitude (0, length) > 0.01f && wY < 1.0e-6f && wNoY < 1.0e-6f && silentBut (wideBoth, { 0, 1, 4, 5, 30, 31 }),
+               "interface outputs: a bus set to outputs 29/30 plays what it would add to the mix there, and the mix goes on without it (worst "
+               + juce::String (juce::jmax (wY, wNoY), 9) + ")");
+
+        // With plug-in latency on A (300), X (500) and Y (64), every output still lines up bit for bit.
+        TrackEffects effects;
+        effects.prepare (rate);
+        effects.add (out.tracks[0].id, std::make_unique<DelayPlugin> (300, 1.0f));
+        effects.add (xId, std::make_unique<DelayPlugin> (500, 1.0f));
+        effects.add (yId, std::make_unique<DelayPlugin> (64, 1.0f));
+        const auto latent = playWide (both, 0, length, 256, &effects);
+        auto exact = true;
+
+        for (int ch = 0; ch < latent.getNumChannels(); ++ch)
+            exact = exact && std::memcmp (latent.getReadPointer (ch), wideBoth.getReadPointer (ch), sizeof (float) * (size_t) length) == 0;
+
+        check (exact, "interface outputs: with 300, 500 and 64 frames of plug-in latency on the way, the mix and both pairs line up bit for bit");
+
+        // Edits: the output is a bus, an interface pair or the mix, one at a time.
+        auto e = out;
+        auto& folder = e.addFolder();
+        const auto folderId = folder.id;
+        const auto refused = ! SessionEdits::setTrackDeviceOutput (e, bId, 2) && ! SessionEdits::setTrackDeviceOutput (e, bId, 31)
+                             && ! SessionEdits::setTrackDeviceOutput (e, bId, -2) && ! SessionEdits::setTrackDeviceOutput (e, folderId, 0);
+        const auto toBus = SessionEdits::setTrackOutput (e, bId, xId) && e.findTrack (bId)->deviceOutput == -1 && e.outputBusOf (*e.findTrack (bId)) != nullptr;
+        const auto toPair = SessionEdits::setTrackDeviceOutput (e, bId, 30) && e.findTrack (bId)->outputBusId == 0 && e.findTrack (bId)->deviceOutput == 30;
+        const auto toMix = SessionEdits::setTrackOutput (e, bId, 0) && e.findTrack (bId)->deviceOutput == -1 && ! SessionEdits::setTrackOutput (e, bId, 0);
+        SessionEdits::setTrackDeviceOutput (e, bId, 4);
+        const auto frozen = SessionEdits::frozenSource (e, bId);
+        check (refused && toBus && toPair && toMix && frozen.tracks.size() == 1 && frozen.tracks[0].deviceOutput == -1
+                   && AudioEngine::deviceOutputsOf (both).countNumberOfSetBits() == 4 && AudioEngine::deviceOutputsOf (both)[2]
+                   && AudioEngine::deviceOutputsOf (both)[3] && AudioEngine::deviceOutputsOf (both)[28] && AudioEngine::deviceOutputsOf (both)[29],
+               "interface outputs: set in place of a bus and back to the mix; refused for a folder, pairs past 31/32, or no change; "
+               "a frozen track's source plays into the mix; the session names the outputs its tracks and buses use");
+
+        // Session files and track templates keep it.
+        auto dir = juce::File::createTempFile ("pairs");
+        dir.createDirectory();
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        auto noClips = both;
+
+        for (auto& t : noClips.tracks)
+            t.clips.clear();
+
+        const auto target = dir.getChildFile ("pairs.sbsession");
+        const auto saved = SessionFile::save (noClips, target).isEmpty();
+        const auto& lt = SessionFile::load (target, formats).state.tracks;
+        const auto file = saved && lt.size() == 4 && lt[1].deviceOutput == 2 && lt[3].deviceOutput == 28 && lt[0].deviceOutput == -1
+                          && lt[2].deviceOutput == -1 && lt[1].outputBusId == 0;
+        dir.deleteRecursively();
+        const auto xml = TrackTemplate::create (both, bId, nullptr);
+        auto other = s;
+        const auto* made = other.findTrack (TrackTemplate::add (other, *xml).trackId);
+        check (file && made != nullptr && made->deviceOutput == 2 && made->outputBusId == 0,
+               "interface outputs: kept in session files and track templates");
+
+        // Bounce and stems: the track's own sound; the bounced track plays where its source did.
+        const auto isolated = play (Bounce::isolate (out, bId), 0, length, 512, nullptr);
+        auto landed = out;
+        const auto newId = Bounce::land (landed, bId, juce::File(), noise (2, 100, 9), 0);
+        auto toBusFirst = out;
+        SessionEdits::setTrackOutput (toBusFirst, bId, yId);
+        const auto newOnBus = Bounce::land (toBusFirst, bId, juce::File(), noise (2, 100, 9), 0);
+        auto inFolder = both;
+        auto& f = inFolder.addFolder();
+        const auto fId = f.id;
+        SessionEdits::setTrackFolder (inFolder, bId, fId);
+        const auto folderStem = Bounce::isolateFolder (inFolder, fId);
+        check (same (isolated, bAlone) && landed.findTrack (newId)->deviceOutput == 2 && toBusFirst.findTrack (newOnBus)->outputBusId == yId
+                   && folderStem.findTrack (bId) != nullptr && folderStem.findTrack (bId)->deviceOutput == -1,
+               "interface outputs: a track's bounce and stem are its own sound, bit for bit; the bounced track plays out of the source's pair "
+               "(or into its bus); a folder stem takes in what plays out of a pair");
     }
 }

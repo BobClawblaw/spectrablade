@@ -195,6 +195,11 @@ struct SessionTrack
         the mix, after its volume. A track's sends are as they were. */
     juce::uint32 outputBusId = 0;
 
+    /** Or a pair of the audio interface's outputs it plays out of in place of the mix (past the
+        rack): the first channel of the pair, from 0, or -1 for none. Used only with outputBusId 0. */
+    int deviceOutput = -1;
+    static constexpr int maxDeviceOutputs = 32;   // pairs from 1/2 to 31/32
+
     /** Ducking under another track (tracks only). It acts with the volume: on the track's
         output and post-fader sends, not its pre-fader sends. */
     Ducking ducking;
@@ -525,6 +530,11 @@ namespace SessionEdits
         mix. False for a folder, a destination that isn't a bus, a bus into itself or into a bus
         that already plays into it (a loop of any length), or when it is already so. */
     bool setTrackOutput (SessionState&, juce::uint32 trackId, juce::uint32 busId);
+
+    /** Sends a track's or bus's output out of a pair of the interface's outputs (from firstChannel)
+        in place of the mix, or with -1 back to the mix. False for a folder, a channel out of
+        [0, maxDeviceOutputs - 1), or when it is already so. */
+    bool setTrackDeviceOutput (SessionState&, juce::uint32 trackId, int firstChannel);
 
     /** Sets a track's ducking (a key of 0 turns it off). False for a bus or folder, a key that
         isn't another track, settings out of range, or a key that ducks under this track itself,

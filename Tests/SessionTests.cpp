@@ -198,6 +198,51 @@ void runSessionTests (juce::AudioFormatManager& formats)
                "player: session mode plays the mix (worst difference " + juce::String (worst, 9) + ")");
         check (out.getMagnitude (2048 + 64, 4096 - 2048 - 64) == 0.0f, "player: session playback stops at the stop frame");
         player.releaseResources();
+
+        // The track out of interface outputs 5/6: the player puts it on those channels, not the mix,
+        // and as it would be in the mix; the document plays nothing there.
+        auto paired = s;
+        SessionEdits::setTrackDeviceOutput (paired, paired.tracks[0].id, 4);
+        session.reset (paired, {});
+        player.resetSource();
+        player.prepareToPlay (rate, 512);
+        player.play (0, -1);
+        constexpr int channels = DocumentPlayerProcessor::clickChannel + 2;
+        juce::AudioBuffer<float> wide (channels, 4096), wideBlock (channels, 512);
+
+        for (int p = 0; p < 4096; p += 512)
+        {
+            wideBlock.clear();
+            player.processBlock (wideBlock, midi);
+
+            for (int ch = 0; ch < channels; ++ch)
+                wide.copyFrom (ch, p, wideBlock, ch, 0, 512);
+        }
+
+        float pairWorst = 0.0f, elsewhere = 0.0f;
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            const auto pairChannel = ch - (DocumentPlayerProcessor::firstInterfaceChannel + 4);
+
+            if (pairChannel == 0 || pairChannel == 1)
+                for (int i = 0; i < 4096; ++i)
+                    pairWorst = juce::jmax (pairWorst, std::abs (wide.getSample (ch, i) - expected.getSample (pairChannel, i)));
+            else
+                elsewhere = juce::jmax (elsewhere, wide.getMagnitude (ch, 0, 4096));
+        }
+
+        player.setMode (DocumentPlayerProcessor::Mode::document);
+        wideBlock.clear();
+
+        for (int ch = 2; ch < channels; ++ch)
+            juce::FloatVectorOperations::fill (wideBlock.getWritePointer (ch), 1.0f, 512);   // what a graph buffer may hold
+
+        player.processBlock (wideBlock, midi);
+        check (pairWorst < 1.0e-6f && elsewhere == 0.0f && wideBlock.getMagnitude (0, 512) == 0.0f,
+               "player: a track out of interface outputs 5/6 plays on the player's channels for them as it would into the mix (worst "
+               + juce::String (pairWorst, 9) + "), nothing on the others; playing a document they are silent");
+        player.releaseResources();
     }
 
     // Clip edits.

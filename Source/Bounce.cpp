@@ -13,6 +13,7 @@ SessionState isolate (const SessionState& s, juce::uint32 trackId)
         t.sends.clear();
         t.mute = false;
         t.solo = false;
+        t.deviceOutput = -1;   // its own sound, not where it plays
         alone.tracks.push_back (std::move (t));
     }
 
@@ -30,6 +31,8 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
     const auto name = source->name + " Bounce";
     const auto sends = source->sends;
     const auto folderId = source->folderId;
+    const auto outputBusId = source->outputBusId;
+    const auto deviceOutput = source->deviceOutput;
     source->mute = true;
 
     auto& added = s.addTrack();
@@ -40,8 +43,14 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
     for (auto& send : sends)
         SessionEdits::setSend (s, id, send);
 
-    // In the source's folder, so the folder's mute, solo and volume act on it as they did.
+    // In the source's folder, so the folder's mute, solo and volume act on it as they did, and
+    // playing where the source played.
     SessionEdits::setTrackFolder (s, id, folderId);
+
+    if (outputBusId != 0)
+        SessionEdits::setTrackOutput (s, id, outputBusId);
+    else if (deviceOutput >= 0)
+        SessionEdits::setTrackDeviceOutput (s, id, deviceOutput);
 
     // From the end, where addTrack put it, to just after the source.
     std::rotate (s.tracks.begin() + index + 1, s.tracks.end() - 1, s.tracks.end());
@@ -60,6 +69,7 @@ SessionState isolateFolder (const SessionState& s, juce::uint32 folderId)
     for (auto& t : alone.tracks)
     {
         t.solo = false;
+        t.deviceOutput = -1;   // what plays out of an interface pair comes into the stem too
 
         if (t.isFolder)
             t.mute = false;

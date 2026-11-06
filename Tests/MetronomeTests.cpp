@@ -63,12 +63,15 @@ namespace
         {
             for (int b = 0; b < blocks; ++b)
             {
-                juce::AudioBuffer<float> out (4, blockSize);
+                juce::AudioBuffer<float> out (DocumentPlayerProcessor::clickChannel + 2, blockSize);
                 juce::MidiBuffer midi;
                 player.processBlock (out, midi);
 
-                for (int ch = 0; ch < 4; ++ch)
-                    sent[(size_t) ch].insert (sent[(size_t) ch].end(), out.getReadPointer (ch), out.getReadPointer (ch) + blockSize);
+                for (int ch = 0; ch < 4; ++ch)   // the mix, then the click
+                {
+                    const auto* from = out.getReadPointer (ch < 2 ? ch : DocumentPlayerProcessor::clickChannel + ch - 2);
+                    sent[(size_t) ch].insert (sent[(size_t) ch].end(), from, from + blockSize);
+                }
             }
         }
 

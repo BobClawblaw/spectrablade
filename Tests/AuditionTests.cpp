@@ -33,6 +33,8 @@ namespace
         return file;
     }
 
+    constexpr int click = DocumentPlayerProcessor::clickChannel;
+
     void testPlayer (juce::AudioFormatManager& formats, const juce::File& file, const juce::AudioBuffer<float>& written)
     {
         AudioDocument document;
@@ -48,13 +50,14 @@ namespace
 
         for (int b = 0; b < blocks; ++b)
         {
-            juce::AudioBuffer<float> out (4, blockSize);
+            juce::AudioBuffer<float> out (click + 2, blockSize);
             out.clear();
             juce::MidiBuffer midi;
             player.processBlock (out, midi);
 
-            for (int ch = 0; ch < 4; ++ch)
-                sent[(size_t) ch].insert (sent[(size_t) ch].end(), out.getReadPointer (ch), out.getReadPointer (ch) + blockSize);
+            for (int ch = 0; ch < 4; ++ch)   // the mix, then the click and auditioned file
+                sent[(size_t) ch].insert (sent[(size_t) ch].end(), out.getReadPointer (ch < 2 ? ch : click + ch - 2),
+                                          out.getReadPointer (ch < 2 ? ch : click + ch - 2) + blockSize);
         }
 
         auto heardError = 0.0f, mainPeak = 0.0f, afterPeak = 0.0f;
@@ -80,14 +83,14 @@ namespace
 
         // Stopping part way: silence from the next block on.
         player.audition (std::unique_ptr<juce::AudioFormatReader> (formats.createReaderFor (file)));
-        juce::AudioBuffer<float> out (4, blockSize);
+        juce::AudioBuffer<float> out (click + 2, blockSize);
         juce::MidiBuffer midi;
         player.processBlock (out, midi);
-        const auto playedFirst = out.getMagnitude (2, 0, blockSize) > 0.0f;
+        const auto playedFirst = out.getMagnitude (click, 0, blockSize) > 0.0f;
         player.audition (nullptr);
         out.clear();
         player.processBlock (out, midi);
-        check (playedFirst && ! player.isAuditioning() && out.getMagnitude (2, 0, blockSize) == 0.0f && out.getMagnitude (3, 0, blockSize) == 0.0f,
+        check (playedFirst && ! player.isAuditioning() && out.getMagnitude (click, 0, blockSize) == 0.0f && out.getMagnitude (click + 1, 0, blockSize) == 0.0f,
                "audition: stopping it silences the next block");
         player.releaseResources();
     }

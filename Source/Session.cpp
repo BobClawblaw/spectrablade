@@ -1484,6 +1484,7 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
         auto t = *track;
         t.sends.clear();
         t.outputBusId = 0;   // applied after the frozen audio, as its volume is
+        t.deviceOutput = -1;
         t.ducking = {};
         t.mute = t.solo = false;
         t.invertPolarity = false;   // applied after the frozen audio, as after live effects
@@ -1560,7 +1561,8 @@ bool setTrackOutput (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
     const auto* bus = busId != 0 ? s.findTrack (busId) : nullptr;
     auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
 
-    if (track == s.tracks.end() || track->isFolder || track->outputBusId == busId || (busId != 0 && (bus == nullptr || ! bus->isBus)))
+    if (track == s.tracks.end() || track->isFolder || (track->outputBusId == busId && track->deviceOutput < 0)
+        || (busId != 0 && (bus == nullptr || ! bus->isBus)))
         return false;
 
     // A bus may not play into itself, nor into a bus whose output leads back to it.
@@ -1568,6 +1570,20 @@ bool setTrackOutput (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
         return false;
 
     track->outputBusId = busId;
+    track->deviceOutput = -1;
+    return true;
+}
+
+bool setTrackDeviceOutput (SessionState& s, juce::uint32 trackId, int firstChannel)
+{
+    auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || track->isFolder || firstChannel < -1 || firstChannel >= SessionTrack::maxDeviceOutputs - 1
+        || (track->deviceOutput == firstChannel && track->outputBusId == 0))
+        return false;
+
+    track->outputBusId = 0;
+    track->deviceOutput = firstChannel;
     return true;
 }
 
@@ -1970,6 +1986,8 @@ juce::String save (const SessionState& state, const juce::File& target,
 
         if (t.outputBusId != 0 && indexOf.count (t.outputBusId) > 0)
             track->setAttribute ("output", indexOf[t.outputBusId]);
+        else if (t.deviceOutput >= 0)
+            track->setAttribute ("deviceOutput", t.deviceOutput);
 
         if (t.ducking.isOn() && indexOf.count (t.ducking.keyTrackId) > 0)
         {
@@ -2207,6 +2225,9 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.collapsed = track.isFolder && trackXml->getBoolAttribute ("collapsed");
         track.folderId = (juce::uint32) trackXml->getIntAttribute ("inFolder", -1);   // an index until every track is read
         track.outputBusId = (juce::uint32) trackXml->getIntAttribute ("output", -1);   // likewise
+
+        if (const auto pair = trackXml->getIntAttribute ("deviceOutput", -1); ! track.isFolder && pair >= 0 && pair < SessionTrack::maxDeviceOutputs - 1)
+            track.deviceOutput = pair;
 
         if (const auto* duck = trackXml->getChildByName ("DUCKING"))
         {

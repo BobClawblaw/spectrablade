@@ -142,9 +142,10 @@ namespace SessionMixer
         bool clips = true;                                 // false: the clips are silent (stopped)
     };
 
-    /** Replaces frames [destStart, destStart + numFrames) of dest (two channels or more; only the
-        first two are written, the rest cleared) with session frames [start, start + numFrames),
-        plus the live inputs. */
+    /** Replaces frames [destStart, destStart + numFrames) of dest (two channels or more) with
+        session frames [start, start + numFrames), plus the live inputs: the mix in channels 0 and 1,
+        and what plays out of an interface pair from channel c in channels 2 + c and 3 + c, when
+        dest has them (a stereo dest gets the mix alone). */
     void render (const SessionState&, juce::int64 start, juce::AudioBuffer<float>& dest, int destStart, int numFrames,
                  Buffers&, Inserts* = nullptr, const Live* = nullptr);
 
