@@ -207,7 +207,7 @@ What they check:
 - MP3 and AAC export: each setting read back at the same length and start, its level and signal-to-error ratio, bit rates on noise, the MP3 tag frame, the .m4a overhead, repeatability, 96 kHz and mono, refusals and stopping.
 - Typing a volume into the mixer: parsing, setting the track as an undo step, refusals.
 - ffmpeg (where installed): Opus, Apple Lossless, WavPack and AC-3 written and opened again, stopping, and an unreadable file.
-- File info: WAV (INFO and bext), AIFF (ID3 chunk; NAME, AUTH and ANNO read), FLAC (Vorbis comments, replaced when tagged again), MP3 (ID3v2.3 written, 2.4 read), .m4a and Opus tags read back, checked against ffmpeg where installed; tagging leaves AIFF and FLAC audio bit for bit; files with no info; the undo step.
+- File info: WAV (INFO and bext), AIFF (ID3 chunk; NAME, AUTH and ANNO read), FLAC (Vorbis comments, replaced when tagged again), MP3 (ID3v2.3 written, 2.4 read), .m4a and Opus tags read back, checked against ffmpeg where installed; tagging leaves AIFF and FLAC audio bit for bit; covers (JPEG and PNG) byte for byte in WAV, AIFF, FLAC, MP3 and .m4a, checked by extracting them with ffmpeg, covers ffmpeg attaches read back, a 2.5 MB cover in an .m4a, replacing and removing a FLAC cover; files with no info; the undo step.
 - The layout: the transport bar's width against its buttons and time, and the heights of the tabs.
 - The themes: text, accent, cursor and waveform contrast measured as WCAG ratios in every theme with every accent, switching themes at runtime (colours, controls and the waveform view), and the standard controls drawn in the theme's colours.
 - The editor's double-click selecting the whole file; a saved device setup that names no device opening the default.

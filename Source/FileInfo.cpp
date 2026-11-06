@@ -1,12 +1,29 @@
 #include "FileInfo.h"
 
-bool FileInfo::hasTags() const
+bool FileInfo::hasText() const
 {
     for (const auto* s : { &title, &artist, &album, &genre, &year, &track, &comment })
         if (s->isNotEmpty())
             return true;
 
     return false;
+}
+
+juce::String FileInfo::coverMime() const
+{
+    if (! hasCover())
+        return {};
+
+    const auto* p = (const juce::uint8*) cover->getData();
+    return cover->getSize() >= 4 && p[0] == 0x89 && p[1] == 'P' ? "image/png" : "image/jpeg";
+}
+
+bool FileInfo::operator== (const FileInfo& o) const
+{
+    const auto sameCover = hasCover() == o.hasCover() && (! hasCover() || *cover == *o.cover);
+    return title == o.title && artist == o.artist && album == o.album && genre == o.genre && year == o.year && track == o.track
+        && comment == o.comment && description == o.description && originator == o.originator && originatorReference == o.originatorReference
+        && originationDate == o.originationDate && originationTime == o.originationTime && timeReference == o.timeReference && sameCover;
 }
 
 bool FileInfo::hasBroadcast() const
@@ -17,9 +34,27 @@ bool FileInfo::hasBroadcast() const
 
 namespace FileInfoIO
 {
+bool isCoverImage (const void* data, size_t size)
+{
+    const auto* p = (const juce::uint8*) data;
+    const auto jpeg = size >= 3 && p[0] == 0xff && p[1] == 0xd8 && p[2] == 0xff;
+    const auto png = size >= 8 && std::memcmp (p, "\x89PNG\r\n\x1a\n", 8) == 0;
+    return (jpeg || png) && size <= FileInfo::maxCoverBytes;
+}
+
 namespace
 {
     using Bytes = std::vector<juce::uint8>;
+
+    /** A cover from bytes, when they are an image. */
+    std::shared_ptr<const juce::MemoryBlock> coverFrom (const juce::uint8* data, size_t size)
+    {
+        return isCoverImage (data, size) ? std::make_shared<const juce::MemoryBlock> (data, size) : nullptr;
+    }
+
+    void parseId3v2 (const juce::uint8* head, Bytes body, FileInfo& info);
+    void parseVorbisComment (const juce::uint8* data, size_t size, FileInfo& info);
+    Bytes pictureBlock (const FileInfo& info);
 
     juce::String textFrom (const juce::uint8* data, size_t size)
     {
@@ -282,6 +317,8 @@ void readRiffInfo (const juce::File& file, FileInfo& info)
     if (! in.openedOk() || in.read (head, 12) != 12 || std::memcmp (head, "RIFF", 4) != 0 || std::memcmp (head + 8, "WAVE", 4) != 0)
         return;
 
+    FileInfo fromId3;
+
     while (in.getPosition() + 8 <= in.getTotalLength())
     {
         juce::uint8 chunk[8];
@@ -319,10 +356,24 @@ void readRiffInfo (const juce::File& file, FileInfo& info)
                 }
             }
         }
+        else if ((std::memcmp (chunk, "id3 ", 4) == 0 || std::memcmp (chunk, "ID3 ", 4) == 0) && size >= 10 && size < (32 << 20))
+        {
+            juce::MemoryBlock tag;
+            in.readIntoMemoryBlock (tag, (ssize_t) size);
+            const auto* p = (const juce::uint8*) tag.getData();
+            parseId3v2 (p, Bytes (p + 10, p + tag.getSize()), fromId3);
+        }
 
         if (! in.setPosition (start + size + (size & 1)))
-            return;
+            break;
     }
+
+    // An ID3 chunk's cover, and its tags where INFO has none.
+    info.cover = fromId3.cover;
+
+    for (auto field : { &FileInfo::title, &FileInfo::artist, &FileInfo::album, &FileInfo::genre, &FileInfo::year, &FileInfo::track, &FileInfo::comment })
+        if ((info.*field).isEmpty())
+            info.*field = fromId3.*field;
 }
 
 juce::String appendRiffInfo (const juce::File& file, const FileInfo& info)
@@ -351,9 +402,25 @@ juce::String appendRiffInfo (const juce::File& file, const FileInfo& info)
     }
 
     Bytes chunk;
-    put4cc (chunk, "LIST");
-    put32le (chunk, (juce::uint32) list.size());
-    putBytes (chunk, list);
+
+    if (info.hasText())
+    {
+        put4cc (chunk, "LIST");
+        put32le (chunk, (juce::uint32) list.size());
+        putBytes (chunk, list);
+    }
+
+    // A cover goes in an ID3 chunk, with the tags too, as the players that show covers read them there.
+    if (info.hasCover())
+    {
+        const auto tag = id3v2 (info);
+        put4cc (chunk, "id3 ");
+        put32le (chunk, (juce::uint32) tag.getSize());
+        chunk.insert (chunk.end(), (const juce::uint8*) tag.getData(), (const juce::uint8*) tag.getData() + tag.getSize());
+
+        if ((tag.getSize() & 1) != 0)
+            chunk.push_back (0);
+    }
 
     {
         juce::FileInputStream in (file);
@@ -432,6 +499,18 @@ juce::MemoryBlock id3v2 (const FileInfo& info)
         frame ("COMM", content);
     }
 
+    // The cover: Latin-1, its MIME type, picture type 3 (front cover), no description, the image.
+    if (info.hasCover())
+    {
+        Bytes content { 0 };
+        putBytes (content, utf8 (info.coverMime()));
+        content.push_back (0);
+        content.push_back (3);
+        content.push_back (0);
+        content.insert (content.end(), (const juce::uint8*) info.cover->getData(), (const juce::uint8*) info.cover->getData() + info.cover->getSize());
+        frame ("APIC", content);
+    }
+
     Bytes tag { 'I', 'D', '3', 3, 0, 0 };
     const auto size = (juce::uint32) frames.size();
 
@@ -501,7 +580,23 @@ namespace
             const int encoding = data[0];
             juce::String value;
 
-            if (id == "COMM" && ! commentFound && size > 4)
+            if (id == "APIC" && size > 4 && ! info.hasCover())
+            {
+                // Encoding, MIME type (Latin-1, ended by 0), picture type, description (ended by 0 or 00 00), image.
+                const auto* end = data + size;
+                const auto* p = std::find (data + 1, end, (juce::uint8) 0);
+
+                if (p + 2 < end)
+                {
+                    p += 2;   // the 0, then the picture type
+                    juce::String description;
+                    p += id3Decode (encoding, p, (size_t) (end - p), description);
+
+                    if (p < end)
+                        info.cover = coverFrom (p, (size_t) (end - p));
+                }
+            }
+            else if (id == "COMM" && ! commentFound && size > 4)
             {
                 juce::String description;
                 const auto used = id3Decode (encoding, data + 4, size - 4, description);
@@ -692,7 +787,7 @@ juce::String addFlacComments (const juce::File& file, const FileInfo& info)
             padding = std::move (data);
             hasPadding = true;
         }
-        else if (type != 4)
+        else if (type != 4 && type != 6)
         {
             blocks.emplace_back (type, std::move (data));
         }
@@ -733,6 +828,16 @@ juce::String addFlacComments (const juce::File& file, const FileInfo& info)
         return "The tags are too long for a FLAC file.";
 
     blocks.emplace_back (4, std::move (comment));
+
+    if (info.hasCover())
+    {
+        auto picture = pictureBlock (info);
+
+        if (picture.size() >= (1u << 24))
+            return "The cover is too large for a FLAC file.";
+
+        blocks.emplace_back (6, std::move (picture));
+    }
 
     if (hasPadding)
         blocks.emplace_back (1, std::move (padding));
@@ -815,6 +920,9 @@ void readMp4 (const juce::File& file, FileInfo& info)
                     if (std::memcmp (moov.data() + at + 4, key.id, 4) == 0)
                         info.*key.field = juce::String::fromUTF8 ((const char*) payload, (int) length).trim();
 
+                if (std::memcmp (moov.data() + at + 4, "covr", 4) == 0 && ! info.hasCover())
+                    info.cover = coverFrom (payload, length);
+
                 if (std::memcmp (moov.data() + at + 4, "trkn", 4) == 0 && length >= 6)
                 {
                     const auto number = (payload[2] << 8) | payload[3], total = (payload[4] << 8) | payload[5];
@@ -860,6 +968,15 @@ juce::String addMp4Tags (const juce::File& file, const FileInfo& info)
         Bytes value { 0, 0, (juce::uint8) (number >> 8), (juce::uint8) number, (juce::uint8) (total >> 8), (juce::uint8) total, 0, 0 };
         putBytes (data, value);
         putBytes (items, box ("trkn", box ("data", data)));
+    }
+
+    if (info.hasCover())
+    {
+        Bytes data;
+        put32be (data, info.coverMime() == "image/png" ? 14u : 13u);   // PNG or JPEG
+        put32be (data, 0);
+        data.insert (data.end(), (const juce::uint8*) info.cover->getData(), (const juce::uint8*) info.cover->getData() + info.cover->getSize());
+        putBytes (items, box ("covr", box ("data", data)));
     }
 
     // The moov box and the free box after it.
@@ -982,6 +1099,148 @@ juce::String addMp4Tags (const juce::File& file, const FileInfo& info)
 }
 
 //==============================================================================
+namespace
+{
+    /** The tags in a Vorbis comment: vendor, then FIELD=value entries. */
+    void parseVorbisComment (const juce::uint8* data, size_t end, FileInfo& info)
+    {
+        size_t at = 0;
+
+        if (end < 8)
+            return;
+
+        const auto vendor = (size_t) get32le (data);
+        at += 4 + vendor;
+
+        if (at + 4 > end)
+            return;
+
+        const auto count = get32le (data + at);
+        at += 4;
+        juce::String trackNumber, trackTotal;
+
+        for (juce::uint32 i = 0; i < count && at + 4 <= end; ++i)
+        {
+            const auto length = (size_t) get32le (data + at);
+            at += 4;
+
+            if (at + length > end)
+                break;
+
+            const auto entry = juce::String::fromUTF8 ((const char*) data + at, (int) length);
+            at += length;
+            const auto key = entry.upToFirstOccurrenceOf ("=", false, false).toUpperCase();
+            const auto value = entry.fromFirstOccurrenceOf ("=", false, false).trim();
+
+            if (key == "TITLE")                                 info.title = value;
+            else if (key == "ARTIST")                           info.artist = value;
+            else if (key == "ALBUM")                            info.album = value;
+            else if (key == "GENRE")                            info.genre = value;
+            else if (key == "DATE" || key == "YEAR")            info.year = value;
+            else if (key == "TRACKNUMBER")                      trackNumber = value;
+            else if (key == "TRACKTOTAL" || key == "TOTALTRACKS") trackTotal = value;
+            else if (key == "COMMENT" || (key == "DESCRIPTION" && info.comment.isEmpty())) info.comment = value;
+        }
+
+        if (trackNumber.isNotEmpty())
+            info.track = trackNumber.containsChar ('/') || trackTotal.isEmpty() ? trackNumber : trackNumber + "/" + trackTotal;
+    }
+
+    /** The image in a FLAC PICTURE block: picture type, MIME type, description, size and colours, data. */
+    std::shared_ptr<const juce::MemoryBlock> parsePicture (const juce::uint8* data, size_t size)
+    {
+        size_t at = 4;
+
+        for (int field = 0; field < 2; ++field)   // the MIME type and the description, each with its length
+        {
+            if (at + 4 > size)
+                return nullptr;
+
+            at += 4 + (size_t) get32be (data + at);
+        }
+
+        at += 16;   // width, height, colour depth, colours used
+
+        if (at + 4 > size)
+            return nullptr;
+
+        const auto length = (size_t) get32be (data + at);
+        at += 4;
+        return at + length <= size ? coverFrom (data + at, length) : nullptr;
+    }
+
+    /** A FLAC PICTURE block's contents for the cover, as the front cover (type 3). */
+    Bytes pictureBlock (const FileInfo& info)
+    {
+        const auto image = juce::ImageFileFormat::loadFrom (info.cover->getData(), info.cover->getSize());
+        Bytes block;
+        put32be (block, 3);
+        const auto mime = utf8 (info.coverMime());
+        put32be (block, (juce::uint32) mime.size());
+        putBytes (block, mime);
+        put32be (block, 0);   // no description
+        put32be (block, (juce::uint32) image.getWidth());
+        put32be (block, (juce::uint32) image.getHeight());
+        put32be (block, image.hasAlphaChannel() ? 32u : 24u);
+        put32be (block, 0);   // not an indexed image
+        put32be (block, (juce::uint32) info.cover->getSize());
+        block.insert (block.end(), (const juce::uint8*) info.cover->getData(), (const juce::uint8*) info.cover->getData() + info.cover->getSize());
+        return block;
+    }
+}
+
+void readFlac (const juce::File& file, FileInfo& info)
+{
+    juce::FileInputStream in (file);
+    char magic[4];
+
+    if (! in.openedOk() || in.read (magic, 4) != 4 || std::memcmp (magic, "fLaC", 4) != 0)
+        return;
+
+    auto frontCover = false;   // a picture marked as the front cover (type 3) wins over others
+
+    for (bool last = false; ! last;)
+    {
+        juce::uint8 h[4];
+
+        if (in.read (h, 4) != 4)
+            return;
+
+        last = (h[0] & 0x80) != 0;
+        const auto type = h[0] & 0x7f;
+        const auto length = (juce::int64) ((h[1] << 16) | (h[2] << 8) | h[3]);
+        const auto next = in.getPosition() + length;
+
+        if (type == 4 || (type == 6 && ! frontCover))
+        {
+            juce::MemoryBlock block;
+
+            if (in.readIntoMemoryBlock (block, (ssize_t) length) != (size_t) length)
+                return;
+
+            const auto* p = (const juce::uint8*) block.getData();
+
+            if (type == 4)
+            {
+                parseVorbisComment (p, block.getSize(), info);
+            }
+            else if (block.getSize() >= 4)
+            {
+                const auto isFront = get32be (p) == 3;
+
+                if (auto picture = parsePicture (p, block.getSize()); picture != nullptr && (isFront || ! info.hasCover()))
+                {
+                    info.cover = std::move (picture);
+                    frontCover = isFront;
+                }
+            }
+        }
+
+        if (! in.setPosition (next))
+            return;
+    }
+}
+
 void readVorbisComments (const juce::File& file, FileInfo& info)
 {
     juce::FileInputStream in (file);
@@ -992,7 +1251,9 @@ void readVorbisComments (const juce::File& file, FileInfo& info)
     juce::MemoryBlock head;
     in.readIntoMemoryBlock (head, 1 << 20);
     const Bytes data ((const juce::uint8*) head.getData(), (const juce::uint8*) head.getData() + head.getSize());
-    size_t at = 0, end = 0;
+
+    if (data.size() < 4 || std::memcmp (data.data(), "OggS", 4) != 0)
+        return;
 
     const auto findText = [&data] (const char* text, size_t length) -> size_t
     {
@@ -1000,75 +1261,15 @@ void readVorbisComments (const juce::File& file, FileInfo& info)
         return it == data.end() ? data.size() : (size_t) (it - data.begin());
     };
 
-    if (data.size() >= 4 && std::memcmp (data.data(), "fLaC", 4) == 0)
-    {
-        // FLAC metadata blocks: type 4 is the Vorbis comment.
-        for (size_t p = 4; p + 4 <= data.size();)
-        {
-            const auto type = data[p] & 0x7f;
-            const auto length = (size_t) ((data[p + 1] << 16) | (data[p + 2] << 8) | data[p + 3]);
+    size_t at = 0;
 
-            if (type == 4)
-            {
-                at = p + 4;
-                end = juce::jmin (data.size(), at + length);
-                break;
-            }
+    if (const auto opus = findText ("OpusTags", 8); opus < data.size())
+        at = opus + 8;
+    else if (const auto vorbis = findText ("\x03vorbis", 7); vorbis < data.size())
+        at = vorbis + 7;
 
-            if ((data[p] & 0x80) != 0)
-                return;
-
-            p += 4 + length;
-        }
-    }
-    else if (data.size() >= 4 && std::memcmp (data.data(), "OggS", 4) == 0)
-    {
-        if (const auto opus = findText ("OpusTags", 8); opus < data.size())
-            at = opus + 8;
-        else if (const auto vorbis = findText ("\x03vorbis", 7); vorbis < data.size())
-            at = vorbis + 7;
-
-        end = data.size();
-    }
-
-    if (at == 0 || at + 8 > end)
-        return;
-
-    const auto vendor = (size_t) get32le (data.data() + at);
-    at += 4 + vendor;
-
-    if (at + 4 > end)
-        return;
-
-    const auto count = get32le (data.data() + at);
-    at += 4;
-    juce::String trackNumber, trackTotal;
-
-    for (juce::uint32 i = 0; i < count && at + 4 <= end; ++i)
-    {
-        const auto length = (size_t) get32le (data.data() + at);
-        at += 4;
-
-        if (at + length > end)
-            break;
-
-        const auto entry = juce::String::fromUTF8 ((const char*) data.data() + at, (int) length);
-        at += length;
-        const auto key = entry.upToFirstOccurrenceOf ("=", false, false).toUpperCase();
-        const auto value = entry.fromFirstOccurrenceOf ("=", false, false).trim();
-
-        if (key == "TITLE")                                 info.title = value;
-        else if (key == "ARTIST")                           info.artist = value;
-        else if (key == "ALBUM")                            info.album = value;
-        else if (key == "GENRE")                            info.genre = value;
-        else if (key == "DATE" || key == "YEAR")            info.year = value;
-        else if (key == "TRACKNUMBER")                      trackNumber = value;
-        else if (key == "TRACKTOTAL" || key == "TOTALTRACKS") trackTotal = value;
-        else if (key == "COMMENT" || (key == "DESCRIPTION" && info.comment.isEmpty())) info.comment = value;
-    }
-
-    if (trackNumber.isNotEmpty())
-        info.track = trackNumber.containsChar ('/') || trackTotal.isEmpty() ? trackNumber : trackNumber + "/" + trackTotal;
+    if (at > 0)
+        parseVorbisComment (data.data() + at, data.size() - at, info);
 }
 
 //==============================================================================
@@ -1107,7 +1308,11 @@ FileInfo read (const juce::File& file, const juce::StringPairArray& metadata)
     {
         readMp4 (file, info);
     }
-    else if (file.hasFileExtension ("flac;ogg;oga;opus;spx"))
+    else if (file.hasFileExtension ("flac"))
+    {
+        readFlac (file, info);
+    }
+    else if (file.hasFileExtension ("ogg;oga;opus;spx"))
     {
         readVorbisComments (file, info);
     }

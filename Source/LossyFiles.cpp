@@ -134,13 +134,14 @@ namespace
         const auto total = snapshot.getNumFrames();
         juce::int64 pos = 0;
 
-        // The file keeps room for the tags (about 180 bytes per second reserved), which go in afterwards.
-        auto tagBytes = 0;
+        // The file keeps room for the tags and cover, which go in afterwards: the encoder reserves about 197
+        // bytes per second asked for, so this asks for about 1.2 times the room they take, 10 s more.
+        auto tagBytes = info.hasCover() ? (double) info.cover->getSize() + 64.0 : 0.0;
 
         for (const auto* t : { &info.title, &info.artist, &info.album, &info.genre, &info.year, &info.track, &info.comment })
-            tagBytes += (int) t->getNumBytesAsUTF8() + 32;
+            tagBytes += (double) t->getNumBytesAsUTF8() + 32.0;
 
-        const auto tagRoom = info.hasTags() ? 10.0 + tagBytes / 100.0 : 0.0;
+        const auto tagRoom = info.hasTags() ? 10.0 + tagBytes / 160.0 : 0.0;
         const auto error = AacWriter::write (file.getFullPathName().toRawUTF8(), sampleRate, outputRate (sampleRate), (unsigned) channels,
                                              settings.kbps, (double) total / sampleRate + tagRoom, [&] (float* const* dest, int maxFrames)
         {

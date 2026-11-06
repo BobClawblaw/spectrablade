@@ -4348,6 +4348,104 @@ void MainComponent::exportWithFfmpeg()
     }), true);
 }
 
+namespace
+{
+    /** The File Info dialog's cover: a thumbnail, its size and type, and buttons to choose an image or
+        remove it. */
+    class CoverPicker final : public juce::Component
+    {
+    public:
+        explicit CoverPicker (std::shared_ptr<const juce::MemoryBlock> initial) : cover (std::move (initial))
+        {
+            choose.onClick = [this] { chooseImage(); };
+            remove.onClick = [this] { set (nullptr); };
+            addAndMakeVisible (choose);
+            addAndMakeVisible (remove);
+            addAndMakeVisible (details);
+            Theme::follow (details, juce::Label::textColourId, Theme::dimText);
+            setSize (360, 120);
+            set (cover);
+        }
+
+        std::shared_ptr<const juce::MemoryBlock> getCover() const  { return cover; }
+
+        void paint (juce::Graphics& g) override
+        {
+            const auto area = thumbArea().toFloat();
+            g.setColour (Theme::lineStrong);
+            g.drawRect (area);
+
+            if (thumbnail.isValid())
+            {
+                g.drawImage (thumbnail, area.reduced (2.0f), juce::RectanglePlacement::centred);
+                return;
+            }
+
+            g.setColour (Theme::dimText);
+            g.setFont (12.0f);
+            g.drawText ("No cover", area, juce::Justification::centred);
+        }
+
+        void resized() override
+        {
+            auto r = getLocalBounds();
+            r.removeFromLeft (thumbArea().getRight() + 12);
+            details.setBounds (r.removeFromTop (44));
+            r.removeFromTop (6);
+            choose.setBounds (r.removeFromTop (26).removeFromLeft (130));
+            r.removeFromTop (6);
+            remove.setBounds (r.removeFromTop (26).removeFromLeft (130));
+        }
+
+    private:
+        std::shared_ptr<const juce::MemoryBlock> cover;
+        juce::Image thumbnail;
+        juce::Label details;
+        juce::TextButton choose { "Choose Image..." }, remove { "Remove" };
+        std::unique_ptr<juce::FileChooser> chooser;
+
+        juce::Rectangle<int> thumbArea() const  { return { 0, 0, 120, 120 }; }
+
+        void set (std::shared_ptr<const juce::MemoryBlock> next)
+        {
+            cover = std::move (next);
+            thumbnail = cover != nullptr ? juce::ImageFileFormat::loadFrom (cover->getData(), cover->getSize()) : juce::Image();
+            FileInfo probe;
+            probe.cover = cover;
+            details.setText (thumbnail.isValid() ? "Front cover: " + juce::String (thumbnail.getWidth()) + " x " + juce::String (thumbnail.getHeight())
+                                                       + (probe.coverMime() == "image/png" ? " PNG, " : " JPEG, ")
+                                                       + juce::File::descriptionOfSizeInBytes ((juce::int64) cover->getSize())
+                                                 : juce::String ("Front cover: none. A JPEG or PNG image, up to 8 MB."),
+                             juce::dontSendNotification);
+            remove.setEnabled (cover != nullptr);
+            repaint();
+        }
+
+        void chooseImage()
+        {
+            chooser = std::make_unique<juce::FileChooser> ("Choose a cover image", juce::File(), "*.jpg;*.jpeg;*.png");
+            chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                                  [safe = juce::Component::SafePointer<CoverPicker> (this)] (const juce::FileChooser& fc)
+            {
+                if (safe == nullptr || fc.getResult() == juce::File())
+                    return;
+
+                juce::MemoryBlock data;
+                const auto file = fc.getResult();
+
+                if (! file.loadFileAsData (data) || ! FileInfoIO::isCoverImage (data.getData(), data.getSize())
+                    || ! juce::ImageFileFormat::loadFrom (data.getData(), data.getSize()).isValid())
+                {
+                    showError ("Not a cover image", file.getFileName() + " isn't a JPEG or PNG image of up to 8 MB.");
+                    return;
+                }
+
+                safe->set (std::make_shared<const juce::MemoryBlock> (std::move (data)));
+            });
+        }
+    };
+}
+
 void MainComponent::showFileInfo()
 {
     const auto& doc = engine.document;
@@ -4363,10 +4461,12 @@ void MainComponent::showFileInfo()
         { "date", "Broadcast: origination date (yyyy-mm-dd)", &FileInfo::originationDate, 10 },
         { "time", "Broadcast: origination time (hh:mm:ss)", &FileInfo::originationTime, 8 } };
 
-    auto* box = new juce::AlertWindow ("File Info", "WAV files keep all of these (the broadcast details in their bext chunk); MP3 and AAC exports, and "
-                                                    "those through ffmpeg, keep the first seven. Time reference: "
-                                                    + juce::String (current.timeReference) + " frames since midnight.",
+    auto* box = new juce::AlertWindow ("File Info", "WAV, AIFF and FLAC files, and MP3 and AAC exports, keep the cover and the first seven; "
+                                                    "WAV files keep the broadcast details too (in their bext chunk); exports through ffmpeg keep "
+                                                    "the first seven. Time reference: " + juce::String (current.timeReference) + " frames since midnight.",
                                        juce::MessageBoxIconType::NoIcon);
+    auto picker = std::make_shared<CoverPicker> (current.cover);
+    box->addCustomComponent (picker.get());
 
     for (const auto& f : fields)
     {
@@ -4379,7 +4479,7 @@ void MainComponent::showFileInfo()
     box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, current] (int result)
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, current, picker] (int result)
     {
         if (result != 1)
             return;
@@ -4388,6 +4488,8 @@ void MainComponent::showFileInfo()
 
         for (const auto& f : fields)
             next.*f.field = box->getTextEditorContents (f.key).trim();
+
+        next.cover = picker->getCover();
 
         if (next != current)
             engine.document.setInfo (next, "File Info");

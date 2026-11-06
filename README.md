@@ -42,7 +42,7 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 | WMA, E-AC-3, Monkey's Audio, TTA, MKA, MP2, AMR, DTS | Through ffmpeg | No |
 | The sound of a video (MP4, MOV, MKV, WebM, AVI) | Through ffmpeg: its first audio stream | No |
 
-File > File Info shows and changes the title, artist, album, genre, year, track and comment, and the broadcast-wave (BWF) details. WAV keeps all of them; AIFF (an ID3 chunk), FLAC (Vorbis comments), MP3 (ID3v2), AAC (.m4a) and the ffmpeg exports keep the tags; they are read from WAV, AIFF, MP3, MPEG-4, FLAC and Ogg files.
+File > File Info shows and changes the title, artist, album, genre, year, track and comment, a front cover (a JPEG or PNG image of up to 8 MB: Choose Image... or Remove), and the broadcast-wave (BWF) details. WAV keeps all of them; AIFF (an ID3 chunk), FLAC (Vorbis comments and a picture block), MP3 (ID3v2) and AAC (.m4a) keep the tags and the cover, and the ffmpeg exports the tags. They are read from WAV, AIFF, MP3, MPEG-4, FLAC and Ogg files (Ogg files' covers aside).
 
 MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz is written at 44.1 or 48 kHz. Both keep the audio's exact length and start, through the encoder-delay information players read.
 

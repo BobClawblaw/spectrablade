@@ -68,6 +68,41 @@ namespace
         return tags;
     }
 
+    /** A test image encoded as JPEG or PNG: a gradient with a circle, width by height. */
+    std::shared_ptr<const juce::MemoryBlock> coverImage (bool png, int width, int height)
+    {
+        juce::Image image (png ? juce::Image::ARGB : juce::Image::RGB, width, height, true);
+        juce::Graphics g (image);
+        g.setGradientFill (juce::ColourGradient (juce::Colours::darkblue, 0.0f, 0.0f, juce::Colours::orange, (float) width, (float) height, false));
+        g.fillAll();
+        g.setColour (juce::Colours::white.withAlpha (0.8f));
+        g.fillEllipse (image.getBounds().toFloat().reduced ((float) width / 4.0f));
+        juce::MemoryOutputStream out;
+        juce::JPEGImageFormat jpeg;
+        juce::PNGImageFormat pngFormat;
+        jpeg.setQuality (0.85f);
+
+        if (png)
+            pngFormat.writeImageToStream (image, out);
+        else
+            jpeg.writeImageToStream (image, out);
+
+        return std::make_shared<const juce::MemoryBlock> (out.getData(), out.getDataSize());
+    }
+
+    /** The picture ffmpeg finds in a file (its attached picture, copied out as it is), or empty. */
+    juce::MemoryBlock ffmpegCover (const juce::File& ffmpeg, const juce::File& file, bool png)
+    {
+        juce::TemporaryFile out (png ? ".png" : ".jpg");
+        juce::ChildProcess p;
+        p.start (juce::StringArray { ffmpeg.getFullPathName(), "-nostdin", "-v", "error", "-y", "-i", file.getFullPathName(), "-an",
+                                     "-map", "0:v:0", "-c", "copy", "-f", "image2", out.getFile().getFullPathName() });
+        p.readAllProcessOutput();
+        juce::MemoryBlock data;
+        out.getFile().loadFileAsData (data);
+        return data;
+    }
+
     bool ffmpegAgrees (const juce::StringPairArray& tags, const FileInfo& info)
     {
         return tags["title"] == info.title && tags["artist"] == info.artist && tags["album"] == info.album && tags["genre"] == info.genre
@@ -364,6 +399,151 @@ void runFileInfoTests()
         p.readAllProcessOutput();
         const auto loaded = AudioFileIO::load (flac, formats);
         check (loaded.error.isEmpty() && sameTags (loaded.info, info), "file info: a FLAC file's Vorbis comments are read");
+    }
+
+    // Cover art: a JPEG or PNG front cover in every format that keeps tags.
+    {
+        const auto jpeg = coverImage (false, 600, 600), png = coverImage (true, 320, 200);
+        int checkedByFfmpeg = 0;
+        juce::StringArray notByFfmpeg;
+        auto allKept = true;
+        juce::String lengths;
+
+        for (const auto* name : { "cover.wav", "cover.aiff", "cover.flac", "cover.mp3", "cover.m4a" })
+        {
+            const auto file = folder.getChildFile (name);
+            const auto usePng = file.hasFileExtension ("flac;m4a");
+            auto withCover = file.hasFileExtension ("wav") ? info : sampleInfo();
+            withCover.cover = usePng ? png : jpeg;
+            const auto error = file.hasFileExtension ("mp3") ? LossyFiles::write (*snapshot, rate, file, {}, {}, withCover)
+                             : file.hasFileExtension ("m4a") ? LossyFiles::write (*snapshot, rate, file, { LossyFiles::Kind::aac, 192 }, {}, withCover)
+                                                             : AudioFileIO::save (*snapshot, rate, file, 24, formats, {}, withCover);
+            const auto loaded = AudioFileIO::load (file, formats);
+            const auto kept = error.isEmpty() && loaded.info == withCover && loaded.snapshot != nullptr && loaded.snapshot->getNumFrames() == 48000;
+            allKept = allKept && kept;
+            lengths << (lengths.isEmpty() ? "" : ", ") << file.getFileExtension().substring (1) << " "
+                    << (loaded.snapshot != nullptr ? loaded.snapshot->getNumFrames() : -1);
+
+            if (! kept)
+                juce::Logger::writeToLog ("cover not kept in " + file.getFileName() + ": " + error + " " + loaded.error);
+
+            if (ffmpeg != juce::File())
+            {
+                if (ffmpegCover (ffmpeg, file, usePng) == *withCover.cover)
+                    ++checkedByFfmpeg;
+                else
+                    notByFfmpeg.add (file.getFileExtension().substring (1));
+            }
+        }
+
+        check (allKept, "file info: a front cover (600 x 600 JPEG, " + juce::File::descriptionOfSizeInBytes ((juce::int64) jpeg->getSize())
+                            + "; 320 x 200 PNG, " + juce::File::descriptionOfSizeInBytes ((juce::int64) png->getSize())
+                            + ") is kept byte for byte in WAV, AIFF, FLAC, MP3 and .m4a files, beside the tags, each still read at its length (" + lengths + ")");
+
+        if (ffmpeg != juce::File())
+            check (notByFfmpeg.isEmpty(), "file info: ffmpeg finds the same picture, byte for byte, in " + juce::String (checkedByFfmpeg) + " of 5 formats"
+                                              + (notByFfmpeg.isEmpty() ? juce::String() : " (not in " + notByFfmpeg.joinIntoString (", ") + ")"));
+
+        // Covers ffmpeg attaches to files are read.
+        if (ffmpeg != juce::File())
+        {
+            const auto image = folder.getChildFile ("cover-in.jpg");
+            image.replaceWithData (jpeg->getData(), jpeg->getSize());
+            juce::StringArray found;
+
+            for (const auto* name : { "ff-cover.mp3", "ff-cover.m4a", "ff-cover.flac" })
+            {
+                const auto out = folder.getChildFile (name);
+                const juce::String codec = out.hasFileExtension ("mp3") ? "libmp3lame" : out.hasFileExtension ("m4a") ? "aac" : "flac";
+                juce::ChildProcess p;
+                p.start (juce::StringArray { ffmpeg.getFullPathName(), "-nostdin", "-v", "error", "-y", "-i", folder.getChildFile ("plain.wav").getFullPathName(),
+                                             "-i", image.getFullPathName(), "-map", "0:a", "-map", "1", "-c:a", codec, "-c:v", "copy",
+                                             "-disposition:v", "attached_pic", out.getFullPathName() });
+                p.readAllProcessOutput();
+                const auto loaded = AudioFileIO::load (out, formats);
+
+                if (loaded.info.hasCover() && *loaded.info.cover == *jpeg)
+                    found.add (out.getFileExtension().substring (1));
+            }
+
+            check (found.size() == 3, "file info: the covers ffmpeg attaches to MP3, .m4a and FLAC files are read, byte for byte (found in: "
+                                          + found.joinIntoString (", ") + ")");
+        }
+
+        // A large cover (random pixels, so it doesn't compress) in an .m4a: room is kept for it before the audio.
+        {
+            juce::Image noisy (juce::Image::RGB, 1600, 1600, false);
+            juce::Random r (9);
+
+            for (int y = 0; y < noisy.getHeight(); ++y)
+                for (int x = 0; x < noisy.getWidth(); ++x)
+                    noisy.setPixelAt (x, y, juce::Colour ((juce::uint32) r.nextInt() | 0xff000000u));
+
+            juce::MemoryOutputStream out;
+            juce::JPEGImageFormat format;
+            format.setQuality (0.95f);
+            format.writeImageToStream (noisy, out);
+            auto big = sampleInfo();
+            big.cover = std::make_shared<const juce::MemoryBlock> (out.getData(), out.getDataSize());
+            const auto file = folder.getChildFile ("big-cover.m4a"), plainM4a = folder.getChildFile ("plain-cover.m4a");
+            const auto error = LossyFiles::write (*snapshot, rate, file, { LossyFiles::Kind::aac, 192 }, {}, big);
+            LossyFiles::write (*snapshot, rate, plainM4a, { LossyFiles::Kind::aac, 192 }, {}, sampleInfo());
+            const auto loaded = AudioFileIO::load (file, formats);
+            const auto spare = file.getSize() - plainM4a.getSize() - (juce::int64) big.cover->getSize();
+            check (error.isEmpty() && loaded.info == big && loaded.snapshot != nullptr && loaded.snapshot->getNumFrames() == 48000,
+                   "file info: a " + juce::File::descriptionOfSizeInBytes ((juce::int64) big.cover->getSize()) + " cover fits in an .m4a, kept byte for byte at its length ("
+                       + juce::String (spare) + " bytes more than the cover left free beside it)");
+        }
+
+        // A cover alone; replacing and removing it; what isn't an image.
+        FileInfo coverOnly;
+        coverOnly.cover = jpeg;
+        const auto bare = folder.getChildFile ("cover-only.wav");
+        AudioFileIO::save (*snapshot, rate, bare, 16, formats, {}, coverOnly);
+        const auto bareLoaded = AudioFileIO::load (bare, formats);
+
+        const auto flac = folder.getChildFile ("cover.flac");
+        auto swapped = sampleInfo();
+        swapped.cover = jpeg;
+        FileInfoIO::addFlacComments (flac, swapped);
+        FileInfo afterSwap;
+        FileInfoIO::readFlac (flac, afterSwap);
+        const auto pictures = [&flac]
+        {
+            juce::MemoryBlock data;
+            flac.loadFileAsData (data);
+            int count = 0;
+            const auto* b = (const juce::uint8*) data.getData();
+
+            for (size_t at = 4; at + 4 <= data.getSize();)
+            {
+                count += (b[at] & 0x7f) == 6 ? 1 : 0;
+
+                if ((b[at] & 0x80) != 0)
+                    break;
+
+                at += 4 + (size_t) ((b[at + 1] << 16) | (b[at + 2] << 8) | b[at + 3]);
+            }
+
+            return count;
+        };
+        const auto oneAfterSwap = pictures();
+        FileInfoIO::addFlacComments (flac, sampleInfo());
+        FileInfo afterRemove;
+        FileInfoIO::readFlac (flac, afterRemove);
+
+        const char gif[] = "GIF89a\x01\x00\x01\x00";
+        juce::MemoryBlock huge (FileInfo::maxCoverBytes + 1);
+        static_cast<juce::uint8*> (huge.getData())[0] = 0xff;
+        static_cast<juce::uint8*> (huge.getData())[1] = 0xd8;
+        static_cast<juce::uint8*> (huge.getData())[2] = 0xff;
+
+        check (bareLoaded.info == coverOnly && ! contains (bare, "INFO") && contains (bare, "id3 ")
+                   && afterSwap.hasCover() && *afterSwap.cover == *jpeg && oneAfterSwap == 1 && ! afterRemove.hasCover() && pictures() == 0
+                   && ! FileInfoIO::isCoverImage (gif, sizeof (gif) - 1) && ! FileInfoIO::isCoverImage (huge.getData(), huge.getSize())
+                   && FileInfoIO::isCoverImage (jpeg->getData(), jpeg->getSize()),
+               "file info: a cover alone goes in a WAV's id3 chunk with no INFO chunk; a FLAC file's cover is replaced (one PICTURE block) "
+               "and removed; a GIF or an image over 8 MB is not a cover");
     }
 
     // The document: the info as an undo step, carried through other edits.
