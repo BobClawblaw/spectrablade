@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.10.2: interface outputs and sidechain inputs**
+- `SpectraBlade-0.10.2.dmg` on the repository's Releases page, with its SHA-256: Milestones 228 and 229 below on top of 0.10.1. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (1050 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.10.2, carries a licence identical to `LICENSE` and LAME's licence, and launched from the mounted image (the main window in 3.1 seconds on that first launch and 1.2 seconds on the next, reopening the last file) and quit with no crash report. The app's Intel half was not launched, and no Intel Mac was tried.
+
 **Milestone 229: Sidechain inputs**
 - An effect on a track or bus that has a sidechain input (a second input bus, as many compressors, gates and duckers have) gets a Sidechain submenu in the track's Effects menu: None, or any other track, whose output after its volume (as ducking hears it) goes into that input. The slot shows its key ("sidechain from Kick"). A mono sidechain input gets the key's two sides averaged; a key that doesn't play (muted, or left out by a solo) feeds silence.
 - The built-in Compressor has a sidechain input and a Sidechain switch: on, it follows the level at that input in place of its own. In the rack and in Effects > Compressor nothing feeds it, so there it should stay off. Plug-ins applied to a file through the rack now get the file on their main input only, with any sidechain input silent, as the live rack had it.
@@ -19,8 +27,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - Measured by the tests: a track out of outputs 3/4 is there bit for bit as it would be in the mix, and the mix lacks it (worst difference 8.9e-8); a bus out of 29/30 carries what it would have added to the mix (1.5e-8); with 300, 500 and 64 frames of plug-in latency along the way, the mix and both pairs line up bit for bit; the player puts a track out of 5/6 on those channels as it would be in the mix (worst 0) and nothing on the others. On the development Mac's 30-output interface, choosing outputs 7/8 turned them on and connected them, pair 31/32 was left out, and setting the track back to the mix disconnected them. The whole suite passed (1039 checks).
 - The player now hands the graph the mix and 32 interface channels: a 512-frame block of a playing session took 17.3 microseconds on the development Mac, against 10.0 with the mix alone (a block lasts 10.7 milliseconds at 48 kHz).
 - Not tried by hand: the Output list in the app, and listening on outputs other than 1/2.
-
-## Released
 
 **Release 0.10.1: tags in AIFF and FLAC files, and cover art**
 - `SpectraBlade-0.10.1.dmg` on the repository's Releases page, with its SHA-256: Milestones 226 and 227 below on top of 0.10.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
