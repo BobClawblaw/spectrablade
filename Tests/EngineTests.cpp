@@ -42,6 +42,7 @@
 #include "LevellerTests.h"
 #include "CentreChannelTests.h"
 #include "PhaseCorrectionTests.h"
+#include "PitchCorrectionTests.h"
 #include "ScrubberTests.h"
 #include "ClickTests.h"
 #include "SessionTests.h"
@@ -551,6 +552,7 @@ int main (int argc, char* argv[])
         runScrubberTests();
         runCentreChannelTests();
         runPhaseCorrectionTests();
+        runPitchCorrectionTests();
         runClickTests();
         runSessionTests (engine.formatManager);
         runTrackEffectsTests();

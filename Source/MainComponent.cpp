@@ -3,6 +3,7 @@
 #include "Restoration.h"
 #include "CentreChannel.h"
 #include "PhaseCorrection.h"
+#include "PitchCorrection.h"
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Generator.h"
@@ -141,7 +142,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones
+        cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -154,7 +155,7 @@ namespace
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
-            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones;
+            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones || id == cmdPitchCorrection;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1187,7 +1188,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdGenerateTones; ++id)
+    for (int id = cmdOpen; id <= cmdPitchCorrection; ++id)
         ids.add (id);
 }
 
@@ -1548,6 +1549,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdCentreChannel: info.setInfo ("Centre Channel...", "Remove what is panned to the middle of a stereo file, or keep it alone, in the selection or file", "Effects", 0);
                             info.setActive (hasAudio && engine.document.getNumChannels() == 2 && backgroundJob == nullptr); break;
+        case cmdPitchCorrection: info.setInfo ("Pitch Correction...", "Move the pitch of a voice or solo line to the nearest notes of a scale, in the selection or file", "Effects", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdPhaseCorrection: info.setInfo ("Automatic Phase Correction...", "Find a time offset between the channels of a stereo file and take it out, in the selection or file", "Effects", 0);
                             info.setActive (hasAudio && engine.document.getNumChannels() == 2 && backgroundJob == nullptr); break;
         case cmdDereverb:   info.setInfo ("Reduce Reverb...", "Lower the room's reverberation in the selection or file, keeping the direct sound", "Effects", 0);
@@ -2327,6 +2330,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDereverb:   askToReduceReverb(); break;
         case cmdCentreChannel: askForCentreChannel(); break;
         case cmdPhaseCorrection: askForPhaseCorrection(); break;
+        case cmdPitchCorrection: askForPitchCorrection(); break;
         case cmdLevelSpeech: askToLevelSpeech(); break;
         case cmdClickRepair: askForClickRepair(); break;
         case cmdRemoveHum:  showRemoveHum(); break;
@@ -2426,7 +2430,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
+            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdPitchCorrection, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
@@ -4999,6 +5003,53 @@ void MainComponent::askToLevelSpeech()
         settings->setValue ("levelSilence", s.silenceLufs);
         runStepInBackground ({ "levelSpeech", { { "target", s.targetLufs }, { "boost", s.maxBoostDb }, { "cut", s.maxCutDb }, { "silence", s.silenceLufs } }, nullptr },
                              "Levelling speech...");
+    }), true);
+}
+
+void MainComponent::askForPitchCorrection()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto* box = new juce::AlertWindow ("Pitch Correction",
+                                       "For one voice or instrument at a time: finds its pitch every 5 ms (60 to 1000 Hz) and moves it to the "
+                                       "nearest note of the scale (A = 440 Hz), keeping its length. The speed is how long a correction takes "
+                                       "to settle: 0 moves it at once, slower keeps more of the slides and vibrato. Breaths, consonants and "
+                                       "noise are left as they are.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addComboBox ("key", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, "Key");
+    box->getComboBoxComponent ("key")->setSelectedItemIndex (juce::jlimit (0, 11, settings->getIntValue ("tuneKey", 0)));
+    box->addComboBox ("scale", { "Chromatic (every note)", "Major", "Minor" }, "Scale");
+    box->getComboBoxComponent ("scale")->setSelectedItemIndex (juce::jlimit (0, 2, settings->getIntValue ("tuneScale", 0)));
+    box->addTextEditor ("speed", juce::String (settings->getDoubleValue ("tuneSpeed", 20.0), 0), "Speed (ms, 0 to 500)");
+    box->addTextEditor ("strength", juce::String (settings->getDoubleValue ("tuneStrength", 100.0), 0), "Strength (%, 0 to 100)");
+
+    for (auto* name : { "speed", "strength" })
+        box->getTextEditor (name)->setInputRestrictions (6, ".0123456789");
+
+    box->addButton ("Correct", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const PitchCorrection::Settings s { box->getComboBoxComponent ("key")->getSelectedItemIndex(),
+                                            (PitchCorrection::Scale) box->getComboBoxComponent ("scale")->getSelectedItemIndex(),
+                                            box->getTextEditorContents ("speed").getFloatValue(), box->getTextEditorContents ("strength").getFloatValue() };
+
+        if (! PitchCorrection::isValid (s))
+        {
+            showError ("Pitch Correction", "The speed must be from 0 to 500 ms and the strength from 0 to 100%.");
+            return;
+        }
+
+        settings->setValue ("tuneKey", s.key);
+        settings->setValue ("tuneScale", (int) s.scale);
+        settings->setValue ("tuneSpeed", s.speedMs);
+        settings->setValue ("tuneStrength", s.strengthPercent);
+
+        if (s.strengthPercent > 0.0f)
+            runStepInBackground ({ "pitchCorrect", { { "key", (double) s.key }, { "scale", (double) s.scale }, { "speed", s.speedMs },
+                                                     { "strength", s.strengthPercent } }, nullptr }, "Correcting the pitch...");
     }), true);
 }
 

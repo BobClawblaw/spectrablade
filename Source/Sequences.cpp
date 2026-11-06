@@ -3,6 +3,7 @@
 #include "AudioEdits.h"
 #include "CentreChannel.h"
 #include "PhaseCorrection.h"
+#include "PitchCorrection.h"
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Dynamics.h"
@@ -68,6 +69,7 @@ namespace
             { "levelSpeech", "Level Speech", { "target", "boost", "cut", "silence" } },
             { "stretch", "Stretch", { "percent" } },
             { "pitch", "Shift Pitch", { "semitones" } },
+            { "pitchCorrect", "Pitch Correction", { "key", "scale", "speed", "strength" } },
             { "convertRate", "Convert Sample Rate", { "rate" } },
             { "rack", "Apply Effects Rack", {} },
         };
@@ -112,6 +114,12 @@ namespace
     CentreChannel::Settings centreOf (const Values& v)
     {
         return { get (v, "keep") > 0.5, (float) get (v, "low"), (float) get (v, "high"), (float) get (v, "reduction") };
+    }
+
+    PitchCorrection::Settings tuningOf (const Values& v)
+    {
+        return { (int) std::lround (get (v, "key")), (PitchCorrection::Scale) juce::jlimit (0, 2, (int) std::lround (get (v, "scale"))),
+                 (float) get (v, "speed"), (float) get (v, "strength") };
     }
 
     Leveller::Settings levellerOf (const Values& v)
@@ -243,6 +251,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v)))
         || (step.kind == "levelSpeech" && ! Leveller::isValid (levellerOf (v)))
         || (step.kind == "centre" && ! CentreChannel::isValid (centreOf (v)))
+        || (step.kind == "pitchCorrect" && (get (v, "scale") < 0.0 || get (v, "scale") > 2.0 || ! PitchCorrection::isValid (tuningOf (v))))
         || (step.kind == "phase" && (get (v, "most") < PhaseCorrection::shortestMs || get (v, "most") > PhaseCorrection::longestMs))
         || (step.kind == "dereverb" && ! Dereverb::isValid ({ (float) get (v, "time"), (float) get (v, "reduction") })))
         return bad();
@@ -306,6 +315,19 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
         else if (end > start && get (v, "reduction") > 0.0)
         {
             out.snapshot = CentreChannel::process (s, start, end, rate, centreOf (v), progress);
+
+            if (out.snapshot == nullptr)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+        }
+    }
+    else if (k == "pitchCorrect")
+    {
+        if (end > start && get (v, "strength") > 0.0)
+        {
+            out.snapshot = PitchCorrection::correct (s, start, end, rate, tuningOf (v), progress);
 
             if (out.snapshot == nullptr)
             {

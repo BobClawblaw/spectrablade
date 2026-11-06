@@ -21,6 +21,7 @@
 #include "../Source/Leveller.h"
 #include "../Source/CentreChannel.h"
 #include "../Source/PhaseCorrection.h"
+#include "../Source/PitchCorrection.h"
 #include "TestUtils.h"
 #include "SequencesTests.h"
 
@@ -148,6 +149,8 @@ void runSequencesTests (AudioEngine& engine)
             { { "convertRate", { { "rate", 44100.0 } }, nullptr }, SampleRateConverter::convert (s, rate, 44100.0) },
             { { "stretch", { { "percent", 120.0 } }, nullptr }, TimeStretch::stretchRange (s, a, b, 1.2, rate) },
             { { "pitch", { { "semitones", -3.0 } }, nullptr }, TimeStretch::shiftRange (s, a, b, -3.0, rate) },
+            { { "pitchCorrect", { { "key", 2.0 }, { "scale", 1.0 }, { "speed", 40.0 }, { "strength", 80.0 } }, nullptr },
+              PitchCorrection::correct (s, a, b, rate, { 2, PitchCorrection::Scale::major, 40.0f, 80.0f }) },
             { { "dereverb", { { "time", 1.5 }, { "reduction", 9.0 } }, nullptr }, Dereverb::reduce (s, a, b, rate, { 1.5f, 9.0f }) },
             { { "levelSpeech", { { "target", -18.0 }, { "boost", 9.0 }, { "cut", 6.0 }, { "silence", -55.0 } }, nullptr },
               Leveller::level (s, a, b, rate, { -18.0f, 9.0f, 6.0f, -55.0f }) },
@@ -220,8 +223,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 33,
-               "sequences: each of the 33 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 34,
+               "sequences: each of the 34 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

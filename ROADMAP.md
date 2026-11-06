@@ -2,7 +2,7 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-1. **Pitch correction:** to a scale automatically, and by hand along a drawn pitch curve.
+1. **Pitch correction by hand:** the pitch shown as a curve over the waveform, moved by dragging notes (correcting to a scale automatically is done since milestone 252).
 2. **5.1 the whole way:** track effects on all six channels of a 5.1 track, a master rack past left and right, and freezing 5.1 tracks.
 3. **Scrubbing a session:** the mix heard as the mouse drags over the session's timeline (files are scrubbed since milestone 248).
 

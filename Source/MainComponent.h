@@ -186,6 +186,7 @@ private:
     void askToReduceReverb();
     void askForCentreChannel();
     void askForPhaseCorrection();
+    void askForPitchCorrection();
     void askToLevelSpeech();
     void askForVideoStart();
     void detachVideo();
