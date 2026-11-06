@@ -185,6 +185,9 @@ private:
     // Surround files
     void saveChannels();
     void newFileFromChannels();
+    void attachVideo();
+    void saveIntoVideo();
+    void showVideoPanel();
     void combineLoaded (const juce::Array<juce::File>&, const std::vector<AudioFileIO::Loaded>&);
     int sequencePosition = 0, sequenceResetCount = 0;      // where the document was after the last recorded step
     void showFileInfo();

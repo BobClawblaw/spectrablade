@@ -46,6 +46,7 @@
 #include "BatchTests.h"
 #include "SequencesTests.h"
 #include "SurroundTests.h"
+#include "VideoTests.h"
 #include "AutomationTests.h"
 #include "MultitrackViewTests.h"
 #include "MixDownTests.h"
@@ -546,6 +547,7 @@ int main (int argc, char* argv[])
         runBatchTests (engine);
         runSequencesTests (engine);
         runSurroundTests (engine);
+        runVideoTests();
         runAutomationTests (engine.formatManager);
         runMultitrackViewTests (engine);
         runMixDownTests (engine);

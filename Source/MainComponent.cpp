@@ -28,6 +28,7 @@
 #include "LevelsPanel.h"
 #include "Analysis.h"
 #include "Surround.h"
+#include "Video.h"
 
 namespace
 {
@@ -61,11 +62,11 @@ namespace
         const juce::String editor { "editor" }, rack { "rack" }, selection { "selection" }, mixer { "mixer" },
                            clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
                            history { "history" }, notes { "notes" }, files { "files" }, levels { "levels" },
-                                spectrum { "spectrum" }, phase { "phase" };
+                                spectrum { "spectrum" }, phase { "phase" }, video { "video" };
 
         juce::StringArray all()
         {
-            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase };
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video };
         }
     }
 
@@ -132,7 +133,8 @@ namespace
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
-        cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels
+        cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
+        cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -144,7 +146,7 @@ namespace
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
-            || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels;
+            || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels || id == cmdAttachVideo || id == cmdSaveIntoVideo;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1177,7 +1179,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdNewFromChannels; ++id)
+    for (int id = cmdOpen; id <= cmdSaveIntoVideo; ++id)
         ids.add (id);
 }
 
@@ -1469,6 +1471,12 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             break;
         case cmdSaveChannels: info.setInfo ("Save Channels as Mono Files...", "Write each channel to a mono WAV file of its own (5.1: L, R, C, LFE, Ls, Rs)", "File", 0);
                               info.setActive (hasAudio && doc.getNumChannels() > 1 && backgroundJob == nullptr); break;
+        case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's video, following the playhead", "Window", 0);
+                           info.setTicked (dock->isShown (Panels::video)); break;
+        case cmdAttachVideo: info.setInfo ("Attach Video...", "Choose the video this file's sound goes with, to watch in the Video panel and to put the sound back into", "File", 0);
+                             info.setActive (hasAudio); break;
+        case cmdSaveIntoVideo: info.setInfo ("Save Sound into Video...", "Write a copy of the file's video with this sound in place of its own, the picture copied as it is (needs ffmpeg)", "File", 0);
+                               info.setActive (hasAudio && doc.getVideo().existsAsFile() && backgroundJob == nullptr && Ffmpeg::find() != juce::File()); break;
         case cmdNewFromChannels: info.setInfo ("New File from Mono Files...", "Put several files' channels side by side as one file, such as six mono files as 5.1", "File", 0);
                                  info.setActive (backgroundJob == nullptr); break;
         case cmdPlaySequence: info.setInfo ("Play Sequence...", "Play a recorded sequence on the selection, or the whole file", "Sequences", 0);
@@ -2236,6 +2244,9 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdSaveChannels: saveChannels(); break;
         case cmdNewFromChannels: newFileFromChannels(); break;
+        case cmdShowVideo: dock->toggle (Panels::video); break;
+        case cmdAttachVideo: attachVideo(); break;
+        case cmdSaveIntoVideo: saveIntoVideo(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
         case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
@@ -2332,7 +2343,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2382,7 +2393,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowVideo, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
 
             juce::PopupMenu workspaceMenu;
 
@@ -3865,6 +3876,9 @@ void MainComponent::openDocuments (const juce::Array<juce::File>& chosen)
         openFiles.prepareForAnother (showingUnseen ? FilePlace {} : waveform.getPlace());
         engine.adoptFile (file, std::move (loaded));
         showingUnseen = true;
+
+        if (Video::isVideoFile (file))
+            showVideoPanel();
         noteRecent (file);
         ++opened;
     }
@@ -3905,6 +3919,9 @@ void MainComponent::openFile (const juce::File& file)
     engine.adoptFile (file, std::move (loaded));
     setMultitrack (false);
     noteRecent (file);
+
+    if (Video::isVideoFile (file))
+        showVideoPanel();
     refreshTitle();
 }
 
@@ -4994,6 +5011,93 @@ void MainComponent::playSequence (const Sequences::Sequence& sequence)
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
+}
+
+void MainComponent::showVideoPanel()
+{
+    if (! dock->isShown (Panels::video))
+        dock->toggle (Panels::video);
+}
+
+void MainComponent::attachVideo()
+{
+    if (! engine.document.hasAudio())
+        return;
+
+    const auto& doc = engine.document;
+    const auto start = doc.getVideo() != juce::File() ? doc.getVideo() : doc.getFile().getParentDirectory();
+    chooser = std::make_unique<juce::FileChooser> ("Attach Video", start, "*." + Video::extensions().joinIntoString (";*."));
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+    {
+        if (const auto video = fc.getResult(); video.existsAsFile() && Video::isVideoFile (video))
+        {
+            engine.document.setVideo (video);
+            showVideoPanel();
+            commands.commandStatusChanged();
+        }
+    });
+}
+
+void MainComponent::saveIntoVideo()
+{
+    const auto& doc = engine.document;
+    const auto video = doc.getVideo();
+    const auto ffmpeg = Ffmpeg::find();
+
+    if (! doc.hasAudio() || ! video.existsAsFile() || ffmpeg == juce::File() || backgroundJob != nullptr)
+        return;
+
+    const auto extension = video.getFileExtension();
+    const auto suggested = video.getSiblingFile (video.getFileNameWithoutExtension() + " (new sound)" + extension);
+    chooser = std::make_unique<juce::FileChooser> ("Save Sound into Video", suggested, "*" + extension);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this, video, ffmpeg, extension] (const juce::FileChooser& fc)
+    {
+        auto target = fc.getResult();
+        const auto& d = engine.document;
+
+        if (target == juce::File() || ! d.hasAudio() || backgroundJob != nullptr)
+            return;
+
+        target = target.withFileExtension (extension);   // the picture is copied into the same type of file
+
+        if (target == video)
+        {
+            showError ("Save Sound into Video", "The new video needs a name of its own: the original is read while it is written.");
+            return;
+        }
+
+        const auto snapshot = d.getSnapshot();
+        const auto rate = d.getSampleRate();
+        auto error = std::make_shared<juce::String>();
+
+        backgroundJob = std::make_unique<BackgroundJob> (*this, "Saving sound into video...",
+            [this, snapshot, rate, ffmpeg, video, target, error] (const std::function<bool (float)>& progress)
+            {
+                juce::TemporaryFile wav (".wav");
+                *error = AudioFileIO::save (*snapshot, rate, wav.getFile(), 32, engine.formatManager);
+
+                if (error->isEmpty() && progress (0.3f))
+                    *error = Ffmpeg::replaceAudio (ffmpeg, video, wav.getFile(), target, [&progress] { return progress (0.3f); });
+
+                return *error != "Stopped.";
+            },
+            [error, target, video]
+            {
+                const auto audio = Ffmpeg::audioForVideo (video);
+
+                if (error->isNotEmpty())
+                    showError ("Save Sound into Video", *error);
+                else
+                    showNote ("Save Sound into Video", "Written: " + target.getFileName() + ", with the picture of " + video.getFileName()
+                                                         + " as it was and this sound as " + audio.description
+                                                         + (audio.kbps > 0 ? " at " + juce::String (audio.kbps) + " kbps." : juce::String (".")));
+            });
+        backgroundJob->launchThread();
+        commands.commandStatusChanged();
+    });
 }
 
 void MainComponent::saveChannels()
@@ -8430,6 +8534,23 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
     }
     else if (id == Panels::notes)
         made = std::make_unique<SessionNotes> (engine.session);
+    else if (id == Panels::video)
+    {
+        auto panel = std::make_unique<Video::Panel>();
+        panel->readVideo = [this] { return engine.document.getVideo(); };
+        panel->readPlayhead = [this]() -> std::optional<std::pair<double, bool>>
+        {
+            const auto rate = engine.document.getSampleRate();
+
+            if (multitrackMode || rate <= 0.0)
+                return std::nullopt;
+
+            auto& player = engine.getPlayer();
+            const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::document;
+            return std::pair<double, bool> { (double) (playing ? player.getPositionFrames() : waveform.getCursor()) / rate, playing };
+        };
+        made = std::move (panel);
+    }
 
     return made.get();
 }
@@ -8454,6 +8575,7 @@ juce::String MainComponent::getTitle (const juce::String& id)
     if (id == Panels::levels)          return "Levels";
     if (id == Panels::spectrum)        return "Frequency Analysis";
     if (id == Panels::phase)           return "Phase Meter";
+    if (id == Panels::video)           return "Video";
     return id;
 }
 
@@ -8474,7 +8596,7 @@ void MainComponent::layoutChanged()
 
 double MainComponent::defaultShare (const juce::String& id)
 {
-    return id == Panels::levels ? 0.12 : id == Panels::files ? 0.2 : 0.3;
+    return id == Panels::levels ? 0.12 : id == Panels::files ? 0.2 : id == Panels::video ? 0.45 : 0.3;
 }
 
 std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::String& id)
@@ -8484,6 +8606,7 @@ std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::Str
     if (id == Panels::selection)   return { Panels::rack, Dock::Side::bottom };
     if (id == Panels::files)       return { Panels::editor, Dock::Side::left };
     if (id == Panels::levels)      return { {}, Dock::Side::bottom };
+    if (id == Panels::video)       return { Panels::rack, Dock::Side::top };
     if (id == Panels::spectrum)    return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::phase)       return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,
                                             dock->getLayout().isDocked (Panels::spectrum) ? Dock::Side::right : Dock::Side::bottom };

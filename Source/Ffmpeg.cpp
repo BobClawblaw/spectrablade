@@ -64,7 +64,7 @@ juce::File find()
 const juce::StringArray& importExtensions()
 {
     static const juce::StringArray extensions { "opus", "wma", "aac", "ac3", "eac3", "wv", "ape", "tta", "mka", "mp2", "amr", "dts",
-                                                "mp4", "m4b", "mov", "mkv", "webm", "avi" };
+                                                "mp4", "m4v", "m4b", "mov", "mkv", "webm", "avi" };
     return extensions;
 }
 
@@ -107,6 +107,44 @@ juce::String encode (const juce::File& ffmpeg, const juce::File& wav, const juce
 
     if (! temp.overwriteTargetFileWithTemporary())
         return "Could not replace " + target.getFullPathName();
+
+    return {};
+}
+
+VideoAudio audioForVideo (const juce::File& video)
+{
+    if (video.hasFileExtension ("mov;avi"))  return { "pcm_s24le", "24-bit PCM", 0 };
+    if (video.hasFileExtension ("mkv"))      return { "flac", "24-bit FLAC", 0 };
+    if (video.hasFileExtension ("webm"))     return { "libopus", "Opus", 256 };
+    return { "aac", "AAC", 320 };
+}
+
+juce::String replaceAudio (const juce::File& ffmpeg, const juce::File& video, const juce::File& wav, const juce::File& target,
+                           const std::function<bool()>& keepGoing)
+{
+    if (target == video)
+        return "The new video needs a name of its own: the original is read while it is written.";
+
+    const auto audio = audioForVideo (video);
+    juce::TemporaryFile temp (target);
+    juce::StringArray arguments { "-i", video.getFullPathName(), "-i", wav.getFullPathName(),
+                                  "-map", "0:v", "-map", "1:a:0", "-map_metadata", "0", "-map_chapters", "0",
+                                  "-c:v", "copy", "-c:a", audio.codec };
+
+    if (audio.kbps > 0)
+        arguments.addArray ({ "-b:a", juce::String (audio.kbps) + "k" });
+
+    if (audio.codec == "flac")
+        arguments.addArray ({ "-sample_fmt", "s32", "-bits_per_raw_sample", "24" });
+
+    const auto extension = video.getFileExtension().substring (1).toLowerCase();
+    arguments.addArray ({ "-f", extension == "mkv" ? "matroska" : extension == "m4v" ? "mp4" : extension, temp.getFile().getFullPathName() });
+
+    if (const auto error = run (ffmpeg, arguments, keepGoing); error.isNotEmpty())
+        return error;
+
+    if (! temp.overwriteTargetFileWithTemporary())
+        return "Could not write " + target.getFullPathName();
 
     return {};
 }

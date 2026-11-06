@@ -36,4 +36,21 @@ namespace Ffmpeg
         temporary file beside the target. Returns an error message, or empty on success. */
     juce::String encode (const juce::File& ffmpeg, const juce::File& wav, const juce::File& target, const Target&, int kbps,
                          const std::function<bool()>& keepGoing = {}, const FileInfo& info = {});
+
+    /** How the audio goes into a video of this type (by its extension): AAC at 320 kbps in MP4 and
+        M4V, 24-bit PCM in MOV and AVI, 24-bit FLAC in MKV and Opus at 256 kbps in WebM. */
+    struct VideoAudio
+    {
+        juce::String codec, description;
+        int kbps = 0;   // 0: lossless
+    };
+
+    VideoAudio audioForVideo (const juce::File& video);
+
+    /** Writes target, of the video's type: the video's picture streams copied as they are (not
+        re-encoded), with its tags and chapters, and the WAV's audio as its only sound, encoded by
+        audioForVideo. Other sound tracks and subtitles are left out. Through a temporary file beside
+        the target, which must not be the video. Returns an error message, or empty on success. */
+    juce::String replaceAudio (const juce::File& ffmpeg, const juce::File& video, const juce::File& wav, const juce::File& target,
+                               const std::function<bool()>& keepGoing = {});
 }

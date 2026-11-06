@@ -93,6 +93,11 @@ public:
     juce::File getFile() const                    { return file; }
     int getSourceBitDepth() const noexcept        { return sourceBitDepth; }
 
+    /** The video the sound goes with: the file itself when opened from a video, or one attached
+        (Video::isVideoFile). Kept through Save As; not an undo step. Message thread only. */
+    juce::File getVideo() const                   { return video; }
+    void setVideo (const juce::File&);
+
     //==============================================================================
     /** Applies a new state as one undoable step. The first form keeps the markers as they are
         (for edits that do not move audio in time). */
@@ -126,7 +131,7 @@ public:
     bool isDirty() const noexcept                 { return position != savedPosition; }
     void markSaved (const juce::File& savedAs, int bitDepth);
 
-    /** Trades everything with another document (its audio, undo history, markers, file and saved
+    /** Trades everything with another document (its audio, undo history, markers, file, video and saved
         point), as switching between open files does; counted as a new file by both. The audio
         leaving this one is held until the audio thread lets go of it. Message thread only. */
     void swapWith (AudioDocument& other);
@@ -158,7 +163,7 @@ private:
     std::vector<Snapshot> pendingRelease;
 
     std::atomic<double> sampleRate { 44100.0 };
-    juce::File file;
+    juce::File file, video;
     int sourceBitDepth = 24;
     int resetCount = 0;
 

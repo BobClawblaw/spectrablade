@@ -1,4 +1,5 @@
 #include "AudioDocument.h"
+#include "Video.h"
 
 namespace
 {
@@ -232,6 +233,7 @@ void AudioDocument::reset (Snapshot initial, double rate, const juce::File& f, i
     history.push_back ({ std::move (initial), std::move (markers), rate, {}, std::move (info) });
     position = savedPosition = 0;
     file = f;
+    video = Video::isVideoFile (f) ? f : juce::File();
     sourceBitDepth = bitDepth;
     ++resetCount;
     setCurrent (history.back());
@@ -332,6 +334,15 @@ void AudioDocument::markSaved (const juce::File& savedAs, int bitDepth)
     sendChangeMessage();
 }
 
+void AudioDocument::setVideo (const juce::File& f)
+{
+    if (f == video)
+        return;
+
+    video = f;
+    sendChangeMessage();
+}
+
 void AudioDocument::swapWith (AudioDocument& other)
 {
     if (&other == this)
@@ -344,6 +355,7 @@ void AudioDocument::swapWith (AudioDocument& other)
     std::swap (position, other.position);
     std::swap (savedPosition, other.savedPosition);
     std::swap (file, other.file);
+    std::swap (video, other.video);
     std::swap (sourceBitDepth, other.sourceBitDepth);
 
     for (auto* d : { this, &other })

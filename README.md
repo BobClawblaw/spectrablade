@@ -40,13 +40,15 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 | Ogg Vorbis | Yes | No |
 | Opus, WavPack, AC-3 | Through ffmpeg | File > Export with ffmpeg |
 | WMA, E-AC-3, Monkey's Audio, TTA, MKA, MP2, AMR, DTS | Through ffmpeg | No |
-| The sound of a video (MP4, MOV, MKV, WebM, AVI) | Through ffmpeg: its first audio stream | No |
+| The sound of a video (MP4, M4V, MOV, MKV, WebM, AVI) | Through ffmpeg: its first audio stream | No |
 
 File > File Info shows and changes the title, artist, album, genre, year, track and comment, a front cover (a JPEG or PNG image of up to 8 MB: Choose Image... or Remove), and the broadcast-wave (BWF) details. WAV keeps all of them; AIFF (an ID3 chunk), FLAC (Vorbis comments and a picture block), MP3 (ID3v2) and AAC (.m4a) keep the tags and the cover, and the ffmpeg exports the tags. They are read from WAV, AIFF, MP3, MPEG-4, FLAC and Ogg files (Ogg files' covers aside).
 
 MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz is written at 44.1 or 48 kHz. Both keep the audio's exact length and start, through the encoder-delay information players read.
 
 The formats marked "through ffmpeg" need [ffmpeg](https://ffmpeg.org) installed (with Homebrew, `brew install ffmpeg`); SpectraBlade looks for it in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` and the `PATH`. It is not part of SpectraBlade. A file opened through ffmpeg is decoded in full to 32-bit float; saving it again goes through Save As.
+
+Opening a video edits its sound and shows its picture in the Video panel (Window > Video), following the cursor and playing along; File > Attach Video... gives any file a video to go with. File > Save Sound into Video... writes a copy of the video with the edited sound, the picture copied as it is (needs ffmpeg). macOS shows MP4, M4V and MOV pictures (and some AVI), not MKV or WebM. Keep the length as it is: the sound's start is the picture's start.
 
 Files with more than two channels open and edit like any other, with each lane named (L R C LFE Ls Rs for 5.1). Transport > Play Surround Folded Down plays 5.1 folded down to stereo (centre and surrounds at -3 dB, LFE left out); Play Surround to Separate Outputs plays L and R on the output pair and the other channels on the outputs after it, one each (up to 8 channels). Make Stereo folds 5.1 down for good, File > Save Channels as Mono Files... splits a file into one WAV per channel, and File > New File from Mono Files... puts files back together as one (six named ... L, R, C, LFE, Ls, Rs go in 5.1 order). Sessions mix in stereo.
 

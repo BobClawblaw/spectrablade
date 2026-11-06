@@ -77,6 +77,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Batch.cpp
     Source/Sequences.cpp
     Source/Surround.cpp
+    Source/Video.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
@@ -163,6 +164,7 @@ target_link_libraries(SpectraBlade PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
+    juce::juce_video
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
@@ -197,6 +199,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/BatchTests.cpp
     Tests/SequencesTests.cpp
     Tests/SurroundTests.cpp
+    Tests/VideoTests.cpp
     Tests/AutomationTests.cpp
     Tests/MultitrackViewTests.cpp
     Tests/MixDownTests.cpp
@@ -227,6 +230,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Batch.cpp
     Source/Sequences.cpp
     Source/Surround.cpp
+    Source/Video.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
@@ -310,5 +314,6 @@ target_link_libraries(SpectraBladeTests PRIVATE
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
+    juce::juce_video
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
