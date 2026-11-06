@@ -1453,6 +1453,7 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
         auto t = *track;
         t.sends.clear();
         t.outputBusId = 0;   // applied after the frozen audio, as its volume is
+        t.ducking = {};
         t.mute = t.solo = false;
         t.invertPolarity = false;   // applied after the frozen audio, as after live effects
         t.gainDb = 0.0f;
@@ -1503,6 +1504,9 @@ bool removeTrack (SessionState& s, int track)
 
         if (t.outputBusId == removed)
             t.outputBusId = 0;
+
+        if (t.ducking.keyTrackId == removed)
+            t.ducking.keyTrackId = 0;
     }
 
     return true;
@@ -1529,6 +1533,36 @@ bool setTrackOutput (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
         return false;
 
     track->outputBusId = busId;
+    return true;
+}
+
+bool setDucking (SessionState& s, juce::uint32 trackId, const Ducking& ducking)
+{
+    auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || track->isBus || track->isFolder || ! ducking.isValid())
+        return false;
+
+    if (ducking.isOn())
+    {
+        const auto* key = s.findTrack (ducking.keyTrackId);
+
+        if (key == nullptr || key->isBus || key->isFolder || key->id == trackId)
+            return false;
+
+        // No loops: follow the key's own key, and its key's, back.
+        for (auto* k = key; k != nullptr && k->ducking.isOn(); k = s.findTrack (k->ducking.keyTrackId))
+            if (k->ducking.keyTrackId == trackId)
+                return false;
+    }
+
+    const auto& d = track->ducking;
+
+    if (d.keyTrackId == ducking.keyTrackId && juce::exactlyEqual (d.amountDb, ducking.amountDb) && juce::exactlyEqual (d.thresholdDb, ducking.thresholdDb)
+        && juce::exactlyEqual (d.attackMs, ducking.attackMs) && juce::exactlyEqual (d.releaseMs, ducking.releaseMs))
+        return false;
+
+    track->ducking = ducking;
     return true;
 }
 
@@ -1902,6 +1936,16 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.outputBusId != 0 && indexOf.count (t.outputBusId) > 0)
             track->setAttribute ("output", indexOf[t.outputBusId]);
 
+        if (t.ducking.isOn() && indexOf.count (t.ducking.keyTrackId) > 0)
+        {
+            auto* duck = track->createNewChildElement ("DUCKING");
+            duck->setAttribute ("key", indexOf[t.ducking.keyTrackId]);
+            duck->setAttribute ("amountDb", t.ducking.amountDb);
+            duck->setAttribute ("thresholdDb", t.ducking.thresholdDb);
+            duck->setAttribute ("attackMs", t.ducking.attackMs);
+            duck->setAttribute ("releaseMs", t.ducking.releaseMs);
+        }
+
         for (auto& send : t.sends)
         {
             auto* sendXml = track->createNewChildElement ("SEND");
@@ -2128,6 +2172,19 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.collapsed = track.isFolder && trackXml->getBoolAttribute ("collapsed");
         track.folderId = (juce::uint32) trackXml->getIntAttribute ("inFolder", -1);   // an index until every track is read
         track.outputBusId = (juce::uint32) trackXml->getIntAttribute ("output", -1);   // likewise
+
+        if (const auto* duck = trackXml->getChildByName ("DUCKING"))
+        {
+            track.ducking.keyTrackId = (juce::uint32) duck->getIntAttribute ("key", -1);   // likewise
+            track.ducking.amountDb = (float) duck->getDoubleAttribute ("amountDb", -12.0);
+            track.ducking.thresholdDb = (float) duck->getDoubleAttribute ("thresholdDb", -40.0);
+            track.ducking.attackMs = (float) duck->getDoubleAttribute ("attackMs", 10.0);
+            track.ducking.releaseMs = (float) duck->getDoubleAttribute ("releaseMs", 300.0);
+        }
+        else
+        {
+            track.ducking.keyTrackId = (juce::uint32) -1;
+        }
         track.name = trackXml->getStringAttribute ("name", track.name);
 
         for (auto* sendXml : trackXml->getChildWithTagNameIterator ("SEND"))
@@ -2280,6 +2337,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         state.tracks[i].sends.clear();
         state.tracks[i].folderId = 0;
         state.tracks[i].outputBusId = 0;
+        state.tracks[i].ducking = {};
 
         if (pending[i].folderId < pending.size())
             SessionEdits::setTrackFolder (state, state.tracks[i].id, pending[pending[i].folderId].id);
@@ -2294,6 +2352,17 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
                 send.busId = pending[send.busId].id;
                 SessionEdits::setSend (state, state.tracks[i].id, send);
             }
+        }
+    }
+
+    // Ducking once every track's has been cleared of indices, as the check for loops follows
+    // keys through the other tracks; a loop or settings out of range are dropped.
+    for (size_t i = 0; i < pending.size(); ++i)
+    {
+        if (auto ducking = pending[i].ducking; ducking.keyTrackId < pending.size())
+        {
+            ducking.keyTrackId = pending[ducking.keyTrackId].id;
+            SessionEdits::setDucking (state, state.tracks[i].id, ducking);
         }
     }
 

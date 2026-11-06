@@ -149,6 +149,25 @@ struct TrackInput
     bool operator!= (const TrackInput& o) const noexcept  { return ! operator== (o); }
 };
 
+/** A track's level dipping while another track (its key, a voice say) is heard: when the key's
+    output is above the threshold, the track comes down by the amount, over the attack time,
+    and goes back up over the release time once the key falls below it. */
+struct Ducking
+{
+    juce::uint32 keyTrackId = 0;           // 0: no ducking
+    float amountDb = -12.0f;               // -60 to -1
+    float thresholdDb = -40.0f;            // -80 to 0 dBFS
+    float attackMs = 10.0f;                // 1 to 500
+    float releaseMs = 300.0f;              // 10 to 5000
+
+    bool isOn() const noexcept             { return keyTrackId != 0; }
+    bool isValid() const noexcept
+    {
+        return amountDb >= -60.0f && amountDb <= -1.0f && thresholdDb >= -80.0f && thresholdDb <= 0.0f
+               && attackMs >= 1.0f && attackMs <= 500.0f && releaseMs >= 10.0f && releaseMs <= 5000.0f;
+    }
+};
+
 struct SessionTrack
 {
     juce::uint32 id = 0;
@@ -175,6 +194,10 @@ struct SessionTrack
     /** Where a track's output goes: 0 for the mix, or a bus it plays into in place of the mix,
         after its volume (tracks only). Its sends are as they were. */
     juce::uint32 outputBusId = 0;
+
+    /** Ducking under another track (tracks only). It acts with the volume: on the track's
+        output and post-fader sends, not its pre-fader sends. */
+    Ducking ducking;
 
     /** A frozen track plays this (its clips, pan and effects rendered, from session frame 0)
         instead of its clips and effects; its volume, sends, mute and solo still apply. Its clips
@@ -494,6 +517,11 @@ namespace SessionEdits
     /** Sends a track's output to a bus in place of the mix, or with busId 0 back to the mix.
         False for a bus or folder, a bus that isn't one, or when it is already so. */
     bool setTrackOutput (SessionState&, juce::uint32 trackId, juce::uint32 busId);
+
+    /** Sets a track's ducking (a key of 0 turns it off). False for a bus or folder, a key that
+        isn't another track, settings out of range, or a key that ducks under this track itself,
+        however many steps away. */
+    bool setDucking (SessionState&, juce::uint32 trackId, const Ducking&);
 
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);

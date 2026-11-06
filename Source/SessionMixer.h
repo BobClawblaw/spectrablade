@@ -22,6 +22,13 @@
     the most latency of the buses it sends to, and each of its outputs is held back by what that
     path lacks, so everything lines up without delaying the mix.
 
+    A track ducking under another comes down while that key track's output (after its volume) is
+    above the threshold, following the attack and release; it acts with the volume, so the
+    track's output and post-fader sends dip, not its pre-fader sends. Keys are mixed before the
+    tracks they duck. The key is lined up with the ducked track when the buses the key feeds
+    have at least as much latency as the ducked track's; otherwise it comes late by the
+    difference. A key that doesn't play (muted, or left out by a solo) ducks nothing.
+
     Muted tracks and buses play nothing. When anything is soloed, only soloed tracks and buses
     play, along with the buses a soloed track feeds (by a send or its output) and the tracks
     that feed a soloed bus. A track whose output bus doesn't play is not heard. */
@@ -84,13 +91,30 @@ namespace SessionMixer
             int frames = 0, write = 0;
         };
 
-        std::map<std::pair<juce::uint32, juce::uint32>, Delay> delays;   // (track, destination: 0 = the mix)
+        std::map<std::pair<juce::uint32, juce::uint32>, Delay> delays;   // (track, destination: 0 = the mix or its output bus;
+                                                                          //  a key's, the track it ducks)
         Levels* levels = nullptr;          // metered when set
+
+        // Ducking: each key track's output for the block, and each ducked track's detector.
+        struct Duck
+        {
+            float held = 0.0f;             // the key's level, held over 20 ms
+            float gainDb = 0.0f;           // the ducking now
+        };
+
+        std::map<juce::uint32, juce::AudioBuffer<float>> keys;
+        std::map<juce::uint32, Duck> ducks;
+        juce::AudioBuffer<float> keyHeld, duckGains;
+        std::vector<int> order;            // the tracks in the order they are mixed: keys first
+        std::vector<char> marks;
 
         void reserve (int frames)
         {
-            for (auto* b : { &clip, &track, &held, &discard, &automation, &clipGains })
+            for (auto* b : { &clip, &track, &held, &discard, &automation, &clipGains, &keyHeld, &duckGains })
                 b->setSize (2, frames);
+
+            order.reserve (64);
+            marks.reserve (64);
         }
     };
 

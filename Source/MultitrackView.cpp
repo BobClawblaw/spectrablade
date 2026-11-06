@@ -76,7 +76,7 @@ public:
             Theme::follow (*b, juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
         }
 
-        sendsButton.setTooltip ("Send this track to buses, or play it into one in place of the mix");
+        sendsButton.setTooltip ("Send this track to buses, play it into one in place of the mix, or duck it under another track");
         Theme::follow (sendsButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         sendsButton.onClick = [this] { view.showSends (trackId, sendsButton); };
 
@@ -188,7 +188,7 @@ public:
                                    : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
                                                            : juce::String (t.input.first + 1));
         sendsButton.setButtonText (t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
-        sendsButton.setToggleState (! t.sends.empty() || t.outputBusId != 0, juce::dontSendNotification);
+        sendsButton.setToggleState (! t.sends.empty() || t.outputBusId != 0 || t.ducking.isOn(), juce::dontSendNotification);
         effectsButton.setTooltip (isBus ? "This bus's effects" : "This track's effects");
         resized();
 
@@ -573,8 +573,9 @@ private:
 };
 
 //==============================================================================
-/** A track's sends: one row per bus (on/off, level, before or after the track's volume), and a
-    button that makes a new bus with a send to it. Follows the session, so undo shows here too. */
+/** A track's routing: its output (the mix or a bus), ducking under another track, one row per
+    bus for its sends (on/off, level, before or after the track's volume), and a button that
+    makes a new bus with a send to it. Follows the session, so undo shows here too. */
 class MultitrackView::SendsPanel final : public juce::Component,
                                          private juce::ChangeListener
 {
@@ -602,6 +603,29 @@ public:
         addAndMakeVisible (outputLabel);
         addAndMakeVisible (output);
         outputLabel.setText ("Output", juce::dontSendNotification);
+
+        duckKey.setTooltip ("Bring this track down while another track is heard (music under a voice, say)");
+        duckKey.onChange = [this] { applyDucking ("Duck Under", false); };
+        duckLabel.setText ("Duck under", juce::dontSendNotification);
+        addAndMakeVisible (duckLabel);
+        addAndMakeVisible (duckKey);
+
+        const auto setUp = [this] (juce::Slider& s, double lo, double hi, double step, double mid, const juce::String& suffix, const juce::String& tip)
+        {
+            s.setSliderStyle (juce::Slider::LinearBar);
+            s.setRange (lo, hi, step);
+            s.setSkewFactorFromMidPoint (mid);
+            s.setTextValueSuffix (suffix);
+            s.setTooltip (tip);
+            Theme::follow (s, juce::Slider::trackColourId, Theme::lineStrong);
+            s.onValueChange = [this] { applyDucking ("Ducking", true); };
+            addAndMakeVisible (s);
+        };
+
+        setUp (duckAmount, -60.0, -1.0, 0.5, -12.0, " dB down", "How far the track comes down");
+        setUp (duckThreshold, -80.0, 0.0, 0.5, -40.0, " dB key", "How loud the other track must be to bring it down");
+        setUp (duckAttack, 1.0, 500.0, 1.0, 20.0, " ms attack", "How quickly it comes down");
+        setUp (duckRelease, 10.0, 5000.0, 10.0, 400.0, " ms release", "How slowly it goes back up");
         addAndMakeVisible (newBus);
         addChildComponent (empty);
         empty.setText ("No buses yet.", juce::dontSendNotification);
@@ -619,8 +643,20 @@ public:
     {
         auto r = getLocalBounds().reduced (8);
         auto top = r.removeFromTop (rowHeight).reduced (0, 2);
-        outputLabel.setBounds (top.removeFromLeft (60));
+        outputLabel.setBounds (top.removeFromLeft (80));
         output.setBounds (top);
+        auto duck = r.removeFromTop (rowHeight).reduced (0, 2);
+        duckLabel.setBounds (duck.removeFromLeft (80));
+        duckKey.setBounds (duck);
+
+        for (auto pair : { std::pair { &duckAmount, &duckThreshold }, std::pair { &duckAttack, &duckRelease } })
+        {
+            auto line = r.removeFromTop (rowHeight).reduced (0, 2);
+            pair.first->setBounds (line.removeFromLeft (line.getWidth() / 2 - 2));
+            line.removeFromLeft (4);
+            pair.second->setBounds (line);
+        }
+
         r.removeFromTop (6);
 
         for (auto* row : rows)
@@ -649,9 +685,24 @@ private:
     };
 
     static constexpr int rowHeight = 28;
-    juce::Label outputLabel;
-    juce::ComboBox output;
+    juce::Label outputLabel, duckLabel;
+    juce::ComboBox output, duckKey;
+    juce::Slider duckAmount, duckThreshold, duckAttack, duckRelease;
     std::vector<juce::uint32> outputChoices;   // the buses in the output list, after Mix
+    std::vector<juce::uint32> keyChoices;      // the tracks in the duck-under list, after None
+
+    void applyDucking (const juce::String& description, bool merge)
+    {
+        const auto index = duckKey.getSelectedItemIndex();
+        const Ducking d { index <= 0 ? 0u : keyChoices[(size_t) index - 1], (float) duckAmount.getValue(), (float) duckThreshold.getValue(),
+                          (float) duckAttack.getValue(), (float) duckRelease.getValue() };
+        auto next = *engine.session.getState();
+
+        if (SessionEdits::setDucking (next, trackId, d))
+            engine.session.apply (std::move (next), description, merge);
+        else
+            refresh();   // refused (a loop): show what it is
+    }
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override  { refresh(); }
 
@@ -696,6 +747,30 @@ private:
         const auto out = std::find (outputChoices.begin(), outputChoices.end(), track != nullptr ? track->outputBusId : 0u);
         output.setSelectedItemIndex (out == outputChoices.end() ? 0 : (int) (out - outputChoices.begin()) + 1, juce::dontSendNotification);
 
+        duckKey.clear (juce::dontSendNotification);
+        duckKey.addItem ("None", 1);
+        keyChoices.clear();
+
+        for (auto& t : current->tracks)
+        {
+            if (! t.isBus && ! t.isFolder && t.id != trackId)
+            {
+                keyChoices.push_back (t.id);
+                duckKey.addItem (t.name, (int) keyChoices.size() + 1);
+            }
+        }
+
+        const auto ducking = track != nullptr ? track->ducking : Ducking();
+        const auto key = std::find (keyChoices.begin(), keyChoices.end(), ducking.keyTrackId);
+        duckKey.setSelectedItemIndex (key == keyChoices.end() ? 0 : (int) (key - keyChoices.begin()) + 1, juce::dontSendNotification);
+        duckAmount.setValue (ducking.amountDb, juce::dontSendNotification);
+        duckThreshold.setValue (ducking.thresholdDb, juce::dontSendNotification);
+        duckAttack.setValue (ducking.attackMs, juce::dontSendNotification);
+        duckRelease.setValue (ducking.releaseMs, juce::dontSendNotification);
+
+        for (auto* s : { &duckAmount, &duckThreshold, &duckAttack, &duckRelease })
+            s->setEnabled (ducking.isOn());
+
         auto same = track != nullptr && (int) buses.size() == rows.size();
 
         for (size_t i = 0; same && i < buses.size(); ++i)
@@ -729,7 +804,7 @@ private:
             }
 
             empty.setVisible (rows.isEmpty());
-            setSize (340, 16 + rowHeight + 6 + juce::jmax (1, rows.size()) * rowHeight + 30);
+            setSize (360, 16 + 4 * rowHeight + 6 + juce::jmax (1, rows.size()) * rowHeight + 30);
             resized();
         }
 

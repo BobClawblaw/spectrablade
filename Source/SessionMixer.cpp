@@ -288,6 +288,66 @@ namespace
     }
 }
 
+namespace
+{
+    /** Places track i in the mixing order after its key (marks: 1 placed, 2 a key, 4 being
+        placed). The edits allow no loops; one here is just cut. */
+    void place (const SessionState& state, Buffers& buffers, int i)
+    {
+        if ((buffers.marks[(size_t) i] & 5) != 0)
+            return;
+
+        buffers.marks[(size_t) i] |= 4;
+        const auto& t = state.tracks[(size_t) i];
+
+        if (! t.isBus && t.ducking.isOn())
+        {
+            for (size_t k = 0; k < state.tracks.size(); ++k)
+            {
+                if (state.tracks[k].id == t.ducking.keyTrackId && ! state.tracks[k].isBus)
+                {
+                    buffers.marks[k] |= 2;
+                    place (state, buffers, (int) k);
+                }
+            }
+        }
+
+        buffers.marks[(size_t) i] = (char) ((buffers.marks[(size_t) i] & ~4) | 1);
+        buffers.order.push_back (i);
+    }
+
+    /** The tracks' places in mixing order: the session's order, but each ducked track after its
+        key. Marks which tracks are keys (2) along the way. */
+    void mixingOrder (const SessionState& state, Buffers& buffers)
+    {
+        buffers.order.clear();
+        buffers.marks.assign (state.tracks.size(), 0);
+
+        for (size_t i = 0; i < state.tracks.size(); ++i)
+            place (state, buffers, (int) i);
+    }
+
+    /** The gains by which a ducked track comes down over frames [0, numFrames), from its key's
+        output (two channels), into gains. */
+    void duckGains (const Ducking& d, double sampleRate, Buffers::Duck& state, const juce::AudioBuffer<float>& key, float* gains, int numFrames)
+    {
+        const auto hold = (float) std::exp (-1.0 / (0.02 * sampleRate));
+        const auto attack = (float) (1.0 - std::exp (-1.0 / (d.attackMs * 0.001 * sampleRate)));
+        const auto release = (float) (1.0 - std::exp (-1.0 / (d.releaseMs * 0.001 * sampleRate)));
+        const auto threshold = juce::Decibels::decibelsToGain (d.thresholdDb);
+        const auto* left = key.getReadPointer (0);
+        const auto* right = key.getReadPointer (1);
+
+        for (int i = 0; i < numFrames; ++i)
+        {
+            state.held = juce::jmax (std::abs (left[i]), std::abs (right[i]), state.held * hold);
+            const auto target = state.held >= threshold ? d.amountDb : 0.0f;
+            state.gainDb += (target - state.gainDb) * (target < state.gainDb ? attack : release);
+            gains[i] = juce::Decibels::decibelsToGain (state.gainDb, -150.0f);
+        }
+    }
+}
+
 void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<float>& dest, int destStart, int numFrames,
              Buffers& buffers, Inserts* inserts, const Live* live)
 {
@@ -309,9 +369,24 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         }
     }
 
-    // Tracks: into the mix and their buses.
-    for (auto& track : state.tracks)
+    mixingOrder (state, buffers);
+
+    // A key's output is silence until it is mixed (and stays so when it doesn't play).
+    for (size_t i = 0; i < state.tracks.size(); ++i)
     {
+        if ((buffers.marks[i] & 2) != 0)
+        {
+            auto& key = buffers.keys[state.tracks[i].id];
+            grow (key, numFrames);
+            key.clear (0, numFrames);
+        }
+    }
+
+    // Tracks: into the mix and their buses.
+    for (const auto index : buffers.order)
+    {
+        const auto& track = state.tracks[(size_t) index];
+
         if (track.isBus || ! plays (state, track))
             continue;
 
@@ -360,14 +435,17 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         auto volume = juce::Decibels::decibelsToGain (track.gainDb, -150.0f);
         const auto volumeAutomated = ! track.volumeEnvelope.isEmpty();
+        const auto* key = track.ducking.isOn() ? state.findTrack (track.ducking.keyTrackId) : nullptr;
+        const auto ducked = key != nullptr && ! key->isBus && ! key->isFolder;
 
-        if (volumeAutomated)
-        {
-            // Pre-fader sends take the signal before the envelope; then it is applied in place.
+        // Pre-fader sends take the signal before the envelope and the ducking, which then act in place.
+        if (volumeAutomated || ducked)
             for (auto& s : track.sends)
                 if (s.preFader)
                     send (s, 1.0f);
 
+        if (volumeAutomated)
+        {
             track.volumeEnvelope.fill (start + ahead, volumes, numFrames);
 
             for (int i = 0; i < numFrames; ++i)
@@ -379,6 +457,30 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             volume = 1.0f;
         }
 
+        if (ducked)
+        {
+            // The key as it was at this track's time: held back by what its buses' latency runs
+            // it ahead of this track's.
+            const auto& keyOut = buffers.keys[key->id];
+            const auto behind = sendLatency (state, *key, inserts) - ahead;
+            const juce::AudioBuffer<float>* lined = &keyOut;
+            grow (buffers.duckGains, numFrames);
+
+            if (behind > 0)
+            {
+                grow (buffers.keyHeld, numFrames);
+                buffers.keyHeld.clear (0, numFrames);
+                addHeld (buffers, { key->id, track.id }, behind, keyOut, numFrames, buffers.keyHeld, 0, 1.0f);
+                lined = &buffers.keyHeld;
+            }
+
+            auto* gains = buffers.duckGains.getWritePointer (0);
+            duckGains (track.ducking, state.sampleRate, buffers.ducks[track.id], *lined, gains, numFrames);
+
+            for (int ch = 0; ch < 2; ++ch)
+                juce::FloatVectorOperations::multiply (buffers.track.getWritePointer (ch), gains, numFrames);
+        }
+
         // Its folder's volume scales what it sends on after its own.
         if (const auto folder = state.folderGain (track); ! juce::exactlyEqual (folder, 1.0f))
             volume *= folder;
@@ -386,6 +488,15 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         if (buffers.levels != nullptr)
             buffers.levels->raise ((int) (&track - state.tracks.data()), peakOf (buffers.track, 0, numFrames) * volume,
                                    peakOf (buffers.track, 1, numFrames) * volume);
+
+        // What a track ducking under this one listens to: its output after its volume.
+        if ((buffers.marks[(size_t) index] & 2) != 0)
+        {
+            auto& keyOut = buffers.keys[track.id];
+
+            for (int ch = 0; ch < 2; ++ch)
+                keyOut.copyFrom (ch, 0, buffers.track.getReadPointer (ch), numFrames, volume);
+        }
 
         // Its output: the mix, or a bus in its place (nothing when that bus doesn't play).
         if (const auto* bus = outputBus (state, track))
@@ -400,7 +511,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         }
 
         for (auto& s : track.sends)
-            if (! (volumeAutomated && s.preFader))
+            if (! ((volumeAutomated || ducked) && s.preFader))
                 send (s, volume);
     }
 
@@ -475,6 +586,8 @@ void prime (const SessionState& state, juce::int64 start, Buffers& buffers, Inse
         delay.ring.clear();
         delay.write = 0;
     }
+
+    buffers.ducks.clear();
 
     // The longest path: a track's own latency plus that of the buses it feeds.
     int longest = 0;
