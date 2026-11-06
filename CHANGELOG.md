@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.11.0: batch processing, command sequences, 5.1, video and projects**
+- `SpectraBlade-0.11.0.dmg` on the repository's Releases page, with its SHA-256: Milestones 230 to 243 below on top of 0.10.2. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (1146 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.11.0, holds both architectures, and carries a licence identical to `LICENSE` and LAME's licence. The image's app was not launched (a new ad hoc signature makes macOS ask again for the microphone); the same code, signed for development, was opened in the app for each 5.1 milestone. The app's Intel half was not launched, and no Intel Mac was tried. The video panel's check (the real macOS player, timed) failed on some runs under load during development and passed on the rerun; it passed in this one.
+
 **Milestone 243: Writing the surround pan while playing**
 - With Write Automation on (W), the mixer's surround pad, width and LFE stay live even when automated, and moving them while the session plays records into their envelopes, as the track headers' volume and pan do: from when the control is grabbed to when it is let go, heard as it is written, then back to what was there over 0.1 s, and undone as one step ("Write Surround Automation"). The pad writes its left-right and front-back envelopes together. A control held still goes on writing its value as play moves on. Stopped, they set the pan as before; with writing off, automated ones follow their envelopes.
 - An automation pass can now write several envelopes at once.
@@ -100,8 +108,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - The new files go beside each source or into a chosen folder, named after the source with an optional suffix, and numbered (" 2", " 3") when the name is taken or is the source itself. Markers (moved with a rate change), tags and the cover go along where the type keeps them. A report lists each file: written as what, or why not, with notes for what couldn't be done as asked (a silent file left at its level, a ceiling that stopped the loudness short, markers a type doesn't keep, a bit depth a type doesn't hold). The settings are remembered.
 - Measured by the tests, on WAV, AIFF, a silent and a text file: a folder gives its four audio files once each, in name order; converted to 48 kHz a file holds the sample-rate converter's samples bit for bit (32-bit float), with its markers moved and tags kept; with nothing asked a 24-bit file comes back at 24 bits and 44.1 kHz with no sample moved by more than 1 LSB (the dither every integer save adds); normalized and made mono its peak is -1.0000 dBFS; matched to -20 LUFS it measures -20.0 LUFS; at -4 LUFS the -1 dBTP ceiling stops it at -4.4 LUFS (said in the report), and through the limiter it reaches -4 LUFS within 0.06 LU with its true peak at -1.0 dBTP; through the rack (the built-in Compressor) it is bit for bit what the rack renders on its own; FLAC at 24 bits, MP3 and AAC at the source's length of 88,200 frames with tags, Opus (asked 320 kbps, written at its highest, 256, with a note) and Apple Lossless through ffmpeg all read back. The whole suite passed (1061 checks), and the app launched and quit cleanly.
 - Not tried by hand: the Batch Process dialog, its file and folder choosers, the progress window and the report were not opened in the app (the tests drive the batch code directly). Cancel stops at the file being processed: files already written stay, and no report is shown. Each file is read whole into memory.
-
-## Released
 
 **Release 0.10.2: interface outputs and sidechain inputs**
 - `SpectraBlade-0.10.2.dmg` on the repository's Releases page, with its SHA-256: Milestones 228 and 229 below on top of 0.10.1. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
