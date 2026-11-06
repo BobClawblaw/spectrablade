@@ -461,6 +461,7 @@ private:
     /** Puts a theme, accent and waveform colour into use and keeps them for next time. */
     void setTheme (const juce::String& theme, const juce::String& accentName, const juce::String& waveformName);
 
+    int lastRepeatable = 0;   // the last command from the Effects menu, for Repeat
     std::unique_ptr<EditorBar> editorBar;   // made once the commands are registered
     std::unique_ptr<EditorPanel> editorPanel;
     std::map<juce::String, std::unique_ptr<juce::Component>> madePanels;   // the panels made when shown

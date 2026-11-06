@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Navigation.h"
 #include "Theme.h"
 #include "BuiltInEffects.h"
 #include "AudioFileIO.h"
@@ -123,7 +124,7 @@ namespace
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
-        cmdMaximizeEditor, cmdResetVerticalZoom
+        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -182,9 +183,10 @@ static KeyShortcuts::KeySet auditionStyleKeys()
     set.about = "The keys Adobe Audition's defaults give these commands, from Adobe's published list (a partial one) and, where it "
                 "says nothing, keys two cheat sheets agree on. 1 switches between the file and the multitrack session; = and - zoom; "
                 "Option-Cmd-Left and Right go to markers; Option-comma and Option-period nudge; Shift-T converts the sample rate. "
-                "Space, Home, End, M, Shift-P, Cmd-K, Cmd-T and S already match.\n\n"
-                "Not carried over, for want of a matching command: going to clip and selection edges (Cmd-Left and Right), "
-                "vertical zoom, repeating the last command (Shift-R, Cmd-R), editing one channel (Up, Down), the spectral "
+                "Space, Home, End, M, Shift-P, Cmd-K, Cmd-T and S already match, as do Cmd-Left and Right (going to clip and selection "
+                "edges) and Shift-R (repeating the last effect, its dialog opening again).\n\n"
+                "Not carried over: Cmd-R stays Apply Effects Rack; vertical zoom keeps SpectraBlade's keys (Option-Cmd-= and minus), "
+                "Audition's not having been checked; and, for want of a matching command, editing one channel (Up, Down), the spectral "
                 "display's scale and resolution, nudging clips between tracks, and Return to Start on Stop (Shift-X).";
     set.keys = { { cmdPlayPause, juce::KeyPress (juce::KeyPress::spaceKey) },
                  { cmdGoToStart, juce::KeyPress (juce::KeyPress::homeKey) },
@@ -201,7 +203,10 @@ static KeyShortcuts::KeySet auditionStyleKeys()
                  { cmdNudgeLater, juce::KeyPress ('.', alt, 0) },
                  { cmdSplitClip, juce::KeyPress ('k', cmd, 0) },
                  { cmdCrop, juce::KeyPress ('t', cmd, 0) },
-                 { cmdSnapping, juce::KeyPress ('s') } };
+                 { cmdSnapping, juce::KeyPress ('s') },
+                 { cmdPreviousEdge, juce::KeyPress (juce::KeyPress::leftKey, cmd, 0) },
+                 { cmdNextEdge, juce::KeyPress (juce::KeyPress::rightKey, cmd, 0) },
+                 { cmdRepeatLast, juce::KeyPress ('r', shift, 0) } };
     return set;
 }
 
@@ -1153,7 +1158,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdResetVerticalZoom; ++id)
+    for (int id = cmdOpen; id <= cmdRepeatLast; ++id)
         ids.add (id);
 }
 
@@ -1471,6 +1476,30 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setActive (multitrackMode ? multitrack.getLaneHeight() > MultitrackView::minLaneHeight
                                            : hasAudio && waveform.getVerticalZoom() > 1.0);
             break;
+        case cmdPreviousEdge:
+        case cmdNextEdge:
+        {
+            const auto forwards = id == cmdNextEdge;
+            info.setInfo (forwards ? "Go to Next Edge" : "Go to Previous Edge",
+                          forwards ? "Move the cursor to the next clip or selection edge, or the end"
+                                   : "Move the cursor to the previous clip or selection edge, or the start", "Transport", 0);
+            info.addDefaultKeypress (forwards ? juce::KeyPress::rightKey : juce::KeyPress::leftKey, cmd);
+            info.setActive (multitrackMode || hasAudio);
+            break;
+        }
+        case cmdRepeatLast:
+        {
+            juce::ApplicationCommandInfo last (lastRepeatable);
+
+            if (lastRepeatable != 0)
+                describeCommand (lastRepeatable, last);
+
+            info.setInfo (lastRepeatable != 0 ? "Repeat " + last.shortName.trimCharactersAtEnd (".") : juce::String ("Repeat Last Effect"),
+                          "Run the last command from the Effects menu again (its dialog opens again, if it has one)", "Edit", 0);
+            info.addDefaultKeypress ('r', shift);
+            info.setActive (! multitrackMode && lastRepeatable != 0 && (last.flags & juce::ApplicationCommandInfo::isDisabled) == 0);
+            break;
+        }
         case cmdResetVerticalZoom:
             info.setInfo ("Full Scale Vertically", "Draw the waveform at full scale again (1x)", "View", 0);
             info.addDefaultKeypress ('0', cmd | alt);
@@ -1744,6 +1773,16 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
 
 bool MainComponent::perform (const InvocationInfo& info)
 {
+    // The last command from the Effects menu, for Repeat.
+    if (info.commandID != cmdRepeatLast && ! multitrackMode)
+    {
+        juce::ApplicationCommandInfo described (info.commandID);
+        describeCommand (info.commandID, described);
+
+        if (described.categoryName == "Effects")
+            lastRepeatable = info.commandID;
+    }
+
     switch (info.commandID)
     {
         case cmdOpen:       chooseFile(); break;
@@ -1907,6 +1946,26 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRepeatClip: multitrack.repeatSelectedClip(); break;
         case cmdRecordingOptions: showRecordingOptions(); break;
         case cmdResetVerticalZoom: waveform.setVerticalZoom (1.0); break;
+        case cmdRepeatLast: commands.invokeDirectly (lastRepeatable, true); break;
+        case cmdPreviousEdge:
+        case cmdNextEdge:
+        {
+            const auto forwards = info.commandID == cmdNextEdge;
+
+            if (multitrackMode)
+            {
+                if (const auto to = Navigation::nextEdge (Navigation::sessionEdges (*engine.session.getState(), multitrack.getTimeSelection()),
+                                                          multitrack.getCursor(), forwards))
+                    multitrack.showFrame (*to);
+            }
+            else if (const auto to = Navigation::nextEdge (Navigation::fileEdges (engine.document.getNumFrames(), waveform.getSelection()),
+                                                           waveform.getCursor(), forwards))
+            {
+                waveform.showFrame (*to);
+            }
+
+            break;
+        }
         case cmdTallerTracks:
         case cmdShorterTracks:
             if (! multitrackMode)
@@ -2165,7 +2224,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
-        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdConvertRate }); break;
         case 2:
         {
             add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
@@ -2209,7 +2268,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             break;
         }
         case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
-        case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdGoToTime }); break;
+        case 5: add ({ cmdPlayPause, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdPreviousEdge, cmdNextEdge, cmdGoToTime }); break;
         case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdRegionsOverSounds, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, cmdMarkersToZero, 0, cmdMoveMarkersInSelection, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
         case 7:
         {

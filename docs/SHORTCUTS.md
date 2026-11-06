@@ -30,6 +30,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Select Previous Clip | `Shift-Tab` |
 | Undo | `Cmd-Z` |
 | Redo | `Shift-Cmd-Z` |
+| Repeat the last effect | `Shift-R` |
 
 ## View
 
@@ -55,6 +56,8 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Loop Playback | `Cmd-L` |
 | Go to Start | `Home` |
 | Go to End | `End` |
+| Go to Previous Edge | `Cmd-Left Arrow` |
+| Go to Next Edge | `Cmd-Right Arrow` |
 | Go to Time... | `Cmd-J` |
 | Record | `Shift-Space` |
 

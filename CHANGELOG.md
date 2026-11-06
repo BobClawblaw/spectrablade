@@ -4,6 +4,13 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 213: Going to edges, and repeating the last effect**
+- Transport > Go to Previous Edge and Go to Next Edge (Cmd-Left and Cmd-Right) move the cursor to the nearest edge before or after it, scrolling it into view. In a file the edges are its start and end and the selection's ends; moving the cursor takes the selection away, as a click does, so from a selection Next Edge goes to its end and then to the file's end. In a session they are every clip's start and end on the tracks shown in the lanes, the time selection's ends, and the session's start and end; the time selection stays.
+- Edit > Repeat (Shift-R) runs the last command from the Effects menu again, named in the menu ("Repeat Normalize", say); an effect with a dialog opens it again. It works on files, not in the session.
+- The Audition-style key set gives these the same keys (Cmd-Left, Cmd-Right, Shift-R), and its note says so; Cmd-R stays Apply Effects Rack.
+- Measured by the tests: the edges of a file with and without a selection, walked both ways from either end and from inside the selection, none beyond the ends; a session's clip edges on two tracks in time order both ways, a hidden track's clips passed over, the time selection's ends among them, and an empty session with nowhere to go. The whole suite passed (899 checks).
+- Not tried by hand: the keys and menu items in the app; Repeat has no test of its own (it lives in the main window, which the tests don't build).
+
 **Milestone 212: Waveform colours**
 - View > Theme has a Waveform section: the theme's own colour, or Green, Blue, Amber, Rose or Grey, each in a lighter tone for the dark themes and a darker one for Light. The choice is kept for the next launch and applies at once, as the theme does.
 - docs/SHORTCUTS.md lost the comma from two keys (Nudge Earlier and Audio Settings); both are put right, and it lists the keys and gestures added in Milestones 209 to 211.
