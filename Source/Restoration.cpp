@@ -95,4 +95,150 @@ namespace Restoration
             }
         });
     }
+
+    namespace
+    {
+        /** The cubic a + b t + c t^2 + d t^3 best fitting the points (least squares). */
+        std::array<double, 4> fitCubic (const std::vector<std::pair<double, double>>& points)
+        {
+            double m[4][5] {};
+
+            for (auto [t, y] : points)
+            {
+                const double p[4] { 1.0, t, t * t, t * t * t };
+
+                for (int r = 0; r < 4; ++r)
+                {
+                    for (int k = 0; k < 4; ++k)
+                        m[r][k] += p[r] * p[k];
+
+                    m[r][4] += p[r] * y;
+                }
+            }
+
+            // Gaussian elimination with partial pivoting.
+            for (int col = 0; col < 4; ++col)
+            {
+                int pivot = col;
+
+                for (int r = col + 1; r < 4; ++r)
+                    if (std::abs (m[r][col]) > std::abs (m[pivot][col]))
+                        pivot = r;
+
+                for (int k = 0; k < 5; ++k)
+                    std::swap (m[col][k], m[pivot][k]);
+
+                if (std::abs (m[col][col]) < 1.0e-12)
+                    return { 0.0, 0.0, 0.0, 0.0 };
+
+                for (int r = 0; r < 4; ++r)
+                {
+                    if (r == col)
+                        continue;
+
+                    const auto f = m[r][col] / m[col][col];
+
+                    for (int k = col; k < 5; ++k)
+                        m[r][k] -= f * m[col][k];
+                }
+            }
+
+            return { m[0][4] / m[0][0], m[1][4] / m[1][1], m[2][4] / m[2][2], m[3][4] / m[3][3] };
+        }
+    }
+
+    DeclipResult declip (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, const Declip& settings)
+    {
+        DeclipResult result;
+        start = juce::jlimit ((juce::int64) 0, s.getNumFrames(), start);
+        end = juce::jlimit (start, s.getNumFrames(), end);
+
+        if (start == end || sampleRate <= 0.0 || settings.threshold < 0.5 || settings.threshold > 1.0
+            || end - start > std::numeric_limits<int>::max() / 2)
+            return result;
+
+        const auto longest = juce::jmax (2, (int) (maxRunSeconds * sampleRate));
+        float clippedLevel = 0.0f, rebuiltPeak = 0.0f;
+
+        auto audio = AudioEdits::processRange (s, start, end, [&] (juce::AudioBuffer<float>& b)
+        {
+            const auto n = b.getNumSamples();
+
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            {
+                auto* x = b.getWritePointer (ch);
+                const auto peak = b.getMagnitude (ch, 0, n);
+
+                if (peak <= 0.0f)
+                    continue;
+
+                const auto level = (float) (settings.threshold * peak);
+                const auto clipped = [&] (int i, float sign) { return x[i] * sign >= level; };
+
+                for (int i = 0; i < n;)
+                {
+                    const auto sign = x[i] >= 0.0f ? 1.0f : -1.0f;
+
+                    if (! clipped (i, sign))
+                    {
+                        ++i;
+                        continue;
+                    }
+
+                    // A run holds the samples level with its first: clipping leaves them equal, while
+                    // even a slow sine's rounded top changes from one sample to the next.
+                    int j = i + 1;
+
+                    while (j < n && clipped (j, sign) && std::abs (std::abs (x[j]) - std::abs (x[i])) <= flatness * peak)
+                        ++j;
+
+                    const auto length = j - i;
+
+                    if (length >= 2)
+                    {
+                        if (length > longest)
+                        {
+                            ++result.tooLong;
+                        }
+                        else if (i >= fitPoints && j + fitPoints <= n)
+                        {
+                            std::vector<std::pair<double, double>> points;
+
+                            for (int k = i - fitPoints; k < i; ++k)
+                                points.emplace_back ((double) (k - i), x[k]);
+
+                            for (int k = j; k < j + fitPoints; ++k)
+                                points.emplace_back ((double) (k - i), x[k]);
+
+                            const auto c = fitCubic (points);
+                            const auto runLevel = juce::jmin (std::abs (x[i]), std::abs (x[j - 1]));
+
+                            for (int k = i; k < j; ++k)
+                            {
+                                const auto t = (double) (k - i);
+                                const auto y = (float) (c[0] + t * (c[1] + t * (c[2] + t * c[3])));
+                                x[k] = sign * juce::jmax (y * sign, runLevel);   // never back inside the clipped level
+                            }
+
+                            clippedLevel = juce::jmax (clippedLevel, runLevel);
+                            ++result.repaired;
+                        }
+                    }
+
+                    i = j;
+                }
+            }
+
+            for (int ch = 0; ch < b.getNumChannels(); ++ch)
+                rebuiltPeak = juce::jmax (rebuiltPeak, b.getMagnitude (ch, 0, n));
+
+            if (settings.keepPeak && result.repaired > 0 && rebuiltPeak > clippedLevel && clippedLevel > 0.0f)
+                b.applyGain (clippedLevel / rebuiltPeak);
+        });
+
+        if (result.repaired > 0)
+            result.audio = std::move (audio);
+
+        return result;
+    }
 }

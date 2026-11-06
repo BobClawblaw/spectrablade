@@ -198,6 +198,7 @@ What they check:
 - Waveform colours: each one's contrast against every theme's canvas and lanes, and the choice replacing the theme's own.
 - Going to edges: a file's and a session's edges walked both ways, with and without a selection, hidden tracks passed over.
 - Remove Hum: the hum and its harmonics taken out while a tone beside them is kept, from the first frame, on a selection only, at 50 and 60 Hz, and the limits.
+- Repair Clipping: a clipped sine rebuilt close to the true one with the rest left bit for bit, the peak kept, clipping found at any level, unclipped sines left, long flat stretches counted.
 - The layout: the transport bar's width against its buttons and time, and the heights of the tabs.
 - The themes: text, accent, cursor and waveform contrast measured as WCAG ratios in every theme with every accent, switching themes at runtime (colours, controls and the waveform view), and the standard controls drawn in the theme's colours.
 - The editor's double-click selecting the whole file; a saved device setup that names no device opening the default.

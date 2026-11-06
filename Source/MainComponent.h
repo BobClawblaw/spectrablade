@@ -159,6 +159,9 @@ private:
     void showEcho();
     void showEqBand();
     void showRemoveHum();
+    void showDeclip();
+    double declipThreshold = 0.99;   // Repair Clipping's last settings
+    bool declipKeepPeak = true;
     bool humIs60 = false;   // Remove Hum's last settings
     int humHarmonics = 8;
     double humQ = 30.0;

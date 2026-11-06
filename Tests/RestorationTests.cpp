@@ -108,7 +108,94 @@ namespace
     }
 }
 
+namespace
+{
+    /** A 500 Hz sine at an amplitude, clipped at a level, 0.2 s on one channel; and the sine unclipped. */
+    std::pair<AudioEdits::Snapshot, std::vector<float>> clippedSine (float amplitude, float clipAt, double frequency = 500.0)
+    {
+        juce::AudioBuffer<float> b (1, (int) (0.2 * rate));
+        std::vector<float> truth ((size_t) b.getNumSamples());
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            truth[(size_t) i] = amplitude * (float) std::sin (juce::MathConstants<double>::twoPi * frequency * i / rate);
+            b.setSample (0, i, juce::jlimit (-clipAt, clipAt, truth[(size_t) i]));
+        }
+
+        return { AudioEdits::fromBuffer (std::move (b)), truth };
+    }
+
+    void testDeclip()
+    {
+        Restoration::Declip plain;
+        plain.keepPeak = false;
+        const auto [clipped, truth] = clippedSine (1.5f, 1.0f);
+        const auto before = readAll (*clipped);
+        const auto result = Restoration::declip (*clipped, 0, clipped->getNumFrames(), rate, plain);
+        const auto after = readAll (*result.audio);
+
+        double errorBefore = 0.0, errorAfter = 0.0;
+        bool untouched = true;
+        int clippedSamples = 0;
+
+        for (int i = 0; i < before.getNumSamples(); ++i)
+        {
+            const auto t = truth[(size_t) i];
+
+            if (std::abs (before.getSample (0, i)) >= 1.0f)
+            {
+                ++clippedSamples;
+                errorBefore += juce::square ((double) before.getSample (0, i) - t);
+                errorAfter += juce::square ((double) after.getSample (0, i) - t);
+            }
+            else
+            {
+                untouched = untouched && juce::exactlyEqual (after.getSample (0, i), before.getSample (0, i));
+            }
+        }
+
+        const auto rmsBefore = std::sqrt (errorBefore / clippedSamples), rmsAfter = std::sqrt (errorAfter / clippedSamples);
+        const auto peak = after.getMagnitude (0, 0, after.getNumSamples());
+        check (result.repaired >= 190 && result.tooLong == 0 && rmsAfter < rmsBefore / 4.0 && peak > 1.35f && peak < 1.65f && untouched,
+               "declip: a 500 Hz sine at 1.5 clipped at 1.0 gets " + juce::String (result.repaired) + " peaks rebuilt, its peak back to "
+                   + juce::String (peak, 3) + ", the clipped samples' error against the true sine down from " + juce::String (rmsBefore, 3)
+                   + " to " + juce::String (rmsAfter, 3) + " RMS, and every sample that wasn't clipped left bit for bit");
+
+        const auto kept = Restoration::declip (*clipped, 0, clipped->getNumFrames(), rate, {});
+        const auto keptAudio = readAll (*kept.audio);
+        const auto ratio = keptAudio.getSample (0, 10) / after.getSample (0, 10);
+        check (std::abs (keptAudio.getMagnitude (0, 0, keptAudio.getNumSamples()) - 1.0f) < 1.0e-6f && std::abs (ratio * peak - 1.0f) < 1.0e-4f,
+               "declip: keeping the peak scales the whole range by " + juce::String (ratio, 4) + ", so the rebuilt peaks reach the 1.0 the clipped ones had");
+
+        const auto quieter = clippedSine (0.75f, 0.5f).first;
+        check (Restoration::declip (*quieter, 0, quieter->getNumFrames(), rate, plain).repaired == result.repaired,
+               "declip: clipping at half scale is found as clipping at full scale is, the level taken from the audio's own peak");
+
+        int falseRuns = 0;
+
+        for (auto f : { 100.0, 500.0, 3000.0 })
+        {
+            const auto clean = clippedSine (0.9f, 1.0f, f).first;
+            falseRuns += Restoration::declip (*clean, 0, clean->getNumFrames(), rate, plain).repaired;
+        }
+
+        check (falseRuns == 0 && Restoration::declip (*clippedSine (0.9f, 1.0f).first, 0, 9600, rate, plain).audio == nullptr,
+               "declip: unclipped sines at 100 Hz, 500 Hz and 3 kHz have no runs found, and nothing to rebuild gives no new audio");
+
+        juce::AudioBuffer<float> square (1, 4800);
+
+        for (int i = 0; i < square.getNumSamples(); ++i)
+            square.setSample (0, i, (i / 1200) % 2 == 0 ? 0.8f : -0.8f);   // 25 ms flat stretches
+
+        const auto flat = AudioEdits::fromBuffer (std::move (square));
+        const auto long_ = Restoration::declip (*flat, 0, flat->getNumFrames(), rate, plain);
+        check (long_.repaired == 0 && long_.tooLong == 4 && long_.audio == nullptr,
+               "declip: flat stretches longer than 5 ms are counted and left alone");
+    }
+}
+
 void runRestorationTests()
 {
     testHum();
+    testDeclip();
 }

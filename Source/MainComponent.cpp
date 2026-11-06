@@ -125,7 +125,7 @@ namespace
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
-        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum
+        cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -135,7 +135,7 @@ namespace
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
-            || id == cmdRemoveHum;
+            || id == cmdRemoveHum || id == cmdDeclip;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1160,7 +1160,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdRemoveHum; ++id)
+    for (int id = cmdOpen; id <= cmdDeclip; ++id)
         ids.add (id);
 }
 
@@ -1433,6 +1433,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdNoiseReduction: info.setInfo ("Noise Reduction...", "Reduce the captured noise in the selection or file", "Effects", 0);
             info.addDefaultKeypress ('p', cmd | juce::ModifierKeys::shiftModifier);
             info.setActive (hasAudio && noisePrint.has_value() && backgroundJob == nullptr); break;
+        case cmdDeclip:     info.setInfo ("Repair Clipping...", "Rebuild clipped peaks in the selection, or the whole file, from the audio around them", "Effects", 0);
+                            info.setActive (hasAudio); break;
         case cmdRemoveHum:  info.setInfo ("Remove Hum...", "Take mains hum (50 or 60 Hz and its harmonics) out of the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdClickRepair: info.setInfo ("Click and Pop Repair...", "Find clicks and pops in the selection or file and rebuild them", "Effects", 0);
@@ -2144,6 +2146,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNoiseReduction: askForNoiseReduction(); break;
         case cmdClickRepair: askForClickRepair(); break;
         case cmdRemoveHum:  showRemoveHum(); break;
+        case cmdDeclip:     showDeclip(); break;
         case cmdPreviousMarker: goToMarker (false); break;
         case cmdNextMarker: goToMarker (true); break;
         case cmdSelectBetweenMarkers: selectBetweenMarkers(); break;
@@ -2240,7 +2243,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
             add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, 0, cmdApplyRack });
+                       cmdSpectralAttenuate, cmdSpectralRemove, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack });
             break;
         }
         case 3:
@@ -4904,6 +4907,50 @@ void MainComponent::showRemoveHum()
 
                           if (auto next = Restoration::removeHum (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), rate, hum))
                               applyEdit (std::move (next), "Remove Hum", waveform.getSelection());
+                      });
+}
+
+void MainComponent::showDeclip()
+{
+    const auto rate = engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        Restoration::Declip d;
+        d.threshold = v.at ("threshold") / 100.0;
+        d.keepPeak = v.at ("keep") < 0.5;
+        return d;
+    };
+
+    showEffectDialog ("Repair Clipping", "Finds clipped peaks, two or more samples in a row held level at or above the share of each "
+                                         "channel's peak given, and rebuilds each as the curve that best fits the samples on either side. "
+                                         "Rebuilt peaks rise above the clipped level; Keep the Peak Level lowers the selection so they "
+                                         "reach it, and no higher. Clipping longer than 5 ms is left as it is.",
+                      { { "threshold", "Clipped at or above (% of the peak)", declipThreshold * 100.0, 1 },
+                        { "keep", "Keep the Peak Level", declipKeepPeak ? 0.0 : 1.0, 0, { "Yes", "No" } } },
+                      "spectrablade:declip", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { const auto d = toSettings (v); return d.threshold >= 0.5 && d.threshold <= 1.0; },
+                      "The share of the peak must be from 50 to 100%.",
+                      nullptr, nullptr,
+                      [this, toSettings, rate] (const EffectValues& v)
+                      {
+                          const auto d = toSettings (v);
+                          declipThreshold = d.threshold;
+                          declipKeepPeak = d.keepPeak;
+                          const auto r = selectionOrAll();
+                          auto result = Restoration::declip (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), rate, d);
+                          const auto tooLong = result.tooLong > 0 ? "\n\n" + juce::String (result.tooLong) + " clipped stretches longer than 5 ms were left as they were."
+                                                                  : juce::String();
+
+                          if (result.audio == nullptr)
+                          {
+                              showNote ("Repair Clipping", "No clipped peaks were found that could be rebuilt." + tooLong);
+                              return;
+                          }
+
+                          applyEdit (std::move (result.audio), "Repair Clipping", waveform.getSelection());
+
+                          if (tooLong.isNotEmpty())
+                              showNote ("Repair Clipping", juce::String (result.repaired) + " clipped peaks were rebuilt." + tooLong);
                       });
 }
 

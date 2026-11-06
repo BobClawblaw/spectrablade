@@ -3,7 +3,7 @@
 #include <JuceHeader.h>
 #include "AudioEdits.h"
 
-/** Restoration: taking mains hum out. */
+/** Restoration: taking mains hum out, and rebuilding clipped peaks. */
 namespace Restoration
 {
     /** Hum at a mains frequency and its harmonics, each taken out with a notch equally narrow in
@@ -26,4 +26,31 @@ namespace Restoration
         frame, so the hum goes from the first frame. Null for a range that is empty or settings
         that aren't valid. */
     AudioEdits::Snapshot removeHum (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Hum&);
+
+    /** Clipped peaks: runs of two or more samples in a row, of one sign, at or above a share of
+        the channel's own peak in the range (so audio clipped at any level is found), and level
+        with each other, within `flatness` of the peak: clipping leaves them equal, while even a
+        100 Hz sine's top at 48 kHz changes by 9 times that from one sample to the next. */
+    struct Declip
+    {
+        double threshold = 0.99;        // the share of the peak, 0.5 to 1
+        bool keepPeak = true;           // scale the range so the rebuilt peaks reach the clipped level
+    };
+
+    struct DeclipResult
+    {
+        AudioEdits::Snapshot audio;     // null when nothing was rebuilt
+        int repaired = 0;               // runs rebuilt
+        int tooLong = 0;                // runs found but longer than maxRunSeconds, left as they were
+    };
+
+    constexpr double maxRunSeconds = 0.005;
+    constexpr float flatness = 1.0e-5f;
+    constexpr int fitPoints = 6;        // samples used on each side of a run
+
+    /** Rebuilds each clipped run in [start, end) as the cubic that best fits (least squares) the
+        fitPoints samples on each side of it, kept at or beyond the clipped level. Runs too near
+        the range's edges to have them are left. With keepPeak, the range is then scaled so its
+        peak is the level the clipped runs had. */
+    DeclipResult declip (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Declip&);
 }
