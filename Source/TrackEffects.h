@@ -62,6 +62,9 @@ public:
     /** Gives the copies of this plug-in (if it is a slot's on a 5.1 track) its whole state again. */
     void refreshCopies (const juce::AudioProcessor&);
 
+    /** Sets a copy's parameters to the plug-in's (by index), where they differ. */
+    static void followParameters (juce::AudioPluginInstance& original, juce::AudioPluginInstance& copy);
+
     /** How many copies the slot has: 2 on a 5.1 track, else 0. */
     int getNumCopies (juce::uint32 trackId, int slot) const;
 

@@ -15,59 +15,20 @@ namespace
     };
 }
 
-juce::String processThroughRack (const juce::XmlElement& rackXml,
-                                 juce::AudioPluginFormatManager& formats,
-                                 double sampleRate,
-                                 juce::AudioBuffer<float>& audio,
-                                 const std::function<bool (float)>& progress)
+namespace
 {
-    std::vector<Slot> slots;
-
-    // Some plug-ins must be destroyed on the message thread, so hand them over when we're done.
-    const juce::ScopeGuard destroyOnMessageThread { [&slots]
+    /** Runs `audio` (one or two channels) through one plug-in in place, lined up for its latency.
+        progress gets 0..1 through it. */
+    juce::String runThrough (Slot& slot, double sampleRate, juce::AudioBuffer<float>& audio, const std::function<bool (float)>& progress)
     {
-        auto doomed = std::make_shared<std::vector<Slot>> (std::move (slots));
-        juce::MessageManager::callAsync ([doomed] { doomed->clear(); });
-    } };
-
-    for (auto* slotXml : rackXml.getChildWithTagNameIterator ("SLOT"))
-    {
-        if (slotXml->getBoolAttribute ("bypassed"))
-            continue;
-
-        juce::PluginDescription description;
-
-        if (auto* d = slotXml->getChildByName ("PLUGIN"); d == nullptr || ! description.loadFromXml (*d))
-            return "The rack has a slot without a plug-in description.";
-
-        juce::String error;
-        auto plugin = formats.createPluginInstance (description, sampleRate, blockSize, error);
-
-        if (plugin == nullptr)
-            return description.name + ": " + (error.isNotEmpty() ? error : juce::String ("could not be created."));
-
-        if (auto* stateXml = slotXml->getChildByName ("STATE"))
-        {
-            juce::MemoryBlock state;
-
-            if (state.fromBase64Encoding (stateXml->getAllSubText()))
-                plugin->setStateInformation (state.getData(), (int) state.getSize());
-        }
-
-        slots.push_back ({ std::move (plugin), description.name });
-    }
-
-    const auto docChannels = audio.getNumChannels();
-    const auto numFrames = audio.getNumSamples();
-
-    for (size_t index = 0; index < slots.size(); ++index)
-    {
-        auto& plugin = *slots[index].plugin;
+        auto& plugin = *slot.plugin;
         plugin.enableAllBuses();
         plugin.setNonRealtime (true);
         plugin.setRateAndBufferSizeDetails (sampleRate, blockSize);
         plugin.prepareToPlay (sampleRate, blockSize);
 
+        const auto docChannels = audio.getNumChannels();
+        const auto numFrames = audio.getNumSamples();
         const auto ins  = plugin.getTotalNumInputChannels();
         const auto mainIns = plugin.getBusCount (true) > 0 ? plugin.getChannelCountOfBus (true, 0) : 0;   // a sidechain input stays silent
         const auto outs = plugin.getTotalNumOutputChannels();
@@ -76,7 +37,7 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
         if (outs == 0)
         {
             plugin.releaseResources();
-            return slots[index].name + " has no audio outputs.";
+            return slot.name + " has no audio outputs.";
         }
 
         // Feed the audio followed by `latency` frames of silence, and drop the first `latency`
@@ -91,7 +52,7 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
             const auto count = (int) juce::jmin ((juce::int64) blockSize, totalIn - pos);
             work.clear();
 
-            // Input: the document's channels mapped onto the plug-in's inputs.
+            // Input: the audio's channels mapped onto the plug-in's inputs.
             if (mainIns > 0 && pos < numFrames)
             {
                 const auto available = (int) juce::jmin ((juce::int64) count, (juce::int64) numFrames - pos);
@@ -110,7 +71,7 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
             midi.clear();
             plugin.processBlock (view, midi);
 
-            // Output: the plug-in's outputs mapped back to the document's channels, skipping latency.
+            // Output: the plug-in's outputs mapped back to the audio's channels, skipping latency.
             const auto outStart = pos - latency;
             const auto skip = (int) juce::jmax ((juce::int64) 0, -outStart);
             const auto writeFrom = juce::jmax ((juce::int64) 0, outStart);
@@ -129,9 +90,7 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
                     result.copyFrom (ch, (int) writeFrom, fitted, ch, 0, toWrite);
             }
 
-            const auto done = ((float) index + (float) (pos + count) / (float) totalIn) / (float) slots.size();
-
-            if (progress != nullptr && ! progress (done))
+            if (progress != nullptr && ! progress ((float) (pos + count) / (float) totalIn))
             {
                 plugin.releaseResources();
                 return "Cancelled.";
@@ -140,8 +99,85 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
 
         plugin.releaseResources();
         audio = std::move (result);
+        return {};
+    }
+}
+
+juce::String processThroughRack (const juce::XmlElement& rackXml,
+                                 juce::AudioPluginFormatManager& formats,
+                                 double sampleRate,
+                                 juce::AudioBuffer<float>& audio,
+                                 const std::function<bool (float)>& progress)
+{
+    std::vector<Slot> slots;
+
+    // Some plug-ins must be destroyed on the message thread, so hand them over when we're done.
+    const juce::ScopeGuard destroyOnMessageThread { [&slots]
+    {
+        auto doomed = std::make_shared<std::vector<Slot>> (std::move (slots));
+        juce::MessageManager::callAsync ([doomed] { doomed->clear(); });
+    } };
+
+    std::vector<const juce::XmlElement*> wanted;
+
+    for (auto* slotXml : rackXml.getChildWithTagNameIterator ("SLOT"))
+        if (! slotXml->getBoolAttribute ("bypassed"))
+            wanted.push_back (slotXml);
+
+    // The rack is stereo: the channels go through it two at a time (L R, C LFE, Ls Rs for 5.1),
+    // a mono file or a last odd channel alone, each group through plug-ins of its own.
+    const auto docChannels = audio.getNumChannels();
+    const auto numFrames = audio.getNumSamples();
+    const auto groups = juce::jmax (1, (docChannels + 1) / 2);
+    juce::AudioBuffer<float> result (docChannels, numFrames);
+
+    for (int group = 0; group < groups; ++group)
+    {
+        const auto first = 2 * group, count = juce::jmin (2, docChannels - first);
+        juce::AudioBuffer<float> part (count, numFrames);
+
+        for (int ch = 0; ch < count; ++ch)
+            part.copyFrom (ch, 0, audio, first + ch, 0, numFrames);
+
+        for (size_t index = 0; index < wanted.size(); ++index)
+        {
+            const auto& slotXml = *wanted[index];
+            juce::PluginDescription description;
+
+            if (auto* d = slotXml.getChildByName ("PLUGIN"); d == nullptr || ! description.loadFromXml (*d))
+                return "The rack has a slot without a plug-in description.";
+
+            juce::String error;
+            auto plugin = formats.createPluginInstance (description, sampleRate, blockSize, error);
+
+            if (plugin == nullptr)
+                return description.name + ": " + (error.isNotEmpty() ? error : juce::String ("could not be created."));
+
+            if (auto* stateXml = slotXml.getChildByName ("STATE"))
+            {
+                juce::MemoryBlock state;
+
+                if (state.fromBase64Encoding (stateXml->getAllSubText()))
+                    plugin->setStateInformation (state.getData(), (int) state.getSize());
+            }
+
+            slots.push_back ({ std::move (plugin), description.name });
+            const auto steps = (float) (groups * (int) wanted.size());
+            const auto step = (float) (group * (int) wanted.size() + (int) index);
+
+            if (const auto error2 = runThrough (slots.back(), sampleRate, part, [&progress, step, steps] (float through)
+                                                {
+                                                    return progress == nullptr || progress ((step + through) / steps);
+                                                });
+                error2.isNotEmpty())
+                return error2;
+        }
+
+        for (int ch = 0; ch < count; ++ch)
+            result.copyFrom (first + ch, 0, part, ch, 0, numFrames);
     }
 
+    audio = std::move (result);
     return {};
 }
 

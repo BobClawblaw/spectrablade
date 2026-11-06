@@ -5,17 +5,6 @@ namespace
     // Set while an effect is given a value from an envelope, so its echo isn't taken for a touch.
     thread_local bool followingEnvelope = false;
 
-    /** Sets a copy's parameters to the plug-in's, where they differ. */
-    void follow (juce::AudioPluginInstance& original, juce::AudioPluginInstance& copy)
-    {
-        const auto& from = original.getParameters();
-        const auto& to = copy.getParameters();
-
-        for (int i = 0; i < juce::jmin (from.size(), to.size()); ++i)
-            if (const auto value = from[i]->getValue(); ! juce::exactlyEqual (value, to[i]->getValue()))
-                to[i]->setValue (value);
-    }
-
     void release (std::array<std::unique_ptr<juce::AudioPluginInstance>, 2>& copies)
     {
         for (auto& c : copies)
@@ -224,6 +213,16 @@ void TrackEffects::refreshCopies (const juce::AudioProcessor& processor)
     if (found != nullptr)
         if (auto made = copiesOf (*found); made[0] != nullptr)
             install (trackId, found, std::move (made));
+}
+
+void TrackEffects::followParameters (juce::AudioPluginInstance& original, juce::AudioPluginInstance& copy)
+{
+    const auto& from = original.getParameters();
+    const auto& to = copy.getParameters();
+
+    for (int i = 0; i < juce::jmin (from.size(), to.size()); ++i)
+        if (const auto value = from[i]->getValue(); ! juce::exactlyEqual (value, to[i]->getValue()))
+            to[i]->setValue (value);
 }
 
 int TrackEffects::getNumCopies (juce::uint32 trackId, int slot) const
@@ -663,7 +662,7 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
                 }
 
                 if (pair > 0)
-                    follow (*s->plugin, *p);
+                    followParameters (*s->plugin, *p);
 
                 run (*p, *s, 2 * pair, done, n);
             }

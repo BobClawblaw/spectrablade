@@ -111,6 +111,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Session.cpp
     Source/SessionMixer.cpp
     Source/TrackEffects.cpp
+    Source/RackCopy.cpp
     Source/Recorder.cpp
     Source/SessionCollect.cpp
     Source/SessionNotes.cpp
@@ -284,6 +285,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Session.cpp
     Source/SessionMixer.cpp
     Source/TrackEffects.cpp
+    Source/RackCopy.cpp
     Source/Recorder.cpp
     Source/SessionCollect.cpp
     Source/SessionNotes.cpp

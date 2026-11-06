@@ -6,6 +6,7 @@
 #include "../Source/AudioFileIO.h"
 #include "../Source/BuiltInEffects.h"
 #include "../Source/OfflineRender.h"
+#include "../Source/RackCopy.h"
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
 #include "TestPlugins.h"
@@ -399,9 +400,183 @@ namespace
     }
 }
 
+namespace
+{
+    juce::AudioBuffer<float> through (juce::AudioProcessor& p, juce::AudioBuffer<float> audio, int blockSize)
+    {
+        p.setPlayConfigDetails (2, 2, rate, blockSize);
+        p.prepareToPlay (rate, blockSize);
+        juce::MidiBuffer midi;
+
+        for (int at = 0; at < audio.getNumSamples(); at += blockSize)
+        {
+            juce::AudioBuffer<float> view (audio.getArrayOfWritePointers(), audio.getNumChannels(), at, juce::jmin (blockSize, audio.getNumSamples() - at));
+            p.processBlock (view, midi);
+        }
+
+        return audio;
+    }
+
+    juce::AudioBuffer<float> read (const AudioSnapshot& a)
+    {
+        juce::AudioBuffer<float> b (a.getNumChannels(), (int) a.getNumFrames());
+        a.read (b, 0, 0, b.getNumSamples());
+        return b;
+    }
+
+    /** A rack of a compressor and a limiter, set as setUp does, as AudioEngine::createRackXml writes it. */
+    std::unique_ptr<juce::XmlElement> rackXml (juce::AudioPluginFormatManager& formats)
+    {
+        auto xml = std::make_unique<juce::XmlElement> ("SPECTRABLADE_RACK");
+        auto compressor = make (formats, BuiltInEffects::compressorId), limiter = make (formats, BuiltInEffects::limiterId);
+        setUp (*compressor, *limiter, -24.0f);
+
+        for (auto* p : { compressor.get(), limiter.get() })
+        {
+            auto* slot = xml->createNewChildElement ("SLOT");
+            slot->setAttribute ("bypassed", false);
+            slot->addChildElement (p->getPluginDescription().createXml().release());
+            juce::MemoryBlock state;
+            p->getStateInformation (state);
+            slot->createNewChildElement ("STATE")->addTextElement (state.toBase64Encoding());
+        }
+
+        return xml;
+    }
+
+    void testMasterRack()
+    {
+        juce::AudioPluginFormatManager formats;
+        formats.addFormat (BuiltInEffects::createFormat());
+        const auto wide = read (*noise (6, 20000, 44));
+
+        // A copy of a rack slot: as the slot's own plug-in would play the pair, following its settings and its bypass.
+        {
+            juce::AudioProcessorGraph graph;
+            auto node = graph.addNode (make (formats, BuiltInEffects::compressorId));
+            RackCopy copy (node, make (formats, BuiltInEffects::compressorId));
+            auto reference = make (formats, BuiltInEffects::compressorId);
+            setUp (dynamic_cast<juce::AudioPluginInstance&> (*node->getProcessor()), *make (formats, BuiltInEffects::limiterId), -30.0f);
+            setUp (*reference, *make (formats, BuiltInEffects::limiterId), -30.0f);
+            const auto pair = channelsOf (*noise (6, 20000, 44), 2, 2);
+            const auto got = through (copy, read (*pair), 512), want = through (*reference, read (*pair), 512);
+            node->setBypassed (true);
+            const auto bypassed = through (copy, read (*pair), 512);
+            node->setBypassed (false);
+
+            auto limiterNode = graph.addNode (make (formats, BuiltInEffects::limiterId));
+            RackCopy limiterCopy (limiterNode, make (formats, BuiltInEffects::limiterId));
+            through (limiterCopy, read (*pair), 512);
+
+            check (same (got, 0, want, 0) && same (got, 1, want, 1) && ! same (got, 0, read (*pair), 0)
+                       && same (bypassed, 0, read (*pair), 0) && same (bypassed, 1, read (*pair), 1) && limiterCopy.getLatencySamples() == 240,
+                   "master rack copies: a copy of a rack slot plays a pair as the slot's own plug-in would, with the settings set on "
+                   "the slot after the copy was made, bit for bit; bypassed with the slot, it passes the pair as it is; it reports "
+                   "the copy's latency once prepared (240 frames for the limiter)");
+        }
+
+        // Applying the rack to a 5.1 file: each pair through it on its own, as a stereo file of that pair would be.
+        {
+            const auto rack = rackXml (formats);
+            auto audio = wide;
+            const auto error = OfflineRender::processThroughRack (*rack, formats, rate, audio, {});
+            auto pairs = error.isEmpty() && audio.getNumChannels() == 6;
+
+            for (int pair = 0; pair < 3; ++pair)
+            {
+                juce::AudioBuffer<float> two (2, wide.getNumSamples());
+                two.copyFrom (0, 0, wide, 2 * pair, 0, wide.getNumSamples());
+                two.copyFrom (1, 0, wide, 2 * pair + 1, 0, wide.getNumSamples());
+                OfflineRender::processThroughRack (*rack, formats, rate, two, {});
+                pairs = pairs && same (audio, 2 * pair, two, 0) && same (audio, 2 * pair + 1, two, 1) && ! silent (audio, 2 * pair + 1);
+            }
+
+            juce::AudioBuffer<float> three (3, wide.getNumSamples()), last (1, wide.getNumSamples());
+
+            for (int ch = 0; ch < 3; ++ch)
+                three.copyFrom (ch, 0, wide, ch, 0, wide.getNumSamples());
+
+            last.copyFrom (0, 0, wide, 2, 0, wide.getNumSamples());
+            OfflineRender::processThroughRack (*rack, formats, rate, three, {});
+            OfflineRender::processThroughRack (*rack, formats, rate, last, {});
+
+            check (pairs && same (three, 2, last, 0),
+                   "master rack on a 5.1 file: applying the rack (a compressor and a limiter) gives each pair, L R, C LFE and Ls Rs, "
+                   "bit for bit what it gives a stereo file of that pair, where it used to fold them into L and R and leave the rest "
+                   "silent; a three-channel file's last channel goes through on its own, as a mono file");
+        }
+    }
+}
+
 void runSurroundEffectsTests (AudioEngine& engine)
 {
+    testMasterRack();
     testBuiltIns (engine);
     testFollowing();
     testFreezing (engine);
+}
+
+void runMasterRackDeviceTests (AudioEngine& engine)
+{
+    // Played to separate outputs, a 5.1 master's C LFE and Ls Rs each get a copy of every rack slot.
+    juce::PluginDescription compressor;
+
+    for (auto& d : BuiltInEffects::getDescriptions())
+        if (d.fileOrIdentifier == BuiltInEffects::compressorId)
+            compressor = d;
+
+    auto& player = engine.getPlayer();
+    const auto mode = player.getMode();
+    const auto wasSeparate = engine.getSurroundOutputs();
+    SessionState s;
+    s.sampleRate = rate;
+    s.surround = true;
+    player.setMode (DocumentPlayerProcessor::Mode::session);
+    engine.session.reset (s, {});
+    engine.clearRack();
+    engine.setSurroundOutputs (true);
+    engine.useDeviceOutputs();
+    auto added = false;
+    engine.addPlugin (compressor, [&added] (const juce::String& error) { added = error.isEmpty(); });
+    TestUtils::runUntil ([&] { return added; }, 5000);
+    const auto separate = engine.getNumRackCopies();
+    const auto from = engine.getOutputPair() + 2;
+    const auto routed = [&]
+    {
+        auto all = true;
+
+        for (int ch = from; ch < from + 4; ++ch)
+            all = all && engine.playsThroughRackCopies (ch) && ! engine.playsOutOf (ch);
+
+        return all;
+    };
+    TestUtils::runUntil (routed, 5000);
+    const auto throughCopies = routed();
+    auto second = false;
+    engine.addPlugin (compressor, [&second] (const juce::String& error) { second = error.isEmpty(); });
+    TestUtils::runUntil ([&] { return second; }, 5000);
+    const auto two = engine.getNumRackCopies();
+    engine.removeRackSlot (0);
+    const auto afterRemove = engine.getNumRackCopies();
+    engine.removeRackSlot (0);
+    const auto straight = engine.playsOutOf (from) && engine.playsOutOf (from + 3) && ! engine.playsThroughRackCopies (from);
+    engine.setSurroundOutputs (false);
+    const auto folded = engine.getNumRackCopies();
+    engine.setSurroundOutputs (true);
+    auto stereo = s;
+    stereo.surround = false;
+    engine.session.reset (stereo, {});
+    engine.useDeviceOutputs();
+    TestUtils::runUntil ([&] { return engine.getNumRackCopies() == 0; }, 2000);
+    const auto stereoMaster = engine.getNumRackCopies();
+    engine.clearRack();
+    engine.setSurroundOutputs (wasSeparate);
+    engine.session.reset (SessionState(), {});
+    player.setMode (mode);
+
+    check (added && second && separate == 2 && throughCopies && two == 4 && afterRemove == 2 && straight && folded == 0 && stereoMaster == 0,
+           "master rack copies: played to separate outputs, a 5.1 master's other two pairs get a copy of each rack slot (2 for "
+           "one slot, 4 for two, 2 again when one is removed), and C, LFE, Ls and Rs reach outputs " + juce::String (from + 1) + " to "
+           + juce::String (from + 4) + " of the " + juce::String (engine.getDeviceOutputChannelNames().size()) + "-output interface "
+           "through them, not straight from the player; with an empty rack, straight; folded down, or with a stereo master, no copies");
 }

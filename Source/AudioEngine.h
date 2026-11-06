@@ -336,6 +336,9 @@ public:
 
     /** True when what the session plays out of this device output (from 0) is connected to it. */
     bool playsOutOf (int deviceChannel) const;
+
+    /** True when this device output (from 0) is fed by the last of the rack's copies for its pair. */
+    bool playsThroughRackCopies (int deviceChannel) const;
     juce::StringArray getDeviceOutputChannelNames() const;
 
     //==============================================================================
@@ -394,12 +397,17 @@ public:
     /** Called before a plug-in is removed so its editor window can be closed first. */
     std::function<void (juce::AudioProcessor*)> onPluginAboutToBeRemoved;
 
-    /** Called with the names of a 5.1 track's effects that couldn't be opened twice more for its
-        other channels (which then play silence through them). */
+    /** Called with the names of effects (a 5.1 track's, or the rack's) that couldn't be opened again
+        for the channels past L and R (which then play silence through them). */
     std::function<void (const juce::StringArray&)> onEffectsNotCopied;
 
-    /** Gives a 5.1 track's copies of this effect its whole state again (after its window closes). */
-    void refreshEffectCopies (const juce::AudioProcessor& p)   { trackEffects.refreshCopies (p); }
+    /** Gives the copies of this effect (a 5.1 track's, or the rack's for the channels past L and R)
+        its whole state again (after its window closes). */
+    void refreshEffectCopies (const juce::AudioProcessor&);
+
+    /** The rack's copies for the channels played to their own outputs past L and R (Play Surround to
+        Separate Outputs): one per slot for each further pair (two for 5.1). */
+    int getNumRackCopies() const;
 
     using AddCallback = std::function<void (const juce::String& error)>;
     void addPlugin (const juce::PluginDescription& description, AddCallback onDone);
@@ -463,6 +471,11 @@ private:
     Node::Ptr playerNode, outputNode, meterNode, previewNode;
     class MasterMeter;
     std::vector<Node::Ptr> rack;
+    std::vector<std::vector<Node::Ptr>> rackCopies;   // for each pair of channels past L and R, a RackCopy per slot (null: couldn't be made)
+
+    /** Channels played to their own outputs past L and R, through rackCopies: 0 unless separate. */
+    int extraChannels() const;
+    void updateRackCopies();
     int outputPairFirstChannel = 0;
     juce::BigInteger usedDeviceOutputs;   // the interface outputs the session's tracks, or the file's extra channels, play out of
     bool surroundOutputs = false;

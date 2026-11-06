@@ -600,6 +600,7 @@ int main (int argc, char* argv[])
 
         testDevice (engine);
         runSurroundDeviceTests (engine);
+        runMasterRackDeviceTests (engine);
         if (liveInput)
             testLiveInput (engine);
         testRack (engine, found);

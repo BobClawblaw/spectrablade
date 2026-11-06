@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "RackCopy.h"
 #include "Surround.h"
 #include "Analysis.h"
 
@@ -1011,6 +1012,20 @@ namespace
     }
 }
 
+bool AudioEngine::playsThroughRackCopies (int deviceChannel) const
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+    const auto pair = (deviceChannel - outputPairFirstChannel - 2) / 2;
+
+    if (device == nullptr || deviceChannel < outputPairFirstChannel + 2 || ! juce::isPositiveAndBelow (deviceChannel, SessionTrack::maxDeviceOutputs)
+        || ! device->getActiveOutputChannels()[deviceChannel] || pair >= (int) rackCopies.size() || rackCopies[(size_t) pair].empty()
+        || rackCopies[(size_t) pair].back() == nullptr)
+        return false;
+
+    return graph.isConnected ({ { rackCopies[(size_t) pair].back()->nodeID, (deviceChannel - outputPairFirstChannel - 2) % 2 },
+                                { outputNode->nodeID, graphChannelOf (device->getActiveOutputChannels(), deviceChannel) } });
+}
+
 bool AudioEngine::playsOutOf (int deviceChannel) const
 {
     auto* device = deviceManager.getCurrentAudioDevice();
@@ -1131,10 +1146,98 @@ juce::String AudioEngine::deviceSignature() const
          + d->getActiveOutputChannels().toString (2) + "|" + juce::String ((int) d->isOpen()) + juce::String ((int) d->isPlaying());
 }
 
+int AudioEngine::extraChannels() const
+{
+    if (! surroundOutputs)
+        return 0;
+
+    if (player->getMode() == DocumentPlayerProcessor::Mode::session)
+        return session.getState()->surround ? Surround::fiveOneChannels - 2 : 0;
+
+    return juce::jlimit (0, 6, document.getNumChannels() - 2);
+}
+
+void AudioEngine::updateRackCopies()
+{
+    const auto pairs = (extraChannels() + 1) / 2;
+    std::vector<std::vector<Node::Ptr>> wanted ((size_t) pairs);
+    juce::StringArray failed;
+
+    for (int pair = 0; pair < pairs; ++pair)
+        for (auto& slot : rack)
+        {
+            // The one already made for this slot, else a new one.
+            Node::Ptr found;
+
+            if ((size_t) pair < rackCopies.size())
+                for (auto& c : rackCopies[(size_t) pair])
+                    if (c != nullptr && dynamic_cast<RackCopy&> (*c->getProcessor()).getOriginal() == slot->getProcessor())
+                        found = c;
+
+            if (found == nullptr)
+                if (auto* original = dynamic_cast<juce::AudioPluginInstance*> (slot->getProcessor()))
+                {
+                    juce::String error;
+
+                    if (auto copy = pluginFormatManager.createPluginInstance (original->getPluginDescription(), currentSampleRate(), currentBlockSize(), error))
+                        found = graph.addNode (std::make_unique<RackCopy> (slot, std::move (copy)), {}, juce::AudioProcessorGraph::UpdateKind::none);
+                    else if (! failed.contains (original->getName()))
+                        failed.add (original->getName());
+                }
+
+            wanted[(size_t) pair].push_back (found);
+        }
+
+    for (auto& copies : rackCopies)
+        for (auto& c : copies)
+            if (c != nullptr && std::none_of (wanted.begin(), wanted.end(), [&c] (auto& w) { return std::find (w.begin(), w.end(), c) != w.end(); }))
+                graph.removeNode (c.get(), juce::AudioProcessorGraph::UpdateKind::none);
+
+    rackCopies = std::move (wanted);
+
+    if (! failed.isEmpty() && onEffectsNotCopied != nullptr)
+        juce::MessageManager::callAsync ([this, failed, isAlive = alive]
+        {
+            if (*isAlive && onEffectsNotCopied != nullptr)
+                onEffectsNotCopied (failed);
+        });
+}
+
+int AudioEngine::getNumRackCopies() const
+{
+    int count = 0;
+
+    for (auto& copies : rackCopies)
+        count += (int) std::count_if (copies.begin(), copies.end(), [] (auto& c) { return c != nullptr; });
+
+    return count;
+}
+
+void AudioEngine::refreshEffectCopies (const juce::AudioProcessor& p)
+{
+    trackEffects.refreshCopies (p);
+    auto any = false;
+
+    for (auto& copies : rackCopies)
+        for (auto& c : copies)
+            if (c != nullptr && dynamic_cast<RackCopy&> (*c->getProcessor()).getOriginal() == &p)
+            {
+                graph.removeNode (c.get(), juce::AudioProcessorGraph::UpdateKind::none);
+                c = nullptr;
+                any = true;
+            }
+
+    // Made again, with its state as it is now.
+    if (any)
+        rebuildConnections();
+}
+
 void AudioEngine::rebuildConnections()
 {
     for (auto& c : graph.getConnections())
         graph.removeConnection (c, juce::AudioProcessorGraph::UpdateKind::none);
+
+    updateRackCopies();
 
     // Chain: player -> the effect being previewed, if any -> each rack slot in order -> master
     // meter -> output. Bypassed slots stay in the chain; the graph calls their bypass processing
@@ -1201,12 +1304,50 @@ void AudioEngine::rebuildConnections()
             }
         }
 
+        // The channels past L and R played to their own outputs: two at a time through the rack's
+        // copies (none: straight there); one whose copy couldn't be made is silent.
+        const auto extra = extraChannels();
+        const auto throughRack = ! rack.empty();
+
+        for (int pair = 0; throughRack && pair < (int) rackCopies.size(); ++pair)
+        {
+            const auto first = outputPairFirstChannel + 2 + 2 * pair, count = juce::jmin (2, extra - 2 * pair);
+            auto from = playerNode;
+            auto fromFirst = DocumentPlayerProcessor::firstInterfaceChannel + first;
+            auto complete = true;
+
+            for (auto& copy : rackCopies[(size_t) pair])
+            {
+                if (copy == nullptr)
+                {
+                    complete = false;
+                    break;
+                }
+
+                for (int ch = 0; ch < 2; ++ch)
+                    graph.addConnection ({ { from->nodeID, fromFirst + juce::jmin (ch, count - 1) }, { copy->nodeID, ch } },
+                                         juce::AudioProcessorGraph::UpdateKind::none);
+
+                from = copy;
+                fromFirst = 0;
+            }
+
+            for (int ch = 0; complete && ch < count; ++ch)
+                if (first + ch < SessionTrack::maxDeviceOutputs && active[first + ch])
+                    graph.addConnection ({ { from->nodeID, fromFirst + ch }, { outputNode->nodeID, graphChannelOf (active, first + ch) } },
+                                         juce::AudioProcessorGraph::UpdateKind::none);
+        }
+
         // Tracks and buses playing out of interface pairs: straight from the player to those
         // outputs, past the rack and the master meter; the graph delays them by the rack's latency
-        // too. A pair the interface doesn't have stays silent.
+        // too. A pair the interface doesn't have stays silent. (Ones on the outputs the channels
+        // past L and R use go through the rack's copies with them.)
         for (int ch = 0; ch < SessionTrack::maxDeviceOutputs; ++ch)
         {
             if (! usedDeviceOutputs[ch] || ! active[ch])
+                continue;
+
+            if (throughRack && ch >= outputPairFirstChannel + 2 && ch < outputPairFirstChannel + 2 + extra)
                 continue;
 
             graph.addConnection ({ { playerNode->nodeID, DocumentPlayerProcessor::firstInterfaceChannel + ch },

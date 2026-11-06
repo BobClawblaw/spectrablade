@@ -839,8 +839,8 @@ MainComponent::MainComponent()
     engine.onPluginAboutToBeRemoved = [this] (juce::AudioProcessor* p) { closeEditorFor (p); };
     engine.onEffectsNotCopied = [] (const juce::StringArray& names)
     {
-        showNote ("5.1 Track Effects", names.joinIntoString (", ") + (names.size() == 1 ? " couldn't" : " couldn't each")
-                                           + " be opened twice more for the 5.1 track's centre, LFE and surround channels, which play silence through it.");
+        showNote ("Surround Effects", names.joinIntoString (", ") + (names.size() == 1 ? " couldn't" : " couldn't each")
+                                          + " be opened again for the channels past left and right (centre, LFE and surrounds), which play silence through it.");
     };
 
     // The panels as the current workspace left them. Before there were workspaces the rack could be
