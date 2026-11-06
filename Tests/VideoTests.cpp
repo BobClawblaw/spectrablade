@@ -255,7 +255,9 @@ void runVideoTests()
         check (error.isNotEmpty() && video.getSize() == before, "video: putting new sound into the video itself, in place, is refused");
     }
 
-    // The Video panel: shows a video and follows the playhead.
+    // The Video panel: shows a video and follows the playhead. Previews go to a folder of the test's own.
+    Video::setPreviewFolder (folder.getChildFile ("Previews"));
+
     {
         Video::Panel panel;
         panel.setSize (400, 320);
@@ -264,7 +266,9 @@ void runVideoTests()
         panel.readPlayhead = [&] { return std::optional<std::pair<double, bool>> ({ audio, playing }); };
 
         juce::StringArray shown, refused;
-        auto refusalSaid = true;
+        auto refusalSaid = true, previewsOk = true;
+        juce::Array<juce::int64> previewTimes;
+        auto reopenMs = 0.0;
 
         for (auto& k : kinds)
         {
@@ -272,10 +276,32 @@ void runVideoTests()
                 continue;
 
             panel.setFile (made[k.extension]);
-            TestUtils::runUntil ([&] { panel.update(); return panel.isReady() || panel.getPlayer() == nullptr; }, 8000);
-            (panel.isReady() ? shown : refused).add (k.extension);
+            TestUtils::runUntil ([&] { panel.update(); return panel.isReady() || panel.getMessage().contains ("can't be shown"); }, 30000);
+            (panel.isReady() ? shown : refused).add (k.extension + (panel.isShowingPreview() ? " (preview)" : ""));
             refusalSaid = refusalSaid && (panel.isReady() || panel.getMessage().contains ("can't be shown"));
+
+            if (panel.isShowingPreview() && panel.isReady())
+            {
+                auto* pp = panel.getPlayer();
+                previewsOk = previewsOk && std::abs (pp->getVideoDuration() - 2.0) < 0.05 && pp->getVideoNativeSize() == juce::Rectangle<int> (320, 240)
+                          && Video::previewFile (made[k.extension]).existsAsFile();
+                previewTimes.add (Video::previewFile (made[k.extension]).getLastModificationTime().toMilliseconds());
+            }
         }
+
+        // Shown again: the preview kept is used, not made again.
+        juce::Array<juce::int64> timesAgain;
+
+        for (auto e : { "mkv", "webm" })
+            if (made.count (e) > 0)
+            {
+                panel.setFile ({});
+                const auto start = juce::Time::getMillisecondCounterHiRes();
+                panel.setFile (made[e]);
+                TestUtils::runUntil ([&] { panel.update(); return panel.isReady(); }, 8000);
+                reopenMs = juce::jmax (reopenMs, juce::Time::getMillisecondCounterHiRes() - start);
+                timesAgain.add (Video::previewFile (made[e]).getLastModificationTime().toMilliseconds());
+            }
 
         panel.setFile (made.count ("mp4") > 0 ? made["mp4"] : juce::File());
         TestUtils::runUntil ([&] { panel.update(); return panel.isReady(); }, 8000);
@@ -312,13 +338,17 @@ void runVideoTests()
         panel.setFile ({});
         const auto none = panel.getPlayer() == nullptr && panel.getMessage().isNotEmpty();
 
-        check (shown.joinIntoString (",") == "mp4,m4v,mov,avi" && refused.joinIntoString (",") == "mkv,webm" && refusalSaid
+        check (shown.joinIntoString (",") == "mp4,m4v,mov,mkv (preview),webm (preview),avi" && refused.isEmpty() && refusalSaid
+                   && previewsOk && previewTimes == timesAgain && previewTimes.size() == 2
                    && opened && std::abs (stoppedAt - 1.24) < 0.001 && wasPlaying && drift <= Video::driftAllowed && stoppedAgain && none,
-               "video panel: shows MP4, M4V, MOV and an MPEG-4 AVI, and says it can't show MKV or WebM (shown: " + shown.joinIntoString (", ") + "; said it can't: " + refused.joinIntoString (", ") + "), "
+               "video panel: shows MP4, M4V, MOV and an MPEG-4 AVI itself, and MKV and WebM through a preview ffmpeg makes (2 s long, "
+               "320 x 240), kept and used again without being made again (shown again within " + juce::String (juce::roundToInt (reopenMs)) + " ms) (shown: "
+               + shown.joinIntoString (", ") + "; not: " + refused.joinIntoString (", ") + "); "
                "320 x 240 and 2 s long, silent; stopped, it shows the frame at the playhead (" + juce::String (stoppedAt, 3) + " s for 1.24); "
                "playing, it plays along, " + juce::String (drift * 1000.0, 1) + " ms from the sound after 1.5 s; stopped again, back to "
                "the playhead; with no video, a message");
     }
 
+    Video::setPreviewFolder ({});
     folder.deleteRecursively();
 }

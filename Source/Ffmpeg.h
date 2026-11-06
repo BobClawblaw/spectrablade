@@ -53,4 +53,10 @@ namespace Ffmpeg
         the target, which must not be the video. Returns an error message, or empty on success. */
     juce::String replaceAudio (const juce::File& ffmpeg, const juce::File& video, const juce::File& wav, const juce::File& target,
                                const std::function<bool()>& keepGoing = {});
+
+    /** A preview of a video's picture that macOS can play, for videos it can't (MKV, WebM): the first
+        picture stream as H.264 in MP4, at most 1280 pixels wide, a keyframe every 12 frames so it
+        seeks quickly, no sound. Encoded with libx264, or VideoToolbox when ffmpeg has no libx264. */
+    juce::String makePreview (const juce::File& ffmpeg, const juce::File& video, const juce::File& target,
+                              const std::function<bool()>& keepGoing = {});
 }

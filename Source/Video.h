@@ -11,6 +11,17 @@ namespace Video
     const juce::StringArray& extensions();
     bool isVideoFile (const juce::File&);
 
+    /** Videos whose picture macOS can't show (MKV, WebM): the panel shows a preview made by ffmpeg. */
+    bool needsPreview (const juce::File&);
+
+    /** Where previews are kept: ~/Library/Caches/SpectraBlade/Video Previews, unless set (for tests). */
+    juce::File previewFolder();
+    void setPreviewFolder (const juce::File&);
+
+    /** A video's preview there, named for the video's path, size and time it was changed (so a changed
+        video gets a new one). */
+    juce::File previewFile (const juce::File& video);
+
     /** While both play, how far off the picture may be before it is put right, in seconds. */
     constexpr double driftAllowed = 0.04;
 
@@ -69,6 +80,9 @@ namespace Video
         /** Whether the video is ready to show (macOS has read it), and follows the playhead. */
         bool isReady() const;
 
+        /** Whether the picture shown is a preview made by ffmpeg, not the video itself. */
+        bool isShowingPreview() const noexcept         { return usingPreview; }
+
         /** What the panel says instead of a picture, or empty when it shows one. */
         juce::String getMessage() const                { return message; }
 
@@ -81,6 +95,13 @@ namespace Video
     private:
         void timerCallback() override                  { update(); }
         void failed (const juce::String& why);
+        void load (const juce::File& played);
+        void startPreview();
+        void previewMade (const juce::File& video, const juce::File& preview, const juce::String& error);
+
+        class PreviewMaker;
+        std::unique_ptr<PreviewMaker> maker;
+        bool usingPreview = false;
 
         juce::File file;
         std::unique_ptr<juce::VideoComponent> player;

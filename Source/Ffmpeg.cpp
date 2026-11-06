@@ -111,6 +111,40 @@ juce::String encode (const juce::File& ffmpeg, const juce::File& wav, const juce
     return {};
 }
 
+juce::String makePreview (const juce::File& ffmpeg, const juce::File& video, const juce::File& target, const std::function<bool()>& keepGoing)
+{
+    if (! target.getParentDirectory().createDirectory())
+        return "Could not make the folder " + target.getParentDirectory().getFullPathName();
+
+    juce::TemporaryFile temp (target);
+    juce::String error;
+
+    for (const auto* encoder : { "libx264", "h264_videotoolbox" })
+    {
+        juce::StringArray arguments { "-i", video.getFullPathName(), "-map", "0:v:0", "-an", "-sn", "-dn",
+                                      "-vf", "scale='min(1280,iw)':-2", "-pix_fmt", "yuv420p", "-g", "12", "-c:v", encoder };
+
+        if (juce::String (encoder) == "libx264")
+            arguments.addArray ({ "-preset", "veryfast", "-crf", "23" });
+        else
+            arguments.addArray ({ "-b:v", "6M" });
+
+        arguments.addArray ({ "-movflags", "+faststart", "-f", "mp4", temp.getFile().getFullPathName() });
+        error = run (ffmpeg, arguments, keepGoing);
+
+        if (error.isEmpty() || error == "Stopped.")
+            break;
+    }
+
+    if (error.isNotEmpty())
+        return error;
+
+    if (! temp.overwriteTargetFileWithTemporary())
+        return "Could not write " + target.getFullPathName();
+
+    return {};
+}
+
 VideoAudio audioForVideo (const juce::File& video)
 {
     if (video.hasFileExtension ("mov;avi"))  return { "pcm_s24le", "24-bit PCM", 0 };

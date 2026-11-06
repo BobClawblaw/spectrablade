@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 235: MKV and WebM pictures**
+- macOS can't show MKV or WebM pictures, so the Video panel now has ffmpeg make a preview of them (H.264, up to 1280 wide, silent) and shows that instead, labelled "preview" with its size. Previews are kept in ~/Library/Caches/SpectraBlade/Video Previews, named by the video's path, size and date, so a video opened again shows at once; a changed video gets a new one. Any other video macOS refuses gets a preview the same way. Saving sound into the video still uses the original's picture.
+- Measured by the tests: the panel shows MP4, M4V, MOV and an MPEG-4 AVI itself and MKV and WebM through previews of the right size and length (2 s, 320 x 240, silent); opened again, the kept preview is used without being made again and shown within 23 ms. In the app, a 6 s 1920 x 1080 MKV showed its picture as "preview 1280 x 720".
+- Not tried by hand: a long MKV (the preview takes a while to make the first time; the panel says so meanwhile).
+
 **Milestone 234: Projects**
 - File > Save Project and Save Project As... save everything open as a project (.sbproject), and File > Open Project... (or opening or dropping one, or Open Recent) brings it all back: the files open in the editor, in order, each with its selection, cursor, zoom and spectral band, and the video it goes with; the one shown; the effects rack beside the editor, with its effects' settings; the multitrack session; and whether the editor or the session was in front. It works without a session too, for waveform editing and effects alone. Opening a project asks about unsaved changes first, then replaces what is open.
 - A project points to its audio rather than holding it. Saving one leaves the files you opened as they are: a file with unsaved changes, or one never saved, is written as a 32-bit float WAV into "<project> Files" beside the project, and the open file becomes that copy, saved. A session with changes is saved to its own file; an untitled one with tracks is saved into the same folder. Paths inside the project's folder are kept relative, so the folder can be moved or copied whole; files outside it are found by their full path.

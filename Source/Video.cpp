@@ -1,5 +1,6 @@
 #include "Video.h"
 #include "Theme.h"
+#include "Ffmpeg.h"
 
 namespace Video
 {
@@ -12,6 +13,39 @@ const juce::StringArray& extensions()
 bool isVideoFile (const juce::File& f)
 {
     return extensions().contains (f.getFileExtension().substring (1).toLowerCase());
+}
+
+bool needsPreview (const juce::File& f)
+{
+    return f.hasFileExtension ("mkv;webm");
+}
+
+namespace
+{
+    juce::File& previewFolderSetting()
+    {
+        static juce::File folder;
+        return folder;
+    }
+}
+
+juce::File previewFolder()
+{
+    if (previewFolderSetting() != juce::File())
+        return previewFolderSetting();
+
+    return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Caches/SpectraBlade/Video Previews");
+}
+
+void setPreviewFolder (const juce::File& folder)
+{
+    previewFolderSetting() = folder;
+}
+
+juce::File previewFile (const juce::File& video)
+{
+    const auto key = video.getFullPathName() + "|" + juce::String (video.getSize()) + "|" + juce::String (video.getLastModificationTime().toMilliseconds());
+    return previewFolder().getChildFile (video.getFileNameWithoutExtension() + " " + juce::String::toHexString (key.hashCode64()) + ".mp4");
 }
 
 Follow Follower::next (double audio, bool audioPlaying, double picture, bool picturePlaying, double duration)
@@ -70,6 +104,36 @@ Follow Follower::next (double audio, bool audioPlaying, double picture, bool pic
 }
 
 //==============================================================================
+/** Makes a video's preview with ffmpeg on a thread of its own, then hands it to the panel. */
+class Panel::PreviewMaker final : public juce::Thread
+{
+public:
+    PreviewMaker (Panel& p, juce::File ff, juce::File v, juce::File t)
+        : juce::Thread ("Video preview"), panel (&p), ffmpeg (std::move (ff)), video (std::move (v)), target (std::move (t))
+    {
+        startThread();
+    }
+
+    ~PreviewMaker() override   { stopThread (10000); }
+
+    void run() override
+    {
+        const auto error = Ffmpeg::makePreview (ffmpeg, video, target, [this] { return ! threadShouldExit(); });
+
+        if (! threadShouldExit())
+            juce::MessageManager::callAsync ([safe = panel, v = video, t = target, error]
+            {
+                if (safe != nullptr)
+                    safe->previewMade (v, t, error);
+            });
+    }
+
+private:
+    juce::Component::SafePointer<Panel> panel;
+    juce::File ffmpeg, video, target;
+};
+
+//==============================================================================
 Panel::Panel()
 {
     message = "No video. Open a video file, or attach one to this file with File > Attach Video...";
@@ -79,6 +143,7 @@ Panel::Panel()
 Panel::~Panel()
 {
     stopTimer();
+    maker.reset();
 }
 
 void Panel::setFile (const juce::File& f)
@@ -90,6 +155,8 @@ void Panel::setFile (const juce::File& f)
     caption.clear();
     follower.restart();
     ticksWaiting = 0;
+    usingPreview = false;
+    maker.reset();
 
     if (player != nullptr)
     {
@@ -111,12 +178,26 @@ void Panel::setFile (const juce::File& f)
         return;
     }
 
+    if (needsPreview (file))
+        startPreview();
+    else
+        load (file);
+}
+
+void Panel::load (const juce::File& played)
+{
+    ticksWaiting = 0;
+    follower.restart();
     player = std::make_unique<juce::VideoComponent> (false);
     addAndMakeVisible (*player);
     resized();
-    player->onErrorOccurred = [this] (const juce::String& error) { failed (error); };
+    // Not from inside the player's own call: failing deletes it.
+    player->onErrorOccurred = [safe = juce::Component::SafePointer<Panel> (this)] (const juce::String& error)
+    {
+        juce::MessageManager::callAsync ([safe, error] { if (safe != nullptr) safe->failed (error); });
+    };
 
-    if (const auto result = player->load (file); result.failed())
+    if (const auto result = player->load (played); result.failed())
     {
         failed (result.getErrorMessage());
         return;
@@ -127,6 +208,42 @@ void Panel::setFile (const juce::File& f)
     repaint();
 }
 
+void Panel::startPreview()
+{
+    usingPreview = true;
+
+    if (const auto preview = previewFile (file); preview.existsAsFile())
+    {
+        load (preview);
+        return;
+    }
+
+    const auto ffmpeg = Ffmpeg::find();
+
+    if (ffmpeg == juce::File())
+    {
+        failed ("showing it needs ffmpeg, which isn't installed");
+        return;
+    }
+
+    message = "Making a preview of " + file.getFileName() + "'s picture, which macOS can't show itself...";
+    repaint();
+    maker = std::make_unique<PreviewMaker> (*this, ffmpeg, file, previewFile (file));
+}
+
+void Panel::previewMade (const juce::File& video, const juce::File& preview, const juce::String& error)
+{
+    if (video != file)
+        return;   // another video since
+
+    maker.reset();
+
+    if (error.isNotEmpty())
+        failed ("its preview could not be made: " + error);
+    else
+        load (preview);
+}
+
 void Panel::failed (const juce::String& why)
 {
     if (player != nullptr)
@@ -135,9 +252,15 @@ void Panel::failed (const juce::String& why)
         player.reset();
     }
 
+    // macOS couldn't play it: a preview made by ffmpeg, if one hasn't been tried.
+    if (! usingPreview && file.existsAsFile() && Ffmpeg::find() != juce::File())
+    {
+        startPreview();
+        return;
+    }
+
     message = "The picture of " + file.getFileName() + " can't be shown" + (why.isNotEmpty() ? ": " + why : juce::String (".")) + "\n\n"
-              "The picture is shown by macOS (AVFoundation), which plays MP4, M4V and MOV video (and some AVI), not MKV or WebM; "
-              "its sound can still be edited and put back into it.";
+              "Its sound can still be edited and put back into it.";
     caption.clear();
     repaint();
 }
@@ -171,7 +294,7 @@ void Panel::update()
     if (message.isNotEmpty())
     {
         const auto size = player->getVideoNativeSize();
-        caption = file.getFileName() + "   " + juce::String (size.getWidth()) + " x " + juce::String (size.getHeight());
+        caption = file.getFileName() + "   " + (usingPreview ? "preview " : "") + juce::String (size.getWidth()) + " x " + juce::String (size.getHeight());
         message.clear();
         resized();
         repaint();
