@@ -134,6 +134,27 @@ public:
     void goTo (int step);
 
     bool isDirty() const noexcept                 { return position != savedPosition; }
+
+    /** The step the file was last saved at (-1: none that can be reached). */
+    int getSavedPosition() const noexcept         { return savedPosition; }
+
+    /** An undo step, as getSteps() gives them and restoreHistory() takes them. */
+    struct Step
+    {
+        Snapshot snapshot;
+        Markers markers;
+        double sampleRate = 44100.0;
+        juce::String description;
+        FileInfo info;
+        PictureMap picture;
+    };
+
+    /** Every undo step, oldest first (getPosition() is the one it is at). Message thread only. */
+    std::vector<Step> getSteps() const;
+
+    /** Replaces everything with these steps, at position, saved at savedPosition (-1: none), as a
+        file read from `file` (counted as a new file). Message thread only. */
+    void restoreHistory (std::vector<Step>, int position, int savedPosition, const juce::File& file, int sourceBitDepth);
     void markSaved (const juce::File& savedAs, int bitDepth);
 
     /** Trades everything with another document (its audio, undo history, markers, file, video and saved

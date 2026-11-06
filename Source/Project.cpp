@@ -33,11 +33,226 @@ namespace
 
     juce::String int64Text (juce::int64 v)   { return juce::String (v); }
     juce::int64 int64Of (const juce::XmlElement& e, const char* name)   { return e.getStringAttribute (name).getLargeIntValue(); }
+
+    const juce::StringArray infoFields { "title", "artist", "album", "genre", "year", "track", "comment",
+                                         "description", "originator", "originatorReference", "originationDate", "originationTime" };
+
+    juce::String* infoField (FileInfo& i, int index)
+    {
+        juce::String* fields[] = { &i.title, &i.artist, &i.album, &i.genre, &i.year, &i.track, &i.comment,
+                                   &i.description, &i.originator, &i.originatorReference, &i.originationDate, &i.originationTime };
+        return fields[index];
+    }
+
+    void writeStep (juce::XmlElement& e, const History::Step& s)
+    {
+        e.setAttribute ("channels", s.channels);
+        e.setAttribute ("rate", s.sampleRate);
+        e.setAttribute ("description", s.description);
+        e.setAttribute ("picture", s.picture.toString());
+        e.setAttribute ("cover", s.cover);
+
+        for (auto& p : s.pieces)
+        {
+            auto* x = e.createNewChildElement ("PIECE");
+            x->setAttribute ("block", p.block);
+            x->setAttribute ("offset", int64Text (p.offset));
+            x->setAttribute ("length", int64Text (p.length));
+        }
+
+        for (auto& m : s.markers)
+        {
+            auto* x = e.createNewChildElement ("MARKER");
+            x->setAttribute ("start", int64Text (m.start));
+            x->setAttribute ("length", int64Text (m.length));
+            x->setAttribute ("name", m.name);
+            x->setAttribute ("colour", m.colour);
+        }
+
+        auto* info = e.createNewChildElement ("INFO");
+        auto copy = s.info;
+
+        for (int i = 0; i < infoFields.size(); ++i)
+            if (infoField (copy, i)->isNotEmpty())
+                info->setAttribute (infoFields[i], *infoField (copy, i));
+
+        info->setAttribute ("timeReference", int64Text (s.info.timeReference));
+    }
+
+    History::Step readStep (const juce::XmlElement& e)
+    {
+        History::Step s;
+        s.channels = e.getIntAttribute ("channels");
+        s.sampleRate = e.getDoubleAttribute ("rate", 44100.0);
+        s.description = e.getStringAttribute ("description");
+        s.picture = PictureMap::fromString (e.getStringAttribute ("picture"));
+        s.cover = e.getIntAttribute ("cover", -1);
+
+        for (auto* x : e.getChildWithTagNameIterator ("PIECE"))
+            s.pieces.push_back ({ x->getIntAttribute ("block"), int64Of (*x, "offset"), int64Of (*x, "length") });
+
+        for (auto* x : e.getChildWithTagNameIterator ("MARKER"))
+            s.markers.push_back ({ int64Of (*x, "start"), int64Of (*x, "length"), x->getStringAttribute ("name"), x->getIntAttribute ("colour", -1) });
+
+        if (auto* info = e.getChildByName ("INFO"))
+        {
+            for (int i = 0; i < infoFields.size(); ++i)
+                *infoField (s.info, i) = info->getStringAttribute (infoFields[i]);
+
+            s.info.timeReference = int64Of (*info, "timeReference");
+        }
+
+        return s;
+    }
 }
 
 juce::File filesFolder (const juce::File& project)
 {
     return project.getSiblingFile (project.getFileNameWithoutExtension() + " Files");
+}
+
+juce::File historyFolder (const juce::File& project)
+{
+    return filesFolder (project).getChildFile ("History");
+}
+
+std::shared_ptr<History> historyOf (const AudioDocument& doc)
+{
+    const auto steps = doc.getSteps();
+
+    if (steps.size() < 2)
+        return {};
+
+    auto h = std::make_shared<History>();
+    h->position = doc.getPosition();
+    h->saved = doc.getSavedPosition();
+    h->bitDepth = doc.getSourceBitDepth();
+    std::map<const AudioBlock*, int> blockIndex;
+    std::map<const juce::MemoryBlock*, int> coverIndex;
+
+    for (auto& s : steps)
+    {
+        History::Step out;
+        out.channels = s.snapshot->getNumChannels();
+        out.markers = s.markers;
+        out.sampleRate = s.sampleRate;
+        out.description = s.description;
+        out.info = s.info;
+        out.info.cover = nullptr;
+        out.picture = s.picture;
+
+        for (auto& seg : s.snapshot->getSegments())
+        {
+            auto [it, isNew] = blockIndex.emplace (seg.block.get(), (int) h->blocks.size());
+
+            if (isNew)
+                h->blocks.push_back (seg.block);
+
+            out.pieces.push_back ({ it->second, seg.offset, seg.length });
+        }
+
+        if (s.info.hasCover())
+        {
+            auto [it, isNew] = coverIndex.emplace (s.info.cover.get(), (int) h->covers.size());
+
+            if (isNew)
+                h->covers.push_back (s.info.cover);
+
+            out.cover = it->second;
+        }
+
+        h->steps.push_back (std::move (out));
+    }
+
+    return h;
+}
+
+juce::String writeHistory (History& h, const juce::File& folder, juce::AudioFormatManager& formats, const std::function<bool()>& keepGoing)
+{
+    if (! folder.createDirectory())
+        return "Could not make the folder " + folder.getFullPathName();
+
+    h.blockFiles.clear();
+    h.coverFiles.clear();
+
+    for (size_t k = 0; k < h.blocks.size(); ++k)
+    {
+        if (keepGoing != nullptr && ! keepGoing())
+            return "Stopped.";
+
+        const auto& block = h.blocks[k];
+        const auto target = folder.getChildFile ("Block " + juce::String ((int) k + 1) + ".wav");
+        const AudioSnapshot whole (block->getNumChannels(), { { block, 0, block->getNumFrames() } });
+
+        // The rate in the WAV doesn't matter: the steps say theirs.
+        if (const auto error = AudioFileIO::save (whole, 48000.0, target, 32, formats); error.isNotEmpty())
+            return target.getFileName() + ": " + error;
+
+        h.blockFiles.push_back (target);
+    }
+
+    for (size_t k = 0; k < h.covers.size(); ++k)
+    {
+        const auto target = folder.getChildFile ("Cover " + juce::String ((int) k + 1) + ".bin");
+
+        if (! target.replaceWithData (h.covers[k]->getData(), h.covers[k]->getSize()))
+            return "Could not write " + target.getFullPathName();
+
+        h.coverFiles.push_back (target);
+    }
+
+    return {};
+}
+
+std::vector<AudioDocument::Step> readHistory (const History& h, juce::AudioFormatManager& formats)
+{
+    std::vector<AudioDocument::Snapshot> blocks;
+
+    for (auto& f : h.blockFiles)
+    {
+        auto loaded = AudioFileIO::load (f, formats);
+
+        if (loaded.snapshot == nullptr)
+            return {};
+
+        blocks.push_back (loaded.snapshot);
+    }
+
+    std::vector<std::shared_ptr<const juce::MemoryBlock>> covers;
+
+    for (auto& f : h.coverFiles)
+    {
+        auto m = std::make_shared<juce::MemoryBlock>();
+        f.loadFileAsData (*m);
+        covers.push_back (std::move (m));
+    }
+
+    std::vector<AudioDocument::Step> out;
+
+    for (auto& s : h.steps)
+    {
+        std::vector<AudioSnapshot::Segment> segments;
+
+        for (auto& p : s.pieces)
+        {
+            if (! juce::isPositiveAndBelow (p.block, (int) blocks.size()) || p.offset < 0 || p.offset + p.length > blocks[(size_t) p.block]->getNumFrames()
+                || blocks[(size_t) p.block]->getNumChannels() != s.channels)
+                return {};
+
+            for (auto& seg : blocks[(size_t) p.block]->slice (p.offset, p.offset + p.length))
+                segments.push_back (seg);
+        }
+
+        auto info = s.info;
+
+        if (juce::isPositiveAndBelow (s.cover, (int) covers.size()))
+            info.cover = covers[(size_t) s.cover];
+
+        out.push_back ({ std::make_shared<const AudioSnapshot> (s.channels, std::move (segments)), s.markers, s.sampleRate, s.description,
+                         std::move (info), s.picture });
+    }
+
+    return out;
 }
 
 std::unique_ptr<juce::XmlElement> toXml (const State& state, const juce::File& project)
@@ -61,6 +276,23 @@ std::unique_ptr<juce::XmlElement> toXml (const State& state, const juce::File& p
         e->setAttribute ("framesPerPixel", f.place.framesPerPixel);
         e->setAttribute ("bandLow", f.place.band.getStart());
         e->setAttribute ("bandHigh", f.place.band.getEnd());
+
+        if (const auto& h = f.history; h != nullptr && ! h->blockFiles.empty())
+        {
+            auto* x = e->createNewChildElement ("HISTORY");
+            x->setAttribute ("position", h->position);
+            x->setAttribute ("saved", h->saved);
+            x->setAttribute ("bitDepth", h->bitDepth);
+
+            for (auto& b : h->blockFiles)
+                writePath (*x->createNewChildElement ("BLOCK"), "path", b, project);
+
+            for (auto& b : h->coverFiles)
+                writePath (*x->createNewChildElement ("COVER"), "path", b, project);
+
+            for (auto& s : h->steps)
+                writeStep (*x->createNewChildElement ("STEP"), s);
+        }
     }
 
     if (state.session != juce::File())
@@ -116,6 +348,32 @@ Loaded fromXml (const juce::XmlElement& xml, const juce::File& project)
             f.place.viewStart = e->getDoubleAttribute ("viewStart");
             f.place.framesPerPixel = juce::jmax (0.0, e->getDoubleAttribute ("framesPerPixel"));
             f.place.band = { e->getDoubleAttribute ("bandLow"), juce::jmax (e->getDoubleAttribute ("bandLow"), e->getDoubleAttribute ("bandHigh")) };
+
+            if (auto* x = e->getChildByName ("HISTORY"))
+            {
+                auto h = std::make_shared<History>();
+                h->position = x->getIntAttribute ("position");
+                h->saved = x->getIntAttribute ("saved", -1);
+                h->bitDepth = x->getIntAttribute ("bitDepth", 24);
+                auto complete = true;
+
+                for (auto* b : x->getChildWithTagNameIterator ("BLOCK"))
+                {
+                    h->blockFiles.push_back (readPath (*b, "path", project));
+                    complete = complete && h->blockFiles.back().existsAsFile();
+                }
+
+                for (auto* b : x->getChildWithTagNameIterator ("COVER"))
+                    h->coverFiles.push_back (readPath (*b, "path", project));
+
+                for (auto* step : x->getChildWithTagNameIterator ("STEP"))
+                    h->steps.push_back (readStep (*step));
+
+                if (complete && ! h->steps.empty())
+                    f.history = h;
+                else
+                    out.missing.add (file.getFileName() + ": its undo history (the audio kept for it isn't all there)");
+            }
 
             // The one shown, or the one before it when that is missing.
             if (index <= active)
@@ -270,11 +528,39 @@ State gather (const OpenFiles& files, const FilePlace& activePlace, const AudioE
         if (i == files.getActiveIndex())
             s.active = (int) s.files.size();
 
-        s.files.push_back ({ doc.getFile(), doc.getVideo(), i == files.getActiveIndex() ? activePlace : files.placeAt (i) });
+        s.files.push_back ({ doc.getFile(), doc.getVideo(), i == files.getActiveIndex() ? activePlace : files.placeAt (i), nullptr });
     }
 
     s.active = juce::jlimit (0, juce::jmax (0, (int) s.files.size() - 1), s.active);
     return s;
+}
+
+void attachHistories (State& state, const OpenFiles& files, const std::vector<std::shared_ptr<History>>& histories)
+{
+    // gather leaves out untitled files; the rest are in order.
+    size_t at = 0;
+
+    for (int i = 0; i < files.size() && at < state.files.size(); ++i)
+    {
+        const auto& doc = files.documentAt (i);
+
+        if (doc.getFile() == juce::File())
+            continue;
+
+        if (auto h = juce::isPositiveAndBelow (i, (int) histories.size()) ? histories[(size_t) i] : nullptr)
+        {
+            const auto steps = doc.getSteps();
+
+            if (steps.size() == h->steps.size() && doc.getPosition() == h->position)
+            {
+                h->saved = doc.getSavedPosition();
+                h->bitDepth = doc.getSourceBitDepth();
+                state.files[at].history = h;
+            }
+        }
+
+        ++at;
+    }
 }
 
 Restored restoreFiles (const State& state, OpenFiles& files, AudioEngine& engine)
@@ -287,16 +573,33 @@ Restored restoreFiles (const State& state, OpenFiles& files, AudioEngine& engine
     for (size_t i = 0; i < state.files.size(); ++i)
     {
         const auto& f = state.files[i];
-        auto loaded = AudioFileIO::load (f.file, engine.formatManager);
 
-        if (loaded.error.isNotEmpty())
+        // With its undo history when the project keeps one that can be read; otherwise as the file is.
+        auto steps = f.history != nullptr ? readHistory (*f.history, engine.formatManager) : std::vector<AudioDocument::Step>();
+
+        if (f.history != nullptr && steps.empty())
+            out.missing.add (f.file.getFileName() + ": its undo history couldn't be read, so it opened as saved");
+
+        if (! steps.empty())
         {
-            out.missing.add (f.file.getFileName() + ": " + loaded.error);
-            continue;
+            files.prepareForAnother (previous);
+            AudioDocument restored;
+            restored.restoreHistory (std::move (steps), f.history->position, f.history->saved, f.file, f.history->bitDepth);
+            engine.swapDocument (restored);
         }
+        else
+        {
+            auto loaded = AudioFileIO::load (f.file, engine.formatManager);
 
-        files.prepareForAnother (previous);
-        engine.adoptFile (f.file, std::move (loaded));
+            if (loaded.error.isNotEmpty())
+            {
+                out.missing.add (f.file.getFileName() + ": " + loaded.error);
+                continue;
+            }
+
+            files.prepareForAnother (previous);
+            engine.adoptFile (f.file, std::move (loaded));
+        }
 
         if (f.video != juce::File())
             engine.document.setVideo (f.video);

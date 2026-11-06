@@ -340,6 +340,41 @@ void AudioDocument::markSaved (const juce::File& savedAs, int bitDepth)
     sendChangeMessage();
 }
 
+std::vector<AudioDocument::Step> AudioDocument::getSteps() const
+{
+    std::vector<Step> out;
+
+    for (auto& e : history)
+        out.push_back ({ e.snapshot, e.markers, e.sampleRate, e.description, e.info, e.picture });
+
+    return out;
+}
+
+void AudioDocument::restoreHistory (std::vector<Step> steps, int at, int saved, const juce::File& f, int bitDepth)
+{
+    if (steps.empty())
+        return;
+
+    for (auto& e : history)
+        retire (std::move (e.snapshot));
+
+    history.clear();
+
+    for (auto& s : steps)
+    {
+        MarkerEdits::sort (s.markers);
+        history.push_back ({ std::move (s.snapshot), std::move (s.markers), s.sampleRate, std::move (s.description), std::move (s.info), std::move (s.picture) });
+    }
+
+    position = juce::jlimit (0, (int) history.size() - 1, at);
+    savedPosition = juce::isPositiveAndBelow (saved, (int) history.size()) ? saved : -1;
+    file = f;
+    video = Video::isVideoFile (f) ? f : juce::File();
+    sourceBitDepth = bitDepth;
+    ++resetCount;
+    setCurrent (history[(size_t) position]);
+}
+
 void AudioDocument::setVideo (const juce::File& f)
 {
     if (f == video)

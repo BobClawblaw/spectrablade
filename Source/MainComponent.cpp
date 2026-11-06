@@ -49,6 +49,7 @@ namespace
     constexpr const char* laneHeightKey   = "laneHeight";
     constexpr const char* loopPlaybackKey = "loopPlayback";
     constexpr const char* fileTabsKey = "fileTabs";
+    constexpr const char* projectHistoryKey = "projectHistory";
     constexpr const char* rackShownKey    = "rackShown";
     constexpr const char* openPreviewKey  = "previewInOpenPanel";
     constexpr const char* waveShareKey    = "waveformShare";
@@ -135,7 +136,7 @@ namespace
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
-        cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs
+        cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1180,7 +1181,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSaveProjectAs; ++id)
+    for (int id = cmdOpen; id <= cmdKeepProjectHistory; ++id)
         ids.add (id);
 }
 
@@ -1479,6 +1480,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                              info.setActive (backgroundJob == nullptr); break;
         case cmdSaveProjectAs: info.setInfo ("Save Project As...", "Save everything open as a new project", "File", 0);
                                info.setActive (backgroundJob == nullptr); break;
+        case cmdKeepProjectHistory: info.setInfo ("Keep Undo History in Projects", "Save each file's undo steps with a project (writing the audio of every version they hold)", "File", 0);
+                                    info.setTicked (appProperties.getUserSettings()->getBoolValue (projectHistoryKey, true)); break;
         case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's video, following the playhead", "Window", 0);
                            info.setTicked (dock->isShown (Panels::video)); break;
         case cmdAttachVideo: info.setInfo ("Attach Video...", "Choose the video this file's sound goes with, to watch in the Video panel and to put the sound back into", "File", 0);
@@ -2256,6 +2259,10 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdOpenProject: chooseProject(); break;
         case cmdSaveProject: saveProject (false); break;
         case cmdSaveProjectAs: saveProject (true); break;
+        case cmdKeepProjectHistory:
+            appProperties.getUserSettings()->setValue (projectHistoryKey, ! appProperties.getUserSettings()->getBoolValue (projectHistoryKey, true));
+            commands.commandStatusChanged();
+            break;
         case cmdAttachVideo: attachVideo(); break;
         case cmdSaveIntoVideo: saveIntoVideo(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
@@ -2354,7 +2361,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -5146,7 +5153,15 @@ void MainComponent::writeProject (const juce::File& project)
 
     const auto copies = Project::copiesNeeded (openFiles, project);
 
-    const auto finish = [this, project, copies]
+    // Each file's undo history, unless turned off: its steps as they are now.
+    const auto keepHistory = appProperties.getUserSettings()->getBoolValue (projectHistoryKey, true);
+    std::vector<std::shared_ptr<Project::History>> histories ((size_t) openFiles.size());
+
+    if (keepHistory)
+        for (int i = 0; i < openFiles.size(); ++i)
+            histories[(size_t) i] = Project::historyOf (openFiles.documentAt (i));
+
+    const auto finish = [this, project, copies, histories]
     {
         Project::adoptCopies (openFiles, copies);
         const auto [session, sessionError] = Project::saveSession (engine, project);
@@ -5157,7 +5172,9 @@ void MainComponent::writeProject (const juce::File& project)
             return;
         }
 
-        const auto state = Project::gather (openFiles, waveform.getPlace(), engine, multitrackMode, session);
+        auto state = Project::gather (openFiles, waveform.getPlace(), engine, multitrackMode, session);
+
+        Project::attachHistories (state, openFiles, histories);
 
         if (const auto error = Project::save (state, project); error.isNotEmpty())
         {
@@ -5171,17 +5188,30 @@ void MainComponent::writeProject (const juce::File& project)
         commands.commandStatusChanged();
     };
 
-    if (copies.empty())
+    const auto anyHistory = std::any_of (histories.begin(), histories.end(), [] (auto& h) { return h != nullptr; });
+
+    if (copies.empty() && ! anyHistory)
     {
+        Project::historyFolder (project).deleteRecursively();   // none kept now
         finish();
         return;
     }
 
     auto error = std::make_shared<juce::String>();
     backgroundJob = std::make_unique<BackgroundJob> (*this, "Saving project...",
-        [this, copies, error] (const std::function<bool (float)>& progress)
+        [this, copies, histories, project, error] (const std::function<bool (float)>& progress)
         {
-            *error = Project::writeCopies (copies, engine.formatManager, progress);
+            *error = Project::writeCopies (copies, engine.formatManager, [&progress] (float p) { return progress (0.5f * p); });
+
+            // The histories written afresh each time.
+            const auto folder = Project::historyFolder (project);
+            folder.deleteRecursively();
+
+            for (size_t i = 0; i < histories.size() && error->isEmpty(); ++i)
+                if (auto h = histories[i])
+                    *error = Project::writeHistory (*h, folder.getChildFile (juce::String ((int) i + 1)), engine.formatManager,
+                                                    [&progress, i, n = histories.size()] { return progress (0.5f + 0.5f * (float) i / (float) n); });
+
             return *error != "Stopped.";
         },
         [error, finish]

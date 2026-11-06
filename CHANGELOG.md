@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 237: Undo history in projects**
+- Saving a project now keeps each file's undo history too: opened again, a file is at the step it was at, with undo and redo back through every step (audio, markers, tags and the cover, sample rate and picture map), and knows which step was saved. The audio the steps share is written once per block, as 32-bit float WAVs, into "<project> Files/History", written afresh each time the project is saved. That can take a lot of room (every version of the audio the history holds), so File > Keep Undo History in Projects turns it off; a file with no steps keeps none.
+- When the audio kept for a history is gone, the file opens as it was saved, and the project says so.
+- Measured by the tests: a file with a gain, a marker, tags with a cover, a cut and the cut undone, saved in a project and opened again after the project's folder moved, comes back at the saved step (not dirty, redo available) with that step's marker and tags (the cover's bytes equal); redo brings back the cut, bit for bit, with its picture map; going back to the start gives the file as first opened, bit for bit; its five steps' audio was written as 2 shared blocks; files with no steps keep none; with the blocks deleted it opens as saved and that is named. The whole suite passed (1094 checks).
+- Not tried by hand: saving and reopening a project with histories through the app's menus (the tests run the same Project code the menus call, but not the menu commands and the background save), and a long history of a large file (the space and time it takes).
+
 **Milestone 236: Picture follows edits**
 - The picture of a video now follows edits that change the sound's length. After a cut the picture jumps where the sound does; audio pasted from elsewhere in the file brings its picture with it; audio from nowhere in the file (inserted silence, generated or time-stretched audio) has no picture, and the Video panel shows black there. Edits in place leave it as it was, as does a sample rate conversion. It goes back and forth with undo and redo.
 - File > Save Sound into Video... with the length changed cuts the picture to follow, on whole frames, black where the sound has none or runs past the video's end, and encodes it again (H.264 at CRF 18 in MP4, M4V, MOV and MKV; VP9 in WebM; MPEG-4 Part 2 in AVI), without chapters, which no longer fit. With the length as it was, the picture is still copied as it is.

@@ -14,15 +14,47 @@
     copy. An untitled session with tracks is saved into the same folder. Paths inside the
     project's own folder are kept relative to it, so the folder can be moved or copied whole.
 
-    Undo histories aren't kept: a project reopens each file as it was saved. */
+    Each file's undo history is kept too, unless turned off: the audio blocks its steps share are
+    written once each, as 32-bit float WAVs, into "<project> Files/History", with each step's
+    markers, tags, sample rate and picture map, where the file was in its history and the step it
+    was saved at. That can take a lot of room: every version of the audio the history holds. */
 namespace Project
 {
     inline constexpr const char* extension = "sbproject";
+
+    /** One file's undo history: its steps, each as pieces of audio blocks that the steps share. */
+    struct History
+    {
+        struct Piece
+        {
+            int block = 0;
+            juce::int64 offset = 0, length = 0;
+        };
+
+        struct Step
+        {
+            int channels = 0;
+            std::vector<Piece> pieces;
+            Markers markers;
+            double sampleRate = 44100.0;
+            juce::String description;
+            FileInfo info;   // its cover by `cover`
+            int cover = -1;
+            PictureMap picture;
+        };
+
+        int position = 0, saved = -1, bitDepth = 24;
+        std::vector<Step> steps;
+        std::vector<std::shared_ptr<const AudioBlock>> blocks;              // gathered, to be written
+        std::vector<std::shared_ptr<const juce::MemoryBlock>> covers;
+        std::vector<juce::File> blockFiles, coverFiles;                     // written or read
+    };
 
     struct OpenFile
     {
         juce::File file, video;
         FilePlace place;
+        std::shared_ptr<History> history;   // none: opened as the file is
     };
 
     struct State
@@ -77,6 +109,22 @@ namespace Project
         one with tracks into the project's folder. Gives the session file the project points to (none
         when there is no session), or an error. */
     std::pair<juce::File, juce::String> saveSession (AudioEngine&, const juce::File& project);
+
+    /** A document's undo history, to keep in a project (nothing when it has no steps but its start). */
+    std::shared_ptr<History> historyOf (const AudioDocument&);
+
+    /** The folder histories are written into, and each file's within it. */
+    juce::File historyFolder (const juce::File& project);
+
+    /** Writes a history's blocks and covers into a folder (any thread). */
+    juce::String writeHistory (History&, const juce::File& folder, juce::AudioFormatManager&, const std::function<bool()>& keepGoing = {});
+
+    /** A history's steps, their audio read back from its block files (empty when one can't be read). */
+    std::vector<AudioDocument::Step> readHistory (const History&, juce::AudioFormatManager&);
+
+    /** Gives the gathered files their histories (taken by historyOf before saving, by open file), with
+        where each file now is in it and the step it is saved at; a file edited meanwhile goes without. */
+    void attachHistories (State&, const OpenFiles&, const std::vector<std::shared_ptr<History>>&);
 
     /** What is open now, as a project. activePlace: where the editor is in the file shown. */
     State gather (const OpenFiles&, const FilePlace& activePlace, const AudioEngine&, bool multitrack, const juce::File& session);
