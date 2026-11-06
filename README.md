@@ -1,5 +1,14 @@
 # SpectraBlade
 
+[![Latest release](https://img.shields.io/github/v/release/BobClawblaw/spectrablade?label=release)](https://github.com/BobClawblaw/spectrablade/releases/latest)
+[![Licence: AGPL-3.0](https://img.shields.io/github/license/BobClawblaw/spectrablade?label=licence)](LICENSE)
+![macOS 13 or later](https://img.shields.io/badge/macOS-13%2B-black?logo=apple)
+![Apple silicon and Intel](https://img.shields.io/badge/arch-Apple%20silicon%20%7C%20Intel-555)
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)
+[![JUCE 9.0.4](https://img.shields.io/badge/JUCE-9.0.4-8DC63F)](https://juce.com)
+![Plug-ins: VST3 and AU](https://img.shields.io/badge/plug--ins-VST3%20%7C%20AU-orange)
+[![Last commit](https://img.shields.io/github/last-commit/BobClawblaw/spectrablade)](https://github.com/BobClawblaw/spectrablade/commits/main)
+
 A clean-room audio editor for macOS: waveform and spectral editing, repair and loudness tools, built-in effects, multitrack sessions with automation and mixdown, and VST3 and Audio Unit plug-ins. Built on JUCE 9.0.4.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
