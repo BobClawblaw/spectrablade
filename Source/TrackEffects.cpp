@@ -337,6 +337,39 @@ int TrackEffects::getLatency (juce::uint32 trackId)
     return chain != nullptr ? latencyOf (*chain) : 0;
 }
 
+bool TrackEffects::takesSidechain (const juce::AudioPluginInstance& p)
+{
+    return p.getBusCount (true) > 1 && p.getChannelCountOfBus (true, 1) > 0;
+}
+
+bool TrackEffects::hasSidechain (juce::uint32 trackId, int slot) const
+{
+    const auto* plugin = getPlugin (trackId, slot);
+    return plugin != nullptr && takesSidechain (*plugin);
+}
+
+int TrackEffects::getLatencyBefore (juce::uint32 trackId, juce::uint32 slotId)
+{
+    const juce::ScopedTryLock sl (lock);
+    const auto* chain = sl.isLocked() ? find (trackId) : nullptr;
+
+    if (chain == nullptr)
+        return -1;
+
+    int before = 0;
+
+    for (auto& slot : *chain)
+    {
+        if (slot->id == slotId)
+            return slot->bypassed || ! takesSidechain (*slot->plugin) ? -1 : before;
+
+        if (! slot->bypassed)
+            before += juce::jmax (0, slot->plugin->getLatencySamples());
+    }
+
+    return -1;
+}
+
 void TrackEffects::reset (juce::uint32 trackId)
 {
     const juce::ScopedTryLock sl (lock);
@@ -346,7 +379,8 @@ void TrackEffects::reset (juce::uint32 trackId)
             slot->plugin->reset();
 }
 
-void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::AudioBuffer<float>& buffer, int numFrames)
+void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::AudioBuffer<float>& buffer, int numFrames,
+                            const std::vector<SessionMixer::KeyAudio>& keys)
 {
     const juce::ScopedTryLock sl (lock);
     auto* chain = sl.isLocked() ? find (track.id) : nullptr;
@@ -398,7 +432,30 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
             auto& p = *s->plugin;
             juce::AudioBuffer<float> work (s->work.getArrayOfWritePointers(), s->work.getNumChannels(), n);
             work.clear();
-            const auto ins = juce::jmin (2, juce::jmax (1, p.getTotalNumInputChannels()));
+            const auto ins = juce::jmin (2, juce::jmax (1, p.getBusCount (true) > 0 ? p.getChannelCountOfBus (true, 0) : 0));
+
+            // The key, if the slot has one, into the sidechain input (a mono one gets the average).
+            if (takesSidechain (p))
+            {
+                const auto key = std::find_if (keys.begin(), keys.end(), [&s] (auto& k) { return k.slotId == s->id; });
+
+                if (key != keys.end() && key->audio != nullptr)
+                {
+                    const auto first = p.getChannelIndexInProcessBlockBuffer (true, 1, 0);
+                    const auto count = p.getChannelCountOfBus (true, 1);
+
+                    if (count == 1)
+                    {
+                        work.addFrom (first, 0, *key->audio, 0, done, n, 0.5f);
+                        work.addFrom (first, 0, *key->audio, 1, done, n, 0.5f);
+                    }
+                    else
+                    {
+                        work.copyFrom (first, 0, *key->audio, 0, done, n);
+                        work.copyFrom (first + 1, 0, *key->audio, 1, done, n);
+                    }
+                }
+            }
 
             // A mono input gets the average of the two sides.
             work.copyFrom (0, 0, buffer, 0, done, n);

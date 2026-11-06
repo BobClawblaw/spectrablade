@@ -7,8 +7,9 @@
 namespace Bounce
 {
     /** The session with only this track in it, sends removed, unmuted and unsoloed, and into the
-        mix even if it plays out of an interface pair: mixed, it gives the track's own sound (not
-        through buses). */
+        mix even if it plays out of an interface pair, with the keys it ducks under and its
+        effects' sidechains listen to (SessionEdits::addKeys): mixed, it gives the track's own
+        sound (not through buses). */
     SessionState isolate (const SessionState&, juce::uint32 trackId);
 
     /** Puts a bounce into the session: a new track right after the source, named after it, with
@@ -23,8 +24,9 @@ namespace Bounce
 
     /** A folder and what is in it alone, as Export Folder Stems renders it: its tracks and buses
         as they are set (their own mutes too), sending only to buses in the folder, nothing
-        soloed, any playing out of an interface pair into the stem instead, and the folder's
-        volume but not its mute. */
+        soloed, any playing out of an interface pair into the stem instead, the keys they listen
+        to from outside the folder (SessionEdits::addKeys), and the folder's volume but not its
+        mute. */
     SessionState isolateFolder (const SessionState&, juce::uint32 folderId);
 
     /** The folders with a track with clips in them, in the session's order: what Export Folder

@@ -42,6 +42,7 @@
 #include "SessionTests.h"
 #include "TrackEffectsTests.h"
 #include "BusTests.h"
+#include "SidechainTests.h"
 #include "AutomationTests.h"
 #include "MultitrackViewTests.h"
 #include "MixDownTests.h"
@@ -534,6 +535,7 @@ int main (int argc, char* argv[])
         runSessionTests (engine.formatManager);
         runTrackEffectsTests();
         runBusTests();
+        runSidechainTests();
         runAutomationTests (engine.formatManager);
         runMultitrackViewTests (engine);
         runMixDownTests (engine);

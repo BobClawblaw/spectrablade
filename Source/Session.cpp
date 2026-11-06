@@ -57,6 +57,45 @@ const SessionTrack* SessionState::outputBusOf (const SessionTrack& t) const
     return bus != nullptr && bus->isBus ? bus : nullptr;
 }
 
+juce::uint32 SessionTrack::sidechainKey (juce::uint32 slotId) const
+{
+    for (auto& s : sidechains)
+        if (s.slotId == slotId)
+            return s.keyTrackId;
+
+    return 0;
+}
+
+bool SessionState::listensTo (const SessionTrack& track, juce::uint32 otherId) const
+{
+    // Depth first through the keys; no longer than the session, so a loop can't hang it.
+    std::vector<std::pair<const SessionTrack*, size_t>> stack { { &track, 0 } };
+
+    while (! stack.empty() && stack.size() <= tracks.size() + 1)
+    {
+        auto [t, depth] = stack.back();
+        stack.pop_back();
+        std::vector<juce::uint32> keys;
+
+        if (t->ducking.isOn())
+            keys.push_back (t->ducking.keyTrackId);
+
+        for (auto& s : t->sidechains)
+            keys.push_back (s.keyTrackId);
+
+        for (const auto k : keys)
+        {
+            if (k == otherId)
+                return true;
+
+            if (const auto* key = findTrack (k); key != nullptr && depth < tracks.size())
+                stack.push_back ({ key, depth + 1 });
+        }
+    }
+
+    return false;
+}
+
 bool SessionState::feeds (const SessionTrack& from, juce::uint32 busId) const
 {
     // Down a chain of outputs from a bus: no longer than the session, so a loop can't hang it.
@@ -1474,6 +1513,43 @@ bool unfreezeTrack (SessionState& s, juce::uint32 trackId)
     return true;
 }
 
+void addKeys (const SessionState& from, SessionState& alone)
+{
+    for (size_t i = 0; i < alone.tracks.size(); ++i)   // grows as keys come in, whose keys come in too
+    {
+        std::vector<juce::uint32> keys;
+
+        if (alone.tracks[i].ducking.isOn())
+            keys.push_back (alone.tracks[i].ducking.keyTrackId);
+
+        for (auto& chain : alone.tracks[i].sidechains)
+            keys.push_back (chain.keyTrackId);
+
+        for (const auto k : keys)
+        {
+            const auto* key = from.findTrack (k);
+
+            if (key == nullptr || key->isBus || key->isFolder || alone.findTrack (k) != nullptr)
+                continue;
+
+            auto copy = *key;
+            copy.sends.clear();
+            copy.outputBusId = 0;
+            copy.deviceOutput = 0;
+            copy.solo = false;
+
+            if (const auto* folder = key->folderId != 0 ? from.findTrack (key->folderId) : nullptr)
+            {
+                copy.mute = copy.mute || folder->mute;
+                copy.gainDb += folder->gainDb;
+            }
+
+            copy.folderId = 0;
+            alone.tracks.push_back (std::move (copy));
+        }
+    }
+}
+
 SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
 {
     auto alone = s;
@@ -1495,6 +1571,7 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
         alone.tracks.push_back (std::move (t));
     }
 
+    addKeys (s, alone);   // what its effects' sidechains listen to
     return alone;
 }
 
@@ -1539,6 +1616,9 @@ bool removeTrack (SessionState& s, int track)
 
         if (t.ducking.keyTrackId == removed)
             t.ducking.keyTrackId = 0;
+
+        t.sidechains.erase (std::remove_if (t.sidechains.begin(), t.sidechains.end(), [removed] (auto& c) { return c.keyTrackId == removed; }),
+                            t.sidechains.end());
     }
 
     return true;
@@ -1601,10 +1681,9 @@ bool setDucking (SessionState& s, juce::uint32 trackId, const Ducking& ducking)
         if (key == nullptr || key->isBus || key->isFolder || key->id == trackId)
             return false;
 
-        // No loops: follow the key's own key, and its key's, back.
-        for (auto* k = key; k != nullptr && k->ducking.isOn(); k = s.findTrack (k->ducking.keyTrackId))
-            if (k->ducking.keyTrackId == trackId)
-                return false;
+        // No loops: the key may not listen to this track, through ducking or sidechains.
+        if (s.listensTo (*key, trackId))
+            return false;
     }
 
     const auto& d = track->ducking;
@@ -1614,6 +1693,30 @@ bool setDucking (SessionState& s, juce::uint32 trackId, const Ducking& ducking)
         return false;
 
     track->ducking = ducking;
+    return true;
+}
+
+bool setSidechain (SessionState& s, juce::uint32 trackId, juce::uint32 slotId, juce::uint32 keyTrackId)
+{
+    auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || track->isFolder || slotId == 0 || track->sidechainKey (slotId) == keyTrackId)
+        return false;
+
+    if (keyTrackId != 0)
+    {
+        const auto* key = s.findTrack (keyTrackId);
+
+        if (key == nullptr || key->isBus || key->isFolder || key->id == trackId || s.listensTo (*key, trackId))
+            return false;
+    }
+
+    auto& list = track->sidechains;
+    list.erase (std::remove_if (list.begin(), list.end(), [slotId] (auto& c) { return c.slotId == slotId; }), list.end());
+
+    if (keyTrackId != 0)
+        list.push_back ({ slotId, keyTrackId });
+
     return true;
 }
 
@@ -1999,6 +2102,16 @@ juce::String save (const SessionState& state, const juce::File& target,
             duck->setAttribute ("releaseMs", t.ducking.releaseMs);
         }
 
+        for (auto& chain : t.sidechains)
+        {
+            if (indexOf.count (chain.keyTrackId) > 0)
+            {
+                auto* side = track->createNewChildElement ("SIDECHAIN");
+                side->setAttribute ("slot", (int) chain.slotId);
+                side->setAttribute ("key", indexOf[chain.keyTrackId]);
+            }
+        }
+
         for (auto& send : t.sends)
         {
             auto* sendXml = track->createNewChildElement ("SEND");
@@ -2241,6 +2354,9 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         {
             track.ducking.keyTrackId = (juce::uint32) -1;
         }
+
+        for (auto* side : trackXml->getChildWithTagNameIterator ("SIDECHAIN"))   // keys as indices, likewise
+            track.sidechains.push_back ({ (juce::uint32) side->getIntAttribute ("slot"), (juce::uint32) side->getIntAttribute ("key", -1) });
         track.name = trackXml->getStringAttribute ("name", track.name);
 
         for (auto* sendXml : trackXml->getChildWithTagNameIterator ("SEND"))
@@ -2394,6 +2510,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         state.tracks[i].folderId = 0;
         state.tracks[i].outputBusId = 0;
         state.tracks[i].ducking = {};
+        state.tracks[i].sidechains.clear();
 
         if (pending[i].folderId < pending.size())
             SessionEdits::setTrackFolder (state, state.tracks[i].id, pending[pending[i].folderId].id);
@@ -2421,6 +2538,12 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             SessionEdits::setDucking (state, state.tracks[i].id, ducking);
         }
     }
+
+    // Sidechains likewise, after the ducking, as the check for loops follows both.
+    for (size_t i = 0; i < pending.size(); ++i)
+        for (auto& chain : pending[i].sidechains)
+            if (chain.keyTrackId < pending.size())
+                SessionEdits::setSidechain (state, state.tracks[i].id, chain.slotId, pending[chain.keyTrackId].id);
 
     return result;
 }

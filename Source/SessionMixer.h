@@ -31,6 +31,11 @@
     have at least as much latency as the ducked track's; otherwise it comes late by the
     difference. A key that doesn't play (muted, or left out by a solo) ducks nothing.
 
+    A sidechain feeds a key track's output (after its volume, as ducking hears it) into an
+    effect's sidechain input on a track or bus. Keys are mixed first, and a key is read ahead far
+    enough that its output, held back, lines up with the audio going into that effect, whatever
+    latency comes before it; a key that doesn't play feeds silence.
+
     Muted tracks and buses play nothing. When anything is soloed, only soloed tracks and buses
     play, along with the buses a soloed track or bus feeds (by a send or an output, through any
     buses between) and the tracks and buses that feed a soloed bus. A track or bus whose output
@@ -39,6 +44,14 @@ namespace SessionMixer
 {
     /** Left and right gains for a pan position and a source with this many channels. */
     std::pair<float, float> panGains (float pan, int sourceChannels);
+
+    /** A key's output for a block, lined up with the audio going into the effect slot whose
+        sidechain it feeds: two channels, frames from 0. */
+    struct KeyAudio
+    {
+        juce::uint32 slotId = 0;
+        const juce::AudioBuffer<float>* audio = nullptr;
+    };
 
     /** Processing on each track between its pan and its volume: the track's effects. */
     struct Inserts
@@ -55,9 +68,15 @@ namespace SessionMixer
         /** Clears the processing's memory (after a jump in time). */
         virtual void reset (juce::uint32 trackId) = 0;
 
+        /** The latency of the processing before this slot on the track, where the slot is there,
+            not bypassed, and takes a sidechain; otherwise -1. */
+        virtual int getLatencyBefore (juce::uint32 trackId, juce::uint32 slotId) = 0;
+
         /** Processes the first numFrames of a two-channel buffer in place: the track's audio from
-            session frame `frame` on (what its effects' automation follows). */
-        virtual void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames) = 0;
+            session frame `frame` on (what its effects' automation follows), with the keys for
+            the slots that take a sidechain (any slot not given one hears silence there). */
+        virtual void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames,
+                              const std::vector<KeyAudio>& keys) = 0;
     };
 
     /** Peak levels of the tracks and buses as they go into the mix (after their volume and pan),
@@ -106,6 +125,8 @@ namespace SessionMixer
         };
 
         std::map<juce::uint32, juce::AudioBuffer<float>> keys;
+        std::map<juce::uint32, juce::AudioBuffer<float>> sidechains;   // by slot: each key lined up for its effect
+        std::vector<KeyAudio> keyAudio;
         std::map<juce::uint32, Duck> ducks;
         juce::AudioBuffer<float> keyHeld, duckGains;
         std::vector<int> order;            // the tracks in the order they are mixed: keys first
@@ -118,6 +139,7 @@ namespace SessionMixer
                 b->setSize (2, frames);
 
             order.reserve (64);
+            keyAudio.reserve (16);
             marks.reserve (64);
             busOrder.reserve (64);
         }

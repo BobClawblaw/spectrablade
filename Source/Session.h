@@ -168,6 +168,14 @@ struct Ducking
     }
 };
 
+/** A plug-in on a track or bus listening to another track: the key track's output (after its
+    volume, as ducking hears it) goes into the plug-in's sidechain input. */
+struct Sidechain
+{
+    juce::uint32 slotId = 0;               // the effect slot (TrackEffects) whose sidechain it feeds
+    juce::uint32 keyTrackId = 0;           // a track, not a bus or folder
+};
+
 struct SessionTrack
 {
     juce::uint32 id = 0;
@@ -203,6 +211,12 @@ struct SessionTrack
     /** Ducking under another track (tracks only). It acts with the volume: on the track's
         output and post-fader sends, not its pre-fader sends. */
     Ducking ducking;
+
+    /** The effect slots fed a key track's output on their sidechain input, at most one key each. */
+    std::vector<Sidechain> sidechains;
+
+    /** The key feeding this slot's sidechain, or 0. */
+    juce::uint32 sidechainKey (juce::uint32 slotId) const;
 
     /** A frozen track plays this (its clips, pan and effects rendered, from session frame 0)
         instead of its clips and effects; its volume, sends, mute and solo still apply. Its clips
@@ -288,6 +302,10 @@ struct SessionState
     /** True when what a track or bus plays reaches this bus: through a send or its output,
         then through the outputs of the buses on the way. */
     bool feeds (const SessionTrack& from, juce::uint32 busId) const;
+
+    /** True when this track listens to the other, through any number of keys (ducking or a
+        sidechain) in turn: the other must be mixed first. */
+    bool listensTo (const SessionTrack& track, juce::uint32 otherId) const;
 
     /** The track and index of the clip with this id, or nothing. */
     std::optional<std::pair<int, int>> findClip (juce::uint32 clipId) const;
@@ -475,7 +493,14 @@ namespace SessionEdits
     bool unfreezeTrack (SessionState&, juce::uint32 trackId);
 
     /** What freezing a track renders: the track alone with its clips, pan and effects, at 0 dB
-        with no volume envelope, sends or solo, unmuted. */
+        with no volume envelope, sends or solo, unmuted; and the keys its effects' sidechains
+        listen to (addKeys). */
+    /** Brings into a session cut from another (a track or folder alone) the key tracks its
+        tracks and buses listen to, by ducking or a sidechain, through any number in turn, as they
+        are in the other: each with no sends, playing out of an interface pair, so it feeds its
+        listeners without reaching a stereo mix; its folder's mute and volume taken on. */
+    void addKeys (const SessionState& from, SessionState& alone);
+
     SessionState frozenSource (const SessionState&, juce::uint32 trackId);
 
     /** Moves each clip on a track that starts after the end of the clips before it back to that
@@ -535,6 +560,11 @@ namespace SessionEdits
         in place of the mix, or with -1 back to the mix. False for a folder, a channel out of
         [0, maxDeviceOutputs - 1), or when it is already so. */
     bool setTrackDeviceOutput (SessionState&, juce::uint32 trackId, int firstChannel);
+
+    /** Feeds a key track's output into the sidechain of the effect in this slot of a track or
+        bus (a key of 0 stops it). False for a folder, a key that isn't another track, a key that
+        listens to this track itself (through any keys), or when it is already so. */
+    bool setSidechain (SessionState&, juce::uint32 trackId, juce::uint32 slotId, juce::uint32 keyTrackId);
 
     /** Sets a track's ducking (a key of 0 turns it off). False for a bus or folder, a key that
         isn't another track, settings out of range, or a key that ducks under this track itself,

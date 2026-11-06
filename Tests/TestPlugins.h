@@ -89,6 +89,91 @@ private:
     int write = 0;
 };
 
+/** Has a sidechain input (stereo, or mono when asked) and adds it to its input, both delayed by
+    its latency: out[n] = in[n - latency] + key[n - latency], so a key out of line shows. */
+class SidechainPlugin final : public juce::AudioPluginInstance
+{
+public:
+    explicit SidechainPlugin (int latencyFrames, bool monoKey = false)
+        : AudioPluginInstance (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
+                                                .withOutput ("Out", juce::AudioChannelSet::stereo(), true)
+                                                .withInput ("Sidechain", monoKey ? juce::AudioChannelSet::mono() : juce::AudioChannelSet::stereo(), true)),
+          latency (latencyFrames)
+    {
+        setLatencySamples (latency);
+    }
+
+    bool isBusesLayoutSupported (const BusesLayout& layout) const override
+    {
+        return layout.getMainInputChannelSet() == juce::AudioChannelSet::stereo() && layout.getMainOutputChannelSet() == juce::AudioChannelSet::stereo();
+    }
+
+    void fillInPluginDescription (juce::PluginDescription& d) const override
+    {
+        d.name = "Test Sidechain";
+        d.pluginFormatName = "Test";
+        d.fileOrIdentifier = "test-sidechain";
+        d.numInputChannels = d.numOutputChannels = 2;
+    }
+
+    const juce::String getName() const override  { return "Test Sidechain"; }
+
+    void prepareToPlay (double, int) override
+    {
+        line.setSize (2, juce::jmax (1, latency));
+        line.clear();
+        write = 0;
+    }
+
+    void releaseResources() override             {}
+    void reset() override                        { line.clear(); write = 0; }
+
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        const auto first = getChannelIndexInProcessBlockBuffer (true, 1, 0);
+        const auto keys = getChannelCountOfBus (true, 1);
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                const auto in = b.getSample (ch, i) + (keys > 0 ? b.getSample (first + juce::jmin (ch, keys - 1), i) : 0.0f);
+
+                if (latency == 0)
+                {
+                    b.setSample (ch, i, in);
+                    continue;
+                }
+
+                b.setSample (ch, i, line.getSample (ch, write));
+                line.setSample (ch, write, in);
+            }
+
+            if (latency > 0)
+                write = (write + 1) % latency;
+        }
+    }
+
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override            { return false; }
+    bool producesMidi() const override           { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override              { return false; }
+    int getNumPrograms() override                { return 1; }
+    int getCurrentProgram() override             { return 0; }
+    void setCurrentProgram (int) override        {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+
+    const int latency;
+
+private:
+    juce::AudioBuffer<float> line;
+    int write = 0;
+};
+
 /** Scales its input by twice its one parameter ("gain", 0 to 1), read at the start of each block. */
 class GainPlugin final : public juce::AudioPluginInstance
 {

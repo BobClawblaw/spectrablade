@@ -190,6 +190,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SessionTests.cpp
     Tests/TrackEffectsTests.cpp
     Tests/BusTests.cpp
+    Tests/SidechainTests.cpp
     Tests/AutomationTests.cpp
     Tests/MultitrackViewTests.cpp
     Tests/MixDownTests.cpp

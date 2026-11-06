@@ -17,6 +17,7 @@ SessionState isolate (const SessionState& s, juce::uint32 trackId)
         alone.tracks.push_back (std::move (t));
     }
 
+    SessionEdits::addKeys (s, alone);   // what it ducks under, and its effects' sidechains listen to
     return alone;
 }
 
@@ -78,6 +79,7 @@ SessionState isolateFolder (const SessionState& s, juce::uint32 folderId)
                        t.sends.end());
     }
 
+    SessionEdits::addKeys (s, alone);   // keys outside the folder
     return alone;
 }
 

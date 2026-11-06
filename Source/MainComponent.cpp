@@ -3181,8 +3181,9 @@ void MainComponent::bounceTrack()
     auto alone = std::make_shared<SessionState> (Bounce::isolate (*state, trackId));
     auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
 
-    if (auto xml = engine.getTrackEffects().createXml (trackId))
-        (*effects)[trackId] = std::move (xml);
+    for (auto& t : alone->tracks)   // the track's, and its keys'
+        if (auto xml = engine.getTrackEffects().createXml (t.id))
+            (*effects)[t.id] = std::move (xml);
 
     auto inserts = std::make_shared<TrackEffects>();
     auto audio = std::make_shared<AudioDocument::Snapshot>();
@@ -3269,8 +3270,9 @@ void MainComponent::freezeOrUnfreezeTrack()
     auto alone = std::make_shared<SessionState> (SessionEdits::frozenSource (*state, trackId));
     auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
 
-    if (auto xml = engine.getTrackEffects().createXml (trackId))
-        (*effects)[trackId] = std::move (xml);
+    for (auto& t : alone->tracks)   // the track's, and its keys'
+        if (auto xml = engine.getTrackEffects().createXml (t.id))
+            (*effects)[t.id] = std::move (xml);
 
     auto inserts = std::make_shared<TrackEffects>();
     auto audio = std::make_shared<AudioDocument::Snapshot>();

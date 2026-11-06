@@ -1088,22 +1088,48 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
             types.add (type);
 
     // Plug-in choices take ids from 1 (PluginMenu); each slot's actions sit above them.
+    // Sidechain choices: sidechainBase + slot * keyChoices + 0 for none, or 1 + the key track's place.
     enum { slotBase = 1000000, editSlot = 0, bypassSlot, moveSlotUp, moveSlotDown, removeSlot, actions };
+    enum { sidechainBase = 2000000, keyChoices = 10000 };
     juce::PopupMenu menu;
+    const auto* track = state->findTrack (trackId);
 
     for (int i = 0; i < slots; ++i)
     {
         const auto* plugin = effects.getPlugin (trackId, i);
         const auto bypassed = effects.isBypassed (trackId, i);
         const auto id = slotBase + i * actions;
+        const auto keyId = track != nullptr ? track->sidechainKey (effects.getSlotId (trackId, i)) : 0u;
+        const auto* key = state->findTrack (keyId);
         juce::PopupMenu slot;
         slot.addItem (id + editSlot, "Edit...");
         slot.addItem (id + bypassSlot, "Bypass", true, bypassed);
         slot.addItem (id + moveSlotUp, "Move Up", i > 0);
         slot.addItem (id + moveSlotDown, "Move Down", i + 1 < slots);
+
+        // A track whose output goes into this plug-in's sidechain input: not this one, nor one
+        // that listens to it.
+        if (track != nullptr && effects.hasSidechain (trackId, i) && (int) state->tracks.size() < keyChoices)
+        {
+            juce::PopupMenu keys;
+            keys.addItem (sidechainBase + i * keyChoices, "None", true, key == nullptr);
+
+            for (size_t k = 0; k < state->tracks.size(); ++k)
+            {
+                const auto& t = state->tracks[k];
+
+                if (! t.isBus && ! t.isFolder && t.id != trackId)
+                    keys.addItem (sidechainBase + i * keyChoices + (int) k + 1, t.name, ! state->listensTo (t, trackId), t.id == keyId);
+            }
+
+            slot.addSubMenu ("Sidechain", keys);
+        }
+
         slot.addSeparator();
         slot.addItem (id + removeSlot, "Remove");
-        menu.addSubMenu (juce::String (i + 1) + ". " + plugin->getName() + (bypassed ? " (bypassed)" : ""), slot);
+        menu.addSubMenu (juce::String (i + 1) + ". " + plugin->getName() + (bypassed ? " (bypassed)" : "")
+                             + (key != nullptr ? ", sidechain from " + key->name : juce::String()),
+                         slot);
     }
 
     if (const auto latency = effects.getChainLatency (trackId); latency > 0)
@@ -1128,6 +1154,20 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
         {
             if (safe == nullptr || result == 0)
                 return;
+
+            if (result >= sidechainBase)
+            {
+                const auto slot = (result - sidechainBase) / keyChoices, choice = (result - sidechainBase) % keyChoices;
+                const auto slotId = engine.getTrackEffects().getSlotId (trackId, slot);
+                auto next = *engine.session.getState();
+                const auto keyId = juce::isPositiveAndNotGreaterThan (choice, (int) next.tracks.size()) && choice > 0
+                                       ? next.tracks[(size_t) choice - 1].id : 0u;
+
+                if (SessionEdits::setSidechain (next, trackId, slotId, keyId))
+                    engine.session.apply (std::move (next), "Sidechain");
+
+                return;
+            }
 
             if (result >= slotBase)
             {

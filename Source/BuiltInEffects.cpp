@@ -183,17 +183,24 @@ void setExactly (juce::AudioParameterFloat& p, float plain)
 }
 
 //==============================================================================
-BuiltInEffect::BuiltInEffect (const juce::PluginDescription& d, const juce::String& stateTag)
-    : AudioPluginInstance (BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo())
-                                            .withOutput ("Output", juce::AudioChannelSet::stereo())),
-      description (d), tag (stateTag)
+juce::AudioProcessor::BusesProperties BuiltInEffect::busesFor (bool sidechain)
+{
+    auto buses = BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo())
+                                  .withOutput ("Output", juce::AudioChannelSet::stereo());
+    return sidechain ? buses.withInput ("Sidechain", juce::AudioChannelSet::stereo(), false) : buses;
+}
+
+BuiltInEffect::BuiltInEffect (const juce::PluginDescription& d, const juce::String& stateTag, bool sidechain)
+    : AudioPluginInstance (busesFor (sidechain)), description (d), tag (stateTag)
 {
 }
 
 bool BuiltInEffect::isBusesLayoutSupported (const BusesLayout& layout) const
 {
     const auto in = layout.getMainInputChannelSet(), out = layout.getMainOutputChannelSet();
-    return in == out && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo());
+    const auto key = layout.inputBuses.size() > 1 ? layout.getChannelSet (true, 1) : juce::AudioChannelSet::disabled();
+    return in == out && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo())
+           && (key.isDisabled() || key == juce::AudioChannelSet::mono() || key == juce::AudioChannelSet::stereo());
 }
 
 juce::AudioParameterFloat* BuiltInEffect::addFloat (const juce::String& id, const juce::String& name, juce::NormalisableRange<float> range,
@@ -645,7 +652,7 @@ void ParametricEqEditor::resized()
 
 //==============================================================================
 CompressorProcessor::CompressorProcessor()
-    : BuiltInEffect (compressorDescription(), "SPECTRABLADE_COMPRESSOR")
+    : BuiltInEffect (compressorDescription(), "SPECTRABLADE_COMPRESSOR", true)
 {
     const Dynamics::Compressor start;
     // The offline Compressor's ranges, so any setting it takes can be heard live.
@@ -655,6 +662,7 @@ CompressorProcessor::CompressorProcessor()
     attack = addFloat ("attack", "Attack", { 0.01f, 1000.0f, 0.0f, 0.2f }, (float) start.attackMs, "ms");
     release = addFloat ("release", "Release", { 1.0f, 5000.0f, 0.0f, 0.25f }, (float) start.releaseMs, "ms");
     makeup = addFloat ("makeup", "Makeup Gain", { -48.0f, 48.0f }, (float) start.makeupDb, "dB");
+    sidechain = addBool ("sidechain", "Sidechain", false);
 }
 
 Dynamics::Compressor CompressorProcessor::getSettings() const
@@ -692,14 +700,27 @@ void CompressorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         core.set (applied, rate);
     }
 
-    const auto channels = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
+    const auto channels = juce::jmin (buffer.getNumChannels(), getChannelCountOfBus (true, 0));
+
+    // The level comes from the sidechain input when it is switched on (silence when nothing feeds it).
+    const auto keyed = sidechain->get() && getBusCount (true) > 1 && getChannelCountOfBus (true, 1) > 0;
+    const auto firstKey = keyed ? getChannelIndexInProcessBlockBuffer (true, 1, 0) : 0;
+    const auto keyChannels = keyed ? juce::jmin (getChannelCountOfBus (true, 1), buffer.getNumChannels() - firstKey) : channels;
 
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
         double level = 0.0;
 
-        for (int ch = 0; ch < channels; ++ch)
-            level = juce::jmax (level, (double) std::abs (buffer.getSample (ch, i)));
+        if (keyed)
+        {
+            for (int ch = firstKey; ch < firstKey + keyChannels; ++ch)
+                level = juce::jmax (level, (double) std::abs (buffer.getSample (ch, i)));
+        }
+        else
+        {
+            for (int ch = 0; ch < channels; ++ch)
+                level = juce::jmax (level, (double) std::abs (buffer.getSample (ch, i)));
+        }
 
         const auto factor = core.next (level);
 

@@ -161,6 +161,39 @@ namespace
         return most;
     }
 
+    /** How far ahead a track is read: the most of what its sends and output need (sendLatency)
+        and what the effects it feeds a sidechain need, so its output, held back, can line up with
+        the audio going into each of them. */
+    int aheadOf (const SessionState& state, const SessionTrack& track, Inserts* inserts, int depth = 0)
+    {
+        auto most = sendLatency (state, track, inserts);
+
+        if (inserts == nullptr || depth > (int) state.tracks.size())
+            return most;
+
+        for (auto& t : state.tracks)
+        {
+            if (t.isFolder || t.isFrozen() || t.id == track.id)
+                continue;
+
+            for (auto& chain : t.sidechains)
+            {
+                if (chain.keyTrackId != track.id || ! inserts->isActive (t.id))
+                    continue;
+
+                if (const auto before = inserts->getLatencyBefore (t.id, chain.slotId); before >= 0)
+                {
+                    // The audio going into the effect is at start + this.
+                    const auto into = t.isBus ? pathLatency (state, t, inserts) - before
+                                              : aheadOf (state, t, inserts, depth + 1) + latencyOf (inserts, t) - before;
+                    most = juce::jmax (most, into);
+                }
+            }
+        }
+
+        return most;
+    }
+
     /** Adds the first n frames of src, held back by frames, times gain, into dest from destStart.
         The delay line is the path's own, so it carries over from block to block. */
     void addHeld (Buffers& buffers, std::pair<juce::uint32, juce::uint32> path, int frames, const juce::AudioBuffer<float>& src,
@@ -214,6 +247,33 @@ namespace
             return 0;
 
         return 2 + track.deviceOutput + 2 <= dest.getNumChannels() ? 2 + track.deviceOutput : -1;
+    }
+
+    /** The keys of a track's or bus's sidechains, each held back to line up with the audio going
+        into its effect, which is at start + into - the latency before the effect. */
+    const std::vector<KeyAudio>& sidechainKeys (const SessionState& state, const SessionTrack& t, int into, int numFrames,
+                                                Buffers& buffers, Inserts* inserts)
+    {
+        buffers.keyAudio.clear();
+
+        for (auto& chain : t.sidechains)
+        {
+            const auto* key = state.findTrack (chain.keyTrackId);
+            const auto keyOut = key != nullptr ? buffers.keys.find (key->id) : buffers.keys.end();
+            const auto before = inserts->getLatencyBefore (t.id, chain.slotId);
+
+            if (keyOut == buffers.keys.end() || before < 0)
+                continue;
+
+            auto& lined = buffers.sidechains[chain.slotId];
+            grow (lined, numFrames);
+            lined.clear (0, numFrames);
+            const auto behind = juce::jmax (0, aheadOf (state, *key, inserts) - (into - before));
+            addHeld (buffers, { key->id, 0x80000000u | chain.slotId }, behind, keyOut->second, numFrames, lined, 0, 1.0f);
+            buffers.keyAudio.push_back ({ chain.slotId, &lined });
+        }
+
+        return buffers.keyAudio;
     }
 
     /** A live input, panned like a clip, into frames [0, numFrames) of out. */
@@ -321,8 +381,8 @@ namespace
 
 namespace
 {
-    /** Places track i in the mixing order after its key (marks: 1 placed, 2 a key, 4 being
-        placed). The edits allow no loops; one here is just cut. */
+    /** Places track i in the mixing order after its keys, for ducking and sidechains (marks: 1
+        placed, 2 a key, 4 being placed). The edits allow no loops; one here is just cut. */
     void place (const SessionState& state, Buffers& buffers, int i)
     {
         if ((buffers.marks[(size_t) i] & 5) != 0)
@@ -331,15 +391,20 @@ namespace
         buffers.marks[(size_t) i] |= 4;
         const auto& t = state.tracks[(size_t) i];
 
-        if (! t.isBus && t.ducking.isOn())
+        for (size_t k = 0; k < state.tracks.size(); ++k)
         {
-            for (size_t k = 0; k < state.tracks.size(); ++k)
+            const auto& other = state.tracks[k];
+
+            if (other.isBus || other.isFolder || other.id == t.id)
+                continue;
+
+            const auto isKey = (! t.isBus && t.ducking.isOn() && other.id == t.ducking.keyTrackId)
+                               || std::any_of (t.sidechains.begin(), t.sidechains.end(), [&other] (auto& c) { return c.keyTrackId == other.id; });
+
+            if (isKey)
             {
-                if (state.tracks[k].id == t.ducking.keyTrackId && ! state.tracks[k].isBus)
-                {
-                    buffers.marks[k] |= 2;
-                    place (state, buffers, (int) k);
-                }
+                buffers.marks[k] |= 2;
+                place (state, buffers, (int) k);
             }
         }
 
@@ -422,7 +487,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             continue;
 
         const auto own = latencyOf (inserts, track);
-        const auto ahead = sendLatency (state, track, inserts);
+        const auto ahead = aheadOf (state, track, inserts);
         const auto panAutomated = ! track.panEnvelope.isEmpty();
 
         // The clips are read at start + own + ahead, so that is where their pan is taken from.
@@ -445,7 +510,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                     addLive (in, *live->audio, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
 
         if (inserts != nullptr && ! track.isFrozen() && inserts->isActive (track.id))
-            inserts->process (track, start + own + ahead, buffers.track, numFrames);
+            inserts->process (track, start + own + ahead, buffers.track, numFrames,
+                              sidechainKeys (state, track, own + ahead, numFrames, buffers, inserts));
 
         if (track.invertPolarity)
             for (int ch = 0; ch < 2; ++ch)
@@ -490,10 +556,10 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         if (ducked)
         {
-            // The key as it was at this track's time: held back by what its buses' latency runs
-            // it ahead of this track's.
+            // The key as it was at this track's time: held back by how much further ahead it is
+            // read than this track.
             const auto& keyOut = buffers.keys[key->id];
-            const auto behind = sendLatency (state, *key, inserts) - ahead;
+            const auto behind = aheadOf (state, *key, inserts) - ahead;
             const juce::AudioBuffer<float>* lined = &keyOut;
             grow (buffers.duckGains, numFrames);
 
@@ -567,7 +633,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         auto& input = buffers.buses[bus.id];
 
         if (inserts != nullptr && inserts->isActive (bus.id))
-            inserts->process (bus, start + pathLatency (state, bus, inserts), input, numFrames);
+            inserts->process (bus, start + pathLatency (state, bus, inserts), input, numFrames,
+                              sidechainKeys (state, bus, pathLatency (state, bus, inserts), numFrames, buffers, inserts));
 
         if (bus.invertPolarity)
             for (int ch = 0; ch < 2; ++ch)
@@ -658,7 +725,7 @@ void prime (const SessionState& state, juce::int64 start, Buffers& buffers, Inse
 
     for (auto& track : state.tracks)
         if (! track.isBus && plays (state, track))
-            longest = juce::jmax (longest, latencyOf (&inserts, track) + sendLatency (state, track, &inserts));
+            longest = juce::jmax (longest, latencyOf (&inserts, track) + aheadOf (state, track, &inserts));
 
     const auto chunk = juce::jmax (1, buffers.discard.getNumSamples());
 

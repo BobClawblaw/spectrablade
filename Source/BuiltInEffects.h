@@ -76,7 +76,8 @@ namespace BuiltInEffects
         void setPresetValues (const EffectPresets::Values&);
 
     protected:
-        BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag);
+        /** With sidechain, a second input bus (off until the host turns it on) for a key. */
+        BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag, bool sidechain = false);
 
         /** What an effect keeps besides its parameters, written into and read back from its state. */
         virtual void addToState (juce::XmlElement&) const          {}
@@ -90,6 +91,8 @@ namespace BuiltInEffects
     private:
         juce::PluginDescription description;
         juce::String tag;
+
+        static BusesProperties busesFor (bool sidechain);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BuiltInEffect)
     };
@@ -189,7 +192,9 @@ namespace BuiltInEffects
 
     /** The compressor, live: Effects > Compressor's settings as parameters, over the same ranges, run a frame at a time
         with Dynamics::CompressorCore, so played over a whole file from its start it gives exactly
-        the samples Dynamics::compress gives. A change of settings carries the gain on. No latency. */
+        the samples Dynamics::compress gives. A change of settings carries the gain on. No latency.
+        With Sidechain on, the level comes from its sidechain input (a key track on a session
+        track, silence elsewhere) in place of its own input. */
     class CompressorProcessor final : public BuiltInEffect
     {
     public:
@@ -211,6 +216,7 @@ namespace BuiltInEffects
         juce::AudioParameterFloat* attack = nullptr;
         juce::AudioParameterFloat* release = nullptr;
         juce::AudioParameterFloat* makeup = nullptr;
+        juce::AudioParameterBool* sidechain = nullptr;   // the level from the sidechain input, not its own
 
     private:
         Dynamics::CompressorCore core;

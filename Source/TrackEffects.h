@@ -8,7 +8,8 @@
     They live outside the session's undoable state: deleting a track keeps its chain, so undoing
     the delete brings the effects back. clear() drops them all for a new session.
 
-    Plug-ins run at the session's rate on two channels. The mixer reads each track ahead by its
+    Plug-ins run at the session's rate on two channels. One with a sidechain input (a second input
+    bus) is given the key the session feeds its slot there, or silence. The mixer reads each track ahead by its
     chain's latency, so tracks with and without effects stay in line.
 
     Each slot has an id that stays with its effect when the chain is reordered and is saved with
@@ -94,7 +95,15 @@ public:
     bool isActive (juce::uint32 trackId) override;
     int getLatency (juce::uint32 trackId) override;
     void reset (juce::uint32 trackId) override;
-    void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames) override;
+    int getLatencyBefore (juce::uint32 trackId, juce::uint32 slotId) override;
+    void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames,
+                  const std::vector<SessionMixer::KeyAudio>& keys) override;
+
+    /** True when the plug-in has a sidechain input: a second input bus, turned on. */
+    static bool takesSidechain (const juce::AudioPluginInstance&);
+
+    /** True when the plug-in in this slot of the track has a sidechain input. */
+    bool hasSidechain (juce::uint32 trackId, int slot) const;
 
 private:
     /** Listens to one slot's parameters for touches. */

@@ -69,6 +69,7 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
         plugin.prepareToPlay (sampleRate, blockSize);
 
         const auto ins  = plugin.getTotalNumInputChannels();
+        const auto mainIns = plugin.getBusCount (true) > 0 ? plugin.getChannelCountOfBus (true, 0) : 0;   // a sidechain input stays silent
         const auto outs = plugin.getTotalNumOutputChannels();
         const auto latency = juce::jmax (0, plugin.getLatencySamples());
 
@@ -91,7 +92,7 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
             work.clear();
 
             // Input: the document's channels mapped onto the plug-in's inputs.
-            if (ins > 0 && pos < numFrames)
+            if (mainIns > 0 && pos < numFrames)
             {
                 const auto available = (int) juce::jmin ((juce::int64) count, (juce::int64) numFrames - pos);
                 juce::AudioBuffer<float> chunk (docChannels, available);
@@ -99,9 +100,9 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
                 for (int ch = 0; ch < docChannels; ++ch)
                     chunk.copyFrom (ch, 0, audio, ch, (int) pos, available);
 
-                const auto fitted = AudioEdits::matchChannels (chunk, ins);
+                const auto fitted = AudioEdits::matchChannels (chunk, mainIns);
 
-                for (int ch = 0; ch < ins; ++ch)
+                for (int ch = 0; ch < mainIns; ++ch)
                     work.copyFrom (ch, 0, fitted, ch, 0, available);
             }
 
