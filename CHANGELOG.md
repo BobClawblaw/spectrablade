@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.10.0: repair and generator tools, spectral drawing and healing, bus routing and ducking, MP3, AAC and ffmpeg, file tags**
+- `SpectraBlade-0.10.0.dmg` on the repository's Releases page, with its SHA-256: Milestones 208 to 225 below on top of 0.9.5. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (1015 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.10.0, carries a licence identical to `LICENSE` and LAME's licence, and launched from the mounted image (the main window in 7.1 seconds on that first launch, while macOS checked the new image, and 1.4 seconds on the next, reopening the last file) and quit with no crash report. The app's Intel half was not launched, and no Intel Mac was tried.
+
 **Milestone 225: Buses into buses**
 - A bus can play into another bus in place of the mix: its header has an Output button (where a track has Sends) with the mix and the buses it may play into. A bus can't play into itself, nor into a bus that already plays into it, through any number of buses. Each bus is mixed before the buses it plays into, whatever their order in the list. A bus's lane says which bus it plays into, and the lane of the bus it plays into lists it as "(output)".
 - Plug-in latency is lined up along the chain: a track feeding a bus is read ahead by that bus's latency plus that of the buses after it. Muting a bus silences the buses played into it; soloing a bus brings the buses it plays into and those that play into it, with the tracks feeding them. Deleting a bus sends the buses that played into it to the mix. Session files keep it, and so do a bus's templates, by the bus's name. Buses still have no sends.
@@ -108,8 +116,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - More room for the audio: the window's margins went from 10 to 6 pixels and the gaps around the panels from 8 to 4; the toolbar is 30 pixels high (34 before), with the transport and zoom buttons 28 square and the time 170 wide (190); panel tabs are 22 high (26) and the file tabs over the editor 24 (30), both in 12-point text with smaller close buttons; the devices and status lines take 46 pixels (52).
 - Measured by the tests: the transport bar's ideal width holds its ten buttons and the time with no more than a gap to spare, each button as tall as the bar, and the tab heights. The whole suite passed (874 checks).
 - Together the waveform gains 36 pixels of height in a window of the same size (26 from the margins, gaps, toolbar and status lines, 4 from the panel tabs and 6 from the file tabs). Seen in a capture of the window: the Editing workspace with two files.
-
-## Released
 
 **Release 0.9.5: docked panels, several files, meters, fade handles and themes**
 - `SpectraBlade-0.9.5.dmg` on the repository's Releases page, with its SHA-256: Milestones 198 to 207 below on top of 0.9.4. The first release published as a regular release rather than a pre-release, so it shows as the repository's latest. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
