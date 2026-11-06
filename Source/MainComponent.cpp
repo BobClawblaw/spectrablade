@@ -46,6 +46,7 @@ namespace
     constexpr const char* workspacesKey   = "workspaces";
     constexpr const char* themeKey        = "theme";
     constexpr const char* accentKey       = "accent";
+    constexpr const char* waveformColourKey = "waveformColour";
 
     // The dock's panels.
     namespace Panels
@@ -686,7 +687,8 @@ MainComponent::MainComponent()
     }
 
     auto* settings = appProperties.getUserSettings();
-    Theme::apply (Theme::make (settings->getValue (themeKey, "Dark"), settings->getValue (accentKey, "Blue")));
+    Theme::apply (Theme::make (settings->getValue (themeKey, "Dark"), settings->getValue (accentKey, "Blue"),
+                               settings->getValue (waveformColourKey, "Theme")));
     deadMansPedalFile = settings->getFile().getSiblingFile ("RecentlyCrashedPluginsList");
     places = std::make_unique<WindowPlaces> (*settings);
 
@@ -2193,6 +2195,14 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             for (int i = 0; i < accents.size(); ++i)
                 themeMenu.addItem (accentBaseId + i, accents[i], true, accents[i] == appProperties.getUserSettings()->getValue (accentKey, "Blue"));
+
+            themeMenu.addSeparator();
+            themeMenu.addSectionHeader ("Waveform");
+            const auto waveforms = Theme::waveformNames();
+
+            for (int i = 0; i < waveforms.size(); ++i)
+                themeMenu.addItem (waveformColourBaseId + i, i == 0 ? juce::String ("Theme's Own") : waveforms[i], true,
+                                   waveforms[i] == appProperties.getUserSettings()->getValue (waveformColourKey, "Theme"));
 
             menu.addSeparator();
             menu.addSubMenu ("Theme", themeMenu);
@@ -3792,12 +3802,13 @@ void MainComponent::noteRecent (const juce::File& file)
     menuItemsChanged();
 }
 
-void MainComponent::setTheme (const juce::String& theme, const juce::String& accentName)
+void MainComponent::setTheme (const juce::String& theme, const juce::String& accentName, const juce::String& waveformName)
 {
     auto* settings = appProperties.getUserSettings();
     settings->setValue (themeKey, theme);
     settings->setValue (accentKey, accentName);
-    Theme::apply (Theme::make (theme, accentName));
+    settings->setValue (waveformColourKey, waveformName);
+    Theme::apply (Theme::make (theme, accentName, waveformName));
     menuItemsChanged();
 }
 
@@ -3805,13 +3816,20 @@ void MainComponent::menuItemSelected (int menuItemId, int)
 {
     if (const auto themes = Theme::themeNames(); juce::isPositiveAndBelow (menuItemId - themeBaseId, themes.size()))
     {
-        setTheme (themes[menuItemId - themeBaseId], appProperties.getUserSettings()->getValue (accentKey, "Blue"));
+        setTheme (themes[menuItemId - themeBaseId], appProperties.getUserSettings()->getValue (accentKey, "Blue"),
+                  appProperties.getUserSettings()->getValue (waveformColourKey, "Theme"));
         return;
     }
 
     if (const auto accents = Theme::accentNames(); juce::isPositiveAndBelow (menuItemId - accentBaseId, accents.size()))
     {
-        setTheme (Theme::current().name, accents[menuItemId - accentBaseId]);
+        setTheme (Theme::current().name, accents[menuItemId - accentBaseId], appProperties.getUserSettings()->getValue (waveformColourKey, "Theme"));
+        return;
+    }
+
+    if (const auto waveforms = Theme::waveformNames(); juce::isPositiveAndBelow (menuItemId - waveformColourBaseId, waveforms.size()))
+    {
+        setTheme (Theme::current().name, appProperties.getUserSettings()->getValue (accentKey, "Blue"), waveforms[menuItemId - waveformColourBaseId]);
         return;
     }
 

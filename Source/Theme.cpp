@@ -68,6 +68,14 @@ namespace
                                       { "Orange", 0xffe8893a, 0xffb4540a, 0xffffa24d },
                                       { "Violet", 0xffa47ae8, 0xff7a46c9, 0xffc39bff } };
 
+    // The waveform colours to choose from, in two tones: for dark themes (High Contrast too) and light ones.
+    struct WaveformTones { const char* name; juce::uint32 dark, light; };
+    constexpr WaveformTones waveforms[] { { "Green", 0xff6cc04a, 0xff3d7a1f },
+                                          { "Blue",  0xff5aa8f0, 0xff1f66b8 },
+                                          { "Amber", 0xffe8b33a, 0xff8a5a00 },
+                                          { "Rose",  0xffec6f9a, 0xffb0285a },
+                                          { "Grey",  0xffb8bec6, 0xff5b636c } };
+
     Palette inUse;
 
     void setColours (const Palette& p)
@@ -100,6 +108,16 @@ juce::StringArray themeNames()
     return { "Dark", "Darker", "Light", "High Contrast" };
 }
 
+juce::StringArray waveformNames()
+{
+    juce::StringArray names { "Theme" };
+
+    for (auto& w : waveforms)
+        names.add (w.name);
+
+    return names;
+}
+
 juce::StringArray accentNames()
 {
     juce::StringArray names;
@@ -110,7 +128,7 @@ juce::StringArray accentNames()
     return names;
 }
 
-Palette make (const juce::String& theme, const juce::String& accentName)
+Palette make (const juce::String& theme, const juce::String& accentName, const juce::String& waveformName)
 {
     auto p = theme == "Darker" ? darker() : theme == "Light" ? light() : theme == "High Contrast" ? highContrast() : dark();
     const auto* tones = &accents[0];
@@ -124,6 +142,11 @@ Palette make (const juce::String& theme, const juce::String& accentName)
     p.accentLight = p.light ? p.accent.interpolatedWith (juce::Colours::black, 0.15f) : p.accent.interpolatedWith (juce::Colours::white, 0.4f);
     p.accentDeep = p.surface.interpolatedWith (p.accent, p.light ? 0.22f : 0.3f);
     p.selection = p.accent.withAlpha (p.light ? 0.22f : 0.35f);
+
+    for (auto& w : waveforms)
+        if (waveformName == w.name)
+            p.waveform = juce::Colour (p.light ? w.light : w.dark);
+
     return p;
 }
 

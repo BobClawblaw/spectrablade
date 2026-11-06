@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 212: Waveform colours**
+- View > Theme has a Waveform section: the theme's own colour, or Green, Blue, Amber, Rose or Grey, each in a lighter tone for the dark themes and a darker one for Light. The choice is kept for the next launch and applies at once, as the theme does.
+- docs/SHORTCUTS.md lost the comma from two keys (Nudge Earlier and Audio Settings); both are put right, and it lists the keys and gestures added in Milestones 209 to 211.
+- Measured by the tests: each of the six waveform colours stands out at 3:1 or better against the canvas and both lane colours of all four themes (3.7:1 at least); a chosen colour replaces the theme's own, in the darker tone on Light, and "Theme" or an unknown name keeps the theme's. The whole suite passed (893 checks).
+- Seen in captures of the window: Amber on Dark and Rose on Light. Not tried by hand: choosing from the menu.
+
 **Milestone 211: The times under the editor**
 - The strip under the editor shows, left of the zoom controls, the cursor's time, the selection's start, end and length ("none" without one) and the view's start and end, updated ten times a second. Click the cursor's time for Go to Time, or the selection's for Set Selection; their tooltips show the keys. When the strip is narrow the view's field is left out first, then the selection's. The Selection/View panel stays, for those who prefer it.
 - Measured by the tests: the cursor (0:00.025), no selection and the whole view of a 0.1-second file, then a selection from 0:00.020 to 0:00.050 shown with its length and the cursor at its start; the fields left to right before the zoom controls, a click on the cursor's running Go to Time, on the selection's Set Selection and on the view's nothing; and, narrowing the strip a pixel at a time, the view's field going at 848 pixels, the selection's at 680 and the cursor's at 418, none overlapping the controls. The whole suite passed (891 checks).

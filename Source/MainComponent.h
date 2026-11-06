@@ -456,10 +456,10 @@ private:
     void askToDeleteWorkspace();
     void resetWorkspace();
     static constexpr int workspaceBaseId = 0x7200;   // menu ids for Window > Workspace
-    static constexpr int themeBaseId = 0x7300, accentBaseId = 0x7380;   // menu ids for View > Theme
+    static constexpr int themeBaseId = 0x7300, accentBaseId = 0x7380, waveformColourBaseId = 0x73c0;   // menu ids for View > Theme
 
-    /** Puts a theme and accent into use and keeps them for next time. */
-    void setTheme (const juce::String& theme, const juce::String& accentName);
+    /** Puts a theme, accent and waveform colour into use and keeps them for next time. */
+    void setTheme (const juce::String& theme, const juce::String& accentName, const juce::String& waveformName);
 
     std::unique_ptr<EditorBar> editorBar;   // made once the commands are registered
     std::unique_ptr<EditorPanel> editorPanel;

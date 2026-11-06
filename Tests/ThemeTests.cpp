@@ -67,6 +67,37 @@ namespace
                "theme: an unknown theme or accent falls back to Dark and Blue, and overlays are black on Light and white on the dark themes");
     }
 
+    void testWaveformColours()
+    {
+        juce::StringArray failures;
+        auto least = 100.0;
+
+        for (auto& name : Theme::themeNames())
+            for (auto& waveform : Theme::waveformNames())
+            {
+                const auto p = Theme::make (name, "Blue", waveform);
+
+                for (auto back : { p.canvas, p.lane, p.laneAlternate })
+                {
+                    const auto ratio = Theme::contrast (p.waveform, back);
+                    least = juce::jmin (least, ratio);
+
+                    if (ratio < 3.0)
+                        failures.add (name + "/" + waveform + " " + juce::String (ratio, 2));
+                }
+            }
+
+        check (failures.isEmpty() && Theme::waveformNames().size() == 6 && Theme::waveformNames()[0] == "Theme",
+               "theme: each of the 6 waveform colours stands out at 3:1 or better on the canvas and lanes of all 4 themes (least "
+                   + juce::String (least, 1) + ")" + (failures.isEmpty() ? juce::String() : ": " + failures.joinIntoString ("; ")));
+
+        const auto own = Theme::make ("Light", "Teal");
+        const auto amberLight = Theme::make ("Light", "Teal", "Amber"), amberDark = Theme::make ("Dark", "Teal", "Amber");
+        check (Theme::make ("Light", "Teal", "Theme").waveform == own.waveform && Theme::make ("Light", "Teal", "Plaid").waveform == own.waveform
+                   && amberLight.waveform != own.waveform && amberLight.waveform != amberDark.waveform && amberLight.accent == own.accent,
+               "theme: a chosen waveform colour replaces the theme's own, in a darker tone on Light; Theme or an unknown name keeps the theme's");
+    }
+
     void testSwitching()
     {
         Theme::LookAndFeel look;
@@ -163,6 +194,7 @@ void runThemeTests()
 {
     testDensity();
     testContrast();
+    testWaveformColours();
     testSwitching();
     testControls();
 }

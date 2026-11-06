@@ -67,8 +67,12 @@ namespace Theme
     juce::StringArray themeNames();
     juce::StringArray accentNames();
 
-    /** A theme with an accent ("Blue" if the name isn't known; "Dark" for an unknown theme). */
-    Palette make (const juce::String& theme, const juce::String& accentName);
+    /** The waveform colours: "Theme" (the theme's own) first, then the others. */
+    juce::StringArray waveformNames();
+
+    /** A theme with an accent ("Blue" if the name isn't known; "Dark" for an unknown theme) and a
+        waveform colour (the theme's own for "Theme" or a name that isn't known). */
+    Palette make (const juce::String& theme, const juce::String& accentName, const juce::String& waveformName = "Theme");
 
     /** Puts a palette into use: the colours above, the look-and-feel, the colours given to controls
         with follow(), and a repaint of every window. */

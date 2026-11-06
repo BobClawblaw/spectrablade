@@ -39,8 +39,9 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Spectrogram | `Cmd-2` |
 | Waveform and Spectrogram | `Cmd-3` |
 | Multitrack Session | `Cmd-4` |
-| Taller Tracks | `Option-Cmd-=` |
-| Shorter Tracks | `Option-Cmd--` |
+| Zoom In Vertically (with a file) or Taller Tracks (in a session) | `Option-Cmd-=` |
+| Zoom Out Vertically (with a file) or Shorter Tracks (in a session) | `Option-Cmd--` |
+| Full Scale Vertically | `Option-Cmd-0` |
 | Zoom In | `Cmd-=` |
 | Zoom Out | `Cmd--` |
 | Zoom to Fit | `Cmd-0` |
@@ -88,8 +89,8 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Ungroup Clips | `Shift-Cmd-G` |
 | Lock Clip | `Shift-Cmd-L` |
 | Clip Properties | `Shift-Cmd-I` |
-| Nudge Earlier | `` |
-| Nudge Later | `.` |
+| Nudge Earlier | `,` (comma) |
+| Nudge Later | `.` (full stop) |
 | Move Track Up | `Option-Cmd-Up Arrow` |
 | Move Track Down | `Option-Cmd-Down Arrow` |
 | Duplicate Clip | `Cmd-D` |
@@ -112,7 +113,8 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Command | Keys |
 |---|---|
 | Effects Rack | `Option-Cmd-E` |
-| Audio Settings... | `Cmd-` |
+| Audio Settings... | `Cmd-,` |
+| Maximize Editor, or Restore All Panels | `Shift-Cmd-F` |
 
 ## With the mouse
 
@@ -124,6 +126,9 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Remove a fade | Double-click its handle |
 | Rename a marker | Double-click it |
 | Size the waveform and spectrogram | Drag the line between them |
+| Zoom vertically | Option-scroll over the waveform |
+| Maximise a group of panels, or put the others back | Double-click its tab, or use the ⋯ menu at the right of its tabs |
+| Go to a time, or set the selection by its times | Click the cursor's or the selection's time under the editor |
 | Show an open file | Click its tab over the editor |
 | Close an open file | Click the × on its tab, or right-click the tab |
 | Move a panel | Drag its tab onto another panel's edge, onto its middle (as a tab), or out of the window (to float it) |
