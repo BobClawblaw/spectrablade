@@ -3,6 +3,7 @@
 
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
+#include "../Source/AudioFileIO.h"
 #include "../Source/BuiltInEffects.h"
 #include "../Source/OfflineRender.h"
 #include "../Source/SessionMixer.h"
@@ -309,8 +310,98 @@ namespace
     }
 }
 
+namespace
+{
+    void testFreezing (AudioEngine& engine)
+    {
+        juce::AudioPluginFormatManager formats;
+        formats.addFormat (BuiltInEffects::createFormat());
+        const auto audio = noise (6, 4000, 43);
+        auto s = session (audio);
+        const auto id = s.tracks[0].id;
+        s.tracks[0].gainDb = -4.5f;
+        s.tracks[0].invertPolarity = true;
+
+        TrackEffects effects;
+        effects.prepare (rate);
+        effects.makeCopy = [&formats] (const juce::PluginDescription& d)
+        {
+            juce::String error;
+            return formats.createPluginInstance (d, rate, TrackEffects::maxBlock, error);
+        };
+        effects.setWideTracks ({ id });
+        effects.add (id, make (formats, BuiltInEffects::compressorId));
+        effects.add (id, make (formats, BuiltInEffects::limiterId));
+        setUp (*effects.getPlugin (id, 0), *effects.getPlugin (id, 1), -24.0f);
+        const auto live = render (s, 97, &effects);
+        auto stereoMaster = s;
+        stereoMaster.surround = false;
+        const auto liveFolded = render (stereoMaster, 97, &effects);
+
+        // Freezing as the app does: the track alone, rendered by a mixdown with its effects loaded afresh.
+        const auto alone = SessionEdits::frozenSource (s, id);
+        std::map<juce::uint32, std::unique_ptr<juce::XmlElement>> chains;
+        chains[id] = effects.createXml (id);
+        TrackEffects offline;
+        OfflineRender::loadTrackEffects (chains, formats, rate, offline);
+        juce::AudioBuffer<float> rendered;
+        const auto mixed = OfflineRender::mixSession (alone, { 0, frames }, rendered, &offline, {});
+        const auto frozenAudio = AudioEdits::fromBuffer (std::move (rendered));
+        auto frozen = s;
+        const auto froze = SessionEdits::freezeTrack (frozen, id, juce::File(), frozenAudio);
+
+        // Played frozen, with no effects to run, in a 5.1 master and folded down in a stereo one.
+        const auto played = render (frozen, 97, nullptr);
+        auto frozenStereo = frozen;
+        frozenStereo.surround = false;
+        const auto playedFolded = render (frozenStereo, 97, nullptr);
+        auto exact = mixed && froze && alone.surround && frozenAudio->getNumChannels() == 6;
+
+        for (int ch = 0; ch < 6; ++ch)
+            exact = exact && same (played, ch, live, ch);
+
+        check (exact && same (playedFolded, 0, liveFolded, 0) && same (playedFolded, 1, liveFolded, 1),
+               "5.1 track freezing: a 5.1 track with a compressor and limiter, -4.5 dB and its polarity inverted, freezes to six channels "
+               "and plays them frozen as it did live, bit for bit, in a 5.1 master and folded down in a stereo one");
+
+        // Frozen audio of two channels (a file swapped by hand) plays to L and R, as a stereo clip on it would.
+        auto two = s;
+        SessionEdits::freezeTrack (two, id, juce::File(), channelsOf (*frozenAudio, 0, 2));
+        const auto twoPlayed = render (two, 97, nullptr);
+        auto lr = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            lr = lr && same (twoPlayed, ch, played, ch);
+
+        check (lr && silent (twoPlayed, 2) && silent (twoPlayed, 3) && silent (twoPlayed, 4) && silent (twoPlayed, 5),
+               "5.1 track freezing: two-channel frozen audio on a 5.1 track plays to L and R alone");
+
+        // The session file keeps it frozen, with its six channels; unfrozen, it plays its effects again.
+        const juce::TemporaryFile wav (".wav"), file (".sbsession");
+        const auto saveError = AudioFileIO::save (*frozenAudio, rate, wav.getFile(), 32, engine.formatManager);
+        auto saved = s;
+        SessionEdits::freezeTrack (saved, id, wav.getFile(), frozenAudio);
+        const auto sessionError = SessionFile::save (saved, wav.getFile().getSiblingFile (file.getFile().getFileName()), nullptr);
+        const auto loaded = SessionFile::load (wav.getFile().getSiblingFile (file.getFile().getFileName()), engine.formatManager);
+        wav.getFile().getSiblingFile (file.getFile().getFileName()).deleteFile();
+        const auto* back = loaded.state.findTrack (id);
+        auto thawed = frozen;
+        const auto unfroze = SessionEdits::unfreezeTrack (thawed, id);
+        const auto again = render (thawed, 97, &effects);
+        auto liveAgain = unfroze;
+
+        for (int ch = 0; ch < 6; ++ch)
+            liveAgain = liveAgain && same (again, ch, live, ch);
+
+        check (saveError.isEmpty() && sessionError.isEmpty() && back != nullptr && back->fiveOne && back->isFrozen()
+                   && back->frozenAudio->getNumChannels() == 6 && liveAgain,
+               "5.1 track freezing: the session file keeps it frozen with its six channels; unfrozen, it plays through its effects as before");
+    }
+}
+
 void runSurroundEffectsTests (AudioEngine& engine)
 {
     testBuiltIns (engine);
     testFollowing();
+    testFreezing (engine);
 }

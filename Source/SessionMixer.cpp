@@ -499,6 +499,30 @@ namespace
         return sourceChannels == 1 ? 2 : channel;
     }
 
+    /** A frozen 5.1 track's audio from frame start, six channels, into frames [0, numFrames) of
+        out (a file of fewer channels placed as a clip of them would be). */
+    void readFrozenFiveOne (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
+                            juce::AudioBuffer<float>& scratch)
+    {
+        out.clear (0, numFrames);
+        const auto& audio = *track.frozenAudio;
+        const auto from = juce::jmax ((juce::int64) 0, start), to = juce::jmin (audio.getNumFrames(), start + numFrames);
+
+        if (to <= from)
+            return;
+
+        const auto count = (int) (to - from), channels = juce::jmin (6, audio.getNumChannels());
+
+        if (scratch.getNumChannels() < audio.getNumChannels() || scratch.getNumSamples() < count)
+            scratch.setSize (juce::jmax (6, audio.getNumChannels()), count, false, false, true);
+
+        juce::AudioBuffer<float> part (scratch.getArrayOfWritePointers(), audio.getNumChannels(), count);
+        audio.read (part, 0, from, count);
+
+        for (int ch = 0; ch < channels; ++ch)
+            out.copyFrom (fiveOneChannel (channels, ch), (int) (from - start), scratch, ch, 0, count);
+    }
+
     /** A 5.1 track's clips, six channels, before its volume, into frames [0, numFrames) of out. */
     void renderFiveOne (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
                         juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains)
@@ -694,7 +718,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         const auto own = latencyOf (inserts, track);
         const auto ahead = aheadOf (state, track, inserts);
-        const auto fiveOne = track.fiveOne && ! track.isFrozen();
+        const auto fiveOne = track.fiveOne;
         const auto panAutomated = ! track.panEnvelope.isEmpty() && ! fiveOne;
 
         // The clips are read at start + own + ahead, so that is where their pan is taken from.
@@ -703,13 +727,15 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         // A frozen track's audio already has its clips, pan and effects: it is the track's
         // output at start + ahead.
-        if (track.isFrozen())
+        if (fiveOne && (buffers.wide.getNumChannels() < 6 || buffers.wide.getNumSamples() < numFrames))
+            buffers.wide.setSize (6, numFrames, false, false, true);
+
+        if (track.isFrozen() && fiveOne)
+            readFrozenFiveOne (track, start + ahead, buffers.wide, numFrames, buffers.wideClip);
+        else if (track.isFrozen())
             readFrozen (track, start + ahead, buffers.track, numFrames);
         else if (fiveOne)
         {
-            if (buffers.wide.getNumChannels() < 6 || buffers.wide.getNumSamples() < numFrames)
-                buffers.wide.setSize (6, numFrames, false, false, true);
-
             if (live == nullptr || live->clips)
                 renderFiveOne (track, start + own + ahead, buffers.wide, numFrames, buffers.wideClip, buffers.clipGains);
             else

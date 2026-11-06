@@ -550,14 +550,14 @@ namespace SessionEdits
     inline constexpr double freezeTailSeconds = 5.0;
 
     /** Freezes a track: it plays `audio` (from frozenSource rendered, saved as file) from frame 0
-        instead of its clips and effects. False for a bus, a 5.1 track (freezing renders
-        stereo) or a track that is gone. */
+        instead of its clips and effects. A 5.1 track's frozen audio is its six channels
+        (fewer play as a clip of them would). False for a bus, a folder or a track that is gone. */
     bool freezeTrack (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot audio);
     bool unfreezeTrack (SessionState&, juce::uint32 trackId);
 
     /** What freezing a track renders: the track alone with its clips, pan and effects, at 0 dB
         with no volume envelope, sends or solo, unmuted; and the keys its effects' sidechains
-        listen to (addKeys). */
+        listen to (addKeys). A 5.1 track's is a 5.1 master, so it renders its six channels. */
     /** Brings into a session cut from another (a track or folder alone) the key tracks its
         tracks and buses listen to, by ducking or a sidechain, through any number in turn, as they
         are in the other: each with no sends, playing out of an interface pair, so it feeds its

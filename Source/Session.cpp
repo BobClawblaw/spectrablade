@@ -1542,7 +1542,7 @@ bool freezeTrack (SessionState& s, juce::uint32 trackId, const juce::File& file,
 {
     const auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
 
-    if (track == s.tracks.end() || track->isBus || track->fiveOne || audio == nullptr)
+    if (track == s.tracks.end() || track->isBus || track->isFolder || audio == nullptr)
         return false;
 
     track->frozenAudio = std::move (audio);
@@ -1603,7 +1603,9 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
 {
     auto alone = s;
     alone.tracks.clear();
-    alone.surround = false;   // the track's own stereo sound: its surround pan places it afterwards
+    // The track's own sound: stereo, which its surround pan places afterwards, or a 5.1 track's six channels.
+    const auto* found = s.findTrack (trackId);
+    alone.surround = found != nullptr && found->fiveOne;
 
     if (const auto* track = s.findTrack (trackId))
     {

@@ -1701,7 +1701,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo (frozen ? "Unfreeze Track" : "Freeze Track",
                           "Render the selected track through its effects to a file it plays instead, freeing the CPU; or play its clips live again", "Multitrack", 0);
             info.setTicked (frozen);
-            info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || (! track->clips.empty() && ! track->fiveOne)));
+            info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || ! track->clips.empty()));
             break;
         }
         case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip right after it", "Multitrack", 0);

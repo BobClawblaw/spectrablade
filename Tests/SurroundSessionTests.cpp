@@ -614,13 +614,13 @@ namespace
         auto& b2 = edits.addBus();
         auto& f2 = edits.addFolder();
         const auto refused = ! SessionEdits::setTrackFiveOne (edits, b2.id, true) && ! SessionEdits::setTrackFiveOne (edits, f2.id, true)
-                             && ! SessionEdits::setTrackFiveOne (edits, id, true) && ! SessionEdits::freezeTrack (edits, id, juce::File(), noise (2, 10, 4))
+                             && ! SessionEdits::setTrackFiveOne (edits, id, true)
                              && SessionEdits::setTrackFiveOne (edits, id, false) && ! edits.tracks[0].fiveOne;
         auto frozen = s;
         frozen.tracks[0].fiveOne = false;
         SessionEdits::freezeTrack (frozen, id, juce::File(), noise (2, 10, 5));
         check (refused && ! SessionEdits::setTrackFiveOne (frozen, id, true),
-               "5.1 track edits: buses, folders and frozen tracks can't be 5.1 tracks, and a 5.1 track can't be frozen");
+               "5.1 track edits: buses, folders and frozen tracks can't be 5.1 tracks");
 
         const juce::TemporaryFile temp (".sbsession");
         SessionFile::save (s, temp.getFile(), nullptr);
