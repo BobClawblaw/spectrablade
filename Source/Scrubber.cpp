@@ -25,6 +25,21 @@ void Scrubber::stop()
 
 void Scrubber::render (const AudioSnapshot& audio, double audioRate, double deviceRate, juce::AudioBuffer<float>& buffer, int start, int n)
 {
+    struct Snapshot final : Source
+    {
+        explicit Snapshot (const AudioSnapshot& a) : audio (a) {}
+        juce::int64 getNumFrames() const override   { return audio.getNumFrames(); }
+        int getNumChannels() const override         { return juce::jmin (2, audio.getNumChannels()); }
+        void read (juce::AudioBuffer<float>& into, juce::int64 first, int count) override   { audio.read (into, 0, first, count); }
+        const AudioSnapshot& audio;
+    };
+
+    Snapshot source (audio);
+    render (source, audioRate, deviceRate, buffer, start, n);
+}
+
+void Scrubber::render (Source& audio, double audioRate, double deviceRate, juce::AudioBuffer<float>& buffer, int start, int n)
+{
     if (audioRate <= 0.0 || deviceRate <= 0.0 || buffer.getNumChannels() == 0 || n <= 0)
         return;
 
@@ -53,7 +68,7 @@ void Scrubber::render (const AudioSnapshot& audio, double audioRate, double devi
         window.setSize (2, count, false, false, true);
 
     if (channels > 0)
-        audio.read (window, 0, first, count);   // outside the audio reads as silence
+        audio.read (window, first, count);   // outside the audio reads as silence
 
     const auto sampleAt = [&] (int ch, double at)
     {

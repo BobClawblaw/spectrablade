@@ -4021,6 +4021,18 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         }
     }
 
+    // Dragging along the time ruler while stopped scrubs: the mix under the mouse is heard as it moves.
+    if (p.y < timeRulerHeight && ! e.mods.isPopupMenu() && ! engine.getPlayer().isPlaying()
+        && engine.getPlayer().getMode() == DocumentPlayerProcessor::Mode::session)
+    {
+        const auto frame = juce::jlimit ((juce::int64) 0, shown().getLength(), frameForX ((float) p.x));
+        drag = Drag::scrub;
+        engine.getPlayer().getScrubber().start (frame);
+        setCursor (frame);
+        setTimeSelection ({});
+        return;
+    }
+
     if (p.y < rulerHeight)
     {
         drag = Drag::range;
@@ -4174,6 +4186,14 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
 {
     const auto p = e.getPosition();
 
+    if (drag == Drag::scrub)
+    {
+        const auto frame = juce::jlimit ((juce::int64) 0, shown().getLength(), frameForX ((float) juce::jmax (headerWidth, p.x)));
+        engine.getPlayer().getScrubber().moveTo (frame);
+        setCursor (frame);
+        return;
+    }
+
     if (drag == Drag::range)
     {
         // Dragging selects the range between where the mouse went down and where it is now; the
@@ -4282,6 +4302,7 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         }
         case Drag::none:
         case Drag::range:
+        case Drag::scrub:
             break;
     }
 
@@ -4301,6 +4322,9 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
 
 void MultitrackView::mouseUp (const juce::MouseEvent&)
 {
+    if (drag == Drag::scrub)
+        engine.getPlayer().getScrubber().stop();
+
     if (preview.has_value())
     {
         auto next = std::move (*preview);

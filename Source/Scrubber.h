@@ -35,10 +35,29 @@ public:
     /** Whether there is sound still to make: on, or fading out. Audio thread. */
     bool isSounding() const noexcept              { return on.load() || level > 0.0 || restart.load(); }
 
+    /** What is scrubbed: frames read on demand, around the head. */
+    struct Source
+    {
+        virtual ~Source() = default;
+
+        /** Its length in frames (the head stays within it). */
+        virtual juce::int64 getNumFrames() const = 0;
+
+        /** 1 (played on both sides) or 2. */
+        virtual int getNumChannels() const = 0;
+
+        /** Frames [first, first + count) into the first channels of `into` from frame 0, silence
+            outside it. Audio thread. */
+        virtual void read (juce::AudioBuffer<float>& into, juce::int64 first, int count) = 0;
+    };
+
     /** Adds the scrubbed sound of the audio to the first two channels of [start, start + n) of the
         buffer (a mono file on both, a file past stereo its first two channels), the device running
         at deviceRate and the audio at its own rate. Audio thread. */
     void render (const AudioSnapshot&, double audioRate, double deviceRate, juce::AudioBuffer<float>&, int start, int n);
+
+    /** As render, from any source. */
+    void render (Source&, double audioRate, double deviceRate, juce::AudioBuffer<float>&, int start, int n);
 
     /** Where the head is now, in frames of the audio (for tests). */
     double getHead() const noexcept               { return head; }

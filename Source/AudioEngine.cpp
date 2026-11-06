@@ -122,6 +122,9 @@ void SessionSource::prepareToPlay (int blockSize, double)
     // does not allocate on the audio thread.
     const auto frames = juce::jmax (8192, 4 * blockSize);
     buffers.reserve (frames);
+    scrubBuffers.reserve (scrubChunk);
+    scrubBuffers.surroundChannel = -1;   // folded down
+    scrubBuffers.interfaceChannel = -1;  // the mix alone
     liveBlock.setSize (2 * SessionMixer::Live::maxTracks, frames);
     liveRing.setSize (2 * SessionMixer::Live::maxTracks, juce::nextPowerOfTwo (2 * frames));
     liveRead = liveCount = 0;
@@ -201,6 +204,39 @@ const SessionMixer::Live* SessionSource::takeLive (int numFrames, bool clips)
     live.audio = &liveBlock;
     live.clips = clips;
     return &live;
+}
+
+void SessionSource::scrub (Scrubber& scrubber, double deviceRate, juce::AudioBuffer<float>& buffer, int numFrames)
+{
+    refreshState();
+
+    if (state == nullptr)
+        return;
+
+    struct Mix final : Scrubber::Source
+    {
+        Mix (const SessionState& s, SessionMixer::Buffers& b) : session (s), mixBuffers (b) {}
+
+        juce::int64 getNumFrames() const override   { return session.getLength(); }
+        int getNumChannels() const override         { return 2; }
+
+        void read (juce::AudioBuffer<float>& into, juce::int64 first, int count) override
+        {
+            // In pieces the mixer has room for, so it doesn't allocate.
+            for (int done = 0; done < count;)
+            {
+                const auto n = juce::jmin (scrubChunk, count - done);
+                SessionMixer::render (session, first + done, into, done, n, mixBuffers, nullptr);
+                done += n;
+            }
+        }
+
+        const SessionState& session;
+        SessionMixer::Buffers& mixBuffers;
+    };
+
+    Mix mix (*state, scrubBuffers);
+    scrubber.render (mix, state->sampleRate, deviceRate, buffer, 0, numFrames);
 }
 
 void SessionSource::renderLive (const juce::AudioSourceChannelInfo& info)
@@ -444,6 +480,10 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     // Stopped (the transport read nothing and played silence): the input plays on its own.
     if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
         sessionSource.renderLive (info);
+
+    // Scrubbing a stopped session: its mix's sound.
+    if (mode == Mode::session && ! playing && scrubber.isSounding())
+        sessionSource.scrub (scrubber, deviceRate, buffer, numFrames);
 
     // Scrubbing a stopped document: its sound as the mix.
     if (mode == Mode::document && ! playing && scrubber.isSounding())

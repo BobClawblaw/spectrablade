@@ -52,6 +52,8 @@ private:
 class SessionSource final : public juce::PositionableAudioSource
 {
 public:
+    static constexpr int scrubChunk = 4096;   // frames of the mix rendered at a time for scrubbing
+
     SessionSource (Session& s, SessionMixer::Inserts& i) : session (s), inserts (i) {}
 
     /** Frames from this one onwards play as silence (-1 = play to the end). */
@@ -67,6 +69,13 @@ public:
 
     /** While stopped: the live input alone (the clips silent) through the session at the cursor. */
     void renderLive (const juce::AudioSourceChannelInfo&);
+
+    /** Scrubbing the stopped session: adds the scrubber's sound of the mix to the first two channels
+        of the buffer's first numFrames. The mix is the clips through their tracks' volume, pan,
+        polarity, mute and solo, buses and folders, without the track and bus effects (which can't
+        follow a head going backwards or jumping); a frozen track plays its frozen audio, effects
+        and all; a 5.1 master is folded down. Audio thread. */
+    void scrub (Scrubber&, double deviceRate, juce::AudioBuffer<float>&, int numFrames);
 
     /** Meters the tracks and buses into these levels as it mixes. */
     void setLevels (SessionMixer::Levels* levels)             { buffers.levels = levels; }
@@ -96,7 +105,7 @@ private:
     SessionMixer::Inserts& inserts;
     Session::State state;                  // audio thread's own reference
     juce::uint32 stateVersion = 0;
-    SessionMixer::Buffers buffers;
+    SessionMixer::Buffers buffers, scrubBuffers;
     juce::int64 nextFrame = -1;            // where the last block ended; anything else is a jump
     std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
     std::atomic<int> surroundChannel { -1 };
@@ -165,8 +174,8 @@ public:
     void audition (std::unique_ptr<juce::AudioFormatReader>);
     bool isAuditioning() const                    { return auditioner.isPlaying(); }
 
-    /** Scrubbing the document while it is stopped (see Scrubber): its sound goes out as the mix,
-        through the effects rack. Playing, or the session shown, it is silent. */
+    /** Scrubbing the document, or the session (SessionSource::scrub), while it is stopped (see
+        Scrubber): its sound goes out as the mix, through the effects rack. Playing, it is silent. */
     Scrubber& getScrubber() noexcept              { return scrubber; }
 
     /** The session's tracks' and buses' levels as they play, by their place in the session. */

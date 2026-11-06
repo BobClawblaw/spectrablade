@@ -54,6 +54,7 @@
 #include "SurroundTests.h"
 #include "SurroundSessionTests.h"
 #include "SurroundEffectsTests.h"
+#include "SessionScrubTests.h"
 #include "VideoTests.h"
 #include "ProjectTests.h"
 #include "AutomationTests.h"
@@ -564,6 +565,7 @@ int main (int argc, char* argv[])
         runSurroundTests (engine);
         runSurroundSessionTests (engine);
         runSurroundEffectsTests (engine);
+        runSessionScrubTests (engine);
         runVideoTests();
         runProjectTests();
         runAutomationTests (engine.formatManager);
