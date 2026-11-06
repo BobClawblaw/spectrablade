@@ -28,6 +28,7 @@
 #include "SessionRecording.h"
 #include "WaveformView.h"
 #include "Dock.h"
+#include "EditorBar.h"
 
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
@@ -460,6 +461,7 @@ private:
     /** Puts a theme and accent into use and keeps them for next time. */
     void setTheme (const juce::String& theme, const juce::String& accentName);
 
+    std::unique_ptr<EditorBar> editorBar;   // made once the commands are registered
     std::unique_ptr<EditorPanel> editorPanel;
     std::map<juce::String, std::unique_ptr<juce::Component>> madePanels;   // the panels made when shown
     std::unique_ptr<Dock::Workspaces> workspaces;

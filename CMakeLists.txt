@@ -80,6 +80,7 @@ target_sources(SpectraBlade PRIVATE
     Source/AuditionPreview.cpp
     Source/WindowPlaces.cpp
     Source/Dock.cpp
+    Source/EditorBar.cpp
     Source/OpenFiles.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
@@ -166,6 +167,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/OpenFilesTests.cpp
     Tests/PanelTests.cpp
     Tests/ThemeTests.cpp
+    Tests/EditorBarTests.cpp
     Tests/FadeHandleTests.cpp
     Source/AudioDocument.cpp
     Source/Markers.cpp
@@ -205,6 +207,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/AuditionPreview.cpp
     Source/WindowPlaces.cpp
     Source/Dock.cpp
+    Source/EditorBar.cpp
     Source/OpenFiles.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp

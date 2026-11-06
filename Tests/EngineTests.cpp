@@ -25,6 +25,7 @@
 #include "OpenFilesTests.h"
 #include "PanelTests.h"
 #include "ThemeTests.h"
+#include "EditorBarTests.h"
 #include "FadeHandleTests.h"
 #include "MultibandTests.h"
 #include "BuiltInEffectsTests.h"
@@ -512,6 +513,7 @@ int main (int argc, char* argv[])
         runOpenFilesTests();
         runPanelTests();
         runThemeTests();
+        runEditorBarTests();
         runFadeHandleTests();
 
         // Scan the way the app does: on a background thread, with the message loop running.

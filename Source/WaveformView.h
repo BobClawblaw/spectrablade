@@ -71,6 +71,17 @@ public:
     void zoomToFit();
     void zoomToSelection();
 
+    /** How much taller the waveform is drawn than full scale fills: 1 (full scale reaches the
+        lane's edges) to 64, peaks beyond the edges clipped there. Option-scrolling changes it too. */
+    void setVerticalZoom (double);
+    double getVerticalZoom() const                      { return verticalZoom; }
+    void zoomInVertically()                             { setVerticalZoom (verticalZoom * 2.0); }
+    void zoomOutVertically()                            { setVerticalZoom (verticalZoom * 0.5); }
+    static constexpr double maxVerticalZoom = 64.0;
+
+    /** The level a lane's edges stand for at a vertical zoom, in dBFS (0 at 1x, -6.02 at 2x). */
+    static double edgeLevelDb (double zoom)             { return juce::Decibels::gainToDecibels (1.0 / zoom, -200.0); }
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void lookAndFeelChanged() override   { invalidateWaveform(); repaint(); }   // a new theme: draw the audio again in its colours
@@ -162,6 +173,7 @@ private:
     bool markerWasMoved = false;
 
     juce::Image waveformImage;
+    double verticalZoom = 1.0;
     bool waveformValid = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformView)

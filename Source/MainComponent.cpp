@@ -122,7 +122,7 @@ namespace
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
-        cmdMaximizeEditor
+        cmdMaximizeEditor, cmdResetVerticalZoom
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -623,10 +623,12 @@ private:
 class MainComponent::EditorPanel final : public juce::Component
 {
 public:
-    EditorPanel (FileTabs& t, WaveformView& w, SessionOverview& o, MultitrackView& m) : tabs (t), waveform (w), overview (o), multitrack (m)
+    EditorPanel (FileTabs& t, WaveformView& w, EditorBar& b, SessionOverview& o, MultitrackView& m)
+        : tabs (t), waveform (w), bar (b), overview (o), multitrack (m)
     {
         addAndMakeVisible (tabs);
         addAndMakeVisible (waveform);
+        addAndMakeVisible (bar);
         addChildComponent (overview);
         addChildComponent (multitrack);
     }
@@ -637,6 +639,8 @@ public:
         const auto showTabs = waveform.isVisible() && tabs.hasTabs();
         tabs.setVisible (showTabs);
         tabs.setBounds (showTabs ? r.removeFromTop (FileTabs::height) : juce::Rectangle<int>());
+        bar.setVisible (waveform.isVisible());
+        bar.setBounds (waveform.isVisible() ? r.removeFromBottom (EditorBar::height) : juce::Rectangle<int>());
         waveform.setBounds (r);
         r = getLocalBounds();
         overview.setBounds (r.removeFromTop (SessionOverview::height));
@@ -647,6 +651,7 @@ public:
 private:
     FileTabs& tabs;
     WaveformView& waveform;
+    EditorBar& bar;
     SessionOverview& overview;
     MultitrackView& multitrack;
 };
@@ -759,7 +764,9 @@ MainComponent::MainComponent()
     waveform.onFilesDropped = [this] (const juce::Array<juce::File>& files) { openDocuments (files); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
-    editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, overview, multitrack);
+    editorBar = std::make_unique<EditorBar> (commands, waveform, EditorBar::Commands { cmdZoomOut, cmdZoomIn, cmdZoomFit,
+                                                                                    cmdShorterTracks, cmdTallerTracks, cmdResetVerticalZoom });
+    editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, *editorBar, overview, multitrack);
     fileTabs.onChoose = [this] (int index) { switchToFile (index); };
     fileTabs.onClose = [this] (int index) { closeFile (index); };
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
@@ -819,6 +826,7 @@ MainComponent::MainComponent()
     addAndMakeVisible (*transportBar);
 
     KeyShortcuts::restore (*commands.getKeyMappings(), *settings);
+    editorBar->refreshTooltips();
     commands.getKeyMappings()->addChangeListener (this);
     addKeyListener (commands.getKeyMappings());
     setApplicationCommandManagerToWatch (&commands);   // menus refresh when command state changes
@@ -1142,7 +1150,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdMaximizeEditor; ++id)
+    for (int id = cmdOpen; id <= cmdResetVerticalZoom; ++id)
         ids.add (id);
 }
 
@@ -1439,12 +1447,32 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setTicked (countIn); info.setActive (multitrackMode && ! isRecording()); break;
         case cmdMixer:      info.setInfo ("Mixer", "A panel with a strip for each track and bus, and the master meter", "Multitrack", 0);
                             info.addDefaultKeypress ('m', cmd | shift); info.setTicked (dock->isShown (Panels::mixer)); break;
-        case cmdTallerTracks: info.setInfo ("Taller Tracks", "Make every track's lane taller", "View", 0);
-                            info.addDefaultKeypress ('=', cmd | alt);
-                            info.setActive (multitrackMode && multitrack.getLaneHeight() < MultitrackView::maxLaneHeight); break;
-        case cmdShorterTracks: info.setInfo ("Shorter Tracks", "Make every track's lane shorter, to see more of them", "View", 0);
-                            info.addDefaultKeypress ('-', cmd | alt);
-                            info.setActive (multitrackMode && multitrack.getLaneHeight() > MultitrackView::minLaneHeight); break;
+        // In the session these size the tracks; with a file, they zoom the waveform vertically.
+        case cmdTallerTracks:
+            if (multitrackMode)
+                info.setInfo ("Taller Tracks", "Make every track's lane taller", "View", 0);
+            else
+                info.setInfo ("Zoom In Vertically", "Draw the waveform taller, to see quiet audio", "View", 0);
+
+            info.addDefaultKeypress ('=', cmd | alt);
+            info.setActive (multitrackMode ? multitrack.getLaneHeight() < MultitrackView::maxLaneHeight
+                                           : hasAudio && waveform.getVerticalZoom() < WaveformView::maxVerticalZoom);
+            break;
+        case cmdShorterTracks:
+            if (multitrackMode)
+                info.setInfo ("Shorter Tracks", "Make every track's lane shorter, to see more of them", "View", 0);
+            else
+                info.setInfo ("Zoom Out Vertically", "Draw the waveform less tall, back towards full scale", "View", 0);
+
+            info.addDefaultKeypress ('-', cmd | alt);
+            info.setActive (multitrackMode ? multitrack.getLaneHeight() > MultitrackView::minLaneHeight
+                                           : hasAudio && waveform.getVerticalZoom() > 1.0);
+            break;
+        case cmdResetVerticalZoom:
+            info.setInfo ("Full Scale Vertically", "Draw the waveform at full scale again (1x)", "View", 0);
+            info.addDefaultKeypress ('0', cmd | alt);
+            info.setActive (! multitrackMode && waveform.getVerticalZoom() > 1.0);
+            break;
         case cmdRecordingOptions: info.setInfo ("Recording Options...", "How long playback runs before a punch-in and after a punch-out", "Transport", 0);
                             info.setActive (! isRecording()); break;
         case cmdRepeatClip: info.setInfo ("Repeat Clip to Range End", "Lay copies of the selected clip end to end up to the end of the time range", "Multitrack", 0);
@@ -1875,8 +1903,19 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdClipList:   dock->toggle (Panels::clipList); break;
         case cmdRepeatClip: multitrack.repeatSelectedClip(); break;
         case cmdRecordingOptions: showRecordingOptions(); break;
+        case cmdResetVerticalZoom: waveform.setVerticalZoom (1.0); break;
         case cmdTallerTracks:
         case cmdShorterTracks:
+            if (! multitrackMode)
+            {
+                if (info.commandID == cmdTallerTracks)
+                    waveform.zoomInVertically();
+                else
+                    waveform.zoomOutVertically();
+
+                break;
+            }
+
             multitrack.setLaneHeight (multitrack.getLaneHeight()
                                       + (info.commandID == cmdTallerTracks ? 1 : -1) * MultitrackView::laneHeightStep);
             appProperties.getUserSettings()->setValue (laneHeightKey, multitrack.getLaneHeight());
@@ -2140,7 +2179,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 3:
         {
             add ({ cmdShowWaveform, cmdShowSpectrogram, cmdShowBoth, cmdMultitrack, cmdShowRack, 0, cmdZoomIn, cmdZoomOut, cmdZoomFit, cmdZoomSelection,
-                   0, cmdTallerTracks, cmdShorterTracks, cmdShowAllTracks });
+                   0, cmdTallerTracks, cmdShorterTracks, cmdResetVerticalZoom, cmdShowAllTracks });
 
             juce::PopupMenu themeMenu;
             const auto themes = Theme::themeNames(), accents = Theme::accentNames();

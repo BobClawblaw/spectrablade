@@ -384,6 +384,7 @@ void WaveformView::renderWaveform()
         const auto top = (float) lane.wave.getY();
         const auto mid = top + (float) lane.wave.getHeight() * 0.5f;
         const auto half = (float) lane.wave.getHeight() * 0.45f;
+        const auto zoom = (float) verticalZoom;
 
         g.setColour (laneLine);
         g.drawHorizontalLine ((int) mid, 0.0f, (float) width);
@@ -401,8 +402,8 @@ void WaveformView::renderWaveform()
                     break;
 
                 const auto peak = snapshot->getPeak (ch, a, b);
-                const auto y1 = mid - juce::jlimit (-1.0f, 1.0f, peak.getEnd()) * half;
-                const auto y2 = mid - juce::jlimit (-1.0f, 1.0f, peak.getStart()) * half;
+                const auto y1 = mid - juce::jlimit (-1.0f, 1.0f, peak.getEnd() * zoom) * half;
+                const auto y2 = mid - juce::jlimit (-1.0f, 1.0f, peak.getStart() * zoom) * half;
                 g.drawVerticalLine (x, y1, juce::jmax (y1 + 1.0f, y2));
             }
         }
@@ -422,7 +423,7 @@ void WaveformView::renderWaveform()
             for (int i = 0; i < count; ++i)
             {
                 const auto x = (float) frameToX (first + i);
-                const auto y = mid - juce::jlimit (-1.0f, 1.0f, samples.getSample (ch, i)) * half;
+                const auto y = mid - juce::jlimit (-1.0f, 1.0f, samples.getSample (ch, i) * zoom) * half;
 
                 if (i == 0)
                     path.startNewSubPath (x, y);
@@ -435,7 +436,27 @@ void WaveformView::renderWaveform()
 
             g.strokePath (path, juce::PathStrokeType (1.2f));
         }
+
+        // Zoomed in vertically: the level the lane's edges stand for, at its top left.
+        if (verticalZoom > 1.0 && lane.wave.getHeight() >= 40)
+        {
+            g.setColour (Theme::dimText);
+            g.setFont (juce::FontOptions (Theme::smallText));
+            g.drawText ("edge " + juce::String (edgeLevelDb (verticalZoom), 1) + " dB",
+                        lane.wave.withTrimmedLeft (24).withHeight (16).withWidth (90), juce::Justification::centredLeft, false);
+        }
     }
+}
+
+void WaveformView::setVerticalZoom (double zoom)
+{
+    zoom = juce::jlimit (1.0, maxVerticalZoom, zoom);
+
+    if (juce::exactlyEqual (zoom, verticalZoom))
+        return;
+
+    verticalZoom = zoom;
+    invalidateWaveform();
 }
 
 void WaveformView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area)
@@ -1025,7 +1046,9 @@ void WaveformView::showMarkerMenu (int index)
 
 void WaveformView::mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
-    if (std::abs (wheel.deltaX) > std::abs (wheel.deltaY))
+    if (e.mods.isAltDown() && wheel.deltaY != 0.0f)
+        setVerticalZoom (verticalZoom * std::pow (2.0, (double) wheel.deltaY * 2.0));
+    else if (std::abs (wheel.deltaX) > std::abs (wheel.deltaY))
         setView (viewStart - (double) wheel.deltaX * getWidth() * framesPerPixel * 0.5, framesPerPixel);
     else if (wheel.deltaY != 0.0f)
         zoomAround (e.position.x, std::pow (2.0, (double) -wheel.deltaY * 2.0));
