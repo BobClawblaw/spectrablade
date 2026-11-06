@@ -16,6 +16,7 @@
 #include "../Source/Reverb.h"
 #include "../Source/SampleRateConverter.h"
 #include "../Source/Sequences.h"
+#include "../Source/TimeStretch.h"
 #include "TestUtils.h"
 #include "SequencesTests.h"
 
@@ -139,6 +140,8 @@ void runSequencesTests (AudioEngine& engine)
             { { "reverb", { { "preDelay", 20.0 }, { "decay", 1.8 }, { "size", 60.0 }, { "damping", 40.0 }, { "width", 80.0 }, { "mix", 30.0 } }, nullptr },
               RoomReverb::apply (s, a, b, rate, rev) },
             { { "convertRate", { { "rate", 44100.0 } }, nullptr }, SampleRateConverter::convert (s, rate, 44100.0) },
+            { { "stretch", { { "percent", 120.0 } }, nullptr }, TimeStretch::stretchRange (s, a, b, 1.2, rate) },
+            { { "pitch", { { "semitones", -3.0 } }, nullptr }, TimeStretch::shiftRange (s, a, b, -3.0, rate) },
         };
 
         juce::StringArray wrong, covered;
@@ -190,8 +193,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 27,
-               "sequences: each of the 27 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 29,
+               "sequences: each of the 29 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

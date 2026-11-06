@@ -51,6 +51,32 @@ Markers afterReplace (const Markers& markers, juce::int64 start, juce::int64 end
     return result;
 }
 
+Markers afterStretch (const Markers& markers, juce::int64 start, juce::int64 end, juce::int64 newLength)
+{
+    const auto length = end - start;
+    const auto place = [&] (juce::int64 frame)
+    {
+        if (frame <= start || length <= 0)
+            return frame;
+
+        if (frame >= end)
+            return frame + newLength - length;
+
+        return start + (juce::int64) std::llround ((double) (frame - start) * (double) newLength / (double) length);
+    };
+
+    Markers result;
+
+    for (auto m : markers)
+    {
+        const auto a = place (m.start);
+        result.push_back ({ a, m.isRegion() ? juce::jmax ((juce::int64) 1, place (m.getEnd()) - a) : 0, m.name, m.colour });
+    }
+
+    sort (result);
+    return result;
+}
+
 Markers afterCrop (const Markers& markers, juce::int64 start, juce::int64 end)
 {
     Markers result;

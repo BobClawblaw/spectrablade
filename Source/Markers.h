@@ -32,6 +32,11 @@ namespace MarkerEdits
           when it spans the edit. A region inside the range is removed. */
     Markers afterReplace (const Markers&, juce::int64 start, juce::int64 end, juce::int64 newLength);
 
+    /** Where markers end up after [start, end) is stretched to newLength frames: those before
+        stay, those after move by the change in length, and starts and ends inside it (or at its
+        end) keep their place in it, in proportion; every marker stays. */
+    Markers afterStretch (const Markers&, juce::int64 start, juce::int64 end, juce::int64 newLength);
+
     /** Markers for keeping only [start, end): points inside it (or at its end) and the parts of
         regions that overlap it, moved so start becomes frame 0. */
     Markers afterCrop (const Markers&, juce::int64 start, juce::int64 end);

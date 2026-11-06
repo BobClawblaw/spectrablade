@@ -137,7 +137,7 @@ namespace
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
-        cmdSurroundMaster
+        cmdSurroundMaster, cmdStretch, cmdPitch
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1182,7 +1182,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSurroundMaster; ++id)
+    for (int id = cmdOpen; id <= cmdPitch; ++id)
         ids.add (id);
 }
 
@@ -1298,6 +1298,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdSilence:    info.setInfo ("Silence", "Replace with silence", "Effects", 0); info.setActive (hasSelection); break;
         case cmdInvert:     info.setInfo ("Invert", "Flip the polarity", "Effects", 0); info.setActive (hasAudio); break;
         case cmdReverse:    info.setInfo ("Reverse", "Play backwards", "Effects", 0); info.setActive (hasAudio); break;
+        case cmdStretch:    info.setInfo ("Stretch...", "Make the selection, or the whole file, longer or shorter, keeping its pitch", "Effects", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdPitch:      info.setInfo ("Shift Pitch...", "Make the selection, or the whole file, higher or lower, keeping its length", "Effects", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdRemoveDc:   info.setInfo ("Remove DC Offset", "Take each channel's average level out of the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdBalance:    info.setInfo ("Balance...", "Move the stereo balance of the selection, or the whole file, left or right", "Effects", 0);
@@ -1953,6 +1957,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSilence:    applySimpleEffect ("Silence", &AudioEdits::silence, true); break;
         case cmdInvert:     runStep ({ "invert", {}, nullptr }); break;
         case cmdReverse:    runStep ({ "reverse", {}, nullptr }); break;
+        case cmdStretch:    askToStretch(); break;
+        case cmdPitch:      askToShiftPitch(); break;
         case cmdReverseRegions:
         {
             auto skipped = 0;
@@ -2387,7 +2393,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
             menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
+            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
                        cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
@@ -4803,6 +4809,111 @@ Sequences::Result MainComponent::runStep (const Sequences::Step& step)
     }
 
     return result;
+}
+
+void MainComponent::runStepInBackground (const Sequences::Step& step, const juce::String& busy)
+{
+    auto& doc = engine.document;
+
+    if (! doc.hasAudio() || backgroundJob != nullptr)
+        return;
+
+    engine.getPlayer().pause();
+
+    const auto range = selectionOrAll();
+    const auto selected = ! waveform.getSelection().isEmpty();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto markers = doc.getMarkers();
+    const auto version = doc.getVersion();
+    auto result = std::make_shared<Sequences::Result>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, busy,
+        [result, step, snapshot, range, rate, markers] (const std::function<bool (float)>& progress)
+        {
+            *result = Sequences::apply (step, snapshot, range.getStart(), range.getEnd(), rate, markers, nullptr, progress);
+            return result->error.isEmpty();
+        },
+        [this, result, step, selected, version]
+        {
+            if (engine.document.getVersion() != version)
+            {
+                showError (step.name(), "The audio changed meanwhile, so the result was discarded.");
+                return;
+            }
+
+            if (result->snapshot == nullptr)
+                return;
+
+            applyEdit (result->snapshot, step.name(), selected ? juce::Range<juce::int64> (result->start, result->end) : juce::Range<juce::int64>(),
+                       result->markers);
+            recordStep (step);
+        });
+    backgroundJob->launchThread();
+}
+
+void MainComponent::askToStretch()
+{
+    const auto range = selectionOrAll();
+    const auto seconds = (double) range.getLength() / engine.document.getSampleRate();
+    auto* box = new juce::AlertWindow ("Stretch",
+                                       juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection") + " ("
+                                           + juce::String (seconds, 2) + " s) longer or shorter, keeping its pitch. Markers in it keep their place in it.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("percent", juce::String (stretchPercent, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."),
+                        "Length (% of now, " + juce::String (juce::roundToInt (TimeStretch::shortest * 100.0)) + " to "
+                            + juce::String (juce::roundToInt (TimeStretch::longest * 100.0)) + ")");
+    box->getTextEditor ("percent")->setInputRestrictions (7, ".0123456789");
+    box->addButton ("Stretch", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        const auto percent = box->getTextEditorContents ("percent").getDoubleValue();
+
+        if (result != 1)
+            return;
+
+        if (percent < TimeStretch::shortest * 100.0 || percent > TimeStretch::longest * 100.0)
+        {
+            showError ("Stretch", "The length must be from 50% to 200% of what it is now.");
+            return;
+        }
+
+        stretchPercent = percent;
+
+        if (std::abs (percent - 100.0) >= 0.005)
+            runStepInBackground ({ "stretch", { { "percent", percent } }, nullptr }, "Stretching...");
+    }), true);
+}
+
+void MainComponent::askToShiftPitch()
+{
+    auto* box = new juce::AlertWindow ("Shift Pitch",
+                                       juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection")
+                                           + " higher or lower, keeping its length (12 semitones is an octave).",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addTextEditor ("semitones", juce::String (pitchSemitones, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."), "Semitones (-12 to +12)");
+    box->getTextEditor ("semitones")->setInputRestrictions (7, "-+.0123456789");
+    box->addButton ("Shift", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        const auto semitones = box->getTextEditorContents ("semitones").getDoubleValue();
+
+        if (result != 1)
+            return;
+
+        if (std::abs (semitones) > TimeStretch::widestShift)
+        {
+            showError ("Shift Pitch", "The shift must be from -12 to +12 semitones.");
+            return;
+        }
+
+        pitchSemitones = semitones;
+
+        if (std::abs (semitones) >= 0.005)
+            runStepInBackground ({ "pitch", { { "semitones", semitones } }, nullptr }, "Shifting the pitch...");
+    }), true);
 }
 
 void MainComponent::recordStep (const Sequences::Step& step)

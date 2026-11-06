@@ -34,7 +34,7 @@ What they check:
 - Moving the selected clips to the cursor, together, and not when locked.
 - Closing gaps on a track, around locked clips and keeping overlaps.
 - Zero crossings: finding them, and splits landing on them.
-- Time stretch: lengths, pitch and level kept on a tone, channels in step, progress and cancelling, and the clip edit.
+- Time stretch: lengths, pitch and level kept on a tone, channels in step, progress and cancelling, and the clip edit; the level kept at the edges; Stretch and Shift Pitch on part of a file (the audio either side bit for bit, the pitch, the joins), markers, and as sequence steps.
 - Pitch shift: four shifts of a tone landing on their pitches at the same length and level, cancelling, and the clip edit.
 - The undo history: listing steps, going back and forward by clicking, and new steps.
 - Track templates: what they keep, sends by bus name, and a file round trip.

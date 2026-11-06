@@ -175,6 +175,14 @@ private:
 
     // Recorded command sequences
     Sequences::Result runStep (const Sequences::Step&);   // a command's edit, through the step that plays it back
+
+    /** A step that takes a while (Stretch, Shift Pitch) on the selection or the whole file, in
+        the background with a progress window, applied as one undo step unless the file changed
+        meanwhile; a selection is kept over the processed range. */
+    void runStepInBackground (const Sequences::Step&, const juce::String& busy);
+    void askToStretch();
+    void askToShiftPitch();
+    double stretchPercent = 100.0, pitchSemitones = 0.0;   // as last asked
     void recordStep (const Sequences::Step&);              // after the edit is applied
     void noticeUnrecordedEdits();
     void toggleSequenceRecording();

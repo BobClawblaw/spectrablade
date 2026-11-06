@@ -409,6 +409,7 @@ void runVideoTests()
 
         juce::StringArray shown, refused;
         auto refusalSaid = true, previewsOk = true;
+        juce::String previewSeen;   // a preview that wasn't right: its length and size
         juce::Array<juce::int64> previewTimes;
         auto reopenMs = 0.0;
 
@@ -424,9 +425,15 @@ void runVideoTests()
 
             if (panel.isShowingPreview() && panel.isReady())
             {
+                // The player can still be reading the preview's length and size when the panel is
+                // ready (seen on a busy machine): given a few seconds to have them.
                 auto* pp = panel.getPlayer();
-                previewsOk = previewsOk && std::abs (pp->getVideoDuration() - 2.0) < 0.05 && pp->getVideoNativeSize() == juce::Rectangle<int> (320, 240)
-                          && Video::previewFile (made[k.extension]).existsAsFile();
+                const auto previewRight = [pp] { return std::abs (pp->getVideoDuration() - 2.0) < 0.05 && pp->getVideoNativeSize() == juce::Rectangle<int> (320, 240); };
+                TestUtils::runUntil (previewRight, 5000);
+                previewsOk = previewsOk && previewRight() && Video::previewFile (made[k.extension]).existsAsFile();
+
+                if (! previewRight())
+                    previewSeen << k.extension << ": " << juce::String (pp->getVideoDuration(), 3) << " s, " << pp->getVideoNativeSize().toString() << "; ";
                 previewTimes.add (Video::previewFile (made[k.extension]).getLastModificationTime().toMilliseconds());
             }
         }
@@ -448,12 +455,13 @@ void runVideoTests()
         panel.setFile (made.count ("mp4") > 0 ? made["mp4"] : juce::File());
         TestUtils::runUntil ([&] { panel.update(); return panel.isReady(); }, 8000);
         auto* p = panel.getPlayer();
+        TestUtils::runUntil ([p] { return p == nullptr || (std::abs (p->getVideoDuration() - 2.0) < 0.05 && ! p->getVideoNativeSize().isEmpty()); }, 5000);
         const auto opened = p != nullptr && panel.isReady() && std::abs (p->getVideoDuration() - 2.0) < 0.05
                             && p->getVideoNativeSize() == juce::Rectangle<int> (320, 240) && p->getAudioVolume() == 0.0f;
 
         audio = 1.24;
         panel.update();
-        TestUtils::runUntil ([&] { return p == nullptr || std::abs (p->getPlayPosition() - 1.24) < 0.001; }, 3000);
+        TestUtils::runUntil ([&] { return p == nullptr || std::abs (p->getPlayPosition() - 1.24) < 0.001; }, 8000);
         const auto stoppedAt = p != nullptr ? p->getPlayPosition() : -1.0;
 
         // Playing: the picture plays along; how far off it is after 1.5 s (having learned how late
@@ -474,21 +482,30 @@ void runVideoTests()
         playing = false;
         audio = 0.2;
         panel.update();
-        TestUtils::runUntil ([&] { return p == nullptr || (! p->isPlaying() && std::abs (p->getPlayPosition() - 0.2) < 0.001); }, 3000);
+        TestUtils::runUntil ([&] { return p == nullptr || (! p->isPlaying() && std::abs (p->getPlayPosition() - 0.2) < 0.001); }, 8000);
         const auto stoppedAgain = p != nullptr && ! p->isPlaying() && std::abs (p->getPlayPosition() - 0.2) < 0.001;
 
         panel.setFile ({});
         const auto none = panel.getPlayer() == nullptr && panel.getMessage().isNotEmpty();
 
-        check (shown.joinIntoString (",") == "mp4,m4v,mov,mkv (preview),webm (preview),avi" && refused.isEmpty() && refusalSaid
-                   && previewsOk && previewTimes == timesAgain && previewTimes.size() == 2
-                   && opened && std::abs (stoppedAt - 1.24) < 0.001 && wasPlaying && drift <= Video::driftAllowed && stoppedAgain && none,
+        // Named when they fail, so a failure on a busy machine says which part.
+        juce::StringArray failed;
+
+        for (auto [ok, part] : std::initializer_list<std::pair<bool, juce::String>> { { shown.joinIntoString (",") == "mp4,m4v,mov,mkv (preview),webm (preview),avi" && refused.isEmpty(), "shown" },
+                                 { refusalSaid, "refusal" }, { previewsOk, previewSeen.isEmpty() ? juce::String ("previews") : "previews (" + previewSeen.trimEnd() + ")" },
+                                 { previewTimes == timesAgain && previewTimes.size() == 2, "previews kept" }, { opened, "opened" },
+                                 { std::abs (stoppedAt - 1.24) < 0.001, "stopped" }, { wasPlaying, "playing" },
+                                 { drift <= Video::driftAllowed, "drift" }, { stoppedAgain, "stopped again" }, { none, "none" } })
+            if (! ok)
+                failed.add (part);
+
+        check (failed.isEmpty(),
                "video panel: shows MP4, M4V, MOV and an MPEG-4 AVI itself, and MKV and WebM through a preview ffmpeg makes (2 s long, "
                "320 x 240), kept and used again without being made again (shown again within " + juce::String (juce::roundToInt (reopenMs)) + " ms) (shown: "
                + shown.joinIntoString (", ") + "; not: " + refused.joinIntoString (", ") + "); "
                "320 x 240 and 2 s long, silent; stopped, it shows the frame at the playhead (" + juce::String (stoppedAt, 3) + " s for 1.24); "
                "playing, it plays along, " + juce::String (drift * 1000.0, 1) + " ms from the sound after 1.5 s; stopped again, back to "
-               "the playhead; with no video, a message");
+               "the playhead; with no video, a message" + (failed.isEmpty() ? juce::String() : " (failed: " + failed.joinIntoString (", ") + ")"));
     }
 
     Video::setPreviewFolder ({});

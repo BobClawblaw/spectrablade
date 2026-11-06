@@ -2,6 +2,7 @@
 #include "../Source/AudioEdits.h"
 #include "../Source/Bounce.h"
 #include "../Source/OfflineRender.h"
+#include "../Source/Sequences.h"
 #include "../Source/TimeStretch.h"
 #include "../Source/TrackTemplate.h"
 #include "TestUtils.h"
@@ -191,6 +192,126 @@ namespace
         check (refused && applied && audio->getNumFrames() == 72000 && c.position == 6000 && c.offset == 0 && c.length == 72000
                    && c.fadeIn == 7200 && c.fadeOut == 3600 && c.audio == audio && c.source.getFileName() == "tone Stretched.wav",
                "time stretch: a clip plays its stretched part from where it starts, fades scaled with it, and a locked one is refused");
+    }
+}
+
+namespace
+{
+    /** A 440 Hz tone at 0.5, as a snapshot: left, and right the inverse. */
+    AudioDocument::Snapshot toneFile (int length)
+    {
+        juce::AudioBuffer<float> b (2, length);
+
+        for (int i = 0; i < length; ++i)
+        {
+            const auto v = 0.5f * std::sin (juce::MathConstants<float>::twoPi * 440.0f * (float) i / (float) rate);
+            b.setSample (0, i, v);
+            b.setSample (1, i, -v);
+        }
+
+        return AudioEdits::fromBuffer (std::move (b));
+    }
+
+    juce::AudioBuffer<float> whole (const AudioSnapshot& s)
+    {
+        juce::AudioBuffer<float> b (s.getNumChannels(), (int) s.getNumFrames());
+        s.read (b, 0, 0, b.getNumSamples());
+        return b;
+    }
+
+    /** The largest step from one sample to the next over [from, to) of a channel. */
+    float largestStep (const juce::AudioBuffer<float>& b, int from, int to)
+    {
+        auto most = 0.0f;
+
+        for (int i = juce::jmax (1, from); i < juce::jmin (to, b.getNumSamples()); ++i)
+            most = juce::jmax (most, std::abs (b.getSample (0, i) - b.getSample (0, i - 1)));
+
+        return most;
+    }
+
+    void testStretchInFiles()
+    {
+        // The edges keep their level: shortened, the start no longer fades in from silence, and
+        // lengthened, the end no longer fades out.
+        const auto tone = whole (*toneFile (48000));
+        auto edgesKept = true;
+        juce::String edges;
+
+        for (auto ratio : { 0.5, 0.75, 1.5, 2.0 })
+        {
+            const auto out = TimeStretch::stretch (tone, ratio, rate);
+            const auto n = out.getNumSamples();
+            const auto first = out.getMagnitude (0, 0, 128), last = out.getMagnitude (0, n - 128, 128);
+            edgesKept = edgesKept && first > 0.45f && last > 0.45f;
+            edges << juce::String (ratio, 2) << "x: " << juce::String (first, 3) << " / " << juce::String (last, 3) << "; ";
+        }
+
+        check (edgesKept, "time stretch: the first and last 128 samples keep the tone's level (peaks " + edges.trimEnd() + " of 0.5)");
+
+        // The middle second of a 3 s tone stretched to 150%: the audio either side is untouched,
+        // the file is 0.5 s longer, and the joins don't click.
+        const auto file = toneFile (144000);
+        const auto original = whole (*file);
+        const auto naturalStep = largestStep (original, 1, 144000);
+        const auto stretched = TimeStretch::stretchRange (*file, 48000, 96000, 1.5, rate);
+        const auto s = whole (*stretched);
+        auto outsideKept = s.getNumSamples() == 168000;
+
+        for (int ch = 0; ch < 2 && outsideKept; ++ch)
+            for (int i = 0; i < 48000 && outsideKept; ++i)
+                outsideKept = juce::exactlyEqual (s.getSample (ch, i), original.getSample (ch, i)) && juce::exactlyEqual (s.getSample (ch, 120000 + i), original.getSample (ch, 96000 + i));
+
+        const auto joinStart = largestStep (s, 47900, 48600), joinEnd = largestStep (s, 119400, 120100);
+        const auto stretchedPitch = frequencyOf (s.getReadPointer (0), 60000, 108000, rate);
+        check (outsideKept && joinStart < 1.5f * naturalStep && joinEnd < 1.5f * naturalStep && std::abs (stretchedPitch / 440.0 - 1.0) < 0.005,
+               "stretch in a file: the middle second of a 3 s tone at 150% makes it 3.5 s, the audio either side bit for bit as it was, "
+               "the pitch kept (" + juce::String (stretchedPitch, 2) + " Hz), and no click at the joins (largest steps "
+                   + juce::String (joinStart, 4) + " and " + juce::String (joinEnd, 4) + " against the tone's " + juce::String (naturalStep, 4) + ")");
+
+        const auto shifted = TimeStretch::shiftRange (*file, 48000, 96000, 7.0, rate);
+        const auto p = whole (*shifted);
+        auto pitchOutside = p.getNumSamples() == 144000;
+
+        for (int i = 0; i < 48000 && pitchOutside; ++i)
+            pitchOutside = juce::exactlyEqual (p.getSample (0, i), original.getSample (0, i)) && juce::exactlyEqual (p.getSample (0, 96000 + i), original.getSample (0, 96000 + i));
+
+        const auto shiftedPitch = frequencyOf (p.getReadPointer (0), 54000, 90000, rate), wanted = 440.0 * std::pow (2.0, 7.0 / 12.0);
+        const auto pitchJoins = juce::jmax (largestStep (p, 47900, 48600), largestStep (p, 95400, 96100));
+        check (pitchOutside && std::abs (shiftedPitch / wanted - 1.0) < 0.005 && pitchJoins < 1.5f * (float) (wanted / 440.0) * naturalStep,
+               "shift pitch in a file: the middle second 7 semitones up (" + juce::String (shiftedPitch, 2) + " Hz for " + juce::String (wanted, 2)
+                   + "), the same length, the audio either side bit for bit, and no click at the joins (largest step " + juce::String (pitchJoins, 4) + ")");
+
+        // Markers keep their place in a stretched range; none is lost.
+        const Markers markers { { 1000, 0, "before", -1 }, { 48000, 0, "at start", -1 }, { 60000, 0, "inside", -1 },
+                                { 90000, 12000, "across end", -1 }, { 100000, 0, "after", -1 } };
+        const auto moved = MarkerEdits::afterStretch (markers, 48000, 96000, 72000);
+        check (moved.size() == 5 && moved[0].start == 1000 && moved[1].start == 48000 && moved[2].start == 66000 && moved[3].start == 111000
+                   && moved[3].getEnd() == 126000 && moved[4].start == 124000,
+               "stretch in a file: markers before it stay, those inside keep their place in it, those after move on, and a region across "
+                   "its end grows with it");
+
+        // As sequence steps: names, ranges, markers, refusals, nothing at 100% or 0, and stopping.
+        using Sequences::Step;
+        const Step stretch { "stretch", { { "percent", 150.0 } }, nullptr }, pitch { "pitch", { { "semitones", 2.0 } }, nullptr };
+        const auto r = Sequences::apply (stretch, file, 48000, 96000, rate, markers, nullptr);
+        const auto same = Sequences::apply ({ "stretch", { { "percent", 100.0 } }, nullptr }, file, 48000, 96000, rate, markers, nullptr);
+        const auto unshifted = Sequences::apply ({ "pitch", { { "semitones", 0.0 } }, nullptr }, file, 48000, 96000, rate, markers, nullptr);
+        auto calls = 0;
+        const auto stopped = Sequences::apply (pitch, file, 48000, 96000, rate, markers, nullptr, [&calls] (float) { return ++calls < 2; });
+        const auto tooLong = Sequences::problem ({ "stretch", { { "percent", 250.0 } }, nullptr }, rate);
+        const auto tooHigh = Sequences::problem ({ "pitch", { { "semitones", 13.0 } }, nullptr }, rate);
+        Sequences::Sequence both { "both", { stretch, { "gain", { { "db", -6.0 } }, nullptr } } };
+        const auto run = Sequences::run (both, file, 48000, 96000, rate, {}, nullptr);
+        const auto ran = whole (*run.snapshot);
+        const auto gainOnStretched = std::abs (ran.getMagnitude (0, 60000, 48000) - 0.5f * juce::Decibels::decibelsToGain (-6.0f)) < 0.01f
+                                     && std::abs (ran.getMagnitude (0, 0, 48000) - 0.5f) < 0.001f && std::abs (ran.getMagnitude (0, 121000, 47000) - 0.5f) < 0.001f;
+        check (r.error.isEmpty() && r.snapshot != nullptr && r.snapshot->getNumFrames() == 168000 && r.start == 48000 && r.end == 120000
+                   && r.markers == moved && same.snapshot == nullptr && unshifted.snapshot == nullptr && stopped.error == "Stopped."
+                   && tooLong.isNotEmpty() && tooHigh.isNotEmpty() && stretch.name() == "Stretch to 150.0%" && pitch.name() == "Shift Pitch +2.00 Semitones"
+                   && run.error.isEmpty() && run.end == 120000 && gainOnStretched,
+               "stretch and shift pitch as sequence steps: the range and markers follow the new length (so a step after acts on the stretched "
+               "part), nothing at 100% or 0 semitones, out-of-range settings refused, and stopping part way changes nothing");
     }
 }
 
@@ -387,6 +508,7 @@ void runBounceTests()
 {
     testFolderStems();
     testTimeStretch();
+    testStretchInFiles();
     testFreeze();
     testClipGainEnvelope();
 

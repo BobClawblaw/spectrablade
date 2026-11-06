@@ -26,14 +26,31 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
     const auto synthesisHop = n / 2;
     const auto tolerance = n / 4;
 
-    // Every channel with silence either side, wide enough for any frame that is looked at, for
-    // finding where frames match: by the sum over channels of their products, so channels out of
-    // phase with each other don't cancel.
+    // Every channel carried on past either end as its mirror image, wide enough for any frame
+    // that is looked at: frames there read sound that carries on smoothly rather than silence, so
+    // the output keeps its level up to its edges without jumping. Frames are matched by the sum
+    // over channels of their products, so channels out of phase with each other don't cancel.
     const auto pad = n + tolerance + (int) std::ceil ((double) synthesisHop / ratio) + 2;
     std::vector<std::vector<float>> padded ((size_t) channels, std::vector<float> ((size_t) (inLength + 2 * pad), 0.0f));
+    const auto mirrored = [inLength] (int i)
+    {
+        for (;;)
+        {
+            if (i < 0)
+                i = -i;
+            else if (i >= inLength)
+                i = 2 * (inLength - 1) - i;
+            else
+                return i;
+
+            if (inLength == 1)
+                return 0;
+        }
+    };
 
     for (int ch = 0; ch < channels; ++ch)
-        std::copy (input.getReadPointer (ch), input.getReadPointer (ch) + inLength, padded[(size_t) ch].begin() + pad);
+        for (int i = -pad; i < inLength + pad; ++i)
+            padded[(size_t) ch][(size_t) (i + pad)] = input.getSample (ch, mirrored (i));
 
     const auto similarity = [&] (int a, int b)
     {
@@ -94,14 +111,13 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
         {
             const auto o = outStart + i, from = chosen + i;
 
-            if (o < 0 || o >= outLength)
+            if (o < 0 || o >= outLength || from + pad < 0 || from + pad >= inLength + 2 * pad)
                 continue;
 
             weight[(size_t) o] += window[(size_t) i];
 
-            if (from >= 0 && from < inLength)
-                for (int ch = 0; ch < channels; ++ch)
-                    out.getWritePointer (ch)[o] += window[(size_t) i] * input.getSample (ch, from);
+            for (int ch = 0; ch < channels; ++ch)
+                out.getWritePointer (ch)[o] += window[(size_t) i] * padded[(size_t) ch][(size_t) (from + pad)];
         }
 
         previous = chosen;
@@ -137,5 +153,94 @@ juce::AudioBuffer<float> shiftPitch (const juce::AudioBuffer<float>& input, doub
     // The converter rounds its length up: exactly the input's length, as silence if short.
     out.setSize (out.getNumChannels(), input.getNumSamples(), true, true);
     return out;
+}
+
+namespace
+{
+    /** Where processed audio meets the audio either side of it: crossfaded over joinSeconds
+        (or a quarter of the range when that is shorter), from the original into the processed
+        at the start and back at the end, so the joins don't click. A join at the file's start
+        or end needs none. */
+    void blendJoins (juce::AudioBuffer<float>& processed, const juce::AudioBuffer<float>& original, bool atStart, bool atEnd, double rate)
+    {
+        const auto length = processed.getNumSamples(), originalLength = original.getNumSamples();
+        const auto frames = juce::jmin ((int) std::llround (joinSeconds * rate), length / 4, originalLength / 4);
+
+        if (frames <= 0)
+            return;
+
+        for (int ch = 0; ch < processed.getNumChannels(); ++ch)
+        {
+            auto* p = processed.getWritePointer (ch);
+            const auto* o = original.getReadPointer (ch);
+
+            for (int i = 0; i < frames; ++i)
+            {
+                const auto t = ((float) i + 0.5f) / (float) frames;
+
+                if (! atStart)
+                    p[i] = o[i] + (p[i] - o[i]) * t;
+
+                if (! atEnd)
+                {
+                    auto& last = p[length - frames + i];
+                    last = last + (o[originalLength - frames + i] - last) * t;
+                }
+            }
+        }
+    }
+
+    /** [start, end) of the audio, processed with up to contextSeconds of the audio either side
+        of it (so what comes out at its edges carries on from what is there), that part cut out
+        (`ratio` times its length), put back in its place with its joins blended; null for an
+        empty range, a range too long to hold, or when processing stops (an empty result). */
+    AudioDocument::Snapshot processRange (const AudioSnapshot& audio, juce::int64 start, juce::int64 end, double ratio, double rate,
+                                          const std::function<juce::AudioBuffer<float> (const juce::AudioBuffer<float>&)>& process)
+    {
+        constexpr double contextSeconds = 0.25;
+        start = juce::jlimit ((juce::int64) 0, audio.getNumFrames(), start);
+        end = juce::jlimit (start, audio.getNumFrames(), end);
+        const auto context = (juce::int64) std::llround (contextSeconds * rate);
+        const auto from = juce::jmax ((juce::int64) 0, start - context), to = juce::jmin (audio.getNumFrames(), end + context);
+
+        if (end <= start || to - from > std::numeric_limits<int>::max())
+            return nullptr;
+
+        juce::AudioBuffer<float> wide (audio.getNumChannels(), (int) (to - from));
+        audio.read (wide, 0, from, wide.getNumSamples());
+        const auto worked = process (wide);
+
+        if (worked.getNumSamples() == 0)
+            return nullptr;
+
+        const auto length = (int) (end - start);
+        const auto first = juce::jlimit (0, worked.getNumSamples(), (int) std::llround ((double) (start - from) * ratio));
+        const auto count = juce::jmin (worked.getNumSamples() - first, (int) std::llround ((double) length * ratio));
+        juce::AudioBuffer<float> original (audio.getNumChannels(), length), processed (worked.getNumChannels(), count);
+
+        for (int ch = 0; ch < wide.getNumChannels(); ++ch)
+        {
+            original.copyFrom (ch, 0, wide, ch, (int) (start - from), length);
+            processed.copyFrom (ch, 0, worked, ch, first, count);
+        }
+
+        blendJoins (processed, original, start == 0, end == audio.getNumFrames(), rate);
+        const auto frames = (juce::int64) processed.getNumSamples();
+        AudioClip clip { processed.getNumChannels(), rate, { { std::make_shared<const AudioBlock> (std::move (processed)), 0, frames } } };
+        return AudioEdits::replaceWithClip (audio, start, end, clip);
+    }
+}
+
+AudioDocument::Snapshot stretchRange (const AudioSnapshot& audio, juce::int64 start, juce::int64 end, double ratio, double rate,
+                                      const std::function<bool (float)>& progress)
+{
+    ratio = juce::jlimit (shortest, longest, ratio);
+    return processRange (audio, start, end, ratio, rate, [&] (const juce::AudioBuffer<float>& in) { return stretch (in, ratio, rate, progress); });
+}
+
+AudioDocument::Snapshot shiftRange (const AudioSnapshot& audio, juce::int64 start, juce::int64 end, double semitones, double rate,
+                                    const std::function<bool (float)>& progress)
+{
+    return processRange (audio, start, end, 1.0, rate, [&] (const juce::AudioBuffer<float>& in) { return shiftPitch (in, semitones, rate, progress); });
 }
 }

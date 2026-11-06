@@ -1,4 +1,5 @@
 #include "Sequences.h"
+#include "TimeStretch.h"
 #include "AudioEdits.h"
 #include "Dynamics.h"
 #include "Equalizer.h"
@@ -57,6 +58,8 @@ namespace
             { "flanger", "Flanger", { "rate", "delay", "depth", "feedback", "mix", "spread" } },
             { "phaser", "Phaser", { "rate", "low", "high", "stages", "feedback", "mix", "spread" } },
             { "reverb", "Reverb", { "preDelay", "decay", "size", "damping", "width", "mix" } },
+            { "stretch", "Stretch", { "percent" } },
+            { "pitch", "Shift Pitch", { "semitones" } },
             { "convertRate", "Convert Sample Rate", { "rate" } },
             { "rack", "Apply Effects Rack", {} },
         };
@@ -144,6 +147,15 @@ juce::String Step::name() const
     if (kind == "convertRate")
         return "Convert to " + juce::String (get (values, "rate") / 1000.0, 1) + " kHz";
 
+    if (kind == "stretch")
+        return "Stretch to " + juce::String (get (values, "percent"), 1) + "%";
+
+    if (kind == "pitch")
+    {
+        const auto semitones = get (values, "semitones");
+        return "Shift Pitch " + juce::String (semitones > 0.0 ? "+" : "") + juce::String (semitones, 2) + " Semitones";
+    }
+
     const auto* k = find (kind);
     return k != nullptr ? juce::String (k->name) : kind;
 }
@@ -183,6 +195,10 @@ juce::String problem (const Step& step, double rate)
         return "it has no rack.";
 
     if (step.kind == "convertRate" && (get (v, "rate") < 8000.0 || get (v, "rate") > 384000.0))
+        return bad();
+
+    if ((step.kind == "stretch" && (get (v, "percent") < TimeStretch::shortest * 100.0 || get (v, "percent") > TimeStretch::longest * 100.0))
+        || (step.kind == "pitch" && std::abs (get (v, "semitones")) > TimeStretch::widestShift))
         return bad();
 
     if (step.kind == "matchLoudness" && (get (v, "target") < -70.0 || get (v, "target") > 0.0 || get (v, "ceiling") < -30.0 || get (v, "ceiling") > 0.0))
@@ -306,6 +322,27 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
                     out.notes.add ("the true-peak ceiling allowed " + juce::String (gain, 1) + " dB, so it is at "
                                    + Loudness::format (measured->integrated + gain, "LUFS"));
             }
+        }
+    }
+    else if (k == "stretch" || k == "pitch")
+    {
+        // A whole number of hundredths, as the dialog takes them; nothing to do at 100% or 0.
+        const auto amount = std::round (get (v, k == "stretch" ? "percent" : "semitones") * 100.0) / 100.0;
+
+        if (end > start && ! juce::exactlyEqual (amount, k == "stretch" ? 100.0 : 0.0))
+        {
+            out.snapshot = k == "stretch" ? TimeStretch::stretchRange (s, start, end, amount / 100.0, rate, progress)
+                                          : TimeStretch::shiftRange (s, start, end, amount, rate, progress);
+
+            if (out.snapshot == nullptr)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+
+            const auto newEnd = end + out.snapshot->getNumFrames() - s.getNumFrames();
+            out.markers = MarkerEdits::afterStretch (markers, start, end, newEnd - start);
+            out.end = newEnd;
         }
     }
     else if (k == "convertRate")

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "AudioEdits.h"
 
 /** Changes the length of audio without changing its pitch, by waveform-similarity overlap-add
     (WSOLA, from Verhelst and Roelands' 1993 paper): Hann-windowed frames are laid down half a
@@ -29,4 +30,18 @@ namespace TimeStretch
         as for stretch. */
     juce::AudioBuffer<float> shiftPitch (const juce::AudioBuffer<float>& input, double semitones, double sampleRate,
                                          const std::function<bool (float)>& progress = {});
+
+    /** How long the joins are crossfaded where a processed range meets the audio around it. */
+    inline constexpr double joinSeconds = 0.005;
+
+    /** The audio with [start, end) stretched to `ratio` times its length at the same pitch (the
+        rest moving with it), its joins with the audio either side crossfaded over joinSeconds.
+        Null for an empty range, or when progress stops it. */
+    AudioDocument::Snapshot stretchRange (const AudioSnapshot&, juce::int64 start, juce::int64 end, double ratio, double sampleRate,
+                                          const std::function<bool (float)>& progress = {});
+
+    /** The audio with [start, end) `semitones` higher or lower and just as long, its joins
+        crossfaded likewise. Null for an empty range, or when progress stops it. */
+    AudioDocument::Snapshot shiftRange (const AudioSnapshot&, juce::int64 start, juce::int64 end, double semitones, double sampleRate,
+                                        const std::function<bool (float)>& progress = {});
 }
