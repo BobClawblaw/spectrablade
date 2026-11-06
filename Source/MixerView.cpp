@@ -95,6 +95,29 @@ public:
         fader.setRange (-60.0, 12.0, 0.1);
         fader.setSkewFactorFromMidPoint (-12.0);
         fader.setDoubleClickReturnValue (true, 0.0);
+        // Double-click the readout to type a volume.
+        readout.setEditable (false, true, false);
+        readout.setTooltip ("Double-click to type a volume, -60 to +12 dB");
+        readout.onEditorShow = [this]
+        {
+            if (auto* e = readout.getCurrentTextEditor())
+            {
+                e->setText (juce::String (fader.getValue(), 1), false);
+                e->selectAll();
+                e->setJustification (juce::Justification::centred);
+            }
+        };
+        readout.onTextChange = [this]
+        {
+            if (const auto typed = parseVolume (readout.getText()); typed.has_value() && fader.isEnabled())
+            {
+                fader.setValue (*typed, juce::dontSendNotification);
+                edit ("Track Volume", false, [volume = *typed] (SessionTrack& t) { t.gainDb = volume; });
+            }
+
+            readout.setText (juce::String (fader.getValue(), 1) + " dB", juce::dontSendNotification);
+        };
+
         fader.onValueChange = [this]
         {
             const auto db = (float) fader.getValue();
@@ -164,6 +187,7 @@ public:
 
         const auto volumeAutomated = ! t.volumeEnvelope.isEmpty(), panAutomated = ! t.panEnvelope.isEmpty();
         fader.setEnabled (! volumeAutomated);
+        readout.setEditable (false, trackId != 0 && ! volumeAutomated, false);
         pan.setEnabled (! panAutomated);
         fader.setTooltip (isFolder ? "Folder volume: added to the volume of each track and bus in it"
                                    : volumeAutomated ? "Volume follows its envelope" : "Volume");
@@ -177,7 +201,9 @@ public:
         if (! pan.isMouseButtonDown())
             pan.setValue (std::round (t.valueAt (AutomationParameter::pan, frame) * 100.0f), juce::dontSendNotification);
 
-        readout.setText (juce::String (db, 1) + " dB", juce::dontSendNotification);
+        if (! readout.isBeingEdited())
+            readout.setText (juce::String (db, 1) + " dB", juce::dontSendNotification);
+
         repaint();
     }
 
@@ -270,6 +296,7 @@ public:
     Meter meter;
     juce::Slider fader, pan;
     juce::TextButton mute { "M" }, solo { "S" }, polarity { juce::String (juce::CharPointer_UTF8 ("\xc3\x98")) };
+    juce::Label readout;
 
 private:
     void edit (const juce::String& description, bool merge, const std::function<void (SessionTrack&)>& change)
@@ -292,7 +319,7 @@ private:
 
     MixerView& view;
     juce::Colour colour;
-    juce::Label name, readout;
+    juce::Label name;
     bool isBus = false, isFolder = false, soloSafe = false;
 };
 
@@ -359,6 +386,31 @@ MixerView::Strip* MixerView::findStrip (juce::uint32 trackId) const
 }
 
 juce::Slider* MixerView::findFader (juce::uint32 trackId) const   { auto* s = findStrip (trackId); return s != nullptr ? &s->fader : nullptr; }
+juce::Label* MixerView::findReadout (juce::uint32 trackId) const  { auto* s = findStrip (trackId); return s != nullptr && trackId != 0 ? &s->readout : nullptr; }
+
+std::optional<float> MixerView::parseVolume (const juce::String& text)
+{
+    auto t = text.trim();
+
+    if (t.endsWithIgnoreCase ("db"))
+        t = t.dropLastCharacters (2).trimEnd();
+
+    if (t.startsWithChar ('+'))
+        t = t.substring (1);
+
+    // Digits, one point and a leading minus only: no stray letters or empty text.
+    if (t.isEmpty() || ! t.containsOnly ("-.0123456789") || t.lastIndexOfChar ('-') > 0 || t.indexOfChar ('.') != t.lastIndexOfChar ('.')
+        || ! t.containsAnyOf ("0123456789"))
+        return std::nullopt;
+
+    const auto value = std::round (t.getDoubleValue() * 10.0) / 10.0;
+
+    if (value < -60.0 || value > 12.0)
+        return std::nullopt;
+
+    return (float) value;
+}
+
 juce::Slider* MixerView::findPan (juce::uint32 trackId) const     { auto* s = findStrip (trackId); return s != nullptr ? &s->pan : nullptr; }
 juce::Button* MixerView::findMute (juce::uint32 trackId) const    { auto* s = findStrip (trackId); return s != nullptr ? &s->mute : nullptr; }
 juce::Button* MixerView::findPolarity (juce::uint32 trackId) const { auto* s = findStrip (trackId); return s != nullptr ? &s->polarity : nullptr; }

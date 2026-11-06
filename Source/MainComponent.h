@@ -96,6 +96,7 @@ private:
     // File
     void openFile (const juce::File&);
     void chooseFile();
+    juce::String openWildcard();
     void save();
     void saveAs (std::function<void (bool saved)> done = {});
     void saveSelectionAs();
@@ -163,6 +164,9 @@ private:
     void showDeclip();
     void showGenerateTone();
     void showGenerateNoise();
+    void exportLossy();
+    void askLossySettings (const juce::File&, juce::Range<juce::int64> selection);
+    void exportWithFfmpeg();
     void insertGenerated (const juce::AudioBuffer<float>&, const juce::String& name);
     int toneWave = 0;                // the generators' last settings
     double toneHz = 1000.0, toneEndHz = 1000.0, toneLevelDb = -12.0, toneSeconds = 1.0, toneFadeMs = 5.0;
@@ -170,6 +174,7 @@ private:
     double noiseLevelDb = -20.0, noiseSeconds = 1.0, noiseFadeMs = 5.0;
     double declipThreshold = 0.99;   // Repair Clipping's last settings
     bool declipKeepPeak = true;
+    int lossyMp3Choice = 1, lossyAacChoice = 1, ffmpegTargetChoice = 0;   // Export as MP3 or AAC's last settings
     bool humIs60 = false;   // Remove Hum's last settings
     int humHarmonics = 8;
     double humQ = 30.0;

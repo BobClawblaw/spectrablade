@@ -2,6 +2,8 @@
 
 #include "AudioEngine.h"
 
+#include <optional>
+
 /** The session as a mixing desk: a strip for each track and bus, in the session's order, with its
     meter, volume fader, pan, mute, polarity switch and solo, and a master strip metering what goes
     to the outputs.
@@ -25,6 +27,11 @@ public:
 
     /** A strip's controls, for the track or bus with this id (null when there is none). */
     juce::Slider* findFader (juce::uint32 trackId) const;
+    juce::Label* findReadout (juce::uint32 trackId) const;
+
+    /** A volume typed into a strip's readout: a number from -60 to +12, with or without "dB", rounded to
+        0.1 dB as the fader sets it. Anything else gives nothing. */
+    static std::optional<float> parseVolume (const juce::String&);
     juce::Slider* findPan (juce::uint32 trackId) const;
     juce::Button* findMute (juce::uint32 trackId) const;
     juce::Button* findSolo (juce::uint32 trackId) const;

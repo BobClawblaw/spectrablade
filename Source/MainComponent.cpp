@@ -2,6 +2,8 @@
 #include "Navigation.h"
 #include "Restoration.h"
 #include "Generator.h"
+#include "LossyFiles.h"
+#include "Ffmpeg.h"
 #include "Theme.h"
 #include "BuiltInEffects.h"
 #include "AudioFileIO.h"
@@ -43,6 +45,7 @@ namespace
     constexpr const char* postrollKey     = "postroll";
     constexpr const char* laneHeightKey   = "laneHeight";
     constexpr const char* loopPlaybackKey = "loopPlayback";
+    constexpr const char* fileTabsKey = "fileTabs";
     constexpr const char* rackShownKey    = "rackShown";
     constexpr const char* openPreviewKey  = "previewInOpenPanel";
     constexpr const char* waveShareKey    = "waveformShare";
@@ -127,7 +130,7 @@ namespace
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
-        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal
+        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -138,7 +141,7 @@ namespace
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
             || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
-            || (id >= cmdBoxTool && id <= cmdSpectralHeal);
+            || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -644,10 +647,14 @@ public:
         addChildComponent (multitrack);
     }
 
+    /** Whether the open files show as tabs over the editor (the Files panel lists them either way). */
+    void setTabsWanted (bool on)        { tabsWanted = on; resized(); }
+    bool areTabsWanted() const          { return tabsWanted; }
+
     void resized() override
     {
         auto r = getLocalBounds();
-        const auto showTabs = waveform.isVisible() && tabs.hasTabs();
+        const auto showTabs = tabsWanted && waveform.isVisible() && tabs.hasTabs();
         tabs.setVisible (showTabs);
         tabs.setBounds (showTabs ? r.removeFromTop (FileTabs::height) : juce::Rectangle<int>());
         bar.setVisible (waveform.isVisible());
@@ -660,6 +667,7 @@ public:
     }
 
 private:
+    bool tabsWanted = false;
     FileTabs& tabs;
     WaveformView& waveform;
     EditorBar& bar;
@@ -786,6 +794,7 @@ MainComponent::MainComponent()
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
     multitrack.setFindingZeroCrossings (settings->getBoolValue (zeroCrossingsKey, false));
     loopPlayback = settings->getBoolValue (loopPlaybackKey, false);
+    editorPanel->setTabsWanted (settings->getBoolValue (fileTabsKey, false));
     multitrack.setLaneHeight (settings->getIntValue (laneHeightKey, MultitrackView::trackHeight));
     rolls.preroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (prerollKey, rolls.preroll));
     rolls.postroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (postrollKey, rolls.postroll));
@@ -1163,7 +1172,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSpectralHeal; ++id)
+    for (int id = cmdOpen; id <= cmdExportFfmpeg; ++id)
         ids.add (id);
 }
 
@@ -1389,6 +1398,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                           "Record from the input", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, shift); break;
 
+        case cmdShowFileTabs: info.setInfo ("File Tabs", "Show the open files as tabs over the editor as well as in the Files panel", "Window", 0);
+                              info.setTicked (editorPanel != nullptr && editorPanel->areTabsWanted()); break;
         case cmdShowRack:   info.setInfo ("Effects Rack", "Show or hide the effects rack panel", "Window", 0);
                             info.addDefaultKeypress ('e', cmd | alt); info.setTicked (dock->isShown (Panels::rack)); break;
         case cmdShowSpectrum: info.setInfo ("Frequency Analysis", "Show or hide the spectrum of what goes to the outputs", "Window", 0);
@@ -1430,6 +1441,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdSpectralRemove: info.setInfo ("Remove Frequencies", "Remove what is inside the box, lasso or brush selection in the spectrogram", "Effects", 0);
                             info.addDefaultKeypress (juce::KeyPress::backspaceKey, alt);
                             info.setActive (hasSpectral); break;
+        case cmdExportFfmpeg: info.setInfo ("Export with ffmpeg...", "Write the file, or the selection, as Opus, Apple Lossless, WavPack or AC-3 through an installed ffmpeg", "File", 0);
+                              info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdExportLossy: info.setInfo ("Export as MP3 or AAC...", "Write the file, or the selection, to an MP3 or AAC (.m4a) file", "File", 0);
+                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdSpectralHeal: info.setInfo ("Heal", "Replace what is inside the box, lasso or brush selection in the spectrogram with the sound around it", "Effects", 0);
                             info.addDefaultKeypress ('h', cmd | shift);
                             info.setActive (hasSpectral); break;
@@ -2041,6 +2056,11 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRecord:     toggleRecord(); break;
         case cmdStop:       stopTransport(); break;
         case cmdShowRack:   dock->toggle (Panels::rack); break;
+        case cmdShowFileTabs:
+            editorPanel->setTabsWanted (! editorPanel->areTabsWanted());
+            appProperties.getUserSettings()->setValue (fileTabsKey, editorPanel->areTabsWanted());
+            commands.commandStatusChanged();
+            break;
         case cmdShowFiles:  dock->toggle (Panels::files); break;
         case cmdShowLevels: dock->toggle (Panels::levels); break;
         case cmdShowSpectrum: dock->toggle (Panels::spectrum); break;
@@ -2175,6 +2195,8 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         case cmdSpectralRemove: applySpectral (-std::numeric_limits<float>::infinity()); break;
         case cmdSpectralHeal: healSpectral(); break;
+        case cmdExportLossy: exportLossy(); break;
+        case cmdExportFfmpeg: exportWithFfmpeg(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
         case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
@@ -2271,7 +2293,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdExportLossy, cmdExportFfmpeg, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2321,7 +2343,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
 
             juce::PopupMenu workspaceMenu;
 
@@ -3665,7 +3687,7 @@ void MainComponent::chooseFilesForSession()
 {
     auto* preview = makeOpenPreview();
     chooser = std::make_unique<juce::FileChooser> ("Import audio", engine.document.getFile().getParentDirectory(),
-                                                   engine.formatManager.getWildcardForAllFormats());
+                                                   openWildcard());
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::canSelectMultipleItems,
                           [this] (const juce::FileChooser& fc)
@@ -3986,11 +4008,24 @@ AuditionPreview* MainComponent::makeOpenPreview()
     return openPreview.get();
 }
 
+juce::String MainComponent::openWildcard()
+{
+    auto wildcard = engine.formatManager.getWildcardForAllFormats();
+
+    // With ffmpeg installed, the formats it reads too.
+    if (Ffmpeg::find() != juce::File())
+        for (const auto& e : Ffmpeg::importExtensions())
+            if (! wildcard.containsIgnoreCase ("*." + e + ";") && ! wildcard.endsWithIgnoreCase ("*." + e))
+                wildcard << ";*." << e;
+
+    return wildcard;
+}
+
 void MainComponent::chooseFile()
 {
     auto* preview = makeOpenPreview();
     chooser = std::make_unique<juce::FileChooser> ("Open audio file", engine.document.getFile().getParentDirectory(),
-                                                   engine.formatManager.getWildcardForAllFormats());
+                                                   openWildcard());
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
                               | juce::FileBrowserComponent::canSelectMultipleItems,
                           [this] (const juce::FileChooser& fc)
@@ -4105,6 +4140,207 @@ void MainComponent::saveFileRegions (const juce::File& folder, bool betweenMarke
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
+}
+
+void MainComponent::exportLossy()
+{
+    const auto& doc = engine.document;
+
+    if (doc.getSnapshot() == nullptr || doc.getNumFrames() == 0 || backgroundJob != nullptr)
+        return;
+
+    const auto selection = waveform.getSelection();
+    const auto base = doc.getFile() != juce::File() ? doc.getFile() : juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Untitled");
+    chooser = std::make_unique<juce::FileChooser> ("Export as MP3 or AAC", base.withFileExtension ("mp3"), "*.mp3;*.m4a");
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this, selection] (const juce::FileChooser& fc)
+                          {
+                              auto file = fc.getResult();
+
+                              if (file == juce::File())
+                                  return;
+
+                              if (! LossyFiles::isLossy (file))
+                                  file = file.withFileExtension ("mp3");
+
+                              askLossySettings (file, selection);
+                          });
+}
+
+void MainComponent::askLossySettings (const juce::File& file, juce::Range<juce::int64> selection)
+{
+    const auto kind = LossyFiles::kindFor (file);
+    const auto isMp3 = kind == LossyFiles::Kind::mp3;
+    const auto& doc = engine.document;
+    std::vector<LossyFiles::Settings> choices;
+    juce::StringArray names;
+
+    if (isMp3)
+        for (auto q : { 0, 2, 4 })
+        {
+            choices.push_back ({ kind, 0, true, q });
+            names.add ("Variable, V" + juce::String (q) + (q == 0 ? " (best)" : ""));
+        }
+
+    for (auto kbps : LossyFiles::bitRates())
+    {
+        choices.push_back ({ kind, kbps });
+        names.add ((isMp3 ? "Constant, " : "") + juce::String (kbps) + " kbps");
+    }
+
+    const auto rate = doc.getSampleRate();
+    const auto written = LossyFiles::outputRate (rate);
+    juce::String about = (isMp3 ? "MP3" : "AAC") + juce::String (" file: ") + file.getFileName() + ".";
+
+    if (! juce::exactlyEqual (written, rate))
+        about << "\nWritten at " << juce::String (written / 1000.0, 3).trimCharactersAtEnd ("0").trimCharactersAtEnd (".") << " kHz.";
+
+    if (! doc.getMarkers().empty())
+        about << "\nMarkers are not kept.";
+
+    auto* box = new juce::AlertWindow ("Export as MP3 or AAC", about, juce::MessageBoxIconType::NoIcon);
+    box->addComboBox ("quality", names, isMp3 ? "Bit rate" : "Average bit rate");
+    box->getComboBoxComponent ("quality")->setSelectedItemIndex (juce::jlimit (0, names.size() - 1, isMp3 ? lossyMp3Choice : lossyAacChoice));
+
+    if (! selection.isEmpty())
+    {
+        box->addComboBox ("range", { "The selection", "The whole file" }, "What");
+        box->getComboBoxComponent ("range")->setSelectedItemIndex (0);
+    }
+
+    box->addButton ("Export", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, file, selection, choices, isMp3] (int result)
+    {
+        if (result != 1 || backgroundJob != nullptr)
+            return;
+
+        const auto index = box->getComboBoxComponent ("quality")->getSelectedItemIndex();
+        (isMp3 ? lossyMp3Choice : lossyAacChoice) = index;
+        const auto settings = choices[(size_t) index];
+        const auto onlySelection = ! selection.isEmpty() && box->getComboBoxComponent ("range")->getSelectedItemIndex() == 0;
+        const auto& d = engine.document;
+        const auto snapshot = onlySelection ? AudioEdits::crop (*d.getSnapshot(), selection.getStart(), selection.getEnd()) : d.getSnapshot();
+        const auto sampleRate = d.getSampleRate();
+        auto error = std::make_shared<juce::String>();
+
+        backgroundJob = std::make_unique<BackgroundJob> (*this, "Exporting...",
+            [snapshot, sampleRate, file, settings, error] (const std::function<bool (float)>& progress)
+            {
+                *error = LossyFiles::write (*snapshot, sampleRate, file, settings, progress);
+                return *error != "Stopped.";
+            },
+            [error]
+            {
+                if (error->isNotEmpty() && *error != "Stopped.")
+                    showError ("Export as MP3 or AAC", *error);
+            });
+        backgroundJob->launchThread();
+        commands.commandStatusChanged();
+    }), true);
+}
+
+void MainComponent::exportWithFfmpeg()
+{
+    const auto& doc = engine.document;
+
+    if (doc.getSnapshot() == nullptr || doc.getNumFrames() == 0 || backgroundJob != nullptr)
+        return;
+
+    const auto ffmpeg = Ffmpeg::find();
+
+    if (ffmpeg == juce::File())
+    {
+        showError ("Export with ffmpeg", "This needs ffmpeg, which isn't installed. With Homebrew: brew install ffmpeg");
+        return;
+    }
+
+    const auto selection = waveform.getSelection();
+    const auto& targets = Ffmpeg::targets();
+    juce::StringArray names;
+
+    for (const auto& t : targets)
+        names.add (t.name + " (." + t.extension + ")");
+
+    auto* box = new juce::AlertWindow ("Export with ffmpeg", "Written by " + ffmpeg.getFullPathName() + ".", juce::MessageBoxIconType::NoIcon);
+    box->addComboBox ("format", names, "Format");
+    box->addComboBox ("rate", {}, "Bit rate");
+    auto* format = box->getComboBoxComponent ("format");
+    auto* bitRate = box->getComboBoxComponent ("rate");
+
+    format->onChange = [format, bitRate, &targets]
+    {
+        const auto& t = targets[(size_t) juce::jmax (0, format->getSelectedItemIndex())];
+        bitRate->clear (juce::dontSendNotification);
+
+        for (auto kbps : t.bitRates)
+            bitRate->addItem (juce::String (kbps) + " kbps", kbps);
+
+        if (! t.hasBitRate)
+            bitRate->addItem ("Lossless", 1);
+
+        bitRate->setSelectedId (t.hasBitRate ? t.defaultBitRate : 1, juce::dontSendNotification);
+        bitRate->setEnabled (t.hasBitRate);
+    };
+    format->setSelectedItemIndex (juce::jlimit (0, (int) targets.size() - 1, ffmpegTargetChoice), juce::sendNotificationSync);
+
+    if (! selection.isEmpty())
+    {
+        box->addComboBox ("range", { "The selection", "The whole file" }, "What");
+        box->getComboBoxComponent ("range")->setSelectedItemIndex (0);
+    }
+
+    box->addButton ("Export...", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, ffmpeg, selection] (int result)
+    {
+        if (result != 1)
+            return;
+
+        ffmpegTargetChoice = box->getComboBoxComponent ("format")->getSelectedItemIndex();
+        const auto target = Ffmpeg::targets()[(size_t) ffmpegTargetChoice];
+        const auto kbps = box->getComboBoxComponent ("rate")->getSelectedId();
+        const auto onlySelection = ! selection.isEmpty() && box->getComboBoxComponent ("range")->getSelectedItemIndex() == 0;
+        const auto& d = engine.document;
+        const auto base = d.getFile() != juce::File() ? d.getFile() : juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Untitled");
+
+        chooser = std::make_unique<juce::FileChooser> ("Export as " + target.name, base.withFileExtension (target.extension), "*." + target.extension);
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::warnAboutOverwriting,
+                              [this, ffmpeg, target, kbps, onlySelection, selection] (const juce::FileChooser& fc)
+        {
+            auto file = fc.getResult();
+
+            if (file == juce::File() || backgroundJob != nullptr)
+                return;
+
+            file = file.withFileExtension (target.extension);
+            const auto& current = engine.document;
+            const auto snapshot = onlySelection ? AudioEdits::crop (*current.getSnapshot(), selection.getStart(), selection.getEnd()) : current.getSnapshot();
+            const auto sampleRate = current.getSampleRate();
+            auto error = std::make_shared<juce::String>();
+
+            backgroundJob = std::make_unique<BackgroundJob> (*this, "Exporting with ffmpeg...",
+                [this, snapshot, sampleRate, ffmpeg, file, target, kbps, error] (const std::function<bool (float)>& progress)
+                {
+                    juce::TemporaryFile wav (".wav");
+                    *error = AudioFileIO::save (*snapshot, sampleRate, wav.getFile(), 32, engine.formatManager);
+
+                    if (error->isEmpty() && progress (0.3f))
+                        *error = Ffmpeg::encode (ffmpeg, wav.getFile(), file, target, kbps, [&progress] { return progress (0.3f); });
+
+                    return *error != "Stopped.";
+                },
+                [error]
+                {
+                    if (error->isNotEmpty() && *error != "Stopped.")
+                        showError ("Export with ffmpeg", *error);
+                });
+            backgroundJob->launchThread();
+            commands.commandStatusChanged();
+        });
+    }), true);
 }
 
 void MainComponent::askForAudioTarget (const juce::String& title, const juce::File& suggested,

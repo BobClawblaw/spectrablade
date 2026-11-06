@@ -20,6 +20,34 @@ else()
     FetchContent_MakeAvailable(JUCE)
 endif()
 
+# LAME's MP3 encoder, built from its pinned source release. Use a local copy of that release with
+# -DSPECTRABLADE_LAME_DIR=/path/to/lame-4.0.
+set(SPECTRABLADE_LAME_DIR "" CACHE PATH "Local LAME 4.0 source (optional)")
+
+if(SPECTRABLADE_LAME_DIR)
+    set(spectrablade_lame_src "${SPECTRABLADE_LAME_DIR}")
+else()
+    include(FetchContent)
+    FetchContent_Declare(lame
+        URL      https://downloads.sourceforge.net/project/lame/lame/4.0/lame-4.0.tar.gz
+        URL_HASH SHA256=3df5124d5ad3a98312ffd7ba6a9b36230e4f8a3e66d3ce0f425e336c32d216eb
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(lame)
+    set(spectrablade_lame_src "${lame_SOURCE_DIR}")
+endif()
+
+set(spectrablade_lame_files VbrTag bitstream encoder fft gain_analysis id3tag lame newmdct presets psymodel
+    quantize quantize_pvt reservoir set_get tables takehiro util vbrquantize version)
+list(TRANSFORM spectrablade_lame_files PREPEND "${spectrablade_lame_src}/libmp3lame/")
+list(TRANSFORM spectrablade_lame_files APPEND ".c")
+add_library(SpectraBladeLame STATIC ${spectrablade_lame_files})
+target_include_directories(SpectraBladeLame PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/ThirdParty/lame" "${spectrablade_lame_src}/libmp3lame")
+target_include_directories(SpectraBladeLame SYSTEM PUBLIC "${spectrablade_lame_src}/include")
+target_compile_definitions(SpectraBladeLame PRIVATE HAVE_CONFIG_H=1)
+# LAME's own code, compiled as it is: its warnings are not ours to fix.
+target_compile_options(SpectraBladeLame PRIVATE -w -Wno-implicit-function-declaration)
+set_target_properties(SpectraBladeLame PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+
 juce_add_gui_app(SpectraBlade
     PRODUCT_NAME                 "SpectraBlade"
     COMPANY_NAME                 "SpectraBlade"
@@ -84,6 +112,9 @@ target_sources(SpectraBlade PRIVATE
     Source/Navigation.cpp
     Source/Restoration.cpp
     Source/Generator.cpp
+    Source/LossyFiles.cpp
+    Source/AacWriter.cpp
+    Source/Ffmpeg.cpp
     Source/OpenFiles.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
@@ -124,6 +155,7 @@ juce_add_binary_data(SpectraBladeArt SOURCES Art/spectrablade-banner.png)
 
 target_link_libraries(SpectraBlade PRIVATE
     SpectraBladeArt
+    SpectraBladeLame
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
@@ -174,6 +206,8 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/NavigationTests.cpp
     Tests/RestorationTests.cpp
     Tests/GeneratorTests.cpp
+    Tests/LossyFilesTests.cpp
+    Tests/FfmpegTests.cpp
     Tests/SpectralShapeTests.cpp
     Tests/DuckingTests.cpp
     Tests/FadeHandleTests.cpp
@@ -219,6 +253,9 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Navigation.cpp
     Source/Restoration.cpp
     Source/Generator.cpp
+    Source/LossyFiles.cpp
+    Source/AacWriter.cpp
+    Source/Ffmpeg.cpp
     Source/OpenFiles.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
@@ -256,6 +293,7 @@ add_dependencies(SpectraBladeTests SpectraBlade)
 target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_APP_EXECUTABLE="$<TARGET_FILE:SpectraBlade>")
 target_link_libraries(SpectraBladeTests PRIVATE
     SpectraBladeArt
+    SpectraBladeLame
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp

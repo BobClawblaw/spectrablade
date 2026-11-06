@@ -57,6 +57,7 @@ trap 'rm -rf "$stage"' EXIT
 ditto "$app" "$stage/SpectraBlade.app"
 ln -s /Applications "$stage/Applications"
 cp "$root/LICENSE" "$stage/LICENSE.txt"
+cp "$build/_deps/lame-src/COPYING" "$stage/LAME-LICENSE.txt"
 mkdir -p "$dist"
 dmg="$dist/SpectraBlade-$version.dmg"
 rm -f "$dmg"

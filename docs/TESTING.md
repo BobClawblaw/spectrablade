@@ -203,6 +203,9 @@ What they check:
 - Spectral drawings: lasso and brush geometry, removing and lowering inside a drawing with the rest left bit for bit, healing a burst, a click and noise over a tone, healing time, and drawing with the tools in the view.
 - Track outputs: a track played into a bus, against sums made by hand, with mute, solo and plug-in latency; the edits, deleting the bus, freezing, session files and templates.
 - Ducking: the attack, hold and release measured against their formulas, block-size independence, mute, pre- and post-fader sends, the edits (loops) and session files.
+- MP3 and AAC export: each setting read back at the same length and start, its level and signal-to-error ratio, bit rates on noise, the MP3 tag frame, the .m4a overhead, repeatability, 96 kHz and mono, refusals and stopping.
+- Typing a volume into the mixer: parsing, setting the track as an undo step, refusals.
+- ffmpeg (where installed): Opus, Apple Lossless, WavPack and AC-3 written and opened again, stopping, and an unreadable file.
 - The layout: the transport bar's width against its buttons and time, and the heights of the tabs.
 - The themes: text, accent, cursor and waveform contrast measured as WCAG ratios in every theme with every accent, switching themes at runtime (colours, controls and the waveform view), and the standard controls drawn in the theme's colours.
 - The editor's double-click selecting the whole file; a saved device setup that names no device opening the default.

@@ -4,6 +4,27 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 223: Opening and exporting through ffmpeg**
+- With ffmpeg installed (it is not part of SpectraBlade; it is looked for in /opt/homebrew/bin, /usr/local/bin, /opt/local/bin and the PATH), files SpectraBlade can't read itself open through it: Opus, WMA, E-AC-3, Monkey's Audio, TTA, MKA and others, and the first audio stream of a video (MP4, MOV, MKV, WebM, AVI). They are decoded in full to 32-bit float; the open dialogs list them. Without ffmpeg, opening one of those types says that it needs ffmpeg.
+- File > Export with ffmpeg writes the file or the selection as Opus (64 to 256 kbps), Apple Lossless, WavPack or AC-3 (192 to 640 kbps), through a temporary file, in the background; it can be stopped.
+- Measured by the tests with ffmpeg 9.0.2, writing 2 s of 44.1 kHz stereo tones and opening the result again: WavPack the same bit for bit; Apple Lossless within 1.2e-7 (24-bit); Opus at 48 kHz, exactly 96,000 frames; AC-3 within 6.2e-4 of the original, with its last block filled out to 89,088 frames. WMA and MP2 were tried and left out: they came back shifted and short or long. Stopping leaves no file, and a file ffmpeg can't read gives its error. The tests skip themselves where ffmpeg isn't installed.
+- Not tried by hand: the menu command and the dialogs.
+
+**Milestone 222: File tabs only if you want them**
+- The open files no longer show as tabs over the editor unless Window > File Tabs is ticked (kept for next time). The Files panel, in the Editing workspace by default, lists them either way; clicking one switches to it.
+- Not tried by hand: the menu item.
+
+**Milestone 221: Typing a volume into the mixer**
+- Double-click a strip's dB readout in the mixer to type its volume: a number from -60 to +12, with or without "dB" or a "+", rounded to 0.1 dB as the fader sets it. It sets the track and its fader as an undo step; anything else (out of range, not a number) is refused and the readout shows the volume again. The master strip's readout and an automated volume's aren't typed into.
+- Measured by the tests: the parsing (8 accepted and 8 refused examples), opening the readout with the volume in it, "-9.25 dB" setting -9.3 dB as "Track Volume", and "99" refused.
+- Not tried by hand: double-clicking in the app.
+
+**Milestone 220: Export as MP3 or AAC**
+- File > Export as MP3 or AAC writes the file or the selection as MP3 (constant 96 to 320 kbps, or variable V0, V2 or V4) or as AAC in a .m4a file (96 to 320 kbps, an average the encoder aims at), in the background; it can be stopped. MP3 is encoded with LAME 4.0, which CMake fetches from its source release (checked against its SHA-256) and builds into the app; AAC with the encoder macOS has. Both hold one or two channels; audio above 48 kHz is written at 44.1 kHz (for the 44.1 kHz family) or 48 kHz. Markers aren't kept. The disk image now carries LAME's licence.
+- At constant rates up to 224 kbps, LAME turns the audio down by 2 to 5% against clipping; the export undoes that, so the file keeps the audio's level. The .m4a files keep about 2.5 KB free for their index rather than the 55 KB the system leaves by default.
+- Measured by the tests, with 4 s of 44.1 kHz sweeps (100 Hz to 8 kHz, half scale), read back by the app: every setting gives the same length and the same first sample (0 frames off, 0 over); the sweeps stay at 0.9986 to 1.0006 of their level, and above the error by 77.1 (MP3 320), 76.9 (192), 63.4 (128), 64.4 (V0), 37.6 (V2), 33.6 (V4), 57.7 (AAC 320), 50.3 (256), 43.4 (192), 37.3 (128) and 34.4 dB (96). On noise, constant MP3 rates come out 1.9% over (the tag frame, in 4 s), AAC 8.5 to 12.9% over; V0, V2 and V4 come to 255, 186 and 147 kbps. The MP3 files start with LAME's tag frame, the .m4a files hold 4,096 bytes besides the audio, writing again gives the same bytes, 96 kHz is written at 48 kHz at the right length, mono stays mono, and three channels, unoffered settings and 4 kHz are refused, leaving the old file and no temporary one.
+- Not tried by hand or listened to: the command, the dialog, and the files in other players.
+
 **Milestone 219: Ducking**
 - A track's routing panel (its Sends button) has Duck Under: another track that brings this one down while it is heard, music under a voice say. While the key track's output (after its volume) is above the threshold (-40 dB to start, -80 to 0), the track comes down by the amount (12 dB, 1 to 60) over the attack (10 ms, 1 to 500), and goes back up over the release (300 ms, 10 to 5000) once the key falls below it, its level read from its peaks falling away with a 20 ms time constant (so 78 ms after a voice at half scale stops, at -40 dB). It acts with the volume: the track's output and post-fader sends dip, its pre-fader sends don't. Keys are mixed before the tracks they duck, wherever they are in the list; a muted key, or one a solo leaves out, ducks nothing. The edits refuse a track keyed to itself, a bus as key or ducking on a bus, and loops of any length; deleting the key turns the ducking off, and freezing renders without it. Session files keep it.
 - The key is lined up with the track it ducks unless the buses the ducked track feeds have more plug-in latency than the key's do; then the ducking comes late by the difference.

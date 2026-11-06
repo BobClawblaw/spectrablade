@@ -1,5 +1,6 @@
 #include "AudioFileIO.h"
 #include "AudioEdits.h"
+#include "Ffmpeg.h"
 
 namespace AudioFileIO
 {
@@ -17,6 +18,26 @@ namespace
 Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 {
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+
+    // Formats read through ffmpeg: decoded to a temporary WAV, which is read and then deleted.
+    if (reader == nullptr && file.existsAsFile())
+    {
+        const auto ffmpeg = Ffmpeg::find();
+
+        if (ffmpeg == juce::File())
+            return { nullptr, 0.0, 0, Ffmpeg::importExtensions().contains (file.getFileExtension().substring (1).toLowerCase())
+                                          ? "Opening " + file.getFileExtension() + " files needs ffmpeg, which isn't installed."
+                                          : "Unsupported or unreadable audio file.", {} };
+
+        juce::TemporaryFile wav (".wav");
+
+        if (const auto error = Ffmpeg::decode (ffmpeg, file, wav.getFile()); error.isNotEmpty())
+            return { nullptr, 0.0, 0, error, {} };
+
+        auto loaded = load (wav.getFile(), formats);
+        loaded.markers = {};
+        return loaded;
+    }
 
     if (reader == nullptr)
         return { nullptr, 0.0, 0, "Unsupported or unreadable audio file.", {} };

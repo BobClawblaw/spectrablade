@@ -126,6 +126,34 @@ namespace
         check (juce::exactlyEqual (engine.session.getState()->tracks[1].gainDb, -4.5f) && engine.session.getUndoDescription() == "Track Volume",
                "mixer: moving a fader sets the track's volume, as an undo step");
 
+        {
+            const auto p = [] (const char* text) { return MixerView::parseVolume (text); };
+            const auto is = [] (std::optional<float> v, float x) { return v.has_value() && juce::exactlyEqual (*v, x); };
+            check (is (p ("-6"), -6.0f) && is (p ("-6 dB"), -6.0f) && is (p ("+3.5dB"), 3.5f) && is (p (" 12 "), 12.0f) && is (p ("-60"), -60.0f)
+                       && is (p ("-4.56"), -4.6f) && is (p (".5"), 0.5f) && is (p ("0"), 0.0f)
+                       && ! p ("").has_value() && ! p ("loud").has_value() && ! p ("12.1").has_value() && ! p ("-61").has_value()
+                       && ! p ("3-4").has_value() && ! p ("1.2.3").has_value() && ! p ("-").has_value() && ! p ("6x").has_value(),
+                   "mixer: a typed volume is a number from -60 to +12 dB, with or without dB, to 0.1 dB; anything else is refused");
+
+            auto* readout = mixer.findReadout (stereo);
+            readout->showEditor();
+            check (readout->getCurrentTextEditor() != nullptr && readout->getCurrentTextEditor()->getText() == "-4.5",
+                   "mixer: the readout opens for typing with the volume in it");
+            readout->getCurrentTextEditor()->setText ("-9.25 dB");
+            readout->hideEditor (false);
+            check (juce::exactlyEqual (engine.session.getState()->tracks[1].gainDb, -9.3f) && std::abs (mixer.findFader (stereo)->getValue() + 9.3) < 1.0e-9
+                       && readout->getText() == "-9.3 dB" && engine.session.getUndoDescription() == "Track Volume",
+                   "mixer: typing a volume into the readout sets the track and its fader, as an undo step");
+
+            readout->showEditor();
+            readout->getCurrentTextEditor()->setText ("99");
+            readout->hideEditor (false);
+            check (juce::exactlyEqual (engine.session.getState()->tracks[1].gainDb, -9.3f) && readout->getText() == "-9.3 dB",
+                   "mixer: a volume out of range is refused and the readout shows the volume again");
+            check (mixer.findReadout (0) == nullptr, "mixer: the master strip's readout is not typed into");
+            engine.session.undo();
+        }
+
         mixer.findPan (bus)->setValue (40.0, juce::sendNotificationSync);
         mixer.findSolo (stereo)->triggerClick();
         juce::MessageManager::getInstance()->runDispatchLoopUntil (30);

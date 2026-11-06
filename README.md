@@ -8,8 +8,6 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 **Status:** 0.9.5, on the way to 1.0. See the [changelog](CHANGELOG.md) for what each version holds, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
-SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026. On first launch it copies the settings of whichever earlier version you ran (audio device, inputs and outputs, plug-in list), and it still opens `.wdrack` and `.wlrack` rack files.
-
 ## Features
 
 - **Editing audio files:** waveform and spectrogram views; cut, copy, paste, paste mix and paste to fill; silence, insert and trim silence, crop, reverse, invert, swap, copy or silence one channel, mix to mono and make stereo; gain, normalize (each channel or each region on its own), fades with shapes (or dragged straight from handles on the waveform, curve and all), gain and pan ramps, balance and stereo width; markers and regions, with lists, CSV import and export, and saving regions or the pieces between markers as files; an undo history.
@@ -19,6 +17,25 @@ SpectraBlade was called Waveloom, then briefly WaveDrill, until 31 October 2026.
 - **Multitrack sessions:** tracks, buses, sends, track outputs into buses, ducking under a voice, folders and groups; clip gain, fades, crossfades, stretching and pitch shifting; automation of volume, pan and effect parameters, drawn or written while playing; a tempo map with bars and beats and quantizing; a mixer; freezing, bouncing, mixdown and stems; recovery after a crash.
 - **Getting around:** several files open at once with a Files panel; panels docked around the editor, tabbed or floating, kept in workspaces; a levels meter, a frequency analyzer and a phase meter of what plays; a transport bar whose tooltips show your keys, keyboard shortcuts you can search, change, export and import (with an Audition-style key set), recent files, and files opened from Finder; a strip under the editor with the cursor, selection and view times and the zoom controls; vertical zoom to see quiet audio.
 - **Themes:** Dark, Darker, Light and High Contrast, each with a Blue, Teal, Orange or Violet accent and a choice of waveform colour, switched at once from View > Theme and kept for next time.
+
+## File formats
+
+| Format | Open | Write |
+|---|---|---|
+| WAV (RF64 too) | Yes, with markers and regions | Save: 8, 16 or 24-bit (dithered) or 32-bit float, with markers and regions |
+| AIFF | Yes, with markers | Save: 8, 16 or 24-bit (dithered), with markers |
+| FLAC | Yes | Save: 16 or 24-bit (dithered) |
+| MP3 | Yes | File > Export as MP3 or AAC: constant 96 to 320 kbps, or variable V0, V2 or V4 (LAME) |
+| AAC (.m4a) | Yes | File > Export as MP3 or AAC: 96 to 320 kbps average (the macOS encoder) |
+| Apple Lossless (.m4a), CAF and the other types macOS reads | Yes | Apple Lossless through ffmpeg |
+| Ogg Vorbis | Yes | No |
+| Opus, WavPack, AC-3 | Through ffmpeg | File > Export with ffmpeg |
+| WMA, E-AC-3, Monkey's Audio, TTA, MKA, MP2, AMR, DTS | Through ffmpeg | No |
+| The sound of a video (MP4, MOV, MKV, WebM, AVI) | Through ffmpeg: its first audio stream | No |
+
+MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz is written at 44.1 or 48 kHz. Both keep the audio's exact length and start, through the encoder-delay information players read.
+
+The formats marked "through ffmpeg" need [ffmpeg](https://ffmpeg.org) installed (with Homebrew, `brew install ffmpeg`); SpectraBlade looks for it in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` and the `PATH`. It is not part of SpectraBlade. A file opened through ffmpeg is decoded in full to 32-bit float; saving it again goes through Save As.
 
 ## Screenshots
 
@@ -84,7 +101,7 @@ cmake --build build -j 12
 open build/SpectraBlade_artefacts/Release/SpectraBlade.app
 ```
 
-CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DSPECTRABLADE_JUCE_DIR=/path/to/JUCE`.
+CMake fetches JUCE 9.0.4 and LAME 4.0 (checked against its SHA-256) by itself. To use a local copy instead, add `-DSPECTRABLADE_JUCE_DIR=/path/to/JUCE` or `-DSPECTRABLADE_LAME_DIR=/path/to/lame-4.0`.
 
 ## Packaging
 
@@ -92,7 +109,7 @@ CMake fetches JUCE 9.0.4 by itself. To use a local checkout instead, add `-DSPEC
 Scripts/package.sh
 ```
 
-This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app and `LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
+This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app, `LICENSE.txt` and LAME's licence as `LAME-LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
 
 To check a disk image's app on its own, mount it and point the tests at it:
 
@@ -110,7 +127,7 @@ They cover editing and undo bit for bit, every effect, file formats, plug-in sca
 
 ## Licence
 
-SpectraBlade is licensed under the GNU Affero General Public License, version 3; the full text is in `LICENSE`. JUCE is dual-licensed under the AGPLv3 or a commercial JUCE licence, and SpectraBlade uses it under the AGPLv3. Anyone who passes on the app, changed or not, must offer its source code under the same licence.
+SpectraBlade is licensed under the GNU Affero General Public License, version 3; the full text is in `LICENSE`. JUCE is dual-licensed under the AGPLv3 or a commercial JUCE licence, and SpectraBlade uses it under the AGPLv3. The MP3 encoder is LAME 4.0's library (LGPL 2 or later), fetched from its pinned source release and built into the app. Anyone who passes on the app, changed or not, must offer its source code under the same licence.
 
 `Scripts/package.sh` signs the app ad hoc, without the hardened runtime, so it loads any plug-in's code. Releases are not signed with a Developer ID and are not notarized, so Gatekeeper asks the first time the app is opened (see [Download and install](#download-and-install)). The CMake target still asks for the hardened runtime with `disable-library-validation` (which third-party plug-ins need), which takes effect for anyone who builds and signs it with their own Developer ID.
 

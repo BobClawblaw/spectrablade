@@ -29,6 +29,8 @@
 #include "NavigationTests.h"
 #include "RestorationTests.h"
 #include "GeneratorTests.h"
+#include "LossyFilesTests.h"
+#include "FfmpegTests.h"
 #include "SpectralShapeTests.h"
 #include "DuckingTests.h"
 #include "FadeHandleTests.h"
@@ -522,6 +524,8 @@ int main (int argc, char* argv[])
         runNavigationTests();
         runRestorationTests();
         runGeneratorTests();
+        runLossyFilesTests();
+        runFfmpegTests();
         runSpectralShapeTests();
         runDuckingTests();
         runFadeHandleTests();
