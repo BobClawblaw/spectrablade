@@ -121,7 +121,8 @@ namespace
         cmdTallerTracks, cmdShorterTracks, cmdLockClip, cmdMuteClip, cmdClipList, cmdDuplicateTrack, cmdHideTrack, cmdShowAllTracks, cmdSelectTrackClips, cmdSelectClipsAfter, cmdMoveClipsToCursor, cmdCloseGaps, cmdZeroCrossings, cmdStretchClip, cmdShiftPitch, cmdUndoHistory, cmdSaveTrackTemplate, cmdAddFromTemplate, cmdSaveCopyWithAudio,
         cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdTempoChange, cmdMarkerList, cmdExportMarkers, cmdExportRegions, cmdQuantize, cmdLoopPlayback, cmdKeyShortcuts, cmdFreezeTrack, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdAddFolder, cmdExportFolderStems, cmdSessionNotes, cmdSelectBetweenMarkers, cmdSelectClipsInRange, cmdTapTempo, cmdGoToTime, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdNextClip, cmdPreviousClip, cmdExportClips, cmdDuplicateTime, cmdRegionFromClips, cmdUnsoloAll, cmdUnmuteAll, cmdTrackAbove, cmdTrackBelow, cmdRemoveDc, cmdSwapChannels, cmdInsertSilence, cmdTrimSilence, cmdMixToMono, cmdMakeStereo, cmdSelectAudible, cmdBalance, cmdSetSelection, cmdPasteMix, cmdSaveSelection, cmdSaveRegions, cmdSelectRegion, cmdMarkersAtIntervals, cmdRegionsFromMarkers, cmdRenameMarkers, cmdImportMarkers, cmdFindClipping, cmdFindSilence, cmdMarkersAtSilences, cmdShortenPauses, cmdFitRegions, cmdRegionsOverClips, cmdSelectClipsInRegion, cmdLoopRegion, cmdNextRegion, cmdPreviousRegion, cmdCopySelectionTime, cmdStepSelectionLater, cmdStepSelectionEarlier, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCrossfadeLoop, cmdRepeatSelection, cmdPasteFill, cmdInvertLeft, cmdInvertRight, cmdSilenceLeft, cmdSilenceRight, cmdLeftToRight, cmdRightToLeft, cmdNoiseGate, cmdMarkClipping, cmdRepair, cmdFadeEdges, cmdCropMargins, cmdSavePieces, cmdDeleteMarkersInSelection, cmdMoveMarkersInSelection, cmdMarkersToZero, cmdGainRamp, cmdPanRamp, cmdStereoWidth, cmdRegionsOverSounds, cmdNextSound, cmdTremolo, cmdEcho, cmdSilenceOutside, cmdNormalizeRegions, cmdFadeRegions, cmdPreviousSound, cmdEqBand, cmdParametricEq, cmdCompressor, cmdLimiter, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb, cmdGraphicEq10, cmdGraphicEq31, cmdAbout, cmdReverseRegions, cmdStop, cmdShowRack, cmdMultiband, cmdDeEsser,
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
-        cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase
+        cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
+        cmdMaximizeEditor
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1141,7 +1142,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdShowPhase; ++id)
+    for (int id = cmdOpen; id <= cmdMaximizeEditor; ++id)
         ids.add (id);
 }
 
@@ -1368,6 +1369,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setTicked (dock->isShown (Panels::spectrum)); break;
         case cmdShowPhase:  info.setInfo ("Phase Meter", "Show or hide the goniometer and correlation of what goes to the outputs", "Window", 0);
                             info.setTicked (dock->isShown (Panels::phase)); break;
+        case cmdMaximizeEditor:
+            info.setInfo (dock->getMaximised().isEmpty() ? "Maximize Editor" : "Restore All Panels",
+                          "Show the editor alone, filling the window, or every panel again", "Window", 0);
+            info.addDefaultKeypress ('f', cmd | shift); info.setTicked (dock->getMaximised().isNotEmpty()); break;
         case cmdShowLevels: info.setInfo ("Levels", "Show or hide the panel metering what goes to the outputs", "Window", 0);
                             info.setTicked (dock->isShown (Panels::levels)); break;
         case cmdShowFiles:  info.setInfo ("Files", "Show or hide the panel listing the open files", "Window", 0);
@@ -1899,6 +1904,12 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShowLevels: dock->toggle (Panels::levels); break;
         case cmdShowSpectrum: dock->toggle (Panels::spectrum); break;
         case cmdShowPhase:  dock->toggle (Panels::phase); break;
+        case cmdMaximizeEditor:
+            if (dock->getMaximised().isEmpty())
+                dock->maximise (Panels::editor);
+            else
+                dock->restore();
+            break;
         case cmdCloseFile:  closeFile (openFiles.getActiveIndex()); break;
         case cmdNextFile:   switchToFile ((openFiles.getActiveIndex() + 1) % openFiles.size()); break;
         case cmdPreviousFile: switchToFile ((openFiles.getActiveIndex() + openFiles.size() - 1) % openFiles.size()); break;
@@ -2153,7 +2164,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdShowFiles, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
 
             juce::PopupMenu workspaceMenu;
 

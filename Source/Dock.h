@@ -202,6 +202,13 @@ namespace Dock
         /** The floating window holding a panel, if it floats. */
         juce::DocumentWindow* getWindow (const juce::String& panel) const;
 
+        /** Shows the group holding a docked panel alone, filling the dock, as double-clicking its
+            tab does; restore() (or any change to the layout) shows them all again. The layout
+            itself is not changed. */
+        void maximise (const juce::String& panel);
+        void restore();
+        juce::String getMaximised() const              { return maximised; }
+
         /** Sets the weights of the split at a path, as dragging its bars does. */
         void setWeights (const std::vector<int>& path, std::vector<double> weights);
 
@@ -228,6 +235,7 @@ namespace Dock
         void changed();
 
         Layout layout;
+        juce::String maximised;
         std::unique_ptr<juce::Component> view;
         std::map<juce::String, std::unique_ptr<FloatingWindow>> windows;
         juce::StringArray shownBefore;

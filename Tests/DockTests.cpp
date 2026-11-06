@@ -276,10 +276,72 @@ namespace
         area.floatPanel ("editor", { 0, 0, 100, 100 });
         check (area.getLayout().isDocked ("editor"), "Dock area: the editor can't be floated");
     }
+
+    juce::MouseEvent click (juce::Component& c, juce::Point<int> at, int clicks)
+    {
+        const auto now = juce::Time::getCurrentTime();
+        return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at.toFloat(), {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &c, &c,
+                                 now, at.toFloat(), now, clicks, false);
+    }
+
+    void testMaximise()
+    {
+        TestHost host;
+        Dock::Area area (host);
+        auto l = Layout::single ("editor");
+        l.dock ("rack", "editor", Side::right, 0.25);
+        l.dock ("markers", "rack", Side::centre);
+        l.dock ("mixer", "editor", Side::bottom, 0.3);
+        area.setLayout (l);
+        area.setSize (1000, 600);
+        const auto saved = area.getLayout();
+
+        area.maximise ("rack");
+        auto* group = host.panels["markers"]->getParentComponent();
+        check (area.getMaximised() == "rack" && area.getLayout() == saved && group != nullptr && group->getBounds() == area.getLocalBounds()
+                   && host.panels["editor"]->getParentComponent() == nullptr && host.panels["mixer"]->getParentComponent() == nullptr
+                   && host.hidden.isEmpty(),
+               "Dock maximise: a panel's group fills the dock alone, with its other tabs, and the layout itself is unchanged");
+
+        area.restore();
+        check (area.getMaximised().isEmpty() && host.panels["editor"]->getParentComponent() != nullptr
+                   && host.panels["mixer"]->getParentComponent() != nullptr && host.panels["editor"]->getParentComponent()->getWidth() < 1000,
+               "Dock maximise: restoring shows every group again where it was");
+
+        area.maximise ("editor");
+        area.hide ("mixer");
+        check (area.getMaximised().isEmpty() && host.panels["markers"]->getParentComponent() != nullptr,
+               "Dock maximise: a change to the layout shows it all again");
+
+        area.maximise ("notes");
+        check (area.getMaximised().isEmpty(), "Dock maximise: a panel that isn't docked can't be maximised");
+
+        // Double-clicking a tab maximises its group, and again puts it back.
+        auto* editorGroup = host.panels["editor"]->getParentComponent();
+        editorGroup->mouseDoubleClick (click (*editorGroup, { 20, Dock::Area::tabHeight / 2 }, 2));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        const auto maximised = area.getMaximised() == "editor" && host.panels["editor"]->getParentComponent()->getWidth() == 1000;
+        editorGroup = host.panels["editor"]->getParentComponent();
+        editorGroup->mouseDoubleClick (click (*editorGroup, { 20, Dock::Area::tabHeight / 2 }, 2));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (maximised && area.getMaximised().isEmpty() && host.panels["markers"]->getParentComponent() != nullptr,
+               "Dock maximise: double-clicking a tab maximises its group, and double-clicking again restores them all");
+
+        // A double-click under the tabs, in the panel, does nothing.
+        editorGroup = host.panels["editor"]->getParentComponent();
+        editorGroup->mouseDoubleClick (click (*editorGroup, { 20, Dock::Area::tabHeight + 40 }, 2));
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        check (area.getMaximised().isEmpty(), "Dock maximise: a double-click below the tabs leaves the layout alone");
+
+        area.maximise ("rack");
+        area.setLayout (saved);
+        check (area.getMaximised().isEmpty(), "Dock maximise: switching layouts (a workspace) shows it all");
+    }
 }
 
 void runDockTests()
 {
+    testMaximise();
     testLayout();
     testXml();
     testWorkspaces();

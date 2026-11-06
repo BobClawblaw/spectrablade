@@ -192,6 +192,7 @@ What they check:
 - Several open files: keeping each aside with its history and place, switching, closing, the Files panel, the tabs over the editor, and dropping several at once.
 - The panels: the undo history following the file or the session, the levels, the spectrum against sines at known levels, correlation and the goniometer, and the copy of the output they read.
 - The fade handles: the curves, the faded samples, the fades kept adjustable as one undo step, and dragging the handles in the view.
+- Maximising a group of panels: filling the dock, the layout kept, restoring, and double-clicking a tab.
 - The layout: the transport bar's width against its buttons and time, and the heights of the tabs.
 - The themes: text, accent, cursor and waveform contrast measured as WCAG ratios in every theme with every accent, switching themes at runtime (colours, controls and the waveform view), and the standard controls drawn in the theme's colours.
 - The editor's double-click selecting the whole file; a saved device setup that names no device opening the default.

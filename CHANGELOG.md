@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 209: Panel menus, and maximising a panel**
+- Each group of panels has a menu button (three dots) at the right of its tabs, with what right-clicking a tab offers (close, float, dock at an edge) for the panel in front, and Maximize. Maximize shows that group alone, filling the dock; the dots turn the accent colour, and the same menu then offers Restore All Panels. Double-clicking a tab, or the header beside the tabs, maximises its group or puts the others back. Window > Maximize Editor (Shift-Cmd-F) does the same for the editor, and reads Restore All Panels while one is maximised. Maximising doesn't change the layout kept in the workspace; any change to the layout (showing, closing or moving a panel, or switching workspace) shows every group again.
+- Measured by the tests: a maximised group fills the dock with its other tabs, the other groups' panels are taken out and none is let go, and the layout is unchanged; restoring puts every group back; a change to the layout, or switching layouts, restores; a panel that isn't docked can't be maximised; double-clicking a tab maximises and double-clicking again restores, and a double-click inside the panel does nothing. The whole suite passed (881 checks).
+- Seen in a capture of the window: the menu button on each group. Not tried by hand: the menu, maximising from it or from the Window menu, and double-clicking a tab (the tests double-click through the same function).
+
 **Milestone 208: A denser layout**
 - More room for the audio: the window's margins went from 10 to 6 pixels and the gaps around the panels from 8 to 4; the toolbar is 30 pixels high (34 before), with the transport and zoom buttons 28 square and the time 170 wide (190); panel tabs are 22 high (26) and the file tabs over the editor 24 (30), both in 12-point text with smaller close buttons; the devices and status lines take 46 pixels (52).
 - Measured by the tests: the transport bar's ideal width holds its ten buttons and the time with no more than a gap to spare, each button as tall as the bar, and the tab heights. The whole suite passed (874 checks).

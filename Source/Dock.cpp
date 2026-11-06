@@ -654,6 +654,13 @@ public:
 
             g.drawText (area.host.getTitle (tabs[i]), textArea, juce::Justification::centredLeft, true);
         }
+
+        // The group's menu: three dots at the header's right, in the accent while maximised.
+        const auto m = menuBounds().toFloat();
+        g.setColour (isMaximised() ? Palette::accent : hoveredMenu ? Palette::text : Palette::dimText);
+
+        for (int i = -1; i <= 1; ++i)
+            g.fillEllipse (juce::Rectangle<float> (3.0f, 3.0f).withCentre (m.getCentre().translated ((float) i * 5.0f, 0.0f)));
     }
 
     void paintOverChildren (juce::Graphics& g) override
@@ -677,27 +684,69 @@ public:
     {
         const auto i = tabAt (e.getPosition());
         const auto over = i >= 0 && area.host.isMovable (tabs[i]) && closeBounds (i).contains (e.getPosition()) ? i : -1;
+        const auto overMenu = menuBounds().contains (e.getPosition());
 
-        if (over != hoveredClose)
+        if (over != hoveredClose || overMenu != hoveredMenu)
         {
             hoveredClose = over;
+            hoveredMenu = overMenu;
             repaint();
         }
     }
 
     void mouseExit (const juce::MouseEvent&) override
     {
-        if (hoveredClose >= 0)
+        if (hoveredClose >= 0 || hoveredMenu)
         {
             hoveredClose = -1;
+            hoveredMenu = false;
             repaint();
         }
     }
 
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        // A double-click on a tab, or on the header beside them, maximises the group or puts it back.
+        if (floating || e.y >= tabHeight || menuBounds().contains (e.getPosition()) || tabs.isEmpty())
+            return;
+
+        if (const auto i = tabAt (e.getPosition()); i >= 0 && area.host.isMovable (tabs[i]) && closeBounds (i).contains (e.getPosition()))
+            return;
+
+        toggleMaximised();
+    }
+
+    /** Where the group's menu button is, at the header's right. */
+    juce::Rectangle<int> menuBounds() const
+    {
+        return { getWidth() - 24, (tabHeight - 16) / 2, 20, 16 };
+    }
+
+    /** Maximises the group, or shows them all again if it is maximised (later: it rebuilds the groups). */
+    void toggleMaximised()
+    {
+        const auto id = tabs[current];
+        later ([id] (Area& a)
+        {
+            if (a.getMaximised().isNotEmpty())
+                a.restore();
+            else
+                a.maximise (id);
+        });
+    }
+
     void mouseDown (const juce::MouseEvent& e) override
     {
-        pressed = tabAt (e.getPosition());
         dragging = false;
+
+        if (menuBounds().contains (e.getPosition()) && ! tabs.isEmpty())
+        {
+            pressed = -1;
+            showMenu (tabs[current]);
+            return;
+        }
+
+        pressed = tabAt (e.getPosition());
 
         if (pressed < 0)
             return;
@@ -819,6 +868,17 @@ private:
 
         juce::PopupMenu menu;
         const auto movable = area.host.isMovable (id);
+
+        if (! floating)
+        {
+            if (isMaximised())
+                menu.addItem ("Restore All Panels", run ([] (Area& a) { a.restore(); }));
+            else
+                menu.addItem ("Maximize", run ([id] (Area& a) { a.maximise (id); }));
+
+            menu.addSeparator();
+        }
+
         menu.addItem ("Close " + area.host.getTitle (id), movable, false, run ([id] (Area& a) { a.hide (id); }));
 
         if (! floating)
@@ -948,7 +1008,9 @@ private:
     bool floating = false;
     juce::Component* shown = nullptr;
     int pressed = -1, hoveredClose = -1;
-    bool dragging = false;
+    bool dragging = false, hoveredMenu = false;
+
+    bool isMaximised() const   { return ! floating && area.getMaximised().isNotEmpty() && tabs.contains (area.getMaximised()); }
     std::optional<Side> dropZone;
 };
 
@@ -1162,7 +1224,28 @@ Area::~Area()
 void Area::setLayout (const Layout& l)
 {
     layout = l;
+    maximised = {};
     rebuild();
+}
+
+void Area::maximise (const juce::String& panel)
+{
+    if (! layout.isDocked (panel) || maximised == panel)
+        return;
+
+    maximised = panel;
+    rebuild();
+    host.layoutChanged();
+}
+
+void Area::restore()
+{
+    if (maximised.isEmpty())
+        return;
+
+    maximised = {};
+    rebuild();
+    host.layoutChanged();
 }
 
 void Area::toggle (const juce::String& panel)
@@ -1254,6 +1337,7 @@ void Area::setWeights (const std::vector<int>& path, std::vector<double> weights
 
 void Area::changed()
 {
+    maximised = {};   // the layout changed: show it all
     rebuild();
     host.layoutChanged();
 }
@@ -1281,7 +1365,24 @@ void Area::rebuild()
     // The old groups let go of their panels before the new ones take them.
     view = nullptr;
     syncWindows();
-    view = build (layout.root, {});
+    // Maximised: only the group holding that panel.
+    const Node* shown = &layout.root;
+    std::vector<int> shownPath;
+
+    if (maximised.isNotEmpty())
+    {
+        if (const auto path = layout.pathTo (maximised))
+        {
+            shownPath = *path;
+            shown = layout.nodeAt (shownPath);
+        }
+        else
+        {
+            maximised = {};
+        }
+    }
+
+    view = build (*shown, shownPath);
     addAndMakeVisible (*view);
     resized();
 
