@@ -64,10 +64,16 @@ namespace
         if (! state.anySolo() || state.isSoloed (track) || state.isSoloSafe (track))
             return true;
 
-        // A soloed bus brings the tracks feeding it; a soloed track brings the buses it feeds.
+        // A soloed bus brings the tracks feeding it (by a send or their output); a soloed track
+        // brings the buses it feeds.
         if (track.isBus)
-            return std::any_of (state.tracks.begin(), state.tracks.end(),
-                                [&] (auto& t) { return state.isSoloed (t) && ! state.isMuted (t) && t.findSend (track.id) != nullptr; });
+            return std::any_of (state.tracks.begin(), state.tracks.end(), [&] (auto& t)
+            {
+                return state.isSoloed (t) && ! state.isMuted (t) && (t.findSend (track.id) != nullptr || (! t.isBus && t.outputBusId == track.id));
+            });
+
+        if (const auto* out = state.findTrack (track.outputBusId); out != nullptr && out->isBus && state.isSoloed (*out))
+            return true;
 
         return std::any_of (track.sends.begin(), track.sends.end(), [&] (auto& send)
         {
@@ -113,10 +119,20 @@ namespace
             part.copyFrom (1, 0, part, 0, 0, count);
     }
 
-    /** The most latency among the buses the track sends to: how far its sends must run ahead. */
+    /** The bus a track's output goes to, or null for the mix. */
+    const SessionTrack* outputBus (const SessionState& state, const SessionTrack& track)
+    {
+        const auto* bus = track.isBus || track.outputBusId == 0 ? nullptr : state.findTrack (track.outputBusId);
+        return bus != nullptr && bus->isBus ? bus : nullptr;
+    }
+
+    /** The most latency among the buses the track feeds: how far its sends and output must run ahead. */
     int sendLatency (const SessionState& state, const SessionTrack& track, Inserts* inserts)
     {
         int most = 0;
+
+        if (const auto* bus = outputBus (state, track))
+            most = latencyOf (inserts, bus->id);
 
         for (auto& send : track.sends)
             if (const auto* bus = state.findTrack (send.busId); bus != nullptr && bus->isBus)
@@ -371,7 +387,17 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
             buffers.levels->raise ((int) (&track - state.tracks.data()), peakOf (buffers.track, 0, numFrames) * volume,
                                    peakOf (buffers.track, 1, numFrames) * volume);
 
-        addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume);
+        // Its output: the mix, or a bus in its place (nothing when that bus doesn't play).
+        if (const auto* bus = outputBus (state, track))
+        {
+            if (plays (state, *bus))
+                addHeld (buffers, { track.id, 0 }, ahead - latencyOf (inserts, bus->id), buffers.track, numFrames,
+                         buffers.buses[bus->id], 0, volume);
+        }
+        else
+        {
+            addHeld (buffers, { track.id, 0 }, ahead, buffers.track, numFrames, dest, destStart, volume);
+        }
 
         for (auto& s : track.sends)
             if (! (volumeAutomated && s.preFader))

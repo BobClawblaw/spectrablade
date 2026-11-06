@@ -9,7 +9,8 @@
     centre leaves them as they are. Clips with more channels play their first two. Then come the
     track's effects (Inserts), then its volume, and the track goes to the mix. Its sends take the
     signal before the volume (pre-fader) or after it, to buses, which play it through their
-    effects, volume and pan (balance) into the mix.
+    effects, volume and pan (balance) into the mix. A track whose output is a bus goes there,
+    after its volume, in place of the mix.
 
     A volume or pan envelope takes over from the setting, sample by sample: a track's pan
     envelope where its clips are panned, its volume envelope where its volume is applied (after
@@ -22,7 +23,8 @@
     path lacks, so everything lines up without delaying the mix.
 
     Muted tracks and buses play nothing. When anything is soloed, only soloed tracks and buses
-    play, along with the buses a soloed track sends to and the tracks that feed a soloed bus. */
+    play, along with the buses a soloed track feeds (by a send or its output) and the tracks
+    that feed a soloed bus. A track whose output bus doesn't play is not heard. */
 namespace SessionMixer
 {
     /** Left and right gains for a pan position and a source with this many channels. */

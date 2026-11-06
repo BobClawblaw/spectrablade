@@ -76,7 +76,7 @@ public:
             Theme::follow (*b, juce::TextButton::buttonOnColourId, b == &mute ? Theme::danger : Theme::warn);
         }
 
-        sendsButton.setTooltip ("Send this track to buses");
+        sendsButton.setTooltip ("Send this track to buses, or play it into one in place of the mix");
         Theme::follow (sendsButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         sendsButton.onClick = [this] { view.showSends (trackId, sendsButton); };
 
@@ -188,7 +188,7 @@ public:
                                    : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
                                                            : juce::String (t.input.first + 1));
         sendsButton.setButtonText (t.sends.empty() ? juce::String ("Sends") : "Sends " + juce::String ((int) t.sends.size()));
-        sendsButton.setToggleState (! t.sends.empty(), juce::dontSendNotification);
+        sendsButton.setToggleState (! t.sends.empty() || t.outputBusId != 0, juce::dontSendNotification);
         effectsButton.setTooltip (isBus ? "This bus's effects" : "This track's effects");
         resized();
 
@@ -589,6 +589,19 @@ public:
             engine.session.apply (std::move (next), "Add Bus and Send");
         };
 
+        output.onChange = [this]
+        {
+            const auto index = output.getSelectedItemIndex();
+            const auto busId = index <= 0 ? 0u : outputChoices[(size_t) index - 1];
+            auto next = *engine.session.getState();
+
+            if (SessionEdits::setTrackOutput (next, trackId, busId))
+                engine.session.apply (std::move (next), "Track Output");
+        };
+        output.setTooltip ("Where the track plays: the mix, or a bus in its place");
+        addAndMakeVisible (outputLabel);
+        addAndMakeVisible (output);
+        outputLabel.setText ("Output", juce::dontSendNotification);
         addAndMakeVisible (newBus);
         addChildComponent (empty);
         empty.setText ("No buses yet.", juce::dontSendNotification);
@@ -605,6 +618,10 @@ public:
     void resized() override
     {
         auto r = getLocalBounds().reduced (8);
+        auto top = r.removeFromTop (rowHeight).reduced (0, 2);
+        outputLabel.setBounds (top.removeFromLeft (60));
+        output.setBounds (top);
+        r.removeFromTop (6);
 
         for (auto* row : rows)
         {
@@ -632,6 +649,9 @@ private:
     };
 
     static constexpr int rowHeight = 28;
+    juce::Label outputLabel;
+    juce::ComboBox output;
+    std::vector<juce::uint32> outputChoices;   // the buses in the output list, after Mix
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override  { refresh(); }
 
@@ -662,6 +682,19 @@ private:
         for (auto& t : current->tracks)
             if (t.isBus)
                 buses.push_back (&t);
+
+        output.clear (juce::dontSendNotification);
+        output.addItem ("Mix", 1);
+        outputChoices.clear();
+
+        for (auto* bus : buses)
+        {
+            outputChoices.push_back (bus->id);
+            output.addItem (bus->name, (int) outputChoices.size() + 1);
+        }
+
+        const auto out = std::find (outputChoices.begin(), outputChoices.end(), track != nullptr ? track->outputBusId : 0u);
+        output.setSelectedItemIndex (out == outputChoices.end() ? 0 : (int) (out - outputChoices.begin()) + 1, juce::dontSendNotification);
 
         auto same = track != nullptr && (int) buses.size() == rows.size();
 
@@ -696,7 +729,7 @@ private:
             }
 
             empty.setVisible (rows.isEmpty());
-            setSize (340, 16 + juce::jmax (1, rows.size()) * rowHeight + 30);
+            setSize (340, 16 + rowHeight + 6 + juce::jmax (1, rows.size()) * rowHeight + 30);
             resized();
         }
 
@@ -1981,12 +2014,14 @@ void MultitrackView::paint (juce::Graphics& g)
                 for (auto& other : s.tracks)
                     if (other.findSend (track.id) != nullptr)
                         feeders.add (other.name);
+                    else if (! other.isBus && other.outputBusId == track.id)
+                        feeders.add (other.name + " (output)");
 
                 g.setColour (Theme::overlay.withAlpha (0.04f));
                 g.fillRect (lane.reduced (0, 3));
                 g.setColour (Theme::dimText);
                 g.setFont (13.0f);
-                g.drawText (feeders.isEmpty() ? "Bus: nothing sends here yet. Use a track's Sends button."
+                g.drawText (feeders.isEmpty() ? "Bus: nothing plays here yet. Use a track's Sends button."
                                               : "Bus: from " + feeders.joinIntoString (", "),
                             lane.reduced (12, 0), juce::Justification::centredLeft);
             }

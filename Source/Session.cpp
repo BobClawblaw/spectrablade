@@ -1452,6 +1452,7 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
     {
         auto t = *track;
         t.sends.clear();
+        t.outputBusId = 0;   // applied after the frozen audio, as its volume is
         t.mute = t.solo = false;
         t.invertPolarity = false;   // applied after the frozen audio, as after live effects
         t.gainDb = 0.0f;
@@ -1499,6 +1500,9 @@ bool removeTrack (SessionState& s, int track)
 
         if (t.folderId == removed)
             t.folderId = 0;
+
+        if (t.outputBusId == removed)
+            t.outputBusId = 0;
     }
 
     return true;
@@ -1513,6 +1517,18 @@ bool setTrackFolder (SessionState& s, juce::uint32 trackId, juce::uint32 folderI
         return false;
 
     track->folderId = folderId;
+    return true;
+}
+
+bool setTrackOutput (SessionState& s, juce::uint32 trackId, juce::uint32 busId)
+{
+    const auto* bus = busId != 0 ? s.findTrack (busId) : nullptr;
+    auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || track->isBus || track->isFolder || track->outputBusId == busId || (busId != 0 && (bus == nullptr || ! bus->isBus)))
+        return false;
+
+    track->outputBusId = busId;
     return true;
 }
 
@@ -1883,6 +1899,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.folderId != 0 && indexOf.count (t.folderId) > 0)
             track->setAttribute ("inFolder", indexOf[t.folderId]);
 
+        if (t.outputBusId != 0 && indexOf.count (t.outputBusId) > 0)
+            track->setAttribute ("output", indexOf[t.outputBusId]);
+
         for (auto& send : t.sends)
         {
             auto* sendXml = track->createNewChildElement ("SEND");
@@ -2108,6 +2127,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         auto& track = trackXml->getBoolAttribute ("bus") ? state.addBus() : trackXml->getBoolAttribute ("folder") ? state.addFolder() : state.addTrack();
         track.collapsed = track.isFolder && trackXml->getBoolAttribute ("collapsed");
         track.folderId = (juce::uint32) trackXml->getIntAttribute ("inFolder", -1);   // an index until every track is read
+        track.outputBusId = (juce::uint32) trackXml->getIntAttribute ("output", -1);   // likewise
         track.name = trackXml->getStringAttribute ("name", track.name);
 
         for (auto* sendXml : trackXml->getChildWithTagNameIterator ("SEND"))
@@ -2252,16 +2272,20 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
                                                juce::jlimit (20.0, 400.0, changeXml->getDoubleAttribute ("tempo", 120.0)),
                                                juce::jlimit (1, 16, changeXml->getIntAttribute ("beatsPerBar", 4)) });
 
-    // Indices to ids; sends to anything but a bus, and places in anything but a folder, are dropped.
+    // Indices to ids; sends and outputs to anything but a bus, and places in anything but a folder, are dropped.
     const auto pending = state.tracks;
 
     for (size_t i = 0; i < pending.size(); ++i)
     {
         state.tracks[i].sends.clear();
         state.tracks[i].folderId = 0;
+        state.tracks[i].outputBusId = 0;
 
         if (pending[i].folderId < pending.size())
             SessionEdits::setTrackFolder (state, state.tracks[i].id, pending[pending[i].folderId].id);
+
+        if (pending[i].outputBusId < pending.size())
+            SessionEdits::setTrackOutput (state, state.tracks[i].id, pending[pending[i].outputBusId].id);
 
         for (auto send : pending[i].sends)
         {

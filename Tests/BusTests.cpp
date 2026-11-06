@@ -4,6 +4,7 @@
 #include <JuceHeader.h>
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
+#include "../Source/TrackTemplate.h"
 #include "TestPlugins.h"
 #include "TestUtils.h"
 #include "BusTests.h"
@@ -291,6 +292,99 @@ void runBusTests()
         SessionEdits::removeTrack (e, 2);
         check (e.tracks[0].sends.empty() && e.tracks[1].sends.size() == 1, "buses: deleting a bus removes the sends to it");
         check (e.addBus().name == "Bus 3", "buses: buses are numbered on their own, skipping names in use");
+    }
+
+    // Outputs: A plays into Y in place of the mix, after its volume; its send to X stays.
+    {
+        auto out = s;
+        const auto changed = SessionEdits::setTrackOutput (out, out.tracks[0].id, out.tracks[3].id);
+        juce::AudioBuffer<float> expected (2, length);
+        expected.clear();
+        add (expected, bPost, 1.0f, 1.0f);
+        add (expected, aPost, y, y);                                                  // A through Y, not the mix
+        add (expected, aPost, x * xl, x * xr);
+        add (expected, bPre, gain (-6.0f) * x * xl, gain (-6.0f) * x * xr);
+        add (expected, bPost, gain (-10.0f) * y, gain (-10.0f) * y);
+        const auto w = worst (play (out, 0, length, 512, nullptr), expected);
+        check (changed && w < 1.0e-6f,
+               "outputs: a track played into a bus is heard through it and not in the mix, its sends as they were (worst " + juce::String (w, 9) + ")");
+
+        auto mutedY = out;
+        mutedY.tracks[3].mute = true;
+        juce::AudioBuffer<float> noY (2, length);
+        noY.clear();
+        add (noY, bPost, 1.0f, 1.0f);
+        add (noY, aPost, x * xl, x * xr);
+        add (noY, bPre, gain (-6.0f) * x * xl, gain (-6.0f) * x * xr);
+        const auto wm = worst (play (mutedY, 0, length, 512, nullptr), noY);
+
+        auto soloY = out;
+        soloY.tracks[3].solo = true;
+        juce::AudioBuffer<float> fromY (2, length);
+        fromY.clear();
+        add (fromY, aPost, y, y);
+        add (fromY, bPost, 1.0f, 1.0f);
+        add (fromY, bPost, gain (-10.0f) * y, gain (-10.0f) * y);
+        const auto ws = worst (play (soloY, 0, length, 512, nullptr), fromY);
+
+        auto soloA = out;
+        soloA.tracks[0].solo = true;
+        juce::AudioBuffer<float> fromA (2, length);
+        fromA.clear();
+        add (fromA, aPost, y, y);
+        add (fromA, aPost, x * xl, x * xr);
+        const auto wa = worst (play (soloA, 0, length, 512, nullptr), fromA);
+        check (wm < 1.0e-6f && ws < 1.0e-6f && wa < 1.0e-6f,
+               "outputs: muting the bus silences the track played into it (but not its sends); soloing the bus brings that track; "
+               "soloing the track brings its bus (worst " + juce::String (juce::jmax (wm, ws, wa), 9) + ")");
+
+        const auto dry = play (out, 0, length, length, nullptr);
+        TrackEffects effects;
+        effects.prepare (rate);
+        effects.add (out.tracks[0].id, std::make_unique<DelayPlugin> (300, 1.0f));
+        effects.add (out.tracks[2].id, std::make_unique<DelayPlugin> (500, 1.0f));
+        effects.add (out.tracks[3].id, std::make_unique<DelayPlugin> (64, 1.0f));
+        check (same (play (out, 0, length, 333, &effects), dry) && same (play (out, 2500, 4000, 256, &effects), slice (dry, 2500, 4000)),
+               "outputs: with 300, 500 and 64 frames of latency on the track and both buses, the routed mix lines up bit for bit, from the start and after priming");
+
+        auto e = out;
+        const auto refused = ! SessionEdits::setTrackOutput (e, e.tracks[2].id, e.tracks[3].id)       // a bus
+                             && ! SessionEdits::setTrackOutput (e, e.tracks[1].id, e.tracks[0].id)    // to a track
+                             && ! SessionEdits::setTrackOutput (e, e.tracks[0].id, e.tracks[3].id)    // already so
+                             && ! SessionEdits::setTrackOutput (e, e.tracks[1].id, 9999);
+        auto back = e;
+        const auto toMix = SessionEdits::setTrackOutput (back, back.tracks[0].id, 0) && back.tracks[0].outputBusId == 0;
+        const auto frozen = SessionEdits::frozenSource (e, e.tracks[0].id);
+        SessionEdits::removeTrack (e, 3);
+        check (refused && toMix && e.tracks[0].outputBusId == 0 && frozen.tracks.size() == 1 && frozen.tracks[0].outputBusId == 0,
+               "outputs: only a track plays into a bus, and only a bus; back to the mix with 0; deleting the bus sends it to the mix; freezing renders without it");
+
+        auto dir = juce::File::createTempFile ("output");
+        dir.createDirectory();
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        auto noClips = out;
+
+        for (auto& t : noClips.tracks)
+            t.clips.clear();
+
+        const auto target = dir.getChildFile ("output.sbsession");
+        const auto saved = SessionFile::save (noClips, target).isEmpty();
+        const auto loaded = SessionFile::load (target, formats);
+        const auto& lt = loaded.state.tracks;
+        const auto file = saved && lt.size() == 4 && lt[0].outputBusId == lt[3].id && lt[1].outputBusId == 0;
+        dir.deleteRecursively();
+
+        const auto xml = TrackTemplate::create (out, out.tracks[0].id, nullptr);
+        auto other = s;
+        const auto added = TrackTemplate::add (other, *xml);
+        const auto* made = other.findTrack (added.trackId);
+        SessionState noBuses;
+        noBuses.sampleRate = rate;
+        const auto missing = TrackTemplate::add (noBuses, *xml);
+        check (file && made != nullptr && made->outputBusId == other.tracks[3].id && missing.missingBuses.contains ("Bus 2")
+                   && noBuses.findTrack (missing.trackId)->outputBusId == 0,
+               "outputs: kept in session files; a track template keeps it by the bus's name, and says when there is no such bus");
     }
 
     // Session files keep buses and sends, pointing at the right bus.

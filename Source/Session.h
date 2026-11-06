@@ -172,6 +172,10 @@ struct SessionTrack
     juce::String note;                     // free text, shown in the header's tooltip
     TrackInput input;                      // what it records from (tracks only)
 
+    /** Where a track's output goes: 0 for the mix, or a bus it plays into in place of the mix,
+        after its volume (tracks only). Its sends are as they were. */
+    juce::uint32 outputBusId = 0;
+
     /** A frozen track plays this (its clips, pan and effects rendered, from session frame 0)
         instead of its clips and effects; its volume, sends, mute and solo still apply. Its clips
         can't be changed while it is frozen. */
@@ -486,6 +490,10 @@ namespace SessionEdits
         the envelope holds its value, as insertTime does. False when the time is empty or at
         another sample rate. */
     bool pasteTime (SessionState&, const SessionTime&, juce::int64 at);
+
+    /** Sends a track's output to a bus in place of the mix, or with busId 0 back to the mix.
+        False for a bus or folder, a bus that isn't one, or when it is already so. */
+    bool setTrackOutput (SessionState&, juce::uint32 trackId, juce::uint32 busId);
 
     /** Sets a track's send to a bus, adding it if there is none. */
     bool setSend (SessionState&, juce::uint32 trackId, const SessionSend&);

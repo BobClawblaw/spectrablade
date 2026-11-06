@@ -4,7 +4,7 @@
 
 /** Track templates (.sbtrack): a track's or bus's settings to start new ones from in any
     session. A template holds its name, whether it is a bus, its volume, pan, colour, input,
-    note, sends (by the bus's name, as ids mean nothing in another session) and its effects
+    note, sends and output (by the bus's name, as ids mean nothing in another session) and its effects
     chain; not its clips, envelopes, group, mute or solo. */
 namespace TrackTemplate
 {
@@ -18,10 +18,10 @@ namespace TrackTemplate
     {
         juce::uint32 trackId = 0;                     // 0 when the XML is not a template
         std::shared_ptr<juce::XmlElement> effects;    // to load onto it, or null
-        juce::StringArray missingBuses;               // sends left out: no bus of that name here
+        juce::StringArray missingBuses;               // sends and the output left out: no bus of that name here
     };
 
     /** Adds a track or bus made from a template at the end of the session. Sends go to the
-        session's first bus of the same name. */
+        session's first bus of the same name, and so does the output. */
     Added add (SessionState&, const juce::XmlElement&);
 }

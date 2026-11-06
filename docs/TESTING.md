@@ -201,6 +201,7 @@ What they check:
 - Repair Clipping: a clipped sine rebuilt close to the true one with the rest left bit for bit, the peak kept, clipping found at any level, unclipped sines left, long flat stretches counted.
 - Generators: each wave's level and fundamental, the sawtooth's aliasing, a sweep's frequency over time, each noise's level, slope, channel independence and peaks, and putting generated audio in.
 - Spectral drawings: lasso and brush geometry, removing and lowering inside a drawing with the rest left bit for bit, healing a burst, a click and noise over a tone, healing time, and drawing with the tools in the view.
+- Track outputs: a track played into a bus, against sums made by hand, with mute, solo and plug-in latency; the edits, deleting the bus, freezing, session files and templates.
 - The layout: the transport bar's width against its buttons and time, and the heights of the tabs.
 - The themes: text, accent, cursor and waveform contrast measured as WCAG ratios in every theme with every accent, switching themes at runtime (colours, controls and the waveform view), and the standard controls drawn in the theme's colours.
 - The editor's double-click selecting the whole file; a saved device setup that names no device opening the default.

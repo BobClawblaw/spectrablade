@@ -31,6 +31,9 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
         }
     }
 
+    if (const auto* out = s.findTrack (t->outputBusId); out != nullptr && out->isBus && ! t->isBus)
+        xml->setAttribute ("output", out->name);
+
     if (effects != nullptr)
         xml->addChildElement (effects.release());
 
@@ -68,6 +71,16 @@ Added add (SessionState& s, const juce::XmlElement& xml)
             }
 
             SessionEdits::setSend (s, id, { bus->id, (float) sendXml->getDoubleAttribute ("gainDb"), sendXml->getBoolAttribute ("preFader") });
+        }
+
+        if (const auto outName = xml.getStringAttribute ("output"); outName.isNotEmpty())
+        {
+            const auto bus = std::find_if (s.tracks.begin(), s.tracks.end(), [&outName] (auto& b) { return b.isBus && b.name == outName; });
+
+            if (bus == s.tracks.end())
+                added.missingBuses.addIfNotAlreadyThere (outName);
+            else
+                SessionEdits::setTrackOutput (s, id, bus->id);
         }
     }
 
