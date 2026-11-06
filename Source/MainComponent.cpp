@@ -837,6 +837,11 @@ MainComponent::MainComponent()
     waveform.onRecentFileClicked = [this] (const juce::File& f) { openDocument (f); };
     rackView.onEditSlot = [this] (int index) { showEditor (index); };
     engine.onPluginAboutToBeRemoved = [this] (juce::AudioProcessor* p) { closeEditorFor (p); };
+    engine.onEffectsNotCopied = [] (const juce::StringArray& names)
+    {
+        showNote ("5.1 Track Effects", names.joinIntoString (", ") + (names.size() == 1 ? " couldn't" : " couldn't each")
+                                           + " be opened twice more for the 5.1 track's centre, LFE and surround channels, which play silence through it.");
+    };
 
     // The panels as the current workspace left them. Before there were workspaces the rack could be
     // hidden; it stays hidden.
@@ -1107,6 +1112,7 @@ MainComponent::~MainComponent()
     renderJob = nullptr;
     backgroundJob = nullptr;
     engine.onPluginAboutToBeRemoved = nullptr;
+    engine.onEffectsNotCopied = nullptr;
     engine.document.removeChangeListener (this);
     engine.session.removeChangeListener (this);
     engine.removeChangeListener (this);
@@ -9266,7 +9272,11 @@ void MainComponent::showEditor (juce::AudioProcessor& p)
         juce::MessageManager::callAsync ([this, safe = juce::Component::SafePointer<PluginEditorWindow> (w)]
         {
             if (safe != nullptr)
+            {
+                // A 5.1 track's copies of the effect take what was changed in its window.
+                engine.refreshEffectCopies (safe->processor);
                 editorWindows.removeObject (safe.getComponent());
+            }
         });
     }));
 

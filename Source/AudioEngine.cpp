@@ -616,6 +616,11 @@ AudioEngine::AudioEngine()
     juce::addDefaultFormatsToManager (pluginFormatManager);
     pluginFormatManager.addFormat (BuiltInEffects::createFormat());
     trackEffects.prepare (session.getSampleRate());
+    trackEffects.makeCopy = [this] (const juce::PluginDescription& d)
+    {
+        juce::String error;
+        return pluginFormatManager.createPluginInstance (d, session.getSampleRate(), TrackEffects::maxBlock, error);
+    };
 
     auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session, trackEffects);
     player = playerProcessor.get();
@@ -1077,6 +1082,7 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
         if (! juce::exactlyEqual (trackEffects.getSampleRate(), session.getSampleRate()))
             trackEffects.prepare (session.getSampleRate());
 
+        updateWideTracks();
         return;
     }
 
@@ -1094,6 +1100,23 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 
     rebuildConnections();
     sendChangeMessage();
+}
+
+void AudioEngine::updateWideTracks()
+{
+    std::set<juce::uint32> now;
+
+    for (auto& t : session.getState()->tracks)
+        if (t.fiveOne && ! t.isFrozen())
+            now.insert (t.id);
+
+    if (now == wideTracks)
+        return;
+
+    wideTracks = now;
+
+    if (const auto failed = trackEffects.setWideTracks (now); ! failed.isEmpty() && onEffectsNotCopied != nullptr)
+        onEffectsNotCopied (failed);
 }
 
 juce::String AudioEngine::deviceSignature() const
@@ -1431,13 +1454,18 @@ void AudioEngine::addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr
 void AudioEngine::addTrackPlugin (juce::uint32 trackId, const juce::PluginDescription& description, AddCallback onDone)
 {
     createPlugin (description, session.getSampleRate(),
-                  [this, trackId, done = std::move (onDone)] (std::unique_ptr<juce::AudioPluginInstance> instance,
-                                                              const juce::String& error)
+                  [this, trackId, description, done = std::move (onDone)] (std::unique_ptr<juce::AudioPluginInstance> instance,
+                                                                           const juce::String& error)
                   {
                       if (instance != nullptr)
                       {
-                          trackEffects.add (trackId, std::move (instance));
+                          const auto slotId = trackEffects.add (trackId, std::move (instance));
                           session.markEffectsChanged();
+
+                          if (wideTracks.count (trackId) != 0 && onEffectsNotCopied != nullptr)
+                              for (int i = 0; i < trackEffects.getNumSlots (trackId); ++i)
+                                  if (trackEffects.getSlotId (trackId, i) == slotId && trackEffects.getNumCopies (trackId, i) < 2)
+                                      onEffectsNotCopied ({ description.name });
                       }
 
                       if (done != nullptr)
@@ -1538,6 +1566,8 @@ void AudioEngine::loadTrackEffects (std::map<juce::uint32, std::shared_ptr<juce:
                             if (state.fromBase64Encoding (stateXml->getAllSubText()))
                                 plugin->setStateInformation (state.getData(), (int) state.getSize());
                         }
+
+                        engine.trackEffects.refreshCopies (*plugin);
                     }
 
                     next (engine, isAlive, q, index + 1, errors, std::move (done));

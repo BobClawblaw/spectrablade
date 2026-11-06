@@ -394,6 +394,13 @@ public:
     /** Called before a plug-in is removed so its editor window can be closed first. */
     std::function<void (juce::AudioProcessor*)> onPluginAboutToBeRemoved;
 
+    /** Called with the names of a 5.1 track's effects that couldn't be opened twice more for its
+        other channels (which then play silence through them). */
+    std::function<void (const juce::StringArray&)> onEffectsNotCopied;
+
+    /** Gives a 5.1 track's copies of this effect its whole state again (after its window closes). */
+    void refreshEffectCopies (const juce::AudioProcessor& p)   { trackEffects.refreshCopies (p); }
+
     using AddCallback = std::function<void (const juce::String& error)>;
     void addPlugin (const juce::PluginDescription& description, AddCallback onDone);
     void removeRackSlot (int index);
@@ -438,6 +445,9 @@ private:
     void rebuildConnections();
     juce::String deviceSignature() const;   // the device in use, its rate, block size and channels
     juce::String lastDeviceSignature;       // as of the last change handled
+    std::set<juce::uint32> wideTracks;      // the 5.1 tracks the track effects were last told of
+
+    void updateWideTracks();
     void addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr<juce::XmlElement>>> slots,
                             size_t next, juce::StringArray errors, AddCallback onDone);
     void createPlugin (const juce::PluginDescription&, double rate,

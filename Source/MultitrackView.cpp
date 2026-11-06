@@ -234,7 +234,7 @@ public:
                         : panAutomated ? "Pan" + automatedTip : writing ? "Pan; drag while playing to write automation" : "Pan");
 
         if (t.fiveOne)
-            effectsButton.setTooltip ("A 5.1 track's effects don't run: track effects are stereo");
+            effectsButton.setTooltip ("This 5.1 track's effects: each runs on L R, C LFE and Ls Rs as three stereo copies");
 
         const auto frame = view.controlFrame();
 

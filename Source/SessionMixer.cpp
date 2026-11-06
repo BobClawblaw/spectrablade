@@ -172,10 +172,10 @@ namespace
         return inserts != nullptr && inserts->isActive (id) ? inserts->getLatency (id) : 0;
     }
 
-    /** True when a track's effects run: not when it is frozen or a 5.1 track. */
+    /** True when a track's effects run: not when it is frozen. */
     bool runsEffects (const SessionTrack& track)
     {
-        return ! track.isFrozen() && ! track.fiveOne;
+        return ! track.isFrozen();
     }
 
     /** A track's own latency: none when its effects don't run. */
@@ -711,7 +711,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 buffers.wide.setSize (6, numFrames, false, false, true);
 
             if (live == nullptr || live->clips)
-                renderFiveOne (track, start + ahead, buffers.wide, numFrames, buffers.wideClip, buffers.clipGains);
+                renderFiveOne (track, start + own + ahead, buffers.wide, numFrames, buffers.wideClip, buffers.clipGains);
             else
                 buffers.wide.clear (0, numFrames);
         }
@@ -733,7 +733,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 }
 
         if (inserts != nullptr && runsEffects (track) && inserts->isActive (track.id))
-            inserts->process (track, start + own + ahead, buffers.track, numFrames,
+            inserts->process (track, start + own + ahead, fiveOne ? buffers.wide : buffers.track, numFrames,
                               sidechainKeys (state, track, own + ahead, numFrames, buffers, inserts));
 
         if (track.invertPolarity)

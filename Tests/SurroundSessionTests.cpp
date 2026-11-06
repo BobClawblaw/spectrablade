@@ -84,21 +84,24 @@ namespace
     }
 
     /** Effects on every track and bus that delay by `latency` frames (and halve, to show they ran),
-        noting which tracks they processed. */
+        noting which tracks they processed and how many channels they were given. */
     struct Delays final : SessionMixer::Inserts
     {
         int latency = 64;
         std::set<juce::uint32> processed;
+        std::map<juce::uint32, int> channels;
         std::map<juce::uint32, juce::AudioBuffer<float>> rings;
         std::map<juce::uint32, int> writes;
 
-        bool isActive (juce::uint32) override                       { return true; }
-        int getLatency (juce::uint32) override                      { return latency; }
+        std::set<juce::uint32> only;   // the tracks with these effects; all when empty
+
+        bool isActive (juce::uint32 id) override                    { return only.empty() || only.count (id) != 0; }
+        int getLatency (juce::uint32 id) override                   { return isActive (id) ? latency : 0; }
         int getLatencyBefore (juce::uint32, juce::uint32) override  { return -1; }
 
         void reset (juce::uint32 id) override
         {
-            rings[id].setSize (2, latency);
+            rings[id].setSize (6, latency);
             rings[id].clear();
             writes[id] = 0;
         }
@@ -106,6 +109,7 @@ namespace
         void process (const SessionTrack& t, juce::int64, juce::AudioBuffer<float>& b, int n, const std::vector<SessionMixer::KeyAudio>&) override
         {
             processed.insert (t.id);
+            channels[t.id] = b.getNumChannels();
             auto& ring = rings[t.id];
 
             if (ring.getNumSamples() != latency)
@@ -115,7 +119,7 @@ namespace
 
             for (int i = 0; i < n; ++i)
             {
-                for (int ch = 0; ch < 2; ++ch)
+                for (int ch = 0; ch < b.getNumChannels(); ++ch)
                 {
                     const auto in = b.getSample (ch, i);
                     b.setSample (ch, i, 0.5f * ring.getSample (ch, w));
@@ -539,11 +543,19 @@ namespace
 
         check (volumes, "5.1 track: its volume, a volume envelope and its polarity act on all six channels; its pan and surround pan do nothing");
 
+        // Its effects get all six channels, read ahead by their latency so the track stays in time.
         Delays fx;
-        fx.latency = 1;
-        const auto withFx = render (s, 6, 2, -1, 512, &fx);
-        check (same (withFx, 0, master, 0) && same (withFx, 2, master, 2) && same (withFx, 5, master, 5) && fx.processed.count (id) == 0,
-               "5.1 track: its effects don't run and add no delay");
+        fx.latency = 37;
+        const auto withFx = render (s, 6, 2, -1, 97, &fx);
+        auto halved = true;
+
+        for (int ch = 0; ch < 6; ++ch)
+            for (int i = 0; i < frames; ++i)
+                halved = halved && withFx.getSample (ch, i) == 0.5f * master.getSample (ch, i);
+
+        check (halved && fx.processed.count (id) == 1 && fx.channels[id] == 6,
+               "5.1 track: its effects are given all six channels, and with 37 frames of latency the six come out in time "
+               "(bit for bit what the effect makes of them, in blocks of 97)");
 
         // Into a bus with effects of 64 frames' latency: the bus gets the fold-down, and the track (read
         // 64 frames ahead) has its six channels to the master held back to line up with the bus's output.
@@ -552,6 +564,7 @@ namespace
         const auto busId = bus.id;
         SessionEdits::setSend (routed, id, { busId, 0.0f, false });
         Delays busFx;
+        busFx.only = { busId };
         const auto r = render (routed, 6, 2, -1, 97, &busFx);
         juce::AudioBuffer<float> folded (2, frames);
         Surround::foldDown (expected.getArrayOfReadPointers(), folded.getWritePointer (0), folded.getWritePointer (1), frames);

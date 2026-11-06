@@ -4,6 +4,24 @@ namespace
 {
     // Set while an effect is given a value from an envelope, so its echo isn't taken for a touch.
     thread_local bool followingEnvelope = false;
+
+    /** Sets a copy's parameters to the plug-in's, where they differ. */
+    void follow (juce::AudioPluginInstance& original, juce::AudioPluginInstance& copy)
+    {
+        const auto& from = original.getParameters();
+        const auto& to = copy.getParameters();
+
+        for (int i = 0; i < juce::jmin (from.size(), to.size()); ++i)
+            if (const auto value = from[i]->getValue(); ! juce::exactlyEqual (value, to[i]->getValue()))
+                to[i]->setValue (value);
+    }
+
+    void release (std::array<std::unique_ptr<juce::AudioPluginInstance>, 2>& copies)
+    {
+        for (auto& c : copies)
+            if (c != nullptr)
+                c->releaseResources();
+    }
 }
 
 TrackEffects::~TrackEffects()
@@ -84,7 +102,18 @@ void TrackEffects::setTouched (juce::uint32 trackId, juce::uint32 slotId, const 
 
 void TrackEffects::prepareSlot (Slot& slot) const
 {
+    prepareInstance (*slot.plugin);
+
+    for (auto& c : slot.copies)
+        if (c != nullptr)
+            prepareInstance (*c);
+
     auto& p = *slot.plugin;
+    slot.work.setSize (juce::jmax (2, p.getTotalNumInputChannels(), p.getTotalNumOutputChannels()), maxBlock);
+}
+
+void TrackEffects::prepareInstance (juce::AudioPluginInstance& p) const
+{
     p.enableAllBuses();
 
     // Stereo in and out where the plug-in takes it; otherwise whatever it has.
@@ -95,7 +124,118 @@ void TrackEffects::prepareSlot (Slot& slot) const
 
     p.setRateAndBufferSizeDetails (rate, maxBlock);
     p.prepareToPlay (rate, maxBlock);
-    slot.work.setSize (juce::jmax (2, p.getTotalNumInputChannels(), p.getTotalNumOutputChannels()), maxBlock);
+}
+
+TrackEffects::Copies TrackEffects::copiesOf (Slot& slot) const
+{
+    Copies made;
+
+    if (makeCopy == nullptr)
+        return made;
+
+    juce::MemoryBlock state;
+    slot.plugin->getStateInformation (state);
+
+    for (auto& c : made)
+    {
+        c = makeCopy (slot.plugin->getPluginDescription());
+
+        if (c == nullptr)
+            return {};
+
+        c->setNonRealtime (slot.plugin->isNonRealtime());
+        prepareInstance (*c);
+        c->setStateInformation (state.getData(), (int) state.getSize());
+    }
+
+    return made;
+}
+
+void TrackEffects::install (juce::uint32 trackId, Slot* slot, Copies made)
+{
+    {
+        const juce::ScopedLock sl (lock);
+        const auto* chain = find (trackId);
+
+        // Only if the slot is still there, on a 5.1 track.
+        if (chain != nullptr && wide.count (trackId) != 0
+            && std::any_of (chain->begin(), chain->end(), [slot] (auto& s) { return s.get() == slot; }))
+            std::swap (slot->copies, made);
+    }
+
+    release (made);
+}
+
+juce::StringArray TrackEffects::setWideTracks (const std::set<juce::uint32>& tracks)
+{
+    std::vector<std::pair<juce::uint32, Slot*>> needed;
+    std::vector<Copies> dropped;
+
+    {
+        const juce::ScopedLock sl (lock);
+        wide = tracks;
+
+        for (auto& [id, chain] : chains)
+            for (auto& s : chain)
+            {
+                if (wide.count (id) != 0 && s->copies[0] == nullptr)
+                    needed.emplace_back (id, s.get());
+                else if (wide.count (id) == 0 && s->copies[0] != nullptr)
+                    dropped.push_back (std::move (s->copies));
+            }
+    }
+
+    for (auto& c : dropped)
+        release (c);
+
+    // Made here, off the lock; slots are added and removed only on this thread.
+    juce::StringArray failed;
+
+    for (auto& [id, slot] : needed)
+    {
+        auto made = copiesOf (*slot);
+
+        if (made[0] == nullptr)
+            failed.add (slot->plugin->getName());
+        else
+            install (id, slot, std::move (made));
+    }
+
+    return failed;
+}
+
+void TrackEffects::refreshCopies (const juce::AudioProcessor& processor)
+{
+    juce::uint32 trackId = 0;
+    Slot* found = nullptr;
+
+    {
+        const juce::ScopedLock sl (lock);
+
+        for (auto& [id, chain] : chains)
+            for (auto& s : chain)
+                if (s->plugin.get() == &processor && s->copies[0] != nullptr)
+                {
+                    trackId = id;
+                    found = s.get();
+                }
+    }
+
+    if (found != nullptr)
+        if (auto made = copiesOf (*found); made[0] != nullptr)
+            install (trackId, found, std::move (made));
+}
+
+int TrackEffects::getNumCopies (juce::uint32 trackId, int slot) const
+{
+    const juce::ScopedLock sl (lock);
+    const auto* chain = find (trackId);
+
+    if (chain == nullptr || ! juce::isPositiveAndBelow (slot, (int) chain->size()))
+        return 0;
+
+    const auto& copies = (*chain)[(size_t) slot]->copies;
+    return (int) std::count_if (copies.begin(), copies.end(), [] (auto& c) { return c != nullptr; });
 }
 
 void TrackEffects::prepare (double sampleRate)
@@ -108,6 +248,7 @@ void TrackEffects::prepare (double sampleRate)
         for (auto& slot : chain)
         {
             slot->plugin->releaseResources();
+            release (slot->copies);
             prepareSlot (*slot);
         }
 }
@@ -123,7 +264,10 @@ void TrackEffects::clear()
 
     for (auto& [id, chain] : old)
         for (auto& slot : chain)
+        {
             slot->plugin->releaseResources();
+            release (slot->copies);
+        }
 }
 
 TrackEffects::Chain* TrackEffects::find (juce::uint32 trackId)
@@ -194,6 +338,15 @@ juce::uint32 TrackEffects::add (juce::uint32 trackId, std::unique_ptr<juce::Audi
     // Prepared before it joins the chain, so the audio thread waits only for the insertion.
     // The rate changes only on this thread, so it needs no lock here.
     prepareSlot (*slot);
+    bool onWide = false;
+
+    {
+        const juce::ScopedLock sl (lock);
+        onWide = wide.count (trackId) != 0;
+    }
+
+    if (onWide)
+        slot->copies = copiesOf (*slot);
 
     const juce::ScopedLock sl (lock);
     slot->id = slotId != 0 ? slotId : nextSlotId;
@@ -241,6 +394,7 @@ std::unique_ptr<juce::AudioPluginInstance> TrackEffects::remove (juce::uint32 tr
     }
 
     slot->plugin->releaseResources();
+    release (slot->copies);
     return std::move (slot->plugin);
 }
 
@@ -254,7 +408,13 @@ void TrackEffects::setBypassed (juce::uint32 trackId, int index, bool bypassed)
 
         // Coming back in, it starts from silence rather than from where it was left.
         if (slot.bypassed && ! bypassed)
+        {
             slot.plugin->reset();
+
+            for (auto& c : slot.copies)
+                if (c != nullptr)
+                    c->reset();
+        }
 
         slot.bypassed = bypassed;
     }
@@ -376,7 +536,13 @@ void TrackEffects::reset (juce::uint32 trackId)
 
     if (auto* chain = sl.isLocked() ? find (trackId) : nullptr)
         for (auto& slot : *chain)
+        {
             slot->plugin->reset();
+
+            for (auto& c : slot->copies)
+                if (c != nullptr)
+                    c->reset();
+        }
 }
 
 void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::AudioBuffer<float>& buffer, int numFrames,
@@ -391,11 +557,66 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
         return;
     }
 
+    // A 5.1 track's six channels go through as three pairs: L R, C LFE, Ls Rs.
+    const auto pairs = track.fiveOne && buffer.getNumChannels() >= 6 ? 3 : 1;
+
     // Steps line up with session time, so the result doesn't depend on how the mix is split into blocks.
     const auto automated = std::any_of (track.effectEnvelopes.begin(), track.effectEnvelopes.end(), [chain] (const EffectEnvelope& e)
     {
         return std::any_of (chain->begin(), chain->end(), [&e] (auto& s) { return s->id == e.slotId && ! s->bypassed; });
     });
+
+    // One plug-in over one pair of the buffer's channels, from `first`.
+    const auto run = [&] (juce::AudioPluginInstance& p, Slot& s, int first, int done, int n)
+    {
+        juce::AudioBuffer<float> work (s.work.getArrayOfWritePointers(), s.work.getNumChannels(), n);
+        work.clear();
+        const auto ins = juce::jmin (2, juce::jmax (1, p.getBusCount (true) > 0 ? p.getChannelCountOfBus (true, 0) : 0));
+
+        // The key, if the slot has one, into the sidechain input (a mono one gets the average).
+        if (takesSidechain (p))
+        {
+            const auto key = std::find_if (keys.begin(), keys.end(), [&s] (auto& k) { return k.slotId == s.id; });
+
+            if (key != keys.end() && key->audio != nullptr)
+            {
+                const auto firstKey = p.getChannelIndexInProcessBlockBuffer (true, 1, 0);
+                const auto count = p.getChannelCountOfBus (true, 1);
+
+                if (count == 1)
+                {
+                    work.addFrom (firstKey, 0, *key->audio, 0, done, n, 0.5f);
+                    work.addFrom (firstKey, 0, *key->audio, 1, done, n, 0.5f);
+                }
+                else
+                {
+                    work.copyFrom (firstKey, 0, *key->audio, 0, done, n);
+                    work.copyFrom (firstKey + 1, 0, *key->audio, 1, done, n);
+                }
+            }
+        }
+
+        // A mono input gets the average of the two sides.
+        work.copyFrom (0, 0, buffer, first, done, n);
+
+        if (ins == 1)
+        {
+            work.addFrom (0, 0, buffer, first + 1, done, n);
+            work.applyGain (0, 0, n, 0.5f);
+        }
+        else
+        {
+            work.copyFrom (1, 0, buffer, first + 1, done, n);
+        }
+
+        midi.clear();
+        p.processBlock (work, midi);
+
+        // A mono output plays on both sides.
+        const auto outs = p.getTotalNumOutputChannels();
+        buffer.copyFrom (first, done, work, 0, 0, n);
+        buffer.copyFrom (first + 1, done, work, outs >= 2 ? 1 : 0, 0, n);
+    };
 
     for (int done = 0; done < numFrames;)
     {
@@ -429,54 +650,23 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
                             }
 
             delayed += juce::jmax (0, s->plugin->getLatencySamples());
-            auto& p = *s->plugin;
-            juce::AudioBuffer<float> work (s->work.getArrayOfWritePointers(), s->work.getNumChannels(), n);
-            work.clear();
-            const auto ins = juce::jmin (2, juce::jmax (1, p.getBusCount (true) > 0 ? p.getChannelCountOfBus (true, 0) : 0));
 
-            // The key, if the slot has one, into the sidechain input (a mono one gets the average).
-            if (takesSidechain (p))
+            for (int pair = 0; pair < pairs; ++pair)
             {
-                const auto key = std::find_if (keys.begin(), keys.end(), [&s] (auto& k) { return k.slotId == s->id; });
+                auto* p = pair == 0 ? s->plugin.get() : s->copies[(size_t) pair - 1].get();
 
-                if (key != keys.end() && key->audio != nullptr)
+                if (p == nullptr)
                 {
-                    const auto first = p.getChannelIndexInProcessBlockBuffer (true, 1, 0);
-                    const auto count = p.getChannelCountOfBus (true, 1);
-
-                    if (count == 1)
-                    {
-                        work.addFrom (first, 0, *key->audio, 0, done, n, 0.5f);
-                        work.addFrom (first, 0, *key->audio, 1, done, n, 0.5f);
-                    }
-                    else
-                    {
-                        work.copyFrom (first, 0, *key->audio, 0, done, n);
-                        work.copyFrom (first + 1, 0, *key->audio, 1, done, n);
-                    }
+                    buffer.clear (2 * pair, done, n);
+                    buffer.clear (2 * pair + 1, done, n);
+                    continue;
                 }
+
+                if (pair > 0)
+                    follow (*s->plugin, *p);
+
+                run (*p, *s, 2 * pair, done, n);
             }
-
-            // A mono input gets the average of the two sides.
-            work.copyFrom (0, 0, buffer, 0, done, n);
-
-            if (ins == 1)
-            {
-                work.addFrom (0, 0, buffer, 1, done, n);
-                work.applyGain (0, 0, n, 0.5f);
-            }
-            else
-            {
-                work.copyFrom (1, 0, buffer, 1, done, n);
-            }
-
-            midi.clear();
-            p.processBlock (work, midi);
-
-            // A mono output plays on both sides.
-            const auto outs = p.getTotalNumOutputChannels();
-            buffer.copyFrom (0, done, work, 0, 0, n);
-            buffer.copyFrom (1, done, work, outs >= 2 ? 1 : 0, 0, n);
         }
 
         done += n;

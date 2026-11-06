@@ -21,6 +21,12 @@
     Moves of the effects' parameters in their own windows are reported (onParameterTouched), so
     they can be written as automation. While a parameter is touched its envelope leaves it alone.
 
+    On a 5.1 track each effect runs three times, on L R, on C LFE and on Ls Rs: the slot's own
+    plug-in on the first pair, and two more of the same plug-in (made by makeCopy, given its state)
+    on the others. The copies follow its parameters (set to the same values before each step) and
+    are given its whole state again when refreshCopies is called for it, after its window closes;
+    their latency is taken to be its. A pair whose copy couldn't be made plays silence.
+
     Changes are made on the message thread; the mixer calls the SessionMixer::Inserts methods on
     the audio thread. A track whose chain is being changed plays silence for that block. */
 class TrackEffects final : public SessionMixer::Inserts,
@@ -44,6 +50,20 @@ public:
 
     /** While a parameter is touched, its envelope doesn't set it, so what the hand does wins. */
     void setTouched (juce::uint32 trackId, juce::uint32 slotId, const juce::String& parameterId, bool touched);
+
+    /** Makes another instance of a plug-in, for a 5.1 track's copies (null if it can't). */
+    std::function<std::unique_ptr<juce::AudioPluginInstance> (const juce::PluginDescription&)> makeCopy;
+
+    /** Makes the copies for these tracks' effects (and for effects added to them later), and drops
+        those of tracks no longer in the set. Returns the names of the effects that couldn't be
+        copied. */
+    juce::StringArray setWideTracks (const std::set<juce::uint32>&) override;
+
+    /** Gives the copies of this plug-in (if it is a slot's on a 5.1 track) its whole state again. */
+    void refreshCopies (const juce::AudioProcessor&);
+
+    /** How many copies the slot has: 2 on a 5.1 track, else 0. */
+    int getNumCopies (juce::uint32 trackId, int slot) const;
 
     /** The largest block a plug-in is given; longer runs are split. */
     static constexpr int maxBlock = 1024;
@@ -121,9 +141,12 @@ private:
         std::map<int, std::pair<juce::AudioProcessorParameter*, juce::String>> byIndex;
     };
 
+    using Copies = std::array<std::unique_ptr<juce::AudioPluginInstance>, 2>;
+
     struct Slot
     {
         std::unique_ptr<juce::AudioPluginInstance> plugin;
+        Copies copies;                         // on a 5.1 track: for C LFE and Ls Rs
         juce::uint32 id = 0;
         bool bypassed = false;
         juce::AudioBuffer<float> work;
@@ -137,6 +160,9 @@ private:
     using Chain = std::vector<std::unique_ptr<Slot>>;
 
     void prepareSlot (Slot&) const;
+    void prepareInstance (juce::AudioPluginInstance&) const;
+    Copies copiesOf (Slot&) const;
+    void install (juce::uint32 trackId, Slot*, Copies);
     Chain* find (juce::uint32 trackId);
     const Chain* find (juce::uint32 trackId) const;
     int latencyOf (const Chain&) const;
@@ -146,6 +172,7 @@ private:
     double rate = 48000.0;
     juce::uint32 nextSlotId = 1;
     std::set<std::tuple<juce::uint32, juce::uint32, juce::String>> touched;   // guarded by lock
+    std::set<juce::uint32> wide;   // 5.1 tracks; guarded by lock
 
     juce::SpinLock touchesLock;
     std::vector<ParameterTouch> touches;   // waiting for the message thread

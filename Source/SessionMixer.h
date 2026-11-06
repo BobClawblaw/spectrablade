@@ -36,8 +36,9 @@
     to there is as in a stereo master. What plays into a bus, or out of an interface pair, stays
     stereo. The master then goes to dest as Buffers::surroundChannel says.
 
-    A 5.1 track (SessionTrack::fiveOne) plays its clips' six channels through its polarity, volume
-    and ducking, without pan or effects, straight into a 5.1 master's channels; everything else it
+    A 5.1 track (SessionTrack::fiveOne) plays its clips' six channels through its effects (as three
+    pairs: L R, C LFE, Ls Rs), polarity, volume and ducking, without pan, straight into a 5.1
+    master's channels; everything else it
     feeds (sends, a bus, an interface pair, keys, its meter, a stereo master) gets them folded
     down to stereo (Surround::foldDown), after its polarity and, past its pre-fader sends, its
     volume, as a stereo track's would.
@@ -95,11 +96,16 @@ namespace SessionMixer
             not bypassed, and takes a sidechain; otherwise -1. */
         virtual int getLatencyBefore (juce::uint32 trackId, juce::uint32 slotId) = 0;
 
-        /** Processes the first numFrames of a two-channel buffer in place: the track's audio from
-            session frame `frame` on (what its effects' automation follows), with the keys for
-            the slots that take a sidechain (any slot not given one hears silence there). */
+        /** Processes the first numFrames of the buffer in place: two channels, or six (L R C LFE
+            Ls Rs) for a 5.1 track. It is the track's audio from session frame `frame` on (what its
+            effects' automation follows), with the keys for the slots that take a sidechain (any
+            slot not given one hears silence there). */
         virtual void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames,
                               const std::vector<KeyAudio>& keys) = 0;
+
+        /** Which tracks are 5.1 tracks, before they are processed, so their processing can be
+            readied for six channels. Called on the message thread, or the thread rendering. */
+        virtual juce::StringArray setWideTracks (const std::set<juce::uint32>&)   { return {}; }
     };
 
     /** Peak levels of the tracks and buses as they go into the mix (after their volume and pan),

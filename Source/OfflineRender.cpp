@@ -152,6 +152,16 @@ juce::String loadTrackEffects (const std::map<juce::uint32, std::unique_ptr<juce
 {
     juce::StringArray errors;
     into.prepare (sampleRate);
+    into.makeCopy = [&formats, sampleRate] (const juce::PluginDescription& d)
+    {
+        juce::String error;
+        auto copy = formats.createPluginInstance (d, sampleRate, TrackEffects::maxBlock, error);
+
+        if (copy != nullptr)
+            copy->setNonRealtime (true);
+
+        return copy;
+    };
 
     for (auto& [trackId, xml] : effects)
     {
@@ -190,6 +200,8 @@ juce::String loadTrackEffects (const std::map<juce::uint32, std::unique_ptr<juce
                 if (state.fromBase64Encoding (stateXml->getAllSubText()))
                     instance->setStateInformation (state.getData(), (int) state.getSize());
             }
+
+            into.refreshCopies (*instance);
         }
     }
 
@@ -208,7 +220,16 @@ bool mixSession (const SessionState& state, juce::Range<juce::int64> range, juce
     buffers.interfaceChannel = -1;   // the mix alone
 
     if (inserts != nullptr)
+    {
+        std::set<juce::uint32> wide;
+
+        for (auto& t : state.tracks)
+            if (t.fiveOne && ! t.isFrozen())
+                wide.insert (t.id);
+
+        inserts->setWideTracks (wide);
         SessionMixer::prime (state, range.getStart(), buffers, *inserts);
+    }
 
     for (int done = 0; done < total; done += blockSize)
     {

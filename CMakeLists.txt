@@ -216,6 +216,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SequencesTests.cpp
     Tests/SurroundTests.cpp
     Tests/SurroundSessionTests.cpp
+    Tests/SurroundEffectsTests.cpp
     Tests/VideoTests.cpp
     Tests/ProjectTests.cpp
     Tests/AutomationTests.cpp

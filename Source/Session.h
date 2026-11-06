@@ -242,7 +242,7 @@ struct SessionTrack
     /** A 5.1 track (tracks only): its clips play six channels, L R C LFE Ls Rs (a 5.1 clip as it
         is, a mono one to C, a stereo one to L and R, others their first six channels in order),
         through its polarity, volume and ducking straight to a 5.1 master's speakers, with no pan
-        or surround pan. Its effects don't run (they are stereo). What it sends, plays into a bus
+        or surround pan. Its effects run on its channels in pairs (TrackEffects). What it sends, plays into a bus
         or out of an interface pair, ducks or keys, and plays into a stereo master, is folded down
         to stereo (Surround::foldDown). */
     bool fiveOne = false;
@@ -550,8 +550,8 @@ namespace SessionEdits
     inline constexpr double freezeTailSeconds = 5.0;
 
     /** Freezes a track: it plays `audio` (from frozenSource rendered, saved as file) from frame 0
-        instead of its clips and effects. False for a bus, a 5.1 track (it has no effects running to
-        freeze) or a track that is gone. */
+        instead of its clips and effects. False for a bus, a 5.1 track (freezing renders
+        stereo) or a track that is gone. */
     bool freezeTrack (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot audio);
     bool unfreezeTrack (SessionState&, juce::uint32 trackId);
 
