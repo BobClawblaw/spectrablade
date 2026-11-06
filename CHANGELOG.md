@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.10.1: tags in AIFF and FLAC files, and cover art**
+- `SpectraBlade-0.10.1.dmg` on the repository's Releases page, with its SHA-256: Milestones 226 and 227 below on top of 0.10.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (1031 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.10.1, carries a licence identical to `LICENSE` and LAME's licence, and launched from the mounted image (the main window in 3.7 seconds on that first launch and 1.3 seconds on the next, reopening the last file) and quit with no crash report. The app's Intel half was not launched, and no Intel Mac was tried.
+
 **Milestone 227: Cover art**
 - File > File Info shows the front cover beside the tags, with its size and type, and Choose Image... (a JPEG or PNG of up to 8 MB) and Remove. A change is an undo step with the rest of the info, and the image is shared between undo steps rather than copied.
 - Kept when saving WAV (in an "id3 " chunk, an ID3v2.3 tag with the text tags again, as the players that show covers read them there; a cover alone writes no INFO chunk), AIFF (in its ID3 chunk) and FLAC (a PICTURE block marked as the front cover, with the image's size, replacing any it had), and when exporting MP3 (an APIC frame) and AAC (a covr item; the file now keeps room for the cover before its audio, and asks the encoder for about 1.2 times the room the tags and cover take, where it asked for about twice before). Read from all of these, and from WAV files other programs gave an "id3 " chunk (whose tags fill in what their INFO chunk lacks). Not kept: exports through ffmpeg, and covers in Ogg files (Opus, Vorbis), which aren't read.
@@ -15,8 +23,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - Measured by the tests (with ffmpeg 9.0.2 as an outside reader): 24-bit AIFF, 16-bit AIFF and 24-bit FLAC files keep every tag, Unicode too, and read back at their full length; tagging a copy of each file saved without info leaves its audio bit for bit; ffmpeg reads the same tags (from FLAC, the track as 3 with a total of 12) and decodes each file without a complaint; tagging a FLAC file again leaves a single Vorbis comment block, with the new tags; files saved with no info have none; the NAME, AUTH and ANNO chunks ffmpeg writes into an AIFF file are read, and so is the ID3v2.4 chunk it writes into a 32-bit float AIFF-C file. The whole suite passed (1026 checks).
 - SpectraBlade itself writes AIFF at 8, 16 or 24 bits only, so it never writes AIFF-C; it reads tags from AIFF-C files others write.
 - Not tried by hand: saving from the app, or opening the files in other players (the Music app, Finder's info).
-
-## Released
 
 **Release 0.10.0: repair and generator tools, spectral drawing and healing, bus routing and ducking, MP3, AAC and ffmpeg, file tags**
 - `SpectraBlade-0.10.0.dmg` on the repository's Releases page, with its SHA-256: Milestones 208 to 225 below on top of 0.9.5. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
