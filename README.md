@@ -48,6 +48,8 @@ MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz i
 
 The formats marked "through ffmpeg" need [ffmpeg](https://ffmpeg.org) installed (with Homebrew, `brew install ffmpeg`); SpectraBlade looks for it in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` and the `PATH`. It is not part of SpectraBlade. A file opened through ffmpeg is decoded in full to 32-bit float; saving it again goes through Save As.
 
+File > Batch Process... puts many files through the same steps and writes each as a new file, leaving the originals as they are. Choose files or folders (their folders are searched too), then the steps, run in this order: the effects rack, a sample rate, mono or stereo, the level (the peak, or the loudness in LUFS under a true-peak ceiling, stopping short or limiting to reach it), and the file type with its bit depth or bit rate. The new files go beside each source or into a chosen folder, named after the source with any suffix you give, and numbered when the name is taken. Markers, tags and the cover go along where the type keeps them, and a report lists what happened to each file.
+
 ## Screenshots
 
 ![The editor in the Editing workspace: two files open in the Files panel, a stereo file in the waveform and spectrogram view with its fade handles at the top corners and the time strip under it, the effects rack and undo history, the selection panel, and the levels meter](docs/screenshots/editor.png)

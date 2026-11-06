@@ -130,7 +130,7 @@ namespace
         cmdShowSelectionPanel, cmdSaveWorkspace, cmdResetWorkspace, cmdDeleteWorkspace,
         cmdShowFiles, cmdCloseFile, cmdNextFile, cmdPreviousFile, cmdShowLevels, cmdShowSpectrum, cmdShowPhase,
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
-        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo
+        cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1172,7 +1172,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdFileInfo; ++id)
+    for (int id = cmdOpen; id <= cmdBatchProcess; ++id)
         ids.add (id);
 }
 
@@ -1443,6 +1443,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (hasSpectral); break;
         case cmdFileInfo: info.setInfo ("File Info...", "See and change the file's title, artist, album and other details, and its broadcast-wave details", "File", 0);
                           info.setActive (hasAudio); break;
+        case cmdBatchProcess: info.setInfo ("Batch Process...", "Put many files through the same steps (the effects rack, sample rate, channels, level) and write each as a new file", "File", 0);
+                              info.setActive (backgroundJob == nullptr); break;
         case cmdExportFfmpeg: info.setInfo ("Export with ffmpeg...", "Write the file, or the selection, as Opus, Apple Lossless, WavPack or AC-3 through an installed ffmpeg", "File", 0);
                               info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdExportLossy: info.setInfo ("Export as MP3 or AAC...", "Write the file, or the selection, to an MP3 or AAC (.m4a) file", "File", 0);
@@ -2200,6 +2202,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdExportLossy: exportLossy(); break;
         case cmdExportFfmpeg: exportWithFfmpeg(); break;
         case cmdFileInfo: showFileInfo(); break;
+        case cmdBatchProcess: batchProcess(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
         case cmdLassoTool:  waveform.setSpectralTool (WaveformView::SpectralTool::lasso); commands.commandStatusChanged(); break;
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
@@ -2296,7 +2299,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdExportLossy, cmdExportFfmpeg, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdExportLossy, cmdExportFfmpeg, 0, cmdBatchProcess, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -4446,6 +4449,220 @@ namespace
             });
         }
     };
+}
+
+void MainComponent::batchProcess()
+{
+    if (backgroundJob != nullptr)
+        return;
+
+    auto* settings = appProperties.getUserSettings();
+    const juce::File start (settings->getValue ("batchSources", juce::File::getSpecialLocation (juce::File::userMusicDirectory).getFullPathName()));
+    chooser = std::make_unique<juce::FileChooser> ("Batch Process: choose files or folders", start, openWildcard());
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::canSelectDirectories | juce::FileBrowserComponent::canSelectMultipleItems,
+                          [this, settings] (const juce::FileChooser& fc)
+                          {
+                              const auto chosen = fc.getResults();
+
+                              if (chosen.isEmpty())
+                                  return;
+
+                              settings->setValue ("batchSources", (chosen[0].isDirectory() ? chosen[0] : chosen[0].getParentDirectory()).getFullPathName());
+                              const auto files = Batch::collect (chosen, engine.formatManager);
+
+                              if (files.isEmpty())
+                                  showError ("Batch Process", "There are no audio files there.");
+                              else
+                                  askForBatchSettings (files);
+                          });
+}
+
+void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
+{
+    auto* settings = appProperties.getUserSettings();
+    const auto withFfmpeg = Ffmpeg::find() != juce::File();
+    const auto types = Batch::types (withFfmpeg);
+    const auto rackSlots = engine.getNumRackSlots();
+    static const juce::Array<double> rates { 0.0, 44100.0, 48000.0, 88200.0, 96000.0, 192000.0 };
+    static const juce::Array<int> depths { 0, 16, 24, 32 };
+
+    juce::String what = juce::String (files.size()) + (files.size() == 1 ? " file: " : " files: ") + files[0].getFileName();
+
+    if (files.size() > 1)
+        what << (files.size() == 2 ? " and " : ", ") << files[1].getFileName() << (files.size() > 2 ? ", ..." : "");
+
+    auto* box = new juce::AlertWindow ("Batch Process",
+                                       what + "\nEach file goes through these steps in order and is written as a new file; the files "
+                                              "themselves are left as they are.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+
+    juce::StringArray rackChoices { "Leave out the effects rack" };
+
+    if (rackSlots > 0)
+        rackChoices.add ("Through the effects rack (" + juce::String (rackSlots) + (rackSlots == 1 ? " effect)" : " effects)"));
+
+    box->addComboBox ("rack", rackChoices, "Effects");
+    box->addComboBox ("rate", { "Keep each file's", "44.1 kHz", "48 kHz", "88.2 kHz", "96 kHz", "192 kHz" }, "Sample rate");
+    box->addComboBox ("channels", { "Keep each file's", "Mono", "Stereo" }, "Channels");
+    box->addComboBox ("level", { "Leave it", "Normalize the peak", "Match loudness, stopping at the ceiling", "Match loudness, limiting at the ceiling" }, "Level");
+    box->addTextEditor ("peak", juce::String (settings->getDoubleValue ("batchPeak", -1.0), 1), "Peak (dBFS)");
+    box->addTextEditor ("lufs", juce::String (settings->getDoubleValue ("batchLufs", -16.0), 1), "Loudness (LUFS)");
+    box->addTextEditor ("ceiling", juce::String (settings->getDoubleValue ("batchCeiling", -1.0), 1), "True peak ceiling (dBTP)");
+
+    juce::StringArray typeNames;
+
+    for (auto& t : types)
+        typeNames.add (Batch::nameOf (t));
+
+    box->addComboBox ("type", typeNames, "File type");
+    box->addComboBox ("depth", { "Keep each file's", "16-bit", "24-bit", "32-bit float" }, "Bit depth (WAV, AIFF, FLAC)");
+
+    juce::StringArray rateNames;
+
+    for (auto r : LossyFiles::bitRates())
+        rateNames.add (juce::String (r) + " kbps");
+
+    box->addComboBox ("kbps", rateNames, "Bit rate (MP3, AAC, Opus, AC-3)");
+    box->addTextEditor ("suffix", settings->getValue ("batchSuffix"), "Added to each name");
+    box->addComboBox ("folder", { "Beside each file", "In a folder, chosen next" }, "Write them");
+
+    const auto pick = [box] (const char* name, int index) { box->getComboBoxComponent (name)->setSelectedItemIndex (juce::jmax (0, index)); };
+    pick ("rack", juce::jmin (rackChoices.size() - 1, settings->getIntValue ("batchRack", 0)));
+    pick ("rate", rates.indexOf (settings->getDoubleValue ("batchRate", 0.0)));
+    pick ("channels", settings->getIntValue ("batchChannels", 0));
+    pick ("level", settings->getIntValue ("batchLevel", 0));
+    pick ("type", types.indexOf (settings->getValue ("batchType", "wav")));
+    pick ("depth", depths.indexOf (settings->getIntValue ("batchDepth", 0)));
+    pick ("kbps", LossyFiles::bitRates().indexOf (settings->getIntValue ("batchKbps", 192)));
+    pick ("folder", settings->getIntValue ("batchFolderMode", 0));
+
+    for (auto* name : { "peak", "lufs", "ceiling" })
+        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
+
+    box->addButton ("Process", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings, files, types] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto index = [box] (const char* name) { return box->getComboBoxComponent (name)->getSelectedItemIndex(); };
+        Batch::Settings s;
+        s.applyRack = index ("rack") == 1;
+        s.sampleRate = rates[index ("rate")];
+        s.channels = index ("channels");
+        s.level = index ("level") == 0 ? Batch::Level::none : index ("level") == 1 ? Batch::Level::peak : Batch::Level::loudness;
+        s.limit = index ("level") == 3;
+        s.peakDb = (float) box->getTextEditorContents ("peak").getDoubleValue();
+        s.lufs = box->getTextEditorContents ("lufs").getDoubleValue();
+        s.ceilingDbtp = box->getTextEditorContents ("ceiling").getDoubleValue();
+        s.type = types[index ("type")];
+        s.bitDepth = depths[index ("depth")];
+        s.lossy.kbps = LossyFiles::bitRates()[index ("kbps")];
+        s.ffmpegKbps = s.lossy.kbps;
+        s.suffix = box->getTextEditorContents ("suffix");
+
+        settings->setValue ("batchRack", index ("rack"));
+        settings->setValue ("batchRate", s.sampleRate);
+        settings->setValue ("batchChannels", s.channels);
+        settings->setValue ("batchLevel", index ("level"));
+        settings->setValue ("batchPeak", s.peakDb);
+        settings->setValue ("batchLufs", s.lufs);
+        settings->setValue ("batchCeiling", s.ceilingDbtp);
+        settings->setValue ("batchType", s.type);
+        settings->setValue ("batchDepth", s.bitDepth);
+        settings->setValue ("batchKbps", s.lossy.kbps);
+        settings->setValue ("batchSuffix", s.suffix);
+        settings->setValue ("batchFolderMode", index ("folder"));
+
+        if (index ("folder") == 0)
+        {
+            runBatch (files, s);
+            return;
+        }
+
+        const juce::File start (settings->getValue ("batchFolder", files[0].getParentDirectory().getFullPathName()));
+        chooser = std::make_unique<juce::FileChooser> ("Batch Process: the folder to write into", start);
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories,
+                              [this, settings, files, s] (const juce::FileChooser& fc) mutable
+                              {
+                                  if (! fc.getResult().isDirectory())
+                                      return;
+
+                                  settings->setValue ("batchFolder", fc.getResult().getFullPathName());
+                                  s.folder = fc.getResult();
+                                  runBatch (files, s);
+                              });
+    }), true);
+}
+
+void MainComponent::runBatch (const juce::Array<juce::File>& files, const Batch::Settings& settings)
+{
+    if (const auto problem = settings.problem(); problem.isNotEmpty())
+    {
+        showError ("Batch Process", problem);
+        return;
+    }
+
+    if (backgroundJob != nullptr)
+        return;
+
+    std::shared_ptr<const juce::XmlElement> rack;
+
+    if (settings.applyRack)
+        rack = engine.createRackXml();
+
+    auto outcomes = std::make_shared<std::vector<Batch::Outcome>>();
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Batch processing...",
+        [this, files, settings, rack, outcomes] (const std::function<bool (float)>& progress)
+        {
+            for (int i = 0; i < files.size(); ++i)
+            {
+                auto outcome = Batch::process (files[i], settings, engine.formatManager, rack.get(), &engine.pluginFormatManager,
+                                               [&progress, i, n = files.size()] (float p) { return progress (((float) i + p) / (float) n); });
+
+                if (outcome.error == "Stopped.")
+                    return false;
+
+                outcomes->push_back (std::move (outcome));
+            }
+
+            return true;
+        },
+        [this, outcomes] { showBatchReport (*outcomes); });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
+}
+
+void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes)
+{
+    juce::File firstWritten;
+
+    for (auto& o : outcomes)
+        if (o.written != juce::File() && firstWritten == juce::File())
+            firstWritten = o.written;
+
+    auto* box = new juce::AlertWindow ("Batch Process", {}, juce::MessageBoxIconType::NoIcon, this);
+    auto* text = new juce::TextEditor();
+    text->setMultiLine (true);
+    text->setReadOnly (true);
+    text->setScrollbarsShown (true);
+    text->setText (Batch::report (outcomes));
+    text->setSize (560, 300);
+    box->addCustomComponent (text);
+    box->addButton ("OK", 0, juce::KeyPress (juce::KeyPress::returnKey));
+
+    if (firstWritten != juce::File())
+        box->addButton ("Show in Finder", 1);
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([text, firstWritten] (int result)
+    {
+        delete text;
+
+        if (result == 1)
+            firstWritten.revealToUser();
+    }), true);
 }
 
 void MainComponent::showFileInfo()

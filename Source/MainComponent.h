@@ -28,6 +28,7 @@
 #include "SessionRecording.h"
 #include "WaveformView.h"
 #include "Dock.h"
+#include "Batch.h"
 #include "EditorBar.h"
 
 class MainComponent final : public juce::Component,
@@ -167,6 +168,10 @@ private:
     void exportLossy();
     void askLossySettings (const juce::File&, juce::Range<juce::int64> selection);
     void exportWithFfmpeg();
+    void batchProcess();
+    void askForBatchSettings (const juce::Array<juce::File>&);
+    void runBatch (const juce::Array<juce::File>&, const Batch::Settings&);
+    void showBatchReport (const std::vector<Batch::Outcome>&);
     void showFileInfo();
     void insertGenerated (const juce::AudioBuffer<float>&, const juce::String& name);
     int toneWave = 0;                // the generators' last settings
