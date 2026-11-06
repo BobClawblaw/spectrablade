@@ -380,12 +380,17 @@ public:
     void continueAutomationPass (juce::int64 frame, float value);
     void finishAutomationPass();
 
+    /** A pass that writes several of a track's envelopes at once (the surround pad's x and y),
+        one value for each, in the same order; undone as one step. */
+    void startAutomationPass (juce::uint32 trackId, const std::vector<AutomationTarget>&, juce::int64 frame, const std::vector<float>& values);
+    void continueAutomationPass (juce::int64 frame, const std::vector<float>& values);
+
     /** A track effect's parameter touched in its window, with the play position when the
         session is playing. Gestures start and finish passes; values continue them. */
     void effectParameterTouched (const TrackEffects::ParameterTouch&, std::optional<juce::int64> playFrame);
     bool isAutomationPassUnderWay (juce::uint32 trackId, const AutomationTarget& p) const noexcept
     {
-        return pass.has_value() && pass->trackId == trackId && pass->parameter == p;
+        return pass.has_value() && pass->trackId == trackId && std::find (pass->parameters.begin(), pass->parameters.end(), p) != pass->parameters.end();
     }
 
     /** The envelope shown over a track's lane, if any: volume, pan or an effect parameter. */
@@ -565,9 +570,9 @@ private:
     struct AutomationPass
     {
         juce::uint32 trackId = 0;
-        AutomationTarget parameter;
-        SessionState base;                 // the session as the pass began
-        std::vector<AutomationPoint> points;
+        std::vector<AutomationTarget> parameters;
+        SessionState base;                              // the session as the pass began
+        std::vector<std::vector<AutomationPoint>> points;   // each parameter's
     };
 
     std::optional<AutomationPass> pass;

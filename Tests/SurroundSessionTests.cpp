@@ -890,12 +890,116 @@ namespace
     }
 }
 
+namespace
+{
+    void testWritingSurround (AudioEngine& engine)
+    {
+        // A pass over two envelopes at once, through the view: one undo step for both.
+        SessionState s;
+        s.sampleRate = rate;
+        s.surround = true;
+        auto& silentTrack = s.addTrack();
+        const auto id = silentTrack.id;
+
+        // A clip of silence, so the session has a length to play and plays nothing out loud.
+        {
+            juce::AudioBuffer<float> zeros (2, (int) rate * 4);
+            zeros.clear();
+            std::vector<AudioSnapshot::Segment> segments { { std::make_shared<const AudioBlock> (std::move (zeros)), 0, (int) rate * 4 } };
+            SessionClip c;
+            c.id = s.nextId++;
+            c.audio = std::make_shared<const AudioSnapshot> (2, std::move (segments));
+            c.length = c.audio->getNumFrames();
+            silentTrack.clips.push_back (c);
+        }
+        engine.session.reset (s, {});
+        MultitrackView view (engine);
+        view.setWritingAutomation (true);
+        const std::vector<AutomationTarget> point { AutomationParameter::surroundX, AutomationParameter::surroundY };
+        view.startAutomationPass (id, point, 48000, { -1.0f, 1.0f });
+        view.continueAutomationPass (60000, std::vector<float> { 0.0f, 0.0f });
+        view.continueAutomationPass (72000, std::vector<float> { 0.5f, -0.5f });
+        const auto bothUnderWay = view.isAutomationPassUnderWay (id, AutomationParameter::surroundX)
+                                  && view.isAutomationPassUnderWay (id, AutomationParameter::surroundY);
+        view.finishAutomationPass();
+        const auto written = *engine.session.getState()->findTrack (id);
+        const auto back = 72000 + (juce::int64) std::llround (MultitrackView::returnSeconds * rate);
+        check (bothUnderWay && written.valueAt (AutomationParameter::surroundX, 60000) == 0.0f
+                   && written.valueAt (AutomationParameter::surroundX, 72000) == 0.5f && written.valueAt (AutomationParameter::surroundY, 72000) == -0.5f
+                   && written.valueAt (AutomationParameter::surroundX, back) == 0.0f && written.valueAt (AutomationParameter::surroundY, back) == 1.0f
+                   && written.valueAt (AutomationParameter::surroundX, 0) == 0.0f && engine.session.getUndoDescription() == "Write Surround Automation",
+               "writing surround: one pass writes the pad's x and y envelopes together, going back to the setting after it, as one step");
+
+        engine.session.undo();
+        check (! engine.session.getState()->findTrack (id)->hasSurroundAutomation(), "writing surround: undone, both envelopes go in one step");
+
+        // From the mixer, with the session playing (silently): the pad and the width record.
+        MixerView mixer (engine);
+        mixer.setSize (MixerView::surroundStripWidth * 3, 500);
+        auto* pad = mixer.findSurroundPad (id);
+        auto* width = mixer.findSurroundWidth (id);
+        const auto noWriter = pad->isEnabled();
+        SessionEdits::setEnvelope (s, id, AutomationParameter::surroundWidth, Envelope { { { 0, 0.5f } } });
+        engine.session.apply (s, "Width Envelope");
+        TestUtils::runUntil ([&] { return ! width->isEnabled(); }, 2000);
+        const auto followsWhenNotWriting = ! width->isEnabled();
+        mixer.setAutomationWriter (&view);
+        TestUtils::runUntil ([&] { return width->isEnabled(); }, 2000);
+        const auto liveWhenWriting = width->isEnabled();
+
+        // Stopped: moving the pad sets it, and an automated width does nothing.
+        pad->onChange ({ 0.25f, 0.5f, 1.0f, SurroundPan::lfeOff }, false);
+        pad->onRelease();
+        width->setValue (20.0, juce::sendNotificationSync);
+        const auto stopped = *engine.session.getState()->findTrack (id);
+        check (noWriter && followsWhenNotWriting && liveWhenWriting && stopped.surroundPan.x == 0.25f && stopped.surroundEnvelopes[0].isEmpty()
+                   && stopped.surroundEnvelopes[2].points.size() == 1,
+               "writing surround: the mixer's automated controls come alive with writing on; stopped, the pad sets its place and the "
+               "automated width changes nothing");
+
+        auto& player = engine.getPlayer();
+        const auto mode = player.getMode();
+        player.setMode (DocumentPlayerProcessor::Mode::session);
+        // Playing, with the play position moved by hand between moves (the suite's device may not
+        // be running it on).
+        player.play (4800, -1);
+        const auto first = player.getPositionFrames();
+        pad->onChange ({ -1.0f, 1.0f, 1.0f, SurroundPan::lfeOff }, false);
+        player.setPositionFrames (first + 9600);
+        pad->onChange ({ 1.0f, -1.0f, 1.0f, SurroundPan::lfeOff }, true);
+        const auto last = player.getPositionFrames();
+        pad->onRelease();
+        const auto padDone = ! view.isAutomationPassUnderWay (id, AutomationParameter::surroundX);
+        const auto padDescription = engine.session.getUndoDescription();
+        player.setPositionFrames (last + 4800);
+        width->setValue (90.0, juce::sendNotificationSync);
+        player.setPositionFrames (last + 9600);
+        width->setValue (95.0, juce::sendNotificationSync);
+        const auto widthUnderWay = view.isAutomationPassUnderWay (id, AutomationParameter::surroundWidth);
+        width->onDragEnd();
+        player.pause();
+        player.setMode (mode);
+        const auto t = *engine.session.getState()->findTrack (id);
+        const auto& x = t.surroundEnvelopes[0].points;
+        check (padDone && padDescription == "Write Surround Automation" && widthUnderWay && x.size() >= 3
+                   && t.valueAt (AutomationParameter::surroundX, last) == 1.0f && t.valueAt (AutomationParameter::surroundY, last) == -1.0f
+                   && t.valueAt (AutomationParameter::surroundX, 0) == 0.25f && x.front().frame >= first && x.front().frame <= last
+                   && t.surroundEnvelopes[2].valueAt (t.surroundEnvelopes[2].points.back().frame - 1) > 0.5f,
+               "writing surround: dragging the mixer's pad while playing writes its x and y at the play position (from "
+                   + juce::String (first) + " to " + juce::String (last) + "), back to its setting after, and the width slider writes its own");
+
+        mixer.setAutomationWriter (nullptr);
+        view.setWritingAutomation (false);
+    }
+}
+
 void runSurroundSessionTests (AudioEngine& engine)
 {
     testFiveOneTracks (engine);
     testFiveOneControls (engine);
     testSurroundAutomation (engine);
     testMasterMeter (engine);
+    testWritingSurround (engine);
     testGains();
     testMaster();
     testEdits (engine);

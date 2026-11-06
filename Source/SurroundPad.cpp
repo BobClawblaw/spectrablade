@@ -118,6 +118,12 @@ void SurroundPad::mouseDrag (const juce::MouseEvent& e)
         moveTo (e.position, true);
 }
 
+void SurroundPad::mouseUp (const juce::MouseEvent& e)
+{
+    if (! e.mods.isPopupMenu() && onRelease != nullptr)
+        onRelease();
+}
+
 void SurroundPad::mouseDoubleClick (const juce::MouseEvent&)
 {
     if (juce::exactlyEqual (pan.x, 0.0f) && juce::exactlyEqual (pan.y, 1.0f))

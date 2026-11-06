@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 243: Writing the surround pan while playing**
+- With Write Automation on (W), the mixer's surround pad, width and LFE stay live even when automated, and moving them while the session plays records into their envelopes, as the track headers' volume and pan do: from when the control is grabbed to when it is let go, heard as it is written, then back to what was there over 0.1 s, and undone as one step ("Write Surround Automation"). The pad writes its left-right and front-back envelopes together. A control held still goes on writing its value as play moves on. Stopped, they set the pan as before; with writing off, automated ones follow their envelopes.
+- An automation pass can now write several envelopes at once.
+- Measured by the tests: one pass writes the x and y envelopes together, at the play positions given, going back to the setting after, and undo takes both off in one step; with the mixer tied to the view and writing on, its automated controls come alive; stopped, the pad sets its place and an automated width changes nothing; with the session playing (a clip of silence, the play position moved between moves), dragging the pad from front left to back right writes both envelopes at the play position and goes back to the setting after, and the width slider writes its own. The whole suite passed (1146 checks); on earlier runs the video panel's check (the real macOS player, timing on a loaded machine) failed twice and passed on the rerun.
+- Not tried by hand: dragging the pad with the mouse while listening.
+
 **Milestone 242: A six-channel master meter**
 - In a 5.1 master the mixer's master meter has six bars, named L R C LFE Ls Rs, and the master strip is as wide as the others. They show the 5.1 master as mixed: before the effects rack (which is stereo) and before any fold-down, so the centre, LFE and surrounds show even when they are folded into a stereo output. A stereo master's meter is as before: what goes to the outputs, after the rack.
 - A 5.1 track's clips show all their channels in the lane, up to six, each named down the left when there is room; a stereo track still shows the two channels it plays.

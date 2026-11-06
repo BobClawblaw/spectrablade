@@ -1,4 +1,5 @@
 #include "MixerView.h"
+#include "MultitrackView.h"
 #include "SurroundPad.h"
 #include "Theme.h"
 #include "TrackColours.h"
@@ -181,8 +182,10 @@ public:
         // A 5.1 master's controls: the point, the width and the LFE's share.
         surroundPad.onChange = [this] (const SurroundPan& p, bool dragging)
         {
-            edit ("Surround Pan", dragging, [x = p.x, y = p.y] (SessionTrack& t) { t.surroundPan.x = x; t.surroundPan.y = y; });
+            if (! record ({ AutomationParameter::surroundX, AutomationParameter::surroundY }, { p.x, p.y }))
+                edit ("Surround Pan", dragging, [x = p.x, y = p.y] (SessionTrack& t) { t.surroundPan.x = x; t.surroundPan.y = y; });
         };
+        surroundPad.onRelease = [this] { finishRecording (AutomationParameter::surroundX); };
 
         for (auto* s : { &width, &lfe })
         {
@@ -197,8 +200,11 @@ public:
         width.onValueChange = [this]
         {
             const auto w = (float) width.getValue() / 100.0f;
-            edit ("Surround Width", true, [w] (SessionTrack& t) { t.surroundPan.width = w; });
+
+            if (! record ({ AutomationParameter::surroundWidth }, { w }))
+                edit ("Surround Width", true, [w] (SessionTrack& t) { t.surroundPan.width = w; });
         };
+        width.onDragEnd = [this] { finishRecording (AutomationParameter::surroundWidth); };
 
         // The far left is off; otherwise -60 to +10 dB.
         lfe.setRange (-61.0, (double) SurroundPan::maxLfeDb, 1.0);
@@ -211,8 +217,11 @@ public:
         lfe.onValueChange = [this]
         {
             const auto db = lfe.getValue() < -60.0 ? SurroundPan::lfeOff : (float) lfe.getValue();
-            edit ("LFE Level", true, [db] (SessionTrack& t) { t.surroundPan.lfeDb = db; });
+
+            if (! record ({ AutomationParameter::lfe }, { juce::jmax (-60.0f, db) }))
+                edit ("LFE Level", true, [db] (SessionTrack& t) { t.surroundPan.lfeDb = db; });
         };
+        lfe.onDragEnd = [this] { finishRecording (AutomationParameter::lfe); };
 
         width.updateText();
         lfe.updateText();
@@ -304,16 +313,23 @@ public:
         const auto& envelopes = t.surroundEnvelopes;
         const auto pointAutomated = ! envelopes[0].isEmpty() || ! envelopes[1].isEmpty();
         const auto widthAutomated = ! envelopes[2].isEmpty(), lfeAutomated = ! envelopes[3].isEmpty();
+        // While automation is being written they stay live, to record into their envelopes.
         const auto now = t.surroundPanAt (frame);
-        surroundPad.setEnabled (! pointAutomated);
-        width.setEnabled (! widthAutomated);
-        lfe.setEnabled (! lfeAutomated);
-        surroundPad.setTooltip (pointAutomated ? "Where it plays in the 5.1 master follows its envelopes"
-                                               : "Where it plays in the 5.1 master: drag the point, double-click to put it back in front");
-        width.setTooltip (widthAutomated ? "Surround width follows its envelope"
-                                         : "Surround width: how far apart its left and right channels play (0: together, as mono)");
-        lfe.setTooltip (lfeAutomated ? "The LFE's share follows its envelope" : "How much also goes to the LFE (far left: none)");
-        surroundPad.setPan (now);
+        const auto writing = view.writer != nullptr && view.writer->isWritingAutomation();
+        const juce::String writeTip = writing ? "; move it while playing to write automation" : "";
+        surroundPad.setEnabled (! pointAutomated || writing);
+        width.setEnabled (! widthAutomated || writing);
+        lfe.setEnabled (! lfeAutomated || writing);
+        surroundPad.setTooltip ((pointAutomated && ! writing ? "Where it plays in the 5.1 master follows its envelopes"
+                                                             : "Where it plays in the 5.1 master: drag the point, double-click to put it back in front")
+                                + writeTip);
+        width.setTooltip ((widthAutomated && ! writing ? "Surround width follows its envelope"
+                                                       : "Surround width: how far apart its left and right channels play (0: together, as mono)")
+                          + writeTip);
+        lfe.setTooltip ((lfeAutomated && ! writing ? "The LFE's share follows its envelope" : "How much also goes to the LFE (far left: none)") + writeTip);
+
+        if (! surroundPad.isMouseButtonDown())
+            surroundPad.setPan (now);
 
         if (! width.isMouseButtonDown())
             width.setValue (std::round (now.width * 100.0f), juce::dontSendNotification);
@@ -443,6 +459,40 @@ public:
     juce::Label readout;
 
 private:
+    /** A surround control moved: while automation is written and the session plays, it records
+        into its envelopes (starting a pass, or going on with this control's); an automated control
+        does nothing otherwise. False to edit the setting. */
+    bool record (const std::vector<AutomationTarget>& parameters, const std::vector<float>& values)
+    {
+        auto& player = view.engine.getPlayer();
+        const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session;
+
+        if (auto* w = view.writer; w != nullptr)
+        {
+            if (w->isAutomationPassUnderWay (trackId, parameters.front()))
+            {
+                w->continueAutomationPass (player.getPositionFrames(), values);
+                return true;
+            }
+
+            if (w->isWritingAutomation() && playing)
+            {
+                w->startAutomationPass (trackId, parameters, player.getPositionFrames(), values);
+                return true;
+            }
+        }
+
+        const auto* t = view.engine.session.getState()->findTrack (trackId);
+        return t != nullptr && std::any_of (parameters.begin(), parameters.end(), [t] (auto& p) { return ! t->envelope (p).isEmpty(); });
+    }
+
+    /** The control was let go: its pass, if one is under way, ends. */
+    void finishRecording (AutomationParameter p)
+    {
+        if (view.writer != nullptr && view.writer->isAutomationPassUnderWay (trackId, p))
+            view.writer->finishAutomationPass();
+    }
+
     void edit (const juce::String& description, bool merge, const std::function<void (SessionTrack&)>& change)
     {
         auto next = *view.engine.session.getState();
@@ -591,6 +641,13 @@ float MixerView::getShownLevel (juce::uint32 trackId, int channel) const
 
 int MixerView::getMasterMeterChannels() const   { return master->meter.getChannels(); }
 
+void MixerView::setAutomationWriter (MultitrackView* w)
+{
+    writer = w;
+    shownWriting = writer != nullptr && writer->isWritingAutomation();
+    rebuild();
+}
+
 void MixerView::updateMeters()
 {
     auto& levels = engine.getPlayer().getLevels();
@@ -599,6 +656,13 @@ void MixerView::updateMeters()
     {
         const auto [left, right] = levels.take ((int) i);
         strips[i]->meter.push (left, right);
+    }
+
+    // Writing automation turned on or off: the surround controls come alive, or follow again.
+    if (const auto writing = writer != nullptr && writer->isWritingAutomation(); writing != shownWriting)
+    {
+        shownWriting = writing;
+        rebuild();
     }
 
     // A 5.1 master: its six channels as mixed; otherwise what went to the outputs.

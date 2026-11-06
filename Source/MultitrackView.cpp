@@ -1302,8 +1302,15 @@ void MultitrackView::timerCallback()
             setView ((double) engine.getPlayer().getPositionFrames() - 20.0 * framesPerPixel, framesPerPixel);
 
         // A control held still keeps writing its value as the play position moves on.
-        if (pass.has_value() && ! pass->points.empty())
-            continueAutomationPass (engine.getPlayer().getPositionFrames(), pass->points.back().value);
+        if (pass.has_value())
+        {
+            std::vector<float> held;
+
+            for (auto& points : pass->points)
+                held.push_back (points.back().value);
+
+            continueAutomationPass (engine.getPlayer().getPositionFrames(), held);
+        }
 
         // Automated controls show their envelope's value as it plays.
         controlsFollowPlay = std::any_of (shown().tracks.begin(), shown().tracks.end(),
@@ -1340,14 +1347,25 @@ void MultitrackView::setWritingAutomation (bool on)
 
 void MultitrackView::startAutomationPass (juce::uint32 trackId, const AutomationTarget& p, juce::int64 frame, float value)
 {
+    startAutomationPass (trackId, std::vector<AutomationTarget> { p }, frame, { value });
+}
+
+void MultitrackView::startAutomationPass (juce::uint32 trackId, const std::vector<AutomationTarget>& parameters, juce::int64 frame,
+                                          const std::vector<float>& values)
+{
     finishAutomationPass();
 
     const auto current = engine.session.getState();
 
-    if (current->findTrack (trackId) == nullptr)
+    if (current->findTrack (trackId) == nullptr || parameters.empty() || parameters.size() != values.size())
         return;
 
-    pass = AutomationPass { trackId, p, *current, { { juce::jmax ((juce::int64) 0, frame), value } } };
+    pass = AutomationPass { trackId, parameters, *current, {} };
+
+    for (auto value : values)
+        pass->points.push_back ({ { juce::jmax ((juce::int64) 0, frame), value } });
+
+    const auto& p = parameters.front();
 
     // An effect parameter being written is held off its envelope, and its envelope shown.
     if (p.parameter == AutomationParameter::effect)
@@ -1375,40 +1393,56 @@ void MultitrackView::effectParameterTouched (const TrackEffects::ParameterTouch&
 
 void MultitrackView::continueAutomationPass (juce::int64 frame, float value)
 {
-    if (! pass.has_value())
+    continueAutomationPass (frame, std::vector<float> { value });
+}
+
+void MultitrackView::continueAutomationPass (juce::int64 frame, const std::vector<float>& values)
+{
+    if (! pass.has_value() || values.size() != pass->points.size())
         return;
 
-    auto& points = pass->points;
-
-    if (frame < points.back().frame)
+    if (frame < pass->points.front().back().frame)
     {
         finishAutomationPass();
         return;
     }
 
-    const auto held = points.size() >= 2 && juce::exactlyEqual (points[points.size() - 2].value, points.back().value)
-                      && juce::exactlyEqual (points.back().value, value);
+    auto changed = false;
 
-    if (frame == points.back().frame || held)
+    for (size_t i = 0; i < values.size(); ++i)
     {
-        // The same frame, or a value held still: the last point moves rather than adding one.
-        if (frame == points.back().frame && juce::exactlyEqual (points.back().value, value))
-            return;
+        auto& points = pass->points[i];
+        const auto value = values[i];
+        const auto held = points.size() >= 2 && juce::exactlyEqual (points[points.size() - 2].value, points.back().value)
+                          && juce::exactlyEqual (points.back().value, value);
 
-        points.back() = { frame, value };
-    }
-    else
-    {
-        points.push_back ({ frame, value });
+        if (frame == points.back().frame || held)
+        {
+            // The same frame, or a value held still: the last point moves rather than adding one.
+            if (frame == points.back().frame && juce::exactlyEqual (points.back().value, value))
+                continue;
+
+            points.back() = { frame, value };
+        }
+        else
+        {
+            points.push_back ({ frame, value });
+        }
+
+        changed = true;
     }
 
-    applyAutomationPass (false);
+    if (changed)
+        applyAutomationPass (false);
 }
 
 void MultitrackView::finishAutomationPass()
 {
-    if (pass.has_value() && pass->parameter.parameter == AutomationParameter::effect)
-        engine.setTrackEffectTouched (pass->trackId, pass->parameter.slotId, pass->parameter.parameterId, false);
+    if (pass.has_value() && pass->parameters.front().parameter == AutomationParameter::effect)
+    {
+        const auto& p = pass->parameters.front();
+        engine.setTrackEffectTouched (pass->trackId, p.slotId, p.parameterId, false);
+    }
 
     pass.reset();
 }
@@ -1417,12 +1451,15 @@ void MultitrackView::applyAutomationPass (bool first)
 {
     auto next = pass->base;
     const auto returnFrames = (juce::int64) std::llround (returnSeconds * next.sampleRate);
-    SessionEdits::writeAutomation (next, pass->trackId, pass->parameter, pass->points, returnFrames);
+
+    for (size_t i = 0; i < pass->parameters.size(); ++i)
+        SessionEdits::writeAutomation (next, pass->trackId, pass->parameters[i], pass->points[i], returnFrames);
 
     // The first write is a step of its own; the rest of the pass merges into it.
-    const auto kind = pass->parameter.parameter;
+    const auto kind = pass->parameters.front().parameter;
     engine.session.apply (std::move (next), kind == AutomationParameter::volume ? "Write Volume Automation"
-                                          : kind == AutomationParameter::pan ? "Write Pan Automation" : "Write Effect Automation", ! first);
+                                          : kind == AutomationParameter::pan ? "Write Pan Automation"
+                                          : kind == AutomationParameter::effect ? "Write Effect Automation" : "Write Surround Automation", ! first);
 }
 
 void MultitrackView::rebuildHeaders()

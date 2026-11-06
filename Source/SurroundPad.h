@@ -19,6 +19,9 @@ public:
         and true for the moves after it, so a drag can be one undo step. */
     std::function<void (const SurroundPan&, bool dragging)> onChange;
 
+    /** Called when the mouse is let go, ending a click or drag. */
+    std::function<void()> onRelease;
+
     /** Where a pan point is in the pad's square, and back (kept inside the room). */
     static juce::Point<float> toPad (float x, float y, juce::Rectangle<float> square) noexcept;
     static juce::Point<float> fromPad (juce::Point<float>, juce::Rectangle<float> square) noexcept;
@@ -29,6 +32,7 @@ public:
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
 
 private:

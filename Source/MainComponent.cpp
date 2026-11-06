@@ -8736,7 +8736,11 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
         made = std::move (panel);
     }
     else if (id == Panels::mixer)
-        made = std::make_unique<MixerView> (engine);
+    {
+        auto mixer = std::make_unique<MixerView> (engine);
+        mixer->setAutomationWriter (&multitrack);
+        made = std::move (mixer);
+    }
     else if (id == Panels::clipProperties)
         made = std::make_unique<ClipProperties> (engine, selectedClip);
     else if (id == Panels::clipList)
