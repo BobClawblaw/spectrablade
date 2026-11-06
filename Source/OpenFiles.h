@@ -28,6 +28,10 @@ public:
 
     /** An open file's document: the engine's for the one in the editor. */
     const AudioDocument& documentAt (int index) const;
+    AudioDocument& documentAt (int index);
+
+    /** Where the editor was in a file kept aside (for the one shown, ask the editor). */
+    const FilePlace& placeAt (int index) const          { return entries[(size_t) index].place; }
 
     /** The name shown for a file: its file name, or "Untitled" for one never saved. */
     juce::String nameAt (int index) const;
@@ -48,6 +52,9 @@ public:
         neighbour below, or above at the end, and returns its place; closing the last one leaves an
         empty document. */
     std::optional<FilePlace> close (int index);
+
+    /** Closes every file, changes and all (ask about them first), leaving an empty document. */
+    void closeAll();
 
     /** The open files with unsaved changes, by index. */
     juce::Array<int> unsaved() const;

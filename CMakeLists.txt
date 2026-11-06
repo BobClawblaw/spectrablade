@@ -62,7 +62,7 @@ juce_add_gui_app(SpectraBlade
     HARDENED_RUNTIME_OPTIONS     com.apple.security.cs.disable-library-validation
                                  com.apple.security.device.audio-input
     # Finder's Open With and double-clicks: the audio types AudioFileIO::openedFromFinder names, and sessions.
-    DOCUMENT_EXTENSIONS          wav aif aiff aifc flac ogg mp3 m4a caf sbsession
+    DOCUMENT_EXTENSIONS          wav aif aiff aifc flac ogg mp3 m4a caf sbsession sbproject
     NEEDS_WEB_BROWSER            FALSE
     NEEDS_CURL                   FALSE)
 
@@ -78,6 +78,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Sequences.cpp
     Source/Surround.cpp
     Source/Video.cpp
+    Source/Project.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
@@ -200,6 +201,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SequencesTests.cpp
     Tests/SurroundTests.cpp
     Tests/VideoTests.cpp
+    Tests/ProjectTests.cpp
     Tests/AutomationTests.cpp
     Tests/MultitrackViewTests.cpp
     Tests/MixDownTests.cpp
@@ -231,6 +233,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Sequences.cpp
     Source/Surround.cpp
     Source/Video.cpp
+    Source/Project.cpp
     Source/AudioFileIO.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp

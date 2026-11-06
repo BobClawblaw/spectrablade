@@ -1153,10 +1153,19 @@ void WaveformView::scrollBarMoved (juce::ScrollBar*, double newRangeStart)
 }
 
 //==============================================================================
+namespace
+{
+    /** Audio, or a session or project (which take the place of what is open). */
+    bool opensOnDrop (const juce::File& f, juce::AudioFormatManager& formats)
+    {
+        return formats.findFormatForFileExtension (f.getFileExtension()) != nullptr || f.hasFileExtension ("sbsession;sbproject");
+    }
+}
+
 bool WaveformView::isInterestedInFileDrag (const juce::StringArray& files)
 {
     for (auto& path : files)
-        if (engine.formatManager.findFormatForFileExtension (juce::File (path).getFileExtension()) != nullptr)
+        if (opensOnDrop (juce::File (path), engine.formatManager))
             return true;
 
     return false;
@@ -1167,7 +1176,7 @@ void WaveformView::filesDropped (const juce::StringArray& files, int, int)
     juce::Array<juce::File> audio;
 
     for (auto& path : files)
-        if (engine.formatManager.findFormatForFileExtension (juce::File (path).getFileExtension()) != nullptr)
+        if (opensOnDrop (juce::File (path), engine.formatManager))
             audio.add (juce::File (path));
 
     if (onFilesDropped != nullptr && ! audio.isEmpty())

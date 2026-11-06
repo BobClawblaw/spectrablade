@@ -29,6 +29,7 @@
 #include "Analysis.h"
 #include "Surround.h"
 #include "Video.h"
+#include "Project.h"
 
 namespace
 {
@@ -134,7 +135,7 @@ namespace
         cmdMaximizeEditor, cmdResetVerticalZoom, cmdPreviousEdge, cmdNextEdge, cmdRepeatLast, cmdRemoveHum, cmdDeclip, cmdGenerateTone, cmdGenerateNoise,
         cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdSpectralHeal, cmdExportLossy, cmdShowFileTabs, cmdExportFfmpeg, cmdFileInfo, cmdBatchProcess, cmdRecordSequence, cmdPlaySequence,
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
-        cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo
+        cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1179,7 +1180,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSaveIntoVideo; ++id)
+    for (int id = cmdOpen; id <= cmdSaveProjectAs; ++id)
         ids.add (id);
 }
 
@@ -1471,6 +1472,13 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             break;
         case cmdSaveChannels: info.setInfo ("Save Channels as Mono Files...", "Write each channel to a mono WAV file of its own (5.1: L, R, C, LFE, Ls, Rs)", "File", 0);
                               info.setActive (hasAudio && doc.getNumChannels() > 1 && backgroundJob == nullptr); break;
+        case cmdOpenProject: info.setInfo ("Open Project...", "Open a project: its files with where you were in each, the effects rack and the session", "File", 0);
+                             info.setActive (backgroundJob == nullptr); break;
+        case cmdSaveProject: info.setInfo ("Save Project", "Save everything open as a project: the files, where you are in each, the effects rack and the session", "File", 0);
+                             if (projectFile != juce::File()) info.shortName = "Save Project (" + projectFile.getFileNameWithoutExtension() + ")";
+                             info.setActive (backgroundJob == nullptr); break;
+        case cmdSaveProjectAs: info.setInfo ("Save Project As...", "Save everything open as a new project", "File", 0);
+                               info.setActive (backgroundJob == nullptr); break;
         case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's video, following the playhead", "Window", 0);
                            info.setTicked (dock->isShown (Panels::video)); break;
         case cmdAttachVideo: info.setInfo ("Attach Video...", "Choose the video this file's sound goes with, to watch in the Video panel and to put the sound back into", "File", 0);
@@ -2245,6 +2253,9 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveChannels: saveChannels(); break;
         case cmdNewFromChannels: newFileFromChannels(); break;
         case cmdShowVideo: dock->toggle (Panels::video); break;
+        case cmdOpenProject: chooseProject(); break;
+        case cmdSaveProject: saveProject (false); break;
+        case cmdSaveProjectAs: saveProject (true); break;
         case cmdAttachVideo: attachVideo(); break;
         case cmdSaveIntoVideo: saveIntoVideo(); break;
         case cmdBoxTool:    waveform.setSpectralTool (WaveformView::SpectralTool::box); commands.commandStatusChanged(); break;
@@ -2343,7 +2354,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2586,7 +2597,7 @@ void MainComponent::refreshTitle()
                            juce::dontSendNotification);
 
         if (onTitleChanged != nullptr)
-            onTitleChanged ((session.isDirty() ? "* " : "") + name + " - SpectraBlade");
+            onTitleChanged ((session.isDirty() ? "* " : "") + name + projectSuffix() + " - SpectraBlade");
 
         return;
     }
@@ -2606,7 +2617,7 @@ void MainComponent::refreshTitle()
                            juce::dontSendNotification);
 
     if (onTitleChanged != nullptr)
-        onTitleChanged ((doc.isDirty() ? "* " : "") + name + " - SpectraBlade");
+        onTitleChanged ((doc.isDirty() ? "* " : "") + name + projectSuffix() + " - SpectraBlade");
 }
 
 void MainComponent::refreshOutputChoices()
@@ -3817,6 +3828,8 @@ void MainComponent::openDocument (const juce::File& file)
 
     if (file.hasFileExtension ("sbsession"))
         confirmDiscardSession ([this, file] { openSession (file); });
+    else if (file.hasFileExtension (Project::extension))
+        openProject (file);
     else
         openFile (file);
 }
@@ -3830,9 +3843,9 @@ void MainComponent::openDocuments (const juce::Array<juce::File>& chosen)
         if (! file.existsAsFile())
             continue;
 
-        if (file.hasFileExtension ("sbsession"))
+        if (file.hasFileExtension ("sbsession") || file.hasFileExtension (Project::extension))
         {
-            openDocument (file);   // a session takes the place of the rest
+            openDocument (file);   // a session or project takes the place of the rest
             return;
         }
 
@@ -4059,6 +4072,8 @@ void MainComponent::menuItemSelected (int menuItemId, int)
         showError ("Can't open", file.getFullPathName() + " is no longer there.");
     else if (RecentFiles::isSession (file))
         confirmDiscardSession ([this, file] { openSession (file); });
+    else if (file.hasFileExtension (Project::extension))
+        openProject (file);
     else
         openFile (file);
 }
@@ -5008,6 +5023,173 @@ void MainComponent::playSequence (const Sequences::Sequence& sequence)
 
             if (! result->notes.isEmpty())
                 showNote ("Play Sequence", result->notes.joinIntoString ("\n"));
+        });
+    backgroundJob->launchThread();
+    commands.commandStatusChanged();
+}
+
+juce::String MainComponent::projectSuffix() const
+{
+    return projectFile != juce::File() ? " (" + projectFile.getFileNameWithoutExtension() + ")" : juce::String();
+}
+
+void MainComponent::chooseProject()
+{
+    const auto start = projectFile != juce::File() ? projectFile.getParentDirectory() : engine.document.getFile().getParentDirectory();
+    chooser = std::make_unique<juce::FileChooser> ("Open Project", start, juce::String ("*.") + Project::extension);
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              if (fc.getResult().existsAsFile())
+                                  openProject (fc.getResult());
+                          });
+}
+
+void MainComponent::openProject (const juce::File& file)
+{
+    if (isRecording() || backgroundJob != nullptr)
+        return;
+
+    if (const auto loaded = Project::load (file); loaded.error.isNotEmpty())
+    {
+        showError ("Can't open project", file.getFullPathName() + "\n\n" + loaded.error);
+        return;
+    }
+
+    // Everything open is replaced: changes are asked about first.
+    confirmAllFiles ([this, file] { confirmDiscardSession ([this, file] { restoreProject (file); }); });
+}
+
+void MainComponent::restoreProject (const juce::File& file)
+{
+    auto loaded = Project::load (file);
+
+    if (loaded.error.isNotEmpty())
+    {
+        showError ("Can't open project", file.getFullPathName() + "\n\n" + loaded.error);
+        return;
+    }
+
+    stopPreview();
+    engine.getPlayer().pause();
+    const auto restored = Project::restoreFiles (loaded.state, openFiles, engine);
+    waveform.setPlace (restored.place);
+
+    if (loaded.state.session != juce::File())
+    {
+        openSession (loaded.state.session);
+    }
+    else
+    {
+        // No session in the project: an empty one, as New Session leaves.
+        SessionState empty;
+        empty.sampleRate = engine.deviceManager.getCurrentAudioDevice() != nullptr
+                               ? engine.deviceManager.getCurrentAudioDevice()->getCurrentSampleRate()
+                               : engine.session.getSampleRate();
+        engine.clearTrackEffects();
+        engine.session.reset (std::move (empty), {});
+        multitrack.setCursor (0);
+    }
+
+    setMultitrack (loaded.state.multitrack);
+    engine.clearRack();
+
+    if (loaded.state.rack != nullptr)
+        engine.loadRackXml (*loaded.state.rack, [] (const juce::String& errors)
+        {
+            if (errors.isNotEmpty())
+                showError ("Some rack effects did not load", errors);
+        });
+
+    projectFile = file;
+    noteRecent (file);
+    refreshTitle();
+    commands.commandStatusChanged();
+
+    auto missing = loaded.missing;
+    missing.addArray (restored.missing);
+
+    if (! missing.isEmpty())
+        showError ("Missing from the project", "These could not be opened, so they were left out:\n\n" + missing.joinIntoString ("\n"));
+}
+
+void MainComponent::saveProject (bool chooseFile)
+{
+    if (isRecording() || backgroundJob != nullptr)
+        return;
+
+    if (! chooseFile && projectFile != juce::File())
+    {
+        writeProject (projectFile);
+        return;
+    }
+
+    const auto& doc = engine.document;
+    const auto suggested = projectFile != juce::File() ? projectFile
+                         : (doc.getFile() != juce::File() ? doc.getFile().withFileExtension (Project::extension)
+                                                          : juce::File::getSpecialLocation (juce::File::userMusicDirectory)
+                                                                .getChildFile (juce::String ("Untitled.") + Project::extension));
+    chooser = std::make_unique<juce::FileChooser> ("Save Project", suggested, juce::String ("*.") + Project::extension);
+    chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::warnAboutOverwriting,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              if (fc.getResult() != juce::File())
+                                  writeProject (fc.getResult().withFileExtension (Project::extension));
+                          });
+}
+
+void MainComponent::writeProject (const juce::File& project)
+{
+    if (backgroundJob != nullptr)
+        return;
+
+    const auto copies = Project::copiesNeeded (openFiles, project);
+
+    const auto finish = [this, project, copies]
+    {
+        Project::adoptCopies (openFiles, copies);
+        const auto [session, sessionError] = Project::saveSession (engine, project);
+
+        if (sessionError.isNotEmpty())
+        {
+            showError ("Save Project", "The session could not be saved: " + sessionError);
+            return;
+        }
+
+        const auto state = Project::gather (openFiles, waveform.getPlace(), engine, multitrackMode, session);
+
+        if (const auto error = Project::save (state, project); error.isNotEmpty())
+        {
+            showError ("Save Project", error);
+            return;
+        }
+
+        projectFile = project;
+        noteRecent (project);
+        refreshTitle();
+        commands.commandStatusChanged();
+    };
+
+    if (copies.empty())
+    {
+        finish();
+        return;
+    }
+
+    auto error = std::make_shared<juce::String>();
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Saving project...",
+        [this, copies, error] (const std::function<bool (float)>& progress)
+        {
+            *error = Project::writeCopies (copies, engine.formatManager, progress);
+            return *error != "Stopped.";
+        },
+        [error, finish]
+        {
+            if (error->isNotEmpty())
+                showError ("Save Project", *error);
+            else
+                finish();
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();

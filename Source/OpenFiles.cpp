@@ -18,6 +18,20 @@ const AudioDocument& OpenFiles::documentAt (int index) const
     return index == active ? engine.document : *entries[(size_t) index].aside;
 }
 
+AudioDocument& OpenFiles::documentAt (int index)
+{
+    jassert (juce::isPositiveAndBelow (index, size()));
+    return index == active ? engine.document : *entries[(size_t) index].aside;
+}
+
+void OpenFiles::closeAll()
+{
+    while (size() > 1)
+        close (active == size() - 1 ? 0 : size() - 1);
+
+    close (0);
+}
+
 juce::String OpenFiles::nameAt (int index) const
 {
     const auto file = documentAt (index).getFile();

@@ -188,6 +188,12 @@ private:
     void attachVideo();
     void saveIntoVideo();
     void showVideoPanel();
+    void chooseProject();
+    void openProject (const juce::File&);
+    void restoreProject (const juce::File&);
+    void saveProject (bool chooseFile);
+    void writeProject (const juce::File&);
+    juce::String projectSuffix() const;
     void combineLoaded (const juce::Array<juce::File>&, const std::vector<AudioFileIO::Loaded>&);
     int sequencePosition = 0, sequenceResetCount = 0;      // where the document was after the last recorded step
     void showFileInfo();
@@ -508,6 +514,7 @@ private:
     int lastRepeatable = 0;   // the last command from the Effects menu, for Repeat
     std::unique_ptr<EditorBar> editorBar;   // made once the commands are registered
     std::unique_ptr<EditorPanel> editorPanel;
+    juce::File projectFile;   // the project last opened or saved (Save Project writes it)
     std::map<juce::String, std::unique_ptr<juce::Component>> madePanels;   // the panels made when shown
     std::unique_ptr<Dock::Workspaces> workspaces;
     std::unique_ptr<Dock::Area> dock;   // last, so it lets go of the panels before they go
