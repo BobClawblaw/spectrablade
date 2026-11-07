@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.13.0: a Sound Library, a Pitch Editor, 7.1, surround effects, delivery specs and scrubbing**
+- `SpectraBlade-0.13.0.dmg` on the repository's Releases page, with its SHA-256: Milestones 248 to 286 below on top of 0.12.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (1321 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.13.0, holds both architectures, and carries a licence identical to `LICENSE` and LAME's licence. The image's app was not launched; the same code, signed for development, was launched for each milestone. The app's Intel half was not launched, and no Intel Mac was tried. The parts of each milestone not tried by hand are listed with it below.
+
 **Milestone 286: File names give categories only as UCS writes them**
 - Fixed: a file name gave a UCS category whenever it started with a CatID and an underscore in any case, so ordinary names were filed under categories they don't belong to: "Wind_Chimes" and "Wind_Up_Toy" under WIND, "beep_n_glitch" and "Beep_TargetLock" under BEEPS, names starting "test_" under TEST. A name now gives a category only when its CatID is in its own case, as UCS names are written (DOORWood_..., WIND_...). In one large library's file list, 3,181 of the 15,339 names that gave a category gave it only that way, all ordinary names (BEEP 2,463, WIND 289, RAIN 217, and others). A category in a file's iXML is still matched in any case, since it is given as a CatID.
 - An index from before is brought up to date when it opens: the sounds whose names gave a category only ignoring case lose it, and are no longer found by its words; a category set by hand stays; and those files are read again on the next scan, so a category in their iXML is found.
@@ -231,8 +239,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - In the editor only: a multitrack session isn't scrubbed yet.
 - ROADMAP.md lists what comes next again.
 - Measured by the tests, on a 440 Hz tone at 48 kHz: dragged at normal speed it plays at 440.0 Hz and its own level (-0.00 dB), twice as fast at 880.0 Hz, backwards at 440.0 Hz, the sound 47 ms behind the mouse; silent where it starts until the mouse moves, and held still the head catches up and the sound is below -100 dBFS half a second later; a jump 20 s ahead is followed at 3.96 times normal speed over the first second; rendered in blocks of 64 and of 1000 frames the sound is the same bit for bit; let go, it is below -100 dBFS from 50 ms on; a 44.1 kHz file on a 48 kHz device plays at 440.0 Hz; a mono file is the same on both sides; past the end of the file there is silence. The whole suite passed (1177 checks). The drag in the app itself, and how it sounds, were not tried: the tests drive the scrubber the player runs, not the mouse.
-
-## Released
 
 **Release 0.12.0: stretch and pitch in files, reverb reduction, a speech leveller and video in sessions**
 - `SpectraBlade-0.12.0.dmg` on the repository's Releases page, with its SHA-256: Milestones 244 to 247 below on top of 0.11.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
