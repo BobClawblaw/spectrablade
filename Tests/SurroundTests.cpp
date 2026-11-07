@@ -89,8 +89,101 @@ namespace
     }
 }
 
+namespace
+{
+    /** 7.1: eight channels named, folded down, saved, put together and played like 5.1's six. */
+    void testSevenOne (AudioEngine& engine)
+    {
+        const auto frames = 30000;
+        juce::Random r (8);
+        juce::AudioBuffer<float> source (8, frames);
+
+        for (int ch = 0; ch < 8; ++ch)
+            for (int i = 0; i < frames; ++i)
+                source.setSample (ch, i, 0.1f * (float) std::sin (0.013 * (ch + 1) * i) + 0.02f * (r.nextFloat() - 0.5f) + 0.01f * (float) ch);
+
+        const auto sevenOne = AudioEdits::fromBuffer (juce::AudioBuffer<float> (source));
+
+        // Each side: its front, the centre, and its rear and side surrounds, all three at -3 dB; no LFE.
+        juce::AudioBuffer<float> folded (2, frames);
+
+        for (int i = 0; i < frames; ++i)
+        {
+            const auto c = 0.70710678f * source.getSample (2, i);
+            folded.setSample (0, i, source.getSample (0, i) + c + 0.70710678f * source.getSample (4, i) + 0.70710678f * source.getSample (6, i));
+            folded.setSample (1, i, source.getSample (1, i) + c + 0.70710678f * source.getSample (5, i) + 0.70710678f * source.getSample (7, i));
+        }
+
+        juce::StringArray names;
+
+        for (int ch = 0; ch < 8; ++ch)
+            names.add (Surround::channelName (8, ch));
+
+        const auto stereo = readAll (*AudioEdits::convertChannels (*sevenOne, 2));
+        const auto mono = readAll (*AudioEdits::convertChannels (*sevenOne, 1));
+        auto monoOk = mono.getNumChannels() == 1;
+
+        for (int i = 0; monoOk && i < frames; ++i)
+            monoOk = mono.getSample (0, i) == 0.5f * folded.getSample (0, i) + 0.5f * folded.getSample (1, i);
+
+        check (names.joinIntoString (" ") == "L R C LFE Lrs Rrs Lss Rss" && Surround::channelFileName ("Mix", 8, 6) == "Mix Lss"
+                   && Surround::isSurround (8) && ! Surround::isSurround (7)
+                   && stereo.getNumChannels() == 2 && sameChannel (stereo, 0, folded, 0, frames) && sameChannel (stereo, 1, folded, 1, frames) && monoOk,
+               "7.1: channels are named L R C LFE Lrs Rrs Lss Rss; made stereo it is each side plus the centre and its rear and side "
+               "surrounds at -3 dB, LFE left out, and made mono the average of the two sides, bit for bit");
+
+        // Saved as WAV with the 7.1 speakers and read back; eight named mono files go in 7.1 order.
+        auto dir = juce::File::createTempFile ("seven");
+        dir.createDirectory();
+        const auto file = dir.getChildFile ("Film.wav");
+        AudioFileIO::save (*sevenOne, 48000.0, file, 32, engine.formatManager);
+        const auto layout = wavLayout (file);
+        const auto back = AudioFileIO::load (file, engine.formatManager);
+        dir.deleteRecursively();
+
+        juce::Array<juce::File> shuffled;
+
+        for (auto n : { "Mix Rss.wav", "Mix_LFE.wav", "Mix L.wav", "Mix-c.wav", "Mix.lrs.wav", "Mix R.wav", "Mix LSS.wav", "Mix Rrs.wav" })
+            shuffled.add (juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (n));
+
+        juce::StringArray order;
+
+        for (auto& f : Surround::orderForCombining (shuffled))
+            order.add (f.getFileName());
+
+        check (layout.first == 0xfffe && layout.second == 0x63f && back.snapshot != nullptr && identical (*back.snapshot, *sevenOne)
+                   && order.joinIntoString (",") == "Mix L.wav,Mix R.wav,Mix-c.wav,Mix_LFE.wav,Mix.lrs.wav,Mix Rrs.wav,Mix LSS.wav,Mix Rss.wav",
+               "7.1: a 7.1 WAV is written with speaker mask 0x" + juce::String::toHexString ((int) layout.second) + " (front left, right, "
+               "centre, LFE, back left, right, side left, right: the order of its channels) and reads back bit for bit; eight files "
+               "named ... L, R, C, LFE, Lrs, Rrs, Lss, Rss go in 7.1 order, whatever their order and case");
+
+        // Played folded down on the mix, or with its six channels past L and R on the next player channels.
+        AudioDocument doc;
+        doc.reset (sevenOne, 48000.0, {}, 32);
+        DocumentSource src (doc);
+        src.prepareToPlay (512, 48000.0);
+        juce::AudioBuffer<float> two (2, frames);
+        src.setNextReadPosition (0);
+        src.getNextAudioBlock ({ &two, 0, frames });
+        juce::AudioBuffer<float> wide (36, frames);
+        src.setSeparateOutputs (4);
+        src.setNextReadPosition (0);
+        src.getNextAudioBlock ({ &wide, 0, frames });
+        auto routed = sameChannel (wide, 0, source, 0, frames) && sameChannel (wide, 1, source, 1, frames);
+
+        for (int ch = 2; ch < 8; ++ch)
+            routed = routed && sameChannel (wide, 2 + ch, source, ch, frames);
+
+        check (sameChannel (two, 0, folded, 0, frames) && sameChannel (two, 1, folded, 1, frames) && routed,
+               "7.1: a 7.1 file plays folded down on the mix, bit for bit, or as L and R on the mix and the other six channels on the next "
+               "six player channels");
+    }
+}
+
 void runSurroundTests (AudioEngine& engine)
 {
+    testSevenOne (engine);
+
     const auto frames = 40000;
     const auto source = fiveOneBuffer (frames, 3);
     const auto fiveOne = AudioEdits::fromBuffer (juce::AudioBuffer<float> (source));

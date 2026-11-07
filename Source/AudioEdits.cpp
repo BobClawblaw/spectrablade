@@ -88,11 +88,11 @@ juce::AudioBuffer<float> matchChannels (const juce::AudioBuffer<float>& source, 
     juce::AudioBuffer<float> out (numChannels, source.getNumSamples());
     out.clear();
 
-    // 5.1 to stereo or mono: folded down (mono is the average of the two sides).
-    if (srcChannels == Surround::fiveOneChannels && numChannels <= 2)
+    // 5.1 or 7.1 to stereo or mono: folded down (mono is the average of the two sides).
+    if (Surround::isSurround (srcChannels) && numChannels <= 2)
     {
         juce::AudioBuffer<float> sides (2, source.getNumSamples());
-        Surround::foldDown (source.getArrayOfReadPointers(), sides.getWritePointer (0), sides.getWritePointer (1), source.getNumSamples());
+        Surround::foldDown (source.getArrayOfReadPointers(), srcChannels, sides.getWritePointer (0), sides.getWritePointer (1), source.getNumSamples());
 
         if (numChannels == 2)
             return sides;

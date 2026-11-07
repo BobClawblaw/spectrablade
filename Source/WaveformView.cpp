@@ -524,7 +524,7 @@ void WaveformView::paint (juce::Graphics& g)
     g.drawImageAt (waveformImage, area.getX(), area.getY());
     drawMarkers (g);
 
-    // Which channel each lane is, past mono (L R, or L R C LFE Ls Rs for 5.1), at its bottom left,
+    // Which channel each lane is, past mono (L R, L R C LFE Ls Rs for 5.1, or L R C LFE Lrs Rrs Lss Rss for 7.1), at its bottom left,
     // clear of the fade handles in the top corners.
     if (const auto channels = engine.document.getNumChannels(); channels > 1)
     {

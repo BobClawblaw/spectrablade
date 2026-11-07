@@ -1,4 +1,5 @@
 #include "AudioFileIO.h"
+#include "Surround.h"
 #include "AudioEdits.h"
 #include "Ffmpeg.h"
 
@@ -125,6 +126,13 @@ juce::String save (const AudioSnapshot& snapshot, double sampleRate, const juce:
                            .withBitsPerSample (bitDepth)
                            .withSampleFormat (isFloat ? juce::AudioFormatWriterOptions::SampleFormat::floatingPoint
                                                       : juce::AudioFormatWriterOptions::SampleFormat::integral);
+
+        // Eight channels are 7.1 (Surround): said so, or WAV would call two of them front centre-left and centre-right.
+        if (snapshot.getNumChannels() == Surround::sevenOneChannels && format->getFormatName().containsIgnoreCase ("WAV"))
+            options = options.withChannelLayout (juce::AudioChannelSet::channelSetWithChannels ({
+                juce::AudioChannelSet::left, juce::AudioChannelSet::right, juce::AudioChannelSet::centre, juce::AudioChannelSet::LFE,
+                juce::AudioChannelSet::leftSurround, juce::AudioChannelSet::rightSurround,                // back left and right (Lrs Rrs)
+                juce::AudioChannelSet::leftSurroundSide, juce::AudioChannelSet::rightSurroundSide }));   // side left and right (Lss Rss)
 
         if (canStoreMarkers (target))
         {

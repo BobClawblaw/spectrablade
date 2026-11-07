@@ -1363,10 +1363,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (hasAudio); break;
         case cmdMixToMono:  info.setInfo ("Mix to Mono", "Average the channels into one", "Effects", 0);
                             info.setActive (hasAudio && doc.getNumChannels() > 1); break;
-        case cmdMakeStereo: info.setInfo ("Make Stereo", "Copy the one channel to left and right, or fold 5.1 down to stereo", "Effects", 0);
-                            if (hasAudio && doc.getNumChannels() == Surround::fiveOneChannels)
+        case cmdMakeStereo: info.setInfo ("Make Stereo", "Copy the one channel to left and right, or fold 5.1 or 7.1 down to stereo", "Effects", 0);
+                            if (hasAudio && Surround::isSurround (doc.getNumChannels()))
                                 info.shortName = "Fold Down to Stereo";
-                            info.setActive (hasAudio && (doc.getNumChannels() == 1 || doc.getNumChannels() == Surround::fiveOneChannels)); break;
+                            info.setActive (hasAudio && (doc.getNumChannels() == 1 || Surround::isSurround (doc.getNumChannels()))); break;
         case cmdTrimSilence: info.setInfo ("Trim Silence...", "Remove what is below a level from the start and end of the file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdGenerateTone: info.setInfo ("Generate Tone...", "Put a tone or sweep in at the cursor, or the start of the selection", "Effects", 0);
@@ -1482,16 +1482,16 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setTicked (sequenceRecorder.isRecording());
             break;
         case cmdSurroundFoldDown:
-            info.setInfo ("Play Surround Folded Down", "Play a 5.1 file folded down to stereo on the output pair (centre and surrounds at -3 dB, "
+            info.setInfo ("Play Surround Folded Down", "Play a 5.1 or 7.1 file folded down to stereo on the output pair (centre and surrounds at -3 dB, "
                                                        "LFE left out), and a session's 5.1 master likewise; other files past stereo play their first two channels", "Transport", 0);
             info.setTicked (! engine.getSurroundOutputs());
             break;
         case cmdSurroundOutputs:
             info.setInfo ("Play Surround to Separate Outputs", "Play a file's first two channels on the output pair and the rest on the outputs "
-                                                               "after it, one each (5.1: C, LFE, Ls, Rs), up to 8 channels; a session's 5.1 master likewise", "Transport", 0);
+                                                               "after it, one each (5.1: C, LFE, Ls, Rs; 7.1: C, LFE, Lrs, Rrs, Lss, Rss), up to 8 channels; a session's 5.1 master likewise", "Transport", 0);
             info.setTicked (engine.getSurroundOutputs());
             break;
-        case cmdSaveChannels: info.setInfo ("Save Channels as Mono Files...", "Write each channel to a mono WAV file of its own (5.1: L, R, C, LFE, Ls, Rs)", "File", 0);
+        case cmdSaveChannels: info.setInfo ("Save Channels as Mono Files...", "Write each channel to a mono WAV file of its own (5.1: L, R, C, LFE, Ls, Rs; 7.1: L, R, C, LFE, Lrs, Rrs, Lss, Rss)", "File", 0);
                               info.setActive (hasAudio && doc.getNumChannels() > 1 && backgroundJob == nullptr); break;
         case cmdOpenProject: info.setInfo ("Open Project...", "Open a project: its files with where you were in each, the effects rack and the session", "File", 0);
                              info.setActive (backgroundJob == nullptr); break;
@@ -1514,7 +1514,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (false); break;   // a session's
         case cmdDetachVideo: info.setInfo ("Detach Video", "Stop showing a video with the file or session", "File", 0);
                              info.setActive (doc.getVideo() != juce::File()); break;
-        case cmdNewFromChannels: info.setInfo ("New File from Mono Files...", "Put several files' channels side by side as one file, such as six mono files as 5.1", "File", 0);
+        case cmdNewFromChannels: info.setInfo ("New File from Mono Files...", "Put several files' channels side by side as one file, such as six mono files as 5.1 or eight as 7.1", "File", 0);
                                  info.setActive (backgroundJob == nullptr); break;
         case cmdPlaySequence: info.setInfo ("Play Sequence...", "Play a recorded sequence on the selection, or the whole file", "Sequences", 0);
                               info.setActive (hasAudio && backgroundJob == nullptr); break;
@@ -5980,7 +5980,7 @@ void MainComponent::newFileFromChannels()
         if (files.size() < 2)
         {
             showError ("New File from Mono Files", "Choose two or more files: their channels go side by side, in name order "
-                                                   "(or 5.1 order, for six named ... L, R, C, LFE, Ls and Rs).");
+                                                   "(or 5.1 order, for six named ... L, R, C, LFE, Ls and Rs, or 7.1 order, for eight named ... L, R, C, LFE, Lrs, Rrs, Lss and Rss).");
             return;
         }
 

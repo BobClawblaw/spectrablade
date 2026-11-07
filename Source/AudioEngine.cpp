@@ -97,9 +97,9 @@ void DocumentSource::readWide (juce::AudioBuffer<float>& buffer, int destStart, 
 
         snapshot->read (wide, 0, start + done, n);
 
-        if (first < 0 && snapshot->getNumChannels() == Surround::fiveOneChannels && buffer.getNumChannels() >= 2)
+        if (first < 0 && Surround::isSurround (snapshot->getNumChannels()) && buffer.getNumChannels() >= 2)
         {
-            Surround::foldDown (wide.getArrayOfReadPointers(), buffer.getWritePointer (0, at), buffer.getWritePointer (1, at), n);
+            Surround::foldDown (wide.getArrayOfReadPointers(), snapshot->getNumChannels(), buffer.getWritePointer (0, at), buffer.getWritePointer (1, at), n);
         }
         else
         {

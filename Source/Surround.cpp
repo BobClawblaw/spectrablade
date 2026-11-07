@@ -13,6 +13,9 @@ juce::String channelName (int numChannels, int channel)
     if (numChannels == fiveOneChannels && juce::isPositiveAndBelow (channel, fiveOneChannels))
         return juce::StringArray { "L", "R", "C", "LFE", "Ls", "Rs" }[channel];
 
+    if (numChannels == sevenOneChannels && juce::isPositiveAndBelow (channel, sevenOneChannels))
+        return juce::StringArray { "L", "R", "C", "LFE", "Lrs", "Rrs", "Lss", "Rss" }[channel];
+
     return juce::String (channel + 1);
 }
 
@@ -28,9 +31,35 @@ void foldDown (const float* const* in, float* left, float* right, int numFrames)
     }
 }
 
+void foldDown (const float* const* in, int numChannels, float* left, float* right, int numFrames)
+{
+    if (numChannels != sevenOneChannels)
+    {
+        foldDown (in, left, right, numFrames);
+        return;
+    }
+
+    for (int i = 0; i < numFrames; ++i)
+    {
+        const auto centre = foldGain * in[2][i];
+        left[i] = in[0][i] + centre + foldGain * in[4][i] + foldGain * in[6][i];
+        right[i] = in[1][i] + centre + foldGain * in[5][i] + foldGain * in[7][i];
+    }
+}
+
 juce::Array<juce::File> orderForCombining (juce::Array<juce::File> files)
 {
-    const juce::StringArray names { "l", "r", "c", "lfe", "ls", "rs" };
+    const auto layout = [] (int count) -> juce::StringArray
+    {
+        if (count == fiveOneChannels)
+            return { "l", "r", "c", "lfe", "ls", "rs" };
+
+        if (count == sevenOneChannels)
+            return { "l", "r", "c", "lfe", "lrs", "rrs", "lss", "rss" };
+
+        return {};
+    };
+    const auto names = layout (files.size());
     std::vector<std::pair<int, juce::File>> placed;
 
     for (auto& f : files)
@@ -41,12 +70,12 @@ juce::Array<juce::File> orderForCombining (juce::Array<juce::File> files)
     }
 
     std::sort (placed.begin(), placed.end(), [] (auto& a, auto& b) { return a.first < b.first; });
-    auto fiveOne = placed.size() == (size_t) fiveOneChannels;
+    auto named = ! names.isEmpty();
 
-    for (size_t i = 0; fiveOne && i < placed.size(); ++i)
-        fiveOne = placed[i].first == (int) i;
+    for (size_t i = 0; named && i < placed.size(); ++i)
+        named = placed[i].first == (int) i;
 
-    if (fiveOne)
+    if (named)
     {
         juce::Array<juce::File> ordered;
 

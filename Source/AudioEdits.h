@@ -246,7 +246,7 @@ namespace AudioEdits
         silence). Nullptr when there are none, or one has no channels. */
     Snapshot combineChannels (const std::vector<const AudioSnapshot*>& parts);
 
-    /** Fits a buffer to a channel count: mono is copied to every channel; 5.1 is folded down to
+    /** Fits a buffer to a channel count: mono is copied to every channel; 5.1 and 7.1 are folded down to
         stereo or mono (as Surround::foldDown does); otherwise more channels than needed are
         averaged into mono or truncated. */
     juce::AudioBuffer<float> matchChannels (const juce::AudioBuffer<float>&, int numChannels);
