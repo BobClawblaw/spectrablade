@@ -19,6 +19,12 @@
     its subcategories), with how many of the sounds found are in each; choosing one shows only
     those. Right-clicking rows sets their category by hand, or clears what was set by hand.
 
+    Your own ratings, favourites and tags: clicking a row's stars rates it (its own rating again
+    clears it) and its heart marks it a favourite; with the list in front, the keys 0 to 5 rate
+    the selected sounds and F marks them; the right-click menu rates, marks and tags them. The bar
+    above the list shows only favourites, only sounds rated at least so many stars, or only those
+    with a tag.
+
     Below the table, the preview shows the sound last selected (see SoundLibraryPreview); the space
     bar plays and stops it, unless the search box is typed in. Parts dragged out of the preview are
     written beside the index, in its Parts folder. */
@@ -30,7 +36,7 @@ public:
     explicit SoundLibraryView (const juce::File& database);
     ~SoundLibraryView() override;
 
-    enum Column { name = 1, length, rate, channels, bits, format, location, description, category };
+    enum Column { name = 1, length, rate, channels, bits, format, location, description, category, favourite, rating, tags };
 
     /** Adds a folder and scans it: false, with the reason in the summary, when the index refuses it. */
     bool addFolder (const juce::File&);
@@ -54,6 +60,23 @@ public:
     /** Sets the selected sounds' category by hand (a CatID), or clears it with an empty one, as
         the rows' right-click menu does. */
     bool setCategoryOfSelection (const juce::String& catId);
+
+    /** Rates, marks and tags the selected sounds, as the stars, heart, keys and menu do. */
+    bool setRatingOfSelection (int stars);
+    bool setFavouriteOfSelection (bool);
+    bool addTagToSelection (const juce::String&);
+    bool removeTagFromSelection (const juce::String&);
+
+    /** The filters above the list: only favourites, at least so many stars, only one tag (empty: any). */
+    void showFavouritesOnly (bool);
+    void showMinRating (int stars);
+    void showTag (const juce::String&);
+
+    /** What the tag filter offers: "Any Tag", then each tag with its count. */
+    juce::StringArray getTagChoices() const;
+
+    /** Clicking a cell, as the mouse does (the x is from the cell's left edge). */
+    void clickCell (int row, Column, int x);
 
     /** Types into the search box, as the keyboard does. */
     void setSearch (const juce::String&);
@@ -92,6 +115,10 @@ private:
     class Categories;
     SoundLibrary::Query query (int offset = 0, int limit = 0) const;
     void showCategoryMenu();
+    std::vector<juce::int64> selectedIds();
+    void updateTagChoices();
+    void askForTag();
+    static constexpr int starWidth = 14;
 
     void paintRowBackground (juce::Graphics&, int row, int width, int height, bool selected) override;
     void paintCell (juce::Graphics&, int row, int column, int width, int height, bool selected) override;
@@ -103,7 +130,7 @@ private:
     void mouseDrag (const juce::MouseEvent&) override;
     void timerCallback() override;
 
-    void refresh();
+    void refresh (bool keepSelection = false);
     void updateSummary();
     void chooseFolder();
     void showFoldersMenu();
@@ -114,7 +141,10 @@ private:
     std::unique_ptr<juce::FileChooser> chooser;
 
     juce::String text, filterCategory, filterCatId;
-    bool filterWithout = false;
+    bool filterWithout = false, filterFavourites = false;
+    int filterRating = 0;
+    juce::String filterTag;
+    std::vector<std::pair<juce::String, juce::int64>> tagCounts;
     std::map<juce::String, juce::int64> counts;               // by CatID, of the sounds the search finds
     std::map<juce::String, juce::int64> categoryCounts;       // by category
     SoundLibrary::Column sortBy = SoundLibrary::Column::name;
@@ -128,6 +158,8 @@ private:
 
     juce::TextEditor search;
     juce::TextButton addButton { "Add Folder..." }, foldersButton { "Folders" };
+    juce::ToggleButton favouritesButton { "Favourites" };
+    juce::ComboBox ratingChoice, tagChoice;
     juce::TableListBox table { {}, this };
     std::unique_ptr<Categories> categories;
     juce::Label summary;

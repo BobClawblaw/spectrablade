@@ -41,7 +41,7 @@ namespace
         JUCE_DECLARE_NON_COPYABLE (Statement)
     };
 
-    constexpr int schemaVersion = 2;   // 2 added the categories
+    constexpr int schemaVersion = 3;   // 2 added the categories, 3 ratings, favourites and tags
 
     /** What FTS5 is asked: each word searched for, as the start of a word, all of them. */
     juce::String matchFor (const juce::String& text)
@@ -64,29 +64,50 @@ namespace
         return text;
     }
 
-    /** The WHERE clause for a query's category, with what it binds. */
+    /** The WHERE clause for a query's filters (category, rating, favourites, tag), with what it binds. */
     std::pair<juce::String, juce::StringArray> categoryFilter (const Query& q)
     {
+        juce::StringArray conditions, values;
+
         if (q.withoutCategory)
-            return { "s.catId IS NULL", {} };
-
-        if (q.catId.isNotEmpty())
-            return { "s.catId = ?", { q.catId } };
-
-        if (q.category.isNotEmpty())
+            conditions.add ("s.catId IS NULL");
+        else if (q.catId.isNotEmpty())
         {
-            juce::StringArray ids, marks;
+            conditions.add ("s.catId = ?");
+            values.add (q.catId);
+        }
+        else if (q.category.isNotEmpty())
+        {
+            juce::StringArray marks;
 
             for (const auto* e : Ucs::subCategoriesOf (q.category))
             {
-                ids.add (e->catId);
+                values.add (e->catId);
                 marks.add ("?");
             }
 
-            return { ids.isEmpty() ? juce::String ("0") : "s.catId IN (" + marks.joinIntoString (", ") + ")", ids };
+            conditions.add (marks.isEmpty() ? juce::String ("0") : "s.catId IN (" + marks.joinIntoString (", ") + ")");
         }
 
-        return {};
+        if (q.minRating > 0)
+            conditions.add ("s.rating >= " + juce::String (juce::jlimit (1, 5, q.minRating)));
+
+        if (q.favouritesOnly)
+            conditions.add ("s.favourite = 1");
+
+        if (q.tag.isNotEmpty())
+        {
+            conditions.add ("s.id IN (SELECT sound FROM tags WHERE tag = ?)");   // tag compares without case, as declared
+            values.add (q.tag.trim());
+        }
+
+        return { conditions.joinIntoString (" AND "), values };
+    }
+
+    /** A tag as kept: one line, trimmed, at most 64 characters; empty when nothing is left. */
+    juce::String cleanTag (const juce::String& tag)
+    {
+        return tag.replaceCharacters ("\t\r\n", "   ").trim().substring (0, 64).trim();
     }
 
     const char* orderOf (Column c)
@@ -100,6 +121,7 @@ namespace
             case Column::format:     return "s.format";
             case Column::modified:   return "s.modified";
             case Column::category:   return "(s.catId IS NULL), s.catId COLLATE NOCASE";
+            case Column::rating:     return "s.rating";
             case Column::name:       break;
         }
 
@@ -123,11 +145,15 @@ namespace
         s.description = st.text (11);
         s.catId = st.text (12);
         s.categoryFrom = (CategoryFrom) juce::jlimit (0, 3, (int) st.integer (13));
+        s.rating = juce::jlimit (0, 5, (int) st.integer (14));
+        s.favourite = st.integer (15) != 0;
+        s.tags = juce::StringArray::fromTokens (st.text (16), "\t", {});
         return s;
     }
 
     constexpr const char* soundColumns = "s.id, s.path, s.folder, s.name, s.size, s.modified, s.frames, s.rate, s.channels, s.bits, s.format, "
-                                         "s.description, s.catId, s.catFrom";
+                                         "s.description, s.catId, s.catFrom, s.rating, s.favourite,"
+                                         " (SELECT group_concat (tag, char (9)) FROM (SELECT tag FROM tags t WHERE t.sound = s.id ORDER BY tag COLLATE NOCASE))";
 }
 
 juce::StringArray wordsOf (const juce::String& name)
@@ -201,7 +227,10 @@ Index::Index (const juce::File& database)
                             "CREATE TABLE IF NOT EXISTS sounds (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, folder TEXT NOT NULL,"
                             " name TEXT NOT NULL, size INTEGER, modified INTEGER, frames INTEGER, rate REAL, channels INTEGER, bits INTEGER,"
                             " format TEXT, description TEXT, seen INTEGER DEFAULT 0,"
-                            " catId TEXT, catFrom INTEGER DEFAULT 0, fileCatId TEXT, fileCatFrom INTEGER DEFAULT 0);"
+                            " catId TEXT, catFrom INTEGER DEFAULT 0, fileCatId TEXT, fileCatFrom INTEGER DEFAULT 0,"
+                            " rating INTEGER DEFAULT 0, favourite INTEGER DEFAULT 0);"
+                            "CREATE TABLE IF NOT EXISTS tags (sound INTEGER NOT NULL, tag TEXT NOT NULL COLLATE NOCASE, PRIMARY KEY (sound, tag));"
+                            "CREATE INDEX IF NOT EXISTS tagsByTag ON tags (tag);"
                             "CREATE INDEX IF NOT EXISTS soundsByFolder ON sounds (folder);"
                             "CREATE INDEX IF NOT EXISTS soundsByName ON sounds (name COLLATE NOCASE);"
                             "CREATE VIRTUAL TABLE IF NOT EXISTS words USING fts5 (text, tokenize='unicode61');");
@@ -216,26 +245,36 @@ Index::Index (const juce::File& database)
 
     // An index from before the categories gets their columns, and its files are read again on
     // the next scan (their size forgotten), so their names and iXML give their categories.
-    if (stored == "1")
+    // Version 3 added ratings and favourites (the tags table is made above when it isn't there).
+    const auto upgrade = [this] (const char* sql)
     {
-        const auto upgraded = exec ("BEGIN;"
+        if (exec (sql))
+            return true;
+
+        error = "The Sound Library's index couldn't be brought up to date.";
+        sqlite3_close (db);
+        db = nullptr;
+        return false;
+    };
+
+    if (stored == "1" && ! upgrade ("BEGIN;"
                                     "ALTER TABLE sounds ADD COLUMN catId TEXT;"
                                     "ALTER TABLE sounds ADD COLUMN catFrom INTEGER DEFAULT 0;"
                                     "ALTER TABLE sounds ADD COLUMN fileCatId TEXT;"
                                     "ALTER TABLE sounds ADD COLUMN fileCatFrom INTEGER DEFAULT 0;"
                                     "UPDATE sounds SET size = -1;"
                                     "UPDATE meta SET value = '2' WHERE key = 'schema';"
-                                    "COMMIT;");
+                                    "COMMIT;"))
+        return;
 
-        if (! upgraded)
-        {
-            error = "The Sound Library's index couldn't be brought up to date.";
-            sqlite3_close (db);
-            db = nullptr;
-            return;
-        }
-    }
-    else if (stored.isNotEmpty() && stored.getIntValue() != schemaVersion)
+    if ((stored == "1" || stored == "2") && ! upgrade ("BEGIN;"
+                                                       "ALTER TABLE sounds ADD COLUMN rating INTEGER DEFAULT 0;"
+                                                       "ALTER TABLE sounds ADD COLUMN favourite INTEGER DEFAULT 0;"
+                                                       "UPDATE meta SET value = '3' WHERE key = 'schema';"
+                                                       "COMMIT;"))
+        return;
+
+    if (stored.isNotEmpty() && stored != "1" && stored != "2" && stored.getIntValue() != schemaVersion)
     {
         error = "The Sound Library's index is from another version of SpectraBlade.";
         sqlite3_close (db);
@@ -246,7 +285,9 @@ Index::Index (const juce::File& database)
     Statement set (db, "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema', ?)");
     set.bind (1, juce::String (schemaVersion));
     set.run();
-    exec ("CREATE INDEX IF NOT EXISTS soundsByCategory ON sounds (catId)");
+    exec ("CREATE INDEX IF NOT EXISTS soundsByCategory ON sounds (catId);"
+          "CREATE INDEX IF NOT EXISTS soundsRated ON sounds (rating) WHERE rating > 0;"
+          "CREATE INDEX IF NOT EXISTS soundsFavourite ON sounds (favourite) WHERE favourite = 1;");
 }
 
 Index::~Index()
@@ -326,10 +367,12 @@ juce::Array<juce::File> Index::getFolders()
 bool Index::remove (juce::int64 id)
 {
     Statement words (db, "DELETE FROM words WHERE rowid = ?");
+    Statement tags (db, "DELETE FROM tags WHERE sound = ?");
     Statement sound (db, "DELETE FROM sounds WHERE id = ?");
     words.bind (1, id);
+    tags.bind (1, id);
     sound.bind (1, id);
-    return words.run() && sound.run();
+    return words.run() && tags.run() && sound.run();
 }
 
 bool Index::put (Sound& s)
@@ -380,12 +423,94 @@ bool Index::put (Sound& s)
 
 bool Index::indexWords (juce::int64 id, const juce::String& name, const juce::String& description, const juce::String& catId)
 {
+    Statement tags (db, "SELECT tag FROM tags WHERE sound = ?");
+    tags.bind (1, id);
+    auto text = searchable (name, description, catId);
+
+    while (tags.step())
+        text << " " << tags.text (0);
+
+    tags.reset();
     Statement clear (db, "DELETE FROM words WHERE rowid = ?");
     clear.bind (1, id);
     Statement words (db, "INSERT INTO words (rowid, text) VALUES (?, ?)");
     words.bind (1, id);
-    words.bind (2, searchable (name, description, catId));
+    words.bind (2, text);
     return clear.run() && words.run();
+}
+
+bool Index::indexWords (juce::int64 id)
+{
+    Statement read (db, "SELECT name, description, catId FROM sounds WHERE id = ?");
+    read.bind (1, id);
+
+    if (! read.step())
+        return false;
+
+    const auto name = read.text (0), description = read.text (1), catId = read.text (2);
+    read.reset();
+    return indexWords (id, name, description, catId);
+}
+
+bool Index::updateEach (const std::vector<juce::int64>& ids, const char* sql, const juce::var& value, bool rewriteWords)
+{
+    if (! exec ("BEGIN"))
+        return false;
+
+    Statement st (db, sql);
+    auto all = true;
+
+    for (auto id : ids)
+    {
+        st.reset();
+        st.bind (1, id);
+
+        if (value.isString())
+            st.bind (2, value.toString());
+        else
+            st.bind (2, (juce::int64) value);
+
+        all = st.run() && all;
+
+        if (rewriteWords)
+            all = indexWords (id) && all;
+    }
+
+    return exec ("COMMIT") && all;
+}
+
+bool Index::setRating (const std::vector<juce::int64>& ids, int stars)
+{
+    return updateEach (ids, "UPDATE sounds SET rating = ?2 WHERE id = ?1", juce::jlimit (0, 5, stars), false);
+}
+
+bool Index::setFavourite (const std::vector<juce::int64>& ids, bool favourite)
+{
+    return updateEach (ids, "UPDATE sounds SET favourite = ?2 WHERE id = ?1", favourite ? 1 : 0, false);
+}
+
+bool Index::addTag (const std::vector<juce::int64>& ids, const juce::String& tag)
+{
+    const auto clean = cleanTag (tag);
+    return clean.isNotEmpty()
+        && updateEach (ids, "INSERT OR IGNORE INTO tags (sound, tag) SELECT id, ?2 FROM sounds WHERE id = ?1", clean, true);
+}
+
+bool Index::removeTag (const std::vector<juce::int64>& ids, const juce::String& tag)
+{
+    const auto clean = cleanTag (tag);
+    return clean.isNotEmpty() && updateEach (ids, "DELETE FROM tags WHERE sound = ?1 AND tag = ?2", clean, true);
+}
+
+std::vector<std::pair<juce::String, juce::int64>> Index::tagCounts()
+{
+    std::vector<std::pair<juce::String, juce::int64>> counts;
+    Statement st (db, "SELECT tag, COUNT(*) FROM tags GROUP BY tag ORDER BY tag COLLATE NOCASE");
+
+    while (st.step())
+        counts.emplace_back (st.text (0), st.integer (1));
+
+    return counts;
 }
 
 bool Index::setCategory (const std::vector<juce::int64>& ids, const juce::String& catId)
@@ -400,7 +525,6 @@ bool Index::setCategory (const std::vector<juce::int64>& ids, const juce::String
 
     Statement set (db, entry != nullptr ? "UPDATE sounds SET catId = ?, catFrom = 3 WHERE id = ?2"
                                         : "UPDATE sounds SET catId = fileCatId, catFrom = fileCatFrom WHERE id = ?2");
-    Statement read (db, "SELECT name, description, catId FROM sounds WHERE id = ?");
     auto all = true;
 
     for (auto id : ids)
@@ -411,16 +535,8 @@ bool Index::setCategory (const std::vector<juce::int64>& ids, const juce::String
             set.bind (1, entry->catId);
 
         set.bind (2, id);
-        read.reset();
-        read.bind (1, id);
         all = set.run() && all;
-
-        if (read.step())
-        {
-            const auto name = read.text (0), description = read.text (1), now = read.text (2);
-            read.reset();
-            all = indexWords (id, name, description, now) && all;
-        }
+        all = indexWords (id) && all;
     }
 
     return exec ("COMMIT") && all;

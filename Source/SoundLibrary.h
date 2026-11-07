@@ -14,6 +14,10 @@ struct sqlite3;
     sound's name (split at case changes and digits too, so "wood" finds "DOORWood_Creak") and its
     description, and its UCS category's names; every word searched for must be found.
 
+    Your own tags, a rating (none, or one to five stars) and a favourite mark are kept in the index
+    with each sound: they stay through rescans (a changed file keeps them; a file gone from its
+    folder leaves with them), tags are searched like words of the name, and each can filter.
+
     Each sound has a UCS category (see SoundCategories.h) when its name or iXML gives one, or one
     is set by hand; one set by hand stays through rescans until it is cleared.
 
@@ -41,11 +45,14 @@ namespace SoundLibrary
         juce::String description;       // the BWF description, where there is one
         juce::String catId;             // its UCS CatID (e.g. DOORWood); empty for none
         CategoryFrom categoryFrom = CategoryFrom::none;
+        int rating = 0;                 // 0 (none) to 5 stars
+        bool favourite = false;
+        juce::StringArray tags;         // in the order of their names
 
         double seconds() const noexcept  { return sampleRate > 0.0 ? (double) frames / sampleRate : 0.0; }
     };
 
-    enum class Column { name, folder, length, sampleRate, channels, format, modified, category };
+    enum class Column { name, folder, length, sampleRate, channels, format, modified, category, rating };
 
     struct Query
     {
@@ -58,6 +65,11 @@ namespace SoundLibrary
             only those with no category. */
         juce::String catId {}, category {};
         bool withoutCategory = false;
+
+        /** Only sounds rated at least this many stars, only favourites, only those with this tag. */
+        int minRating = 0;
+        bool favouritesOnly = false;
+        juce::String tag {};
     };
 
     struct ScanResult
@@ -111,6 +123,19 @@ namespace SoundLibrary
             False for a CatID not in the list. */
         bool setCategory (const std::vector<juce::int64>& ids, const juce::String& catId);
 
+        /** Rates these sounds: 0 (no rating) to 5 stars. */
+        bool setRating (const std::vector<juce::int64>& ids, int stars);
+        bool setFavourite (const std::vector<juce::int64>& ids, bool);
+
+        /** Adds a tag to these sounds, or takes it off them. A tag is up to 64 characters of one
+            line, with spaces round it trimmed; tags differing only in case are the same tag.
+            False for an empty one. */
+        bool addTag (const std::vector<juce::int64>& ids, const juce::String& tag);
+        bool removeTag (const std::vector<juce::int64>& ids, const juce::String& tag);
+
+        /** Every tag in use, in the order of their names, with how many sounds have it. */
+        std::vector<std::pair<juce::String, juce::int64>> tagCounts();
+
         /** Puts a sound in the index, or replaces the one at its file (what a scan does for each
             file). Its category is taken as the file's own: one set by hand on that file stays. */
         bool put (Sound&);
@@ -125,8 +150,13 @@ namespace SoundLibrary
         bool exec (const char* sql);
         bool remove (juce::int64 id);
 
-        /** Rewrites the words a sound is searched by. */
+        /** Rewrites the words a sound is searched by (its name, description, category and tags). */
         bool indexWords (juce::int64 id, const juce::String& name, const juce::String& description, const juce::String& catId);
+        bool indexWords (juce::int64 id);
+
+        /** Runs an update (binding the sound's id as ?1 and the value as ?2) on each sound in one
+            transaction, rewriting their words when asked. */
+        bool updateEach (const std::vector<juce::int64>& ids, const char* sql, const juce::var& value, bool rewriteWords);
 
         JUCE_DECLARE_NON_COPYABLE (Index)
     };

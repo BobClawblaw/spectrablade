@@ -206,6 +206,36 @@ namespace
                    + ", \"creak\" (" + juce::String (creaks) + ") " + ms (countCreak) + ", \"wood creak\" (" + juce::String (woodCreaks) + ") "
                    + ms (countBoth) + ", one sound by its number " + ms (countOne) + "; the first page of \"wood creak\" by name "
                    + ms (firstPage) + ", page 5001 of everything by name " + ms (deepPage) + ", the longest 100 of \"creak\" " + ms (byLength));
+
+        // Rated, favourite and tagged sounds among the million: every 10th rated, every 100th a favourite, every 200th tagged.
+        std::vector<juce::int64> ratedIds, favouriteIds, taggedIds;
+
+        for (juce::int64 id = 1; id <= total; ++id)
+        {
+            if (id % 10 == 0)   ratedIds.push_back (id);
+            if (id % 100 == 0)  favouriteIds.push_back (id);
+            if (id % 200 == 0)  taggedIds.push_back (id);
+        }
+
+        const auto marking = timed ([&] { index.setRating (ratedIds, 4); index.setFavourite (favouriteIds, true); index.addTag (taggedIds, "Keep"); });
+        SoundLibrary::Query fourStars, favourites, kept, keptCreaks;
+        fourStars.minRating = 4;
+        favourites.favouritesOnly = true;
+        kept.tag = "keep";
+        keptCreaks.tag = "keep";
+        keptCreaks.text = "creak";
+        juce::int64 nRated = 0, nFavourites = 0, nKept = 0, nKeptCreaks = 0;
+        std::vector<SoundLibrary::Sound> keptPage;
+        const auto countRated = timed ([&] { nRated = index.count (fourStars); });
+        const auto countFavourites = timed ([&] { nFavourites = index.count (favourites); });
+        const auto countKept = timed ([&] { nKept = index.count (kept); });
+        const auto countKeptCreaks = timed ([&] { nKeptCreaks = index.count (keptCreaks); });
+        const auto keptFirst = timed ([&] { keptPage = index.find (kept); });
+        check (nRated == total / 10 && nFavourites == total / 100 && nKept == total / 200 && nKeptCreaks > 0 && nKeptCreaks < nKept
+                   && keptPage.size() == 100,
+               "sound library, " + juce::String (total) + " sounds: rating 100,000, marking 10,000 and tagging 5,000 took " + ms (marking)
+                   + "; counting those rated 4 stars or more " + ms (countRated) + ", the favourites " + ms (countFavourites) + ", the tagged "
+                   + ms (countKept) + " (with \"creak\" " + ms (countKeptCreaks) + "), the first page of the tagged " + ms (keptFirst));
     }
 }
 
@@ -749,6 +779,144 @@ namespace
     }
 }
 
+namespace
+{
+    void testTags (const juce::File& dir)
+    {
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        const auto library = dir.getChildFile ("Tagged");
+        writeWav (library.getChildFile ("Owl Hoot.wav"), 1000);
+        writeWav (library.getChildFile ("Cricket Field.wav"), 1100);
+        writeWav (library.getChildFile ("Rain on Roof.wav"), 1200);
+        writeWav (library.getChildFile ("Car Pass.wav"), 1300);
+        SoundLibrary::Index index (dir.getChildFile ("tags/Index.sqlite"));
+        index.addFolder (library);
+        index.scan (formats);
+        const auto idOf = [&index] (const juce::String& words) { return index.find ({ words }).front().id; };
+        const auto owl = idOf ("owl"), cricket = idOf ("cricket"), rain = idOf ("rain"), car = idOf ("car");
+        const auto one = [&index] (const juce::String& words) { return index.find ({ words }).front(); };
+
+        const auto set = index.setRating ({ owl }, 4) && index.setRating ({ cricket }, 2) && index.setRating ({ car }, 9)
+                         && index.setFavourite ({ owl, rain }, true) && index.addTag ({ owl, cricket }, "  Night  ")
+                         && index.addTag ({ cricket }, "night") && index.addTag ({ rain }, "Exterior")
+                         && index.addTag ({ car }, "Street\tTraffic\nLoud") && index.addTag ({ car }, juce::String::repeatedString ("x", 70));
+        const auto refused = ! index.addTag ({ owl }, "   ");
+        SoundLibrary::Query rated, favourites, night, favouriteNight;
+        rated.minRating = 3;
+        favourites.favouritesOnly = true;
+        night.tag = "NIGHT";
+        favouriteNight.favouritesOnly = true;
+        favouriteNight.tag = "night";
+        const auto owlNow = one ("owl"), cricketNow = one ("cricket"), carNow = one ("pass");
+        const auto counts = index.tagCounts();
+        auto byRating = index.find ({ {}, SoundLibrary::Column::rating, false, 0, 10 });
+        check (set && refused && owlNow.rating == 4 && owlNow.favourite && owlNow.tags == juce::StringArray { "Night" }
+                   && cricketNow.tags == juce::StringArray { "Night" } && carNow.rating == 5
+                   && carNow.tags.contains ("Street Traffic Loud") && carNow.tags.contains (juce::String::repeatedString ("x", 64))
+                   && index.count (rated) == 2 && index.count (favourites) == 2 && index.count (night) == 2 && index.count (favouriteNight) == 1
+                   && index.count ("night") == 2 && index.count ("exterior") == 1 && index.count ("traffic") == 1
+                   && counts.size() == 4 && counts[0].first == "Exterior" && counts[1].first == "Night" && counts[1].second == 2
+                   && byRating.size() == 4 && byRating[0].id == car && byRating[1].id == owl,
+               "sound library tags: ratings (clamped to 5), favourites and tags (trimmed, one line, at most 64 characters, the same in any "
+               "case, never empty) are kept per sound; queries show at least 3 stars (2), favourites (2), a tag in any case (2), and "
+               "both; searching finds tags; tags are counted in order; sorting by rating puts 5 stars first");
+
+        // Kept through a rescan of a changed file; a file gone takes its tags with it.
+        writeWav (library.getChildFile ("Owl Hoot.wav"), 2000);
+        library.getChildFile ("Rain on Roof.wav").deleteFile();
+        const auto again = index.scan (formats);
+        const auto owlKept = one ("owl");
+        index.removeTag ({ cricket }, "NIGHT");
+        const auto after = index.tagCounts();
+        check (again.updated == 1 && again.removed == 1 && owlKept.rating == 4 && owlKept.favourite && owlKept.tags == juce::StringArray { "Night" }
+                   && owlKept.frames == 2000 && index.count ("night") == 1 && one ("cricket").tags.isEmpty() && after.size() == 3
+                   && after[0].first == "Night" && after[0].second == 1 && index.count (favourites) == 1,
+               "sound library tags: a changed file read again keeps its rating, favourite and tags (and is still found by them); a "
+               "removed tag goes from the sound and its search words; a file gone from its folder leaves no tags behind");
+
+        // An index from M282 (version 2) gains ratings and favourites.
+        const auto old = dir.getChildFile ("tags/Version2.sqlite");
+        {
+            sqlite3* raw = nullptr;
+            sqlite3_open (old.getFullPathName().toRawUTF8(), &raw);
+            sqlite3_exec (raw, "CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);"
+                               "CREATE TABLE folders (path TEXT PRIMARY KEY);"
+                               "CREATE TABLE sounds (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, folder TEXT NOT NULL,"
+                               " name TEXT NOT NULL, size INTEGER, modified INTEGER, frames INTEGER, rate REAL, channels INTEGER, bits INTEGER,"
+                               " format TEXT, description TEXT, seen INTEGER DEFAULT 0,"
+                               " catId TEXT, catFrom INTEGER DEFAULT 0, fileCatId TEXT, fileCatFrom INTEGER DEFAULT 0);"
+                               "CREATE VIRTUAL TABLE words USING fts5 (text, tokenize='unicode61');"
+                               "INSERT INTO meta VALUES ('schema', '2');"
+                               "INSERT INTO sounds (path, folder, name, size, modified, frames, rate, channels, bits, format, description, catId, catFrom)"
+                               " VALUES ('/nowhere/DOORWood_Creak.wav', '/nowhere', 'DOORWood_Creak', 1, 1, 1, 48000, 1, 16, 'WAV file', '', 'DOORWood', 1);"
+                               "INSERT INTO words (rowid, text) VALUES (1, 'DOOR Wood Creak');",
+                          nullptr, nullptr, nullptr);
+            sqlite3_close (raw);
+        }
+        SoundLibrary::Index two (old);
+        const auto opened = two.isOpen() && two.count() == 1;
+        const auto id = opened ? two.find ({}).front().id : 0;
+        const auto upgraded = two.setRating ({ id }, 3) && two.setFavourite ({ id }, true) && two.addTag ({ id }, "Old");
+        const auto kept = opened ? two.find ({ "old" }) : std::vector<SoundLibrary::Sound>();
+        check (opened && upgraded && kept.size() == 1 && kept[0].rating == 3 && kept[0].favourite && kept[0].catId == "DOORWood",
+               "sound library tags: an index from before ratings (version 2) opens with its sounds and categories, and takes ratings, "
+               "favourites and tags");
+    }
+
+    void testTagsView (const juce::File& dir)
+    {
+        SoundLibraryView view (dir.getChildFile ("tags view/Index.sqlite"));
+        view.setSize (1300, 700);
+        view.addFolder (dir.getChildFile ("Tagged"));
+        TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+        view.setSort (SoundLibraryView::name, true);
+        juce::SparseSet<int> first;
+        first.addRange ({ 0, 1 });
+        view.selectRows (first);
+        const auto chosen = view.getSelectedFiles();
+        view.setRatingOfSelection (3);
+        const auto ratedKept = view.getText (0, SoundLibraryView::rating) == "3" && view.getSelectedFiles() == chosen;
+        auto& asComponent = static_cast<juce::Component&> (view);
+        asComponent.keyPressed (juce::KeyPress ('5', {}, '5'));
+        const auto keyed = view.getText (0, SoundLibraryView::rating) == "5";
+        asComponent.keyPressed (juce::KeyPress ('f', {}, 'f'));
+        const auto marked = view.getText (0, SoundLibraryView::favourite).isNotEmpty();
+        asComponent.keyPressed (juce::KeyPress ('f', {}, 'f'));
+        const auto unmarked = view.getText (0, SoundLibraryView::favourite).isEmpty();
+
+        // The stars and the heart, clicked.
+        view.clickCell (1, SoundLibraryView::rating, 6 + 14 + 5);
+        const auto twoStars = view.getText (1, SoundLibraryView::rating) == "2";
+        view.clickCell (1, SoundLibraryView::rating, 6 + 14 + 5);
+        const auto cleared = view.getText (1, SoundLibraryView::rating).isEmpty();
+        view.clickCell (1, SoundLibraryView::favourite, 13);
+        const auto hearted = view.getText (1, SoundLibraryView::favourite).isNotEmpty();
+        check (ratedKept && keyed && marked && unmarked && twoStars && cleared && hearted,
+               "sound library window: rating the selection keeps it selected; the 5 key rates it 5 stars, F marks and unmarks it; "
+               "clicking the second star rates a sound 2, clicking it again clears it; clicking the heart marks it");
+
+        view.addTagToSelection ("Night");
+        const auto tagged = view.getText (0, SoundLibraryView::tags) == "Night"
+                            && view.getTagChoices() == juce::StringArray { "Any Tag", "Night (1)" };
+        view.showTag ("Night");
+        const auto byTag = view.getNumRows() == 1;
+        view.showTag ({});
+        view.showMinRating (4);
+        const auto byStars = view.getNumRows() == 1;
+        view.showMinRating (0);
+        view.showFavouritesOnly (true);
+        const auto byHeart = view.getNumRows() == 1 && view.getSummary().startsWith ("1 of 3 sounds match");
+        view.showFavouritesOnly (false);
+        view.selectRows (first);
+        view.removeTagFromSelection ("night");
+        check (tagged && byTag && byStars && byHeart && view.getText (0, SoundLibraryView::tags).isEmpty()
+                   && view.getTagChoices() == juce::StringArray { "Any Tag" } && view.getNumRows() == 3,
+               "sound library window: a tag added to the selection shows in its row and in the tag filter with its count; the bar shows "
+               "only that tag, at least 4 stars, or favourites (1 of 3 each); removing the tag takes it out of the filter");
+    }
+}
+
 void runSoundLibraryTests()
 {
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("SoundLibraryTests", {}, false);
@@ -762,6 +930,8 @@ void runSoundLibraryTests()
     testUcsList();
     testCategories (dir);
     testCategoriesView (dir);
+    testTags (dir);
+    testTagsView (dir);
     testLarge (dir);
     dir.deleteRecursively();
 }

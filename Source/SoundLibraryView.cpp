@@ -165,6 +165,8 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
     const auto unsorted = juce::TableHeaderComponent::defaultFlags & ~juce::TableHeaderComponent::sortable;
     auto& header = table.getHeader();
     header.addColumn ("Name", name, 260);
+    header.addColumn ({}, favourite, 26, 26, 26, unsorted);
+    header.addColumn ("Rating", rating, 5 * starWidth + 12, 5 * starWidth + 12, 5 * starWidth + 12);
     header.addColumn ("Length", length, 70);
     header.addColumn ("Rate", rate, 70);
     header.addColumn ("Ch", channels, 36);
@@ -173,6 +175,20 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
     header.addColumn ("Folder", location, 180);
     header.addColumn ("Description", description, 260, 30, -1, unsorted);
     header.addColumn ("Category", category, 170);
+    header.addColumn ("Tags", tags, 160, 30, -1, unsorted);
+
+    favouritesButton.onClick = [this] { showFavouritesOnly (favouritesButton.getToggleState()); };
+    addAndMakeVisible (favouritesButton);
+    ratingChoice.addItemList ({ "Any Rating", "1 Star or More", "2 Stars or More", "3 Stars or More", "4 Stars or More", "5 Stars" }, 1);
+    ratingChoice.setSelectedId (1, juce::dontSendNotification);
+    ratingChoice.onChange = [this] { showMinRating (ratingChoice.getSelectedId() - 1); };
+    addAndMakeVisible (ratingChoice);
+    tagChoice.onChange = [this]
+    {
+        const auto i = tagChoice.getSelectedId() - 2;
+        showTag (juce::isPositiveAndBelow (i, (int) tagCounts.size()) ? tagCounts[(size_t) i].first : juce::String());
+    };
+    addAndMakeVisible (tagChoice);
     header.setSortColumnId (name, true);
     Theme::follow (table, juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
@@ -218,10 +234,29 @@ void SoundLibraryView::setAudioDevice (juce::AudioDeviceManager* manager)
 
 bool SoundLibraryView::keyPressed (const juce::KeyPress& key)
 {
-    if (key == juce::KeyPress::spaceKey && ! search.hasKeyboardFocus (false))
+    if (search.hasKeyboardFocus (false))
+        return false;
+
+    if (key == juce::KeyPress::spaceKey)
     {
         preview.togglePlay();
         return true;
+    }
+
+    // 0 to 5 rate the selected sounds; F marks them favourites (or, when all are, unmarks them).
+    if (const auto c = key.getTextCharacter(); c >= '0' && c <= '5' && ! key.getModifiers().isAnyModifierKeyDown())
+        return setRatingOfSelection (c - '0') || true;
+
+    if (key == juce::KeyPress ('f') || key == juce::KeyPress ('F', juce::ModifierKeys::shiftModifier, 'F'))
+    {
+        auto allFavourites = true;
+        const auto selected = table.getSelectedRows();
+
+        for (int i = 0; i < selected.size(); ++i)
+            if (const auto* s = soundAt (selected[i]))
+                allFavourites = allFavourites && s->favourite;
+
+        return setFavouriteOfSelection (! allFavourites) || true;
     }
 
     return false;
@@ -289,7 +324,7 @@ void SoundLibraryView::sortOrderChanged (int column, bool forwardsNow)
     static const std::map<int, SoundLibrary::Column> sorts {
         { name, SoundLibrary::Column::name }, { length, SoundLibrary::Column::length }, { rate, SoundLibrary::Column::sampleRate },
         { channels, SoundLibrary::Column::channels }, { format, SoundLibrary::Column::format }, { location, SoundLibrary::Column::folder },
-        { category, SoundLibrary::Column::category },
+        { category, SoundLibrary::Column::category }, { rating, SoundLibrary::Column::rating },
     };
 
     if (const auto it = sorts.find (column); it != sorts.end())
@@ -300,9 +335,10 @@ void SoundLibraryView::sortOrderChanged (int column, bool forwardsNow)
     }
 }
 
-void SoundLibraryView::refresh()
+void SoundLibraryView::refresh (bool keepSelection)
 {
     pages.clear();
+    const auto before = rows;
     rows = index.count (query());
     total = index.count();
     counts = index.countByCategory (text);
@@ -314,8 +350,15 @@ void SoundLibraryView::refresh()
 
     if (categories != nullptr)
         categories->repaint();
+
+    tagCounts = index.tagCounts();
+    updateTagChoices();
     const juce::ScopedValueSetter<bool> quiet (refreshing, true);
-    table.deselectAllRows();
+
+    // Rating or tagging the selection keeps it, unless that changed which sounds are listed.
+    if (! keepSelection || rows != before)
+        table.deselectAllRows();
+
     table.updateContent();
     table.repaint();
     updateSummary();
@@ -337,7 +380,8 @@ void SoundLibraryView::updateSummary()
 
     if (folders == 0)
         line = "No folders yet: Add Folder... chooses the folders of sounds to scan. Nothing else is scanned.";
-    else if (text.isEmpty() && filterCategory.isEmpty() && filterCatId.isEmpty() && ! filterWithout)
+    else if (text.isEmpty() && filterCategory.isEmpty() && filterCatId.isEmpty() && ! filterWithout && ! filterFavourites
+             && filterRating == 0 && filterTag.isEmpty())
         line = number (total) + (total == 1 ? " sound in " : " sounds in ") + juce::String (folders) + (folders == 1 ? " folder" : " folders");
     else
         line = number (rows) + " of " + number (total) + " sounds match";
@@ -430,6 +474,9 @@ juce::String SoundLibraryView::getText (int row, int column)
         case format:      return s->format.upToFirstOccurrenceOf (" file", false, true);
         case location:    return s->file.getParentDirectory().getRelativePathFrom (s->folder.getParentDirectory());
         case description: return s->description;
+        case favourite:   return s->favourite ? juce::String (juce::CharPointer_UTF8 ("\xe2\x99\xa5")) : juce::String();
+        case rating:      return s->rating > 0 ? juce::String (s->rating) : juce::String();
+        case tags:        return s->tags.joinIntoString (", ");
         case category:
         {
             const auto* e = Ucs::byCatId (s->catId);
@@ -463,6 +510,45 @@ void SoundLibraryView::paintRowBackground (juce::Graphics& g, int, int, int, boo
 
 void SoundLibraryView::paintCell (juce::Graphics& g, int row, int column, int width, int height, bool)
 {
+    if (column == rating || column == favourite)
+    {
+        const auto* s = soundAt (row);
+
+        if (s == nullptr)
+            return;
+
+        const auto cy = (float) height * 0.5f;
+
+        if (column == favourite)
+        {
+            // A heart: two lobes and a point.
+            const auto cx = (float) width * 0.5f, r = 3.2f;
+            juce::Path heart;
+            heart.startNewSubPath (cx, cy + 5.5f);
+            heart.cubicTo (cx - 2.0f * r - 1.0f, cy + 1.0f, cx - 2.0f * r, cy - 2.5f * r, cx, cy - 1.2f);
+            heart.cubicTo (cx + 2.0f * r, cy - 2.5f * r, cx + 2.0f * r + 1.0f, cy + 1.0f, cx, cy + 5.5f);
+            heart.closeSubPath();
+            g.setColour (s->favourite ? Theme::accent : Theme::dimText.withAlpha (0.35f));
+
+            if (s->favourite)
+                g.fillPath (heart);
+            else
+                g.strokePath (heart, juce::PathStrokeType (1.0f));
+
+            return;
+        }
+
+        for (int i = 0; i < 5; ++i)
+        {
+            juce::Path star;
+            star.addStar ({ 6.0f + (float) starWidth * ((float) i + 0.5f), cy }, 5, 2.4f, 5.6f);
+            g.setColour (i < s->rating ? Theme::accent : Theme::dimText.withAlpha (0.3f));
+            g.fillPath (star);
+        }
+
+        return;
+    }
+
     g.setColour (column == name ? Theme::textStrong : Theme::text);
     g.setFont (13.0f);
     const auto right = column == length || column == rate || column == channels || column == bits;
@@ -481,6 +567,9 @@ SoundLibrary::Query SoundLibraryView::query (int offset, int limit) const
     q.category = filterCategory;
     q.catId = filterCatId;
     q.withoutCategory = filterWithout;
+    q.favouritesOnly = filterFavourites;
+    q.minRating = filterRating;
+    q.tag = filterTag;
     return q;
 }
 
@@ -528,10 +617,139 @@ bool SoundLibraryView::setCategoryOfSelection (const juce::String& catId)
     return done;
 }
 
-void SoundLibraryView::cellClicked (int, int, const juce::MouseEvent& e)
+void SoundLibraryView::cellClicked (int row, int column, const juce::MouseEvent& e)
 {
     if (e.mods.isPopupMenu())
         showCategoryMenu();
+    else if (column == rating || column == favourite)
+        clickCell (row, (Column) column, juce::roundToInt (e.getEventRelativeTo (&table).position.x) - table.getCellPosition (column, row, true).getX());
+}
+
+void SoundLibraryView::clickCell (int row, Column column, int x)
+{
+    const auto* s = soundAt (row);
+
+    if (s == nullptr)
+        return;
+
+    if (column == favourite)
+        index.setFavourite ({ s->id }, ! s->favourite);
+    else if (column == rating)
+    {
+        const auto stars = juce::jlimit (1, 5, (x - 6) / starWidth + 1);
+        index.setRating ({ s->id }, stars == s->rating ? 0 : stars);
+    }
+
+    refresh (true);
+}
+
+std::vector<juce::int64> SoundLibraryView::selectedIds()
+{
+    std::vector<juce::int64> ids;
+    const auto selected = table.getSelectedRows();
+
+    for (int i = 0; i < selected.size(); ++i)
+        if (const auto* s = soundAt (selected[i]))
+            ids.push_back (s->id);
+
+    return ids;
+}
+
+bool SoundLibraryView::setRatingOfSelection (int stars)
+{
+    const auto ids = selectedIds();
+    const auto done = ! ids.empty() && index.setRating (ids, stars);
+    refresh (true);
+    return done;
+}
+
+bool SoundLibraryView::setFavouriteOfSelection (bool on)
+{
+    const auto ids = selectedIds();
+    const auto done = ! ids.empty() && index.setFavourite (ids, on);
+    refresh (true);
+    return done;
+}
+
+bool SoundLibraryView::addTagToSelection (const juce::String& tag)
+{
+    const auto ids = selectedIds();
+    const auto done = ! ids.empty() && index.addTag (ids, tag);
+    refresh (true);
+    return done;
+}
+
+bool SoundLibraryView::removeTagFromSelection (const juce::String& tag)
+{
+    const auto ids = selectedIds();
+    const auto done = ! ids.empty() && index.removeTag (ids, tag);
+    refresh (true);
+    return done;
+}
+
+void SoundLibraryView::showFavouritesOnly (bool on)
+{
+    filterFavourites = on;
+    favouritesButton.setToggleState (on, juce::dontSendNotification);
+    refresh();
+}
+
+void SoundLibraryView::showMinRating (int stars)
+{
+    filterRating = juce::jlimit (0, 5, stars);
+    ratingChoice.setSelectedId (filterRating + 1, juce::dontSendNotification);
+    refresh();
+}
+
+void SoundLibraryView::showTag (const juce::String& tag)
+{
+    filterTag = tag;
+    refresh();
+}
+
+juce::StringArray SoundLibraryView::getTagChoices() const
+{
+    juce::StringArray choices;
+
+    for (int i = 0; i < tagChoice.getNumItems(); ++i)
+        choices.add (tagChoice.getItemText (i));
+
+    return choices;
+}
+
+void SoundLibraryView::updateTagChoices()
+{
+    juce::StringArray wanted { "Any Tag" };
+    auto chosen = 1;
+
+    for (size_t i = 0; i < tagCounts.size(); ++i)
+    {
+        wanted.add (tagCounts[i].first + " (" + juce::String (tagCounts[i].second) + ")");
+
+        if (tagCounts[i].first.equalsIgnoreCase (filterTag))
+            chosen = (int) i + 2;
+    }
+
+    if (wanted != getTagChoices())
+    {
+        tagChoice.clear (juce::dontSendNotification);
+        tagChoice.addItemList (wanted, 1);
+    }
+
+    tagChoice.setSelectedId (chosen, juce::dontSendNotification);
+}
+
+void SoundLibraryView::askForTag()
+{
+    auto* window = new juce::AlertWindow ("Add Tag", "A tag for the selected sounds:", juce::MessageBoxIconType::NoIcon, this);
+    window->addTextEditor ("tag", {}, {});
+    window->addButton ("Add", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    window->enterModalState (true, juce::ModalCallbackFunction::create ([this, window] (int result)
+    {
+        if (result == 1)
+            addTagToSelection (window->getTextEditorContents ("tag"));
+    }), true);
 }
 
 void SoundLibraryView::showCategoryMenu()
@@ -559,11 +777,45 @@ void SoundLibraryView::showCategoryMenu()
     set.addSubMenu (current, sub);
     const auto many = table.getNumSelectedRows();
     menu.addSectionHeader (juce::String (many) + (many == 1 ? " sound" : " sounds"));
+    juce::PopupMenu ratings, removeTags;
+    ratings.addItem (10, "No Rating");
+
+    for (int stars = 1; stars <= 5; ++stars)
+        ratings.addItem (10 + stars, juce::String (stars) + (stars == 1 ? " Star" : " Stars"));
+
+    juce::StringArray selectedTags;
+    const auto chosenRows = table.getSelectedRows();
+
+    for (int i = 0; i < chosenRows.size(); ++i)
+        if (const auto* s = soundAt (chosenRows[i]))
+            for (const auto& t : s->tags)
+                if (! selectedTags.contains (t, true))
+                    selectedTags.add (t);
+
+    selectedTags.sortNatural();
+
+    for (int i = 0; i < selectedTags.size(); ++i)
+        removeTags.addItem (40 + i, selectedTags[i]);
+
+    menu.addSubMenu ("Rating", ratings);
+    menu.addItem (20, "Mark as Favourite");
+    menu.addItem (21, "Not a Favourite");
+    menu.addItem (30, "Add Tag...");
+    menu.addSubMenu ("Remove Tag", removeTags, ! selectedTags.isEmpty());
+    menu.addSeparator();
     menu.addSubMenu ("Set Category", set);
     menu.addItem (1, "Clear Category Set by Hand");
-    menu.showMenuAsync (juce::PopupMenu::Options(), [this] (int result)
+    menu.showMenuAsync (juce::PopupMenu::Options(), [this, selectedTags] (int result)
     {
-        if (result == 1)
+        if (result >= 10 && result <= 15)
+            setRatingOfSelection (result - 10);
+        else if (result == 20 || result == 21)
+            setFavouriteOfSelection (result == 20);
+        else if (result == 30)
+            askForTag();
+        else if (juce::isPositiveAndBelow (result - 40, selectedTags.size()))
+            removeTagFromSelection (selectedTags[result - 40]);
+        else if (result == 1)
             setCategoryOfSelection ({});
         else if (result >= 100 && (size_t) (result - 100) < Ucs::list().size())
             setCategoryOfSelection (Ucs::list()[(size_t) (result - 100)].catId);
@@ -640,6 +892,12 @@ void SoundLibraryView::resized()
     addButton.setBounds (top.removeFromRight (110));
     top.removeFromRight (6);
     search.setBounds (top);
+    auto filters = r.removeFromTop (26).reduced (4, 2);
+    favouritesButton.setBounds (filters.removeFromLeft (100));
+    filters.removeFromLeft (6);
+    ratingChoice.setBounds (filters.removeFromLeft (150));
+    filters.removeFromLeft (6);
+    tagChoice.setBounds (filters.removeFromLeft (220));
     summary.setBounds (r.removeFromBottom (24).reduced (4, 0));
     preview.setBounds (r.removeFromBottom (juce::jlimit (110, 220, r.getHeight() / 3)));
     categories->setBounds (r.removeFromLeft (juce::jlimit (150, 240, r.getWidth() / 5)));
