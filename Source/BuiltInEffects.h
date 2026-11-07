@@ -83,6 +83,11 @@ namespace BuiltInEffects
             with nothing done, where it can't. Same thread as processBlock. */
         virtual bool processLinked (juce::AudioBuffer<float>&)        { return false; }
 
+        /** Whether its main input and output can be up to mostLinkedChannels wide (as many
+            channels, discrete), processBlock then linking them as processLinked does: how the
+            effects rack plays a 5.1 master's or file's channels through it together. */
+        virtual bool linksChannels() const                            { return false; }
+
     protected:
         /** With sidechain, a second input bus (off until the host turns it on) for a key. */
         BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag, bool sidechain = false);
@@ -221,6 +226,7 @@ namespace BuiltInEffects
         /** Linked, from the loudest of all the channels; not with Sidechain on (every pair then
             hears the same key, so they move together anyway). */
         bool processLinked (juce::AudioBuffer<float>&) override;
+        bool linksChannels() const override                           { return true; }
 
         juce::AudioParameterFloat* threshold = nullptr;
         juce::AudioParameterFloat* ratio = nullptr;
@@ -265,6 +271,7 @@ namespace BuiltInEffects
 
         /** Linked, from the peak of all the channels, so none goes above the ceiling. */
         bool processLinked (juce::AudioBuffer<float>&) override;
+        bool linksChannels() const override                           { return true; }
 
         juce::AudioParameterFloat* gain = nullptr;
         juce::AudioParameterFloat* ceiling = nullptr;

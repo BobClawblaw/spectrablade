@@ -12,7 +12,8 @@ namespace OfflineRender
         plug-in's reported latency is compensated, so the result lines up with the input. Effect tails
         past the end of the audio are cut off. Audio of more than two channels goes through two at a
         time (L R, C LFE, Ls Rs for 5.1; a last odd channel alone), each group through instances of
-        its own.
+        its own, except a built-in effect that links channels (the compressor, the limiter), which
+        takes them all at once, as the rack plays them.
 
         Call from a background thread: plug-ins are created synchronously, which AUv3 requires to happen
         off the message thread. progress receives 0..1 and returns false to cancel.

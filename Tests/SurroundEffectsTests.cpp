@@ -501,14 +501,12 @@ namespace
         return b;
     }
 
-    /** A rack of a compressor and a limiter, set as setUp does, as AudioEngine::createRackXml writes it. */
-    std::unique_ptr<juce::XmlElement> rackXml (juce::AudioPluginFormatManager& formats)
+    /** A rack of these plug-ins, as AudioEngine::createRackXml writes it. */
+    std::unique_ptr<juce::XmlElement> rackOf (std::initializer_list<juce::AudioPluginInstance*> plugins)
     {
         auto xml = std::make_unique<juce::XmlElement> ("SPECTRABLADE_RACK");
-        auto compressor = make (formats, BuiltInEffects::compressorId), limiter = make (formats, BuiltInEffects::limiterId);
-        setUp (*compressor, *limiter, -24.0f);
 
-        for (auto* p : { compressor.get(), limiter.get() })
+        for (auto* p : plugins)
         {
             auto* slot = xml->createNewChildElement ("SLOT");
             slot->setAttribute ("bypassed", false);
@@ -519,6 +517,22 @@ namespace
         }
 
         return xml;
+    }
+
+    /** A rack of a compressor and a limiter, set as setUp does: both link a 5.1 file's channels. */
+    std::unique_ptr<juce::XmlElement> rackXml (juce::AudioPluginFormatManager& formats)
+    {
+        auto compressor = make (formats, BuiltInEffects::compressorId), limiter = make (formats, BuiltInEffects::limiterId);
+        setUp (*compressor, *limiter, -24.0f);
+        return rackOf ({ compressor.get(), limiter.get() });
+    }
+
+    /** A rack of a parametric EQ and a phaser, set as setUpPairs does: neither links. */
+    std::unique_ptr<juce::XmlElement> pairsRackXml (juce::AudioPluginFormatManager& formats)
+    {
+        auto eq = make (formats, BuiltInEffects::parametricEqId), phaser = make (formats, BuiltInEffects::phaserId);
+        setUpPairs (*eq);
+        return rackOf ({ eq.get(), phaser.get() });
     }
 
     void testMasterRack()
@@ -552,9 +566,9 @@ namespace
                    "the copy's latency once prepared (240 frames for the limiter)");
         }
 
-        // Applying the rack to a 5.1 file: each pair through it on its own, as a stereo file of that pair would be.
+        // Applying the rack to a 5.1 file: each pair through effects that don't link on its own, as a stereo file of that pair would be.
         {
-            const auto rack = rackXml (formats);
+            const auto rack = pairsRackXml (formats);
             auto audio = wide;
             const auto error = OfflineRender::processThroughRack (*rack, formats, rate, audio, {});
             auto pairs = error.isEmpty() && audio.getNumChannels() == 6;
@@ -578,9 +592,66 @@ namespace
             OfflineRender::processThroughRack (*rack, formats, rate, last, {});
 
             check (pairs && same (three, 2, last, 0),
-                   "master rack on a 5.1 file: applying the rack (a compressor and a limiter) gives each pair, L R, C LFE and Ls Rs, "
-                   "bit for bit what it gives a stereo file of that pair, where it used to fold them into L and R and leave the rest "
-                   "silent; a three-channel file's last channel goes through on its own, as a mono file");
+                   "master rack on a 5.1 file: applying the rack (a parametric EQ and a phaser) gives each pair, L R, C LFE and Ls Rs, "
+                   "bit for bit what it gives a stereo file of that pair; a three-channel file's last channel goes through on its own, "
+                   "as a mono file");
+        }
+
+        // A compressor and a limiter link the six: applying them is compressing and then limiting
+        // the six as one file, and playing them in the rack, their buses widened to six as the
+        // engine widens them, gives the same, a look-ahead late.
+        {
+            const auto rack = rackXml (formats);
+            auto applied = wide;
+            const auto error = OfflineRender::processThroughRack (*rack, formats, rate, applied, {});
+            auto compressor = make (formats, BuiltInEffects::compressorId), limiter = make (formats, BuiltInEffects::limiterId);
+            setUp (*compressor, *limiter, -24.0f);
+            const auto length = wide.getNumSamples();
+            const auto compressed = Dynamics::compress (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (wide)), 0, length, rate,
+                                                        dynamic_cast<BuiltInEffects::CompressorProcessor&> (*compressor).getSettings());
+            const auto want = read (*Dynamics::limit (*compressed, 0, length, rate, dynamic_cast<BuiltInEffects::LimiterProcessor&> (*limiter).getSettings()));
+            auto asOneFile = error.isEmpty();
+
+            for (int ch = 0; ch < 6; ++ch)
+                asOneFile = asOneFile && same (applied, ch, want, ch);
+
+            auto widened = true;
+
+            for (auto* p : { compressor.get(), limiter.get() })
+            {
+                p->enableAllBuses();
+                widened = widened && p->setChannelLayoutOfBus (true, 0, juce::AudioChannelSet::discreteChannels (6))
+                                  && p->setChannelLayoutOfBus (false, 0, juce::AudioChannelSet::discreteChannels (6));
+                p->prepareToPlay (rate, 512);
+            }
+
+            const auto ahead = limiter->getLatencySamples();
+            juce::AudioBuffer<float> played (6, length + ahead);
+            played.clear();
+
+            for (int ch = 0; ch < 6; ++ch)
+                played.copyFrom (ch, 0, wide, ch, 0, length);
+
+            juce::MidiBuffer midi;
+
+            for (int at = 0; at < played.getNumSamples(); at += 512)
+            {
+                juce::AudioBuffer<float> view (played.getArrayOfWritePointers(), 6, at, juce::jmin (512, played.getNumSamples() - at));
+                compressor->processBlock (view, midi);
+                limiter->processBlock (view, midi);
+            }
+            auto live = widened && ahead == 240;
+
+            for (int ch = 0; live && ch < 6; ++ch)
+                live = std::memcmp (played.getReadPointer (ch, ahead), applied.getReadPointer (ch), sizeof (float) * (size_t) length) == 0;
+
+            auto eq = make (formats, BuiltInEffects::parametricEqId);
+            const auto eqStaysStereo = ! eq->setChannelLayoutOfBus (true, 0, juce::AudioChannelSet::discreteChannels (6));
+
+            check (asOneFile && live && eqStaysStereo,
+                   "master rack on a 5.1 file: a compressor and a limiter in the rack link the six channels; applied, bit for bit "
+                   "compressing and then limiting the six as one file, and played, their buses six wide as the engine makes them, the "
+                   "same samples 240 frames (the look-ahead) later, in blocks of 512; an EQ can't be widened");
         }
     }
 }
@@ -595,12 +666,19 @@ void runSurroundEffectsTests (AudioEngine& engine)
 
 void runMasterRackDeviceTests (AudioEngine& engine)
 {
-    // Played to separate outputs, a 5.1 master's C LFE and Ls Rs each get a copy of every rack slot.
-    juce::PluginDescription compressor;
+    // Played to separate outputs, a 5.1 master's C LFE and Ls Rs each get a copy of every rack
+    // slot that doesn't link them (an EQ), and go through the ones that do (a compressor) themselves.
+    juce::PluginDescription compressor, eq, limiter;
 
     for (auto& d : BuiltInEffects::getDescriptions())
+    {
         if (d.fileOrIdentifier == BuiltInEffects::compressorId)
             compressor = d;
+        if (d.fileOrIdentifier == BuiltInEffects::parametricEqId)
+            eq = d;
+        if (d.fileOrIdentifier == BuiltInEffects::limiterId)
+            limiter = d;
+    }
 
     auto& player = engine.getPlayer();
     const auto mode = player.getMode();
@@ -614,7 +692,7 @@ void runMasterRackDeviceTests (AudioEngine& engine)
     engine.setSurroundOutputs (true);
     engine.useDeviceOutputs();
     auto added = false;
-    engine.addPlugin (compressor, [&added] (const juce::String& error) { added = error.isEmpty(); });
+    engine.addPlugin (eq, [&added] (const juce::String& error) { added = error.isEmpty(); });
     TestUtils::runUntil ([&] { return added; }, 5000);
     const auto separate = engine.getNumRackCopies();
     const auto from = engine.getOutputPair() + 2;
@@ -623,22 +701,45 @@ void runMasterRackDeviceTests (AudioEngine& engine)
         auto all = true;
 
         for (int ch = from; ch < from + 4; ++ch)
-            all = all && engine.playsThroughRackCopies (ch) && ! engine.playsOutOf (ch);
+            all = all && engine.playsThroughRack (ch) && ! engine.playsOutOf (ch);
 
         return all;
     };
     TestUtils::runUntil (routed, 5000);
     const auto throughCopies = routed();
     auto second = false;
-    engine.addPlugin (compressor, [&second] (const juce::String& error) { second = error.isEmpty(); });
+    engine.addPlugin (eq, [&second] (const juce::String& error) { second = error.isEmpty(); });
     TestUtils::runUntil ([&] { return second; }, 5000);
     const auto two = engine.getNumRackCopies();
     engine.removeRackSlot (0);
     const auto afterRemove = engine.getNumRackCopies();
+
+    // A compressor and a limiter after the EQ: no copies of them; the pairs go from the EQ's
+    // copies into them, and out of the limiter.
+    auto linking = 0;
+
+    for (auto* d : { &compressor, &limiter })
+    {
+        auto done = false;
+        engine.addPlugin (*d, [&done, &linking] (const juce::String& error) { done = true; linking += error.isEmpty() ? 1 : 0; });
+        TestUtils::runUntil ([&] { return done; }, 5000);
+    }
+
+    TestUtils::runUntil (routed, 5000);
+    const auto linked = linking == 2 && engine.getNumRackCopies() == 2 && engine.getNumRackSlotsLinking() == 2 && routed();
     engine.removeRackSlot (0);
-    const auto straight = engine.playsOutOf (from) && engine.playsOutOf (from + 3) && ! engine.playsThroughRackCopies (from);
+    TestUtils::runUntil (routed, 5000);
+    const auto onlyLinked = engine.getNumRackCopies() == 0 && engine.getNumRackSlotsLinking() == 2 && routed();
+    engine.removeRackSlot (0);
+    engine.removeRackSlot (0);
+    const auto straight = engine.playsOutOf (from) && engine.playsOutOf (from + 3) && ! engine.playsThroughRack (from);
     engine.setSurroundOutputs (false);
     const auto folded = engine.getNumRackCopies();
+    auto narrowed = false;
+    engine.addPlugin (compressor, [&narrowed] (const juce::String& error) { narrowed = error.isEmpty(); });
+    TestUtils::runUntil ([&] { return narrowed; }, 5000);
+    narrowed = narrowed && engine.getNumRackSlotsLinking() == 0;
+    engine.removeRackSlot (0);
     engine.setSurroundOutputs (true);
     auto stereo = s;
     stereo.surround = false;
@@ -652,8 +753,12 @@ void runMasterRackDeviceTests (AudioEngine& engine)
     player.setMode (mode);
 
     check (added && second && separate == 2 && throughCopies && two == 4 && afterRemove == 2 && straight && folded == 0 && stereoMaster == 0,
-           "master rack copies: played to separate outputs, a 5.1 master's other two pairs get a copy of each rack slot (2 for "
+           "master rack copies: played to separate outputs, a 5.1 master's other two pairs get a copy of each rack slot (an EQ: 2 for "
            "one slot, 4 for two, 2 again when one is removed), and C, LFE, Ls and Rs reach outputs " + juce::String (from + 1) + " to "
            + juce::String (from + 4) + " of the " + juce::String (engine.getDeviceOutputChannelNames().size()) + "-output interface "
            "through them, not straight from the player; with an empty rack, straight; folded down, or with a stereo master, no copies");
+    check (linked && onlyLinked && narrowed,
+           "master rack linking: a compressor and a limiter added after the EQ get no copies but take C, LFE, Ls and Rs themselves "
+           "(their buses six wide), the pairs going from the EQ's copies into them and out of the limiter to their outputs; without "
+           "the EQ, straight from the player into them; folded down to stereo, a compressor stays two wide");
 }

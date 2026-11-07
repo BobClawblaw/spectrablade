@@ -346,8 +346,9 @@ public:
     /** True when what the session plays out of this device output (from 0) is connected to it. */
     bool playsOutOf (int deviceChannel) const;
 
-    /** True when this device output (from 0) is fed by the last of the rack's copies for its pair. */
-    bool playsThroughRackCopies (int deviceChannel) const;
+    /** True when this device output (from 0) is fed by the last of the rack's copies for its pair,
+        or by the last slot when that slot links the channels itself. */
+    bool playsThroughRack (int deviceChannel) const;
     juce::StringArray getDeviceOutputChannelNames() const;
 
     //==============================================================================
@@ -418,6 +419,10 @@ public:
         Separate Outputs): one per slot for each further pair (two for 5.1). */
     int getNumRackCopies() const;
 
+    /** The rack's slots that take those channels themselves, linked with L and R (the built-in
+        compressor and limiter, their main bus widened); they have no copies. */
+    int getNumRackSlotsLinking() const;
+
     using AddCallback = std::function<void (const juce::String& error)>;
     void addPlugin (const juce::PluginDescription& description, AddCallback onDone);
     void removeRackSlot (int index);
@@ -480,7 +485,7 @@ private:
     Node::Ptr playerNode, outputNode, meterNode, previewNode;
     class MasterMeter;
     std::vector<Node::Ptr> rack;
-    std::vector<std::vector<Node::Ptr>> rackCopies;   // for each pair of channels past L and R, a RackCopy per slot (null: couldn't be made)
+    std::vector<std::vector<Node::Ptr>> rackCopies;   // for each pair of channels past L and R, a RackCopy per slot (null: couldn't be made), or the slot itself where it links them
 
     /** Channels played to their own outputs past L and R, through rackCopies: 0 unless separate. */
     int extraChannels() const;

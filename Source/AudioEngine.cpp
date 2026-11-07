@@ -1050,9 +1050,27 @@ namespace
 
         return graphChannel;
     }
+
+    /** A rack slot that takes the channels past L and R itself, linked (the built-in compressor and limiter). */
+    bool linksInRack (const juce::AudioProcessorGraph::Node& slot)
+    {
+        auto* effect = dynamic_cast<const BuiltInEffects::BuiltInEffect*> (slot.getProcessor());
+        return effect != nullptr && effect->linksChannels();
+    }
+
+    const RackCopy* asCopy (const juce::AudioProcessorGraph::Node::Ptr& node)
+    {
+        return node != nullptr ? dynamic_cast<const RackCopy*> (node->getProcessor()) : nullptr;
+    }
+
+    /** Where a pair comes out of a node in its chain: a copy's first two outputs, a linking slot's own. */
+    int firstOutputOf (const juce::AudioProcessorGraph::Node::Ptr& node, int pair)
+    {
+        return asCopy (node) != nullptr ? 0 : 2 + 2 * pair;
+    }
 }
 
-bool AudioEngine::playsThroughRackCopies (int deviceChannel) const
+bool AudioEngine::playsThroughRack (int deviceChannel) const
 {
     auto* device = deviceManager.getCurrentAudioDevice();
     const auto pair = (deviceChannel - outputPairFirstChannel - 2) / 2;
@@ -1062,7 +1080,8 @@ bool AudioEngine::playsThroughRackCopies (int deviceChannel) const
         || rackCopies[(size_t) pair].back() == nullptr)
         return false;
 
-    return graph.isConnected ({ { rackCopies[(size_t) pair].back()->nodeID, (deviceChannel - outputPairFirstChannel - 2) % 2 },
+    const auto& last = rackCopies[(size_t) pair].back();
+    return graph.isConnected ({ { last->nodeID, firstOutputOf (last, pair) + (deviceChannel - outputPairFirstChannel - 2) % 2 },
                                 { outputNode->nodeID, graphChannelOf (device->getActiveOutputChannels(), deviceChannel) } });
 }
 
@@ -1199,19 +1218,42 @@ int AudioEngine::extraChannels() const
 
 void AudioEngine::updateRackCopies()
 {
-    const auto pairs = (extraChannels() + 1) / 2;
+    const auto extra = extraChannels();
+    const auto pairs = (extra + 1) / 2;
     std::vector<std::vector<Node::Ptr>> wanted ((size_t) pairs);
     juce::StringArray failed;
+
+    // A slot that links takes them itself: its main bus as wide as L and R and the rest (stereo
+    // again when there are none), changed between blocks.
+    for (auto& slot : rack)
+        if (linksInRack (*slot))
+        {
+            auto& p = *slot->getProcessor();
+            const auto width = extra > 0 ? juce::AudioChannelSet::discreteChannels (2 + extra) : juce::AudioChannelSet::stereo();
+
+            if (p.getChannelLayoutOfBus (true, 0) != width)
+            {
+                const juce::ScopedLock between (p.getCallbackLock());
+                p.setChannelLayoutOfBus (true, 0, width);
+                p.setChannelLayoutOfBus (false, 0, width);
+            }
+        }
 
     for (int pair = 0; pair < pairs; ++pair)
         for (auto& slot : rack)
         {
+            if (linksInRack (*slot))
+            {
+                wanted[(size_t) pair].push_back (slot);
+                continue;
+            }
+
             // The one already made for this slot, else a new one.
             Node::Ptr found;
 
             if ((size_t) pair < rackCopies.size())
                 for (auto& c : rackCopies[(size_t) pair])
-                    if (c != nullptr && dynamic_cast<RackCopy&> (*c->getProcessor()).getOriginal() == slot->getProcessor())
+                    if (auto* copy = asCopy (c); copy != nullptr && copy->getOriginal() == slot->getProcessor())
                         found = c;
 
             if (found == nullptr)
@@ -1230,7 +1272,7 @@ void AudioEngine::updateRackCopies()
 
     for (auto& copies : rackCopies)
         for (auto& c : copies)
-            if (c != nullptr && std::none_of (wanted.begin(), wanted.end(), [&c] (auto& w) { return std::find (w.begin(), w.end(), c) != w.end(); }))
+            if (asCopy (c) != nullptr && std::none_of (wanted.begin(), wanted.end(), [&c] (auto& w) { return std::find (w.begin(), w.end(), c) != w.end(); }))
                 graph.removeNode (c.get(), juce::AudioProcessorGraph::UpdateKind::none);
 
     rackCopies = std::move (wanted);
@@ -1248,7 +1290,18 @@ int AudioEngine::getNumRackCopies() const
     int count = 0;
 
     for (auto& copies : rackCopies)
-        count += (int) std::count_if (copies.begin(), copies.end(), [] (auto& c) { return c != nullptr; });
+        count += (int) std::count_if (copies.begin(), copies.end(), [] (auto& c) { return asCopy (c) != nullptr; });
+
+    return count;
+}
+
+int AudioEngine::getNumRackSlotsLinking() const
+{
+    auto count = 0;
+
+    for (auto& slot : rack)
+        if (linksInRack (*slot) && slot->getProcessor()->getMainBusNumInputChannels() > 2)
+            ++count;
 
     return count;
 }
@@ -1260,7 +1313,7 @@ void AudioEngine::refreshEffectCopies (const juce::AudioProcessor& p)
 
     for (auto& copies : rackCopies)
         for (auto& c : copies)
-            if (c != nullptr && dynamic_cast<RackCopy&> (*c->getProcessor()).getOriginal() == &p)
+            if (auto* copy = asCopy (c); copy != nullptr && copy->getOriginal() == &p)
             {
                 graph.removeNode (c.get(), juce::AudioProcessorGraph::UpdateKind::none);
                 c = nullptr;
@@ -1345,7 +1398,8 @@ void AudioEngine::rebuildConnections()
         }
 
         // The channels past L and R played to their own outputs: two at a time through the rack's
-        // copies (none: straight there); one whose copy couldn't be made is silent.
+        // copies, or through a slot that links them (its channels after L and R), in the rack's
+        // order (an empty rack: straight there); a pair one of whose copies couldn't be made is silent.
         const auto extra = extraChannels();
         const auto throughRack = ! rack.empty();
 
@@ -1364,12 +1418,14 @@ void AudioEngine::rebuildConnections()
                     break;
                 }
 
-                for (int ch = 0; ch < 2; ++ch)
-                    graph.addConnection ({ { from->nodeID, fromFirst + juce::jmin (ch, count - 1) }, { copy->nodeID, ch } },
+                const auto toFirst = firstOutputOf (copy, pair);
+
+                for (int ch = 0; ch < (toFirst == 0 ? 2 : count); ++ch)
+                    graph.addConnection ({ { from->nodeID, fromFirst + juce::jmin (ch, count - 1) }, { copy->nodeID, toFirst + ch } },
                                          juce::AudioProcessorGraph::UpdateKind::none);
 
                 from = copy;
-                fromFirst = 0;
+                fromFirst = toFirst;
             }
 
             for (int ch = 0; complete && ch < count; ++ch)

@@ -199,7 +199,8 @@ bool BuiltInEffect::isBusesLayoutSupported (const BusesLayout& layout) const
 {
     const auto in = layout.getMainInputChannelSet(), out = layout.getMainOutputChannelSet();
     const auto key = layout.inputBuses.size() > 1 ? layout.getChannelSet (true, 1) : juce::AudioChannelSet::disabled();
-    return in == out && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo())
+    const auto wide = linksChannels() && in.isDiscreteLayout() && in.size() > 2 && in.size() <= mostLinkedChannels;
+    return in == out && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo() || wide)
            && (key.isDisabled() || key == juce::AudioChannelSet::mono() || key == juce::AudioChannelSet::stereo());
 }
 

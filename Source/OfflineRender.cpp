@@ -1,6 +1,7 @@
 #include "OfflineRender.h"
 #include "AudioEdits.h"
 #include "TrackEffects.h"
+#include "BuiltInEffects.h"
 
 namespace OfflineRender
 {
@@ -101,6 +102,65 @@ namespace
         audio = std::move (result);
         return {};
     }
+
+    /** Runs all of `audio`'s channels through a built-in effect that links them (as the rack plays
+        them through it), in place and lined up for its latency. False, with nothing done, when the
+        effect can't link them; error says why it stopped otherwise. */
+    bool runLinked (Slot& slot, double sampleRate, juce::AudioBuffer<float>& audio, const std::function<bool (float)>& progress, juce::String& error)
+    {
+        auto* effect = dynamic_cast<BuiltInEffects::BuiltInEffect*> (slot.plugin.get());
+
+        if (effect == nullptr || ! effect->linksChannels() || audio.getNumChannels() > BuiltInEffects::BuiltInEffect::mostLinkedChannels)
+            return false;
+
+        effect->enableAllBuses();
+        effect->setNonRealtime (true);
+        effect->setRateAndBufferSizeDetails (sampleRate, blockSize);
+        effect->prepareToPlay (sampleRate, blockSize);
+
+        const auto channels = audio.getNumChannels();
+        const auto numFrames = audio.getNumSamples();
+        const auto latency = juce::jmax (0, effect->getLatencySamples());
+        const auto totalIn = (juce::int64) numFrames + latency;
+        juce::AudioBuffer<float> work (channels, blockSize), result (channels, numFrames);
+
+        for (juce::int64 pos = 0; pos < totalIn; pos += blockSize)
+        {
+            const auto count = (int) juce::jmin ((juce::int64) blockSize, totalIn - pos);
+            work.clear();
+
+            if (pos < numFrames)
+                for (int ch = 0; ch < channels; ++ch)
+                    work.copyFrom (ch, 0, audio, ch, (int) pos, (int) juce::jmin ((juce::int64) count, (juce::int64) numFrames - pos));
+
+            juce::AudioBuffer<float> view (work.getArrayOfWritePointers(), channels, count);
+
+            if (! effect->processLinked (view))
+            {
+                effect->releaseResources();
+                return false;
+            }
+
+            const auto outStart = pos - latency;
+            const auto skip = (int) juce::jmax ((juce::int64) 0, -outStart);
+            const auto writeFrom = juce::jmax ((juce::int64) 0, outStart);
+            const auto toWrite = (int) juce::jmin ((juce::int64) count - skip, (juce::int64) numFrames - writeFrom);
+
+            for (int ch = 0; toWrite > 0 && ch < channels; ++ch)
+                result.copyFrom (ch, (int) writeFrom, work, ch, skip, toWrite);
+
+            if (progress != nullptr && ! progress ((float) (pos + count) / (float) totalIn))
+            {
+                effect->releaseResources();
+                error = "Cancelled.";
+                return true;
+            }
+        }
+
+        effect->releaseResources();
+        audio = std::move (result);
+        return true;
+    }
 }
 
 juce::String processThroughRack (const juce::XmlElement& rackXml,
@@ -125,59 +185,95 @@ juce::String processThroughRack (const juce::XmlElement& rackXml,
             wanted.push_back (slotXml);
 
     // The rack is stereo: the channels go through it two at a time (L R, C LFE, Ls Rs for 5.1),
-    // a mono file or a last odd channel alone, each group through plug-ins of its own.
+    // a mono file or a last odd channel alone, each group through plug-ins of its own; a built-in
+    // effect that links channels (the compressor, the limiter) takes them all at once.
     const auto docChannels = audio.getNumChannels();
     const auto numFrames = audio.getNumSamples();
     const auto groups = juce::jmax (1, (docChannels + 1) / 2);
-    juce::AudioBuffer<float> result (docChannels, numFrames);
+    slots.reserve (wanted.size() * (size_t) groups);   // create hands out pointers into it
 
-    for (int group = 0; group < groups; ++group)
+    const auto create = [&] (const juce::XmlElement& slotXml, juce::String& error) -> Slot*
     {
-        const auto first = 2 * group, count = juce::jmin (2, docChannels - first);
-        juce::AudioBuffer<float> part (count, numFrames);
+        juce::PluginDescription description;
 
-        for (int ch = 0; ch < count; ++ch)
-            part.copyFrom (ch, 0, audio, first + ch, 0, numFrames);
-
-        for (size_t index = 0; index < wanted.size(); ++index)
+        if (auto* d = slotXml.getChildByName ("PLUGIN"); d == nullptr || ! description.loadFromXml (*d))
         {
-            const auto& slotXml = *wanted[index];
-            juce::PluginDescription description;
-
-            if (auto* d = slotXml.getChildByName ("PLUGIN"); d == nullptr || ! description.loadFromXml (*d))
-                return "The rack has a slot without a plug-in description.";
-
-            juce::String error;
-            auto plugin = formats.createPluginInstance (description, sampleRate, blockSize, error);
-
-            if (plugin == nullptr)
-                return description.name + ": " + (error.isNotEmpty() ? error : juce::String ("could not be created."));
-
-            if (auto* stateXml = slotXml.getChildByName ("STATE"))
-            {
-                juce::MemoryBlock state;
-
-                if (state.fromBase64Encoding (stateXml->getAllSubText()))
-                    plugin->setStateInformation (state.getData(), (int) state.getSize());
-            }
-
-            slots.push_back ({ std::move (plugin), description.name });
-            const auto steps = (float) (groups * (int) wanted.size());
-            const auto step = (float) (group * (int) wanted.size() + (int) index);
-
-            if (const auto error2 = runThrough (slots.back(), sampleRate, part, [&progress, step, steps] (float through)
-                                                {
-                                                    return progress == nullptr || progress ((step + through) / steps);
-                                                });
-                error2.isNotEmpty())
-                return error2;
+            error = "The rack has a slot without a plug-in description.";
+            return nullptr;
         }
 
-        for (int ch = 0; ch < count; ++ch)
-            result.copyFrom (first + ch, 0, part, ch, 0, numFrames);
+        auto plugin = formats.createPluginInstance (description, sampleRate, blockSize, error);
+
+        if (plugin == nullptr)
+        {
+            error = description.name + ": " + (error.isNotEmpty() ? error : juce::String ("could not be created."));
+            return nullptr;
+        }
+
+        if (auto* stateXml = slotXml.getChildByName ("STATE"))
+        {
+            juce::MemoryBlock state;
+
+            if (state.fromBase64Encoding (stateXml->getAllSubText()))
+                plugin->setStateInformation (state.getData(), (int) state.getSize());
+        }
+
+        slots.push_back ({ std::move (plugin), description.name });
+        return &slots.back();
+    };
+
+    for (size_t index = 0; index < wanted.size(); ++index)
+    {
+        const auto step = (float) index, steps = (float) wanted.size();
+        juce::String error;
+        auto* first = create (*wanted[index], error);
+
+        if (first == nullptr)
+            return error;
+
+        if (docChannels > 2)
+        {
+            const auto linked = runLinked (*first, sampleRate, audio, [&progress, step, steps] (float through)
+                                           {
+                                               return progress == nullptr || progress ((step + through) / steps);
+                                           }, error);
+
+            if (error.isNotEmpty())
+                return error;
+
+            if (linked)
+                continue;
+        }
+
+        juce::AudioBuffer<float> result (docChannels, numFrames);
+
+        for (int group = 0; group < groups; ++group)
+        {
+            const auto from = 2 * group, count = juce::jmin (2, docChannels - from);
+            juce::AudioBuffer<float> part (count, numFrames);
+
+            for (int ch = 0; ch < count; ++ch)
+                part.copyFrom (ch, 0, audio, from + ch, 0, numFrames);
+
+            auto* slot = group == 0 ? first : create (*wanted[index], error);
+
+            if (slot == nullptr)
+                return error;
+
+            if (const auto failed = runThrough (*slot, sampleRate, part, [&progress, step, steps, group, groups] (float through)
+                                                {
+                                                    return progress == nullptr || progress ((step + ((float) group + through) / (float) groups) / steps);
+                                                });
+                failed.isNotEmpty())
+                return failed;
+
+            for (int ch = 0; ch < count; ++ch)
+                result.copyFrom (from + ch, 0, part, ch, 0, numFrames);
+        }
+
+        audio = std::move (result);
     }
 
-    audio = std::move (result);
     return {};
 }
 
