@@ -308,6 +308,7 @@ namespace
         if (key == graphicEq31Id)   return std::make_unique<GraphicEqProcessor> (31);
         if (key == multibandId)     return std::make_unique<MultibandProcessor>();
         if (key == deEsserId)       return std::make_unique<DeEsserProcessor>();
+        if (key == dynamicEqId)     return std::make_unique<DynamicEqProcessor>();
         return nullptr;
     }
 

@@ -8,6 +8,7 @@
 #include "GraphicEq.h"
 #include "Multiband.h"
 #include "ParametricEq.h"
+#include "DynamicEq.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
     their own ("SpectraBlade"), so racks, track chains, sessions and offline renders create,
@@ -28,6 +29,7 @@ namespace BuiltInEffects
     constexpr const char* graphicEq31Id = "spectrablade:graphic-eq-31";
     constexpr const char* multibandId = "spectrablade:multiband-compressor";
     constexpr const char* deEsserId = "spectrablade:de-esser";
+    constexpr const char* dynamicEqId = "spectrablade:dynamic-eq";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -607,5 +609,80 @@ namespace BuiltInEffects
         int channelsPrepared = 0;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeEsserProcessor)
+    };
+
+    /** The dynamic EQ, live: each band's on, shape, mode, frequency, Q, gain, threshold, ratio, attack
+        and release, and the output, as parameters (over Effects > Dynamic EQ's ranges). A frequency past
+        what the rate allows is brought under it. It runs a frame at a time with DynamicEq::Core, so
+        over a whole file from its start it gives DynamicEq::apply's samples. No latency. */
+    class DynamicEqProcessor final : public BuiltInEffect
+    {
+    public:
+        DynamicEqProcessor();
+
+        /** The settings as played: the parameters' with each frequency brought under the rate. */
+        DynamicEq::Settings getSettings() const;
+
+        /** The settings exactly as the parameters hold them. */
+        DynamicEq::Settings getParameterSettings() const;
+        void setSettings (const DynamicEq::Settings&);
+
+        /** Each band's gain and its part's level at the end of the last block, for the window. */
+        DynamicEq::Panel::Readings getReadings() const noexcept;
+
+        juce::AudioProcessorEditor* createEditor() override;
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+        /** The parameters' values in one order, to tell a change. */
+        std::vector<float> parameterValues() const;
+
+    private:
+        struct BandParameters
+        {
+            juce::AudioParameterBool* on;
+            juce::AudioParameterChoice *shape, *mode;
+            juce::AudioParameterFloat *frequency, *q, *gain, *threshold, *ratio, *attack, *release;
+        };
+
+        std::array<BandParameters, DynamicEq::numBands> bands {};
+        juce::AudioParameterFloat* output = nullptr;
+
+        DynamicEq::Core core;
+        std::array<std::atomic<double>, DynamicEq::numBands> gainDb {}, levelDb {};
+        std::vector<float> applied;
+        double rate = 48000.0;
+        int channelsPrepared = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicEqProcessor)
+    };
+
+    /** The live dynamic EQ's window: its presets and the panel, with the bands' gains and levels as
+        they play. */
+    class DynamicEqEditor final : public juce::AudioProcessorEditor,
+                                  private juce::Timer
+    {
+    public:
+        explicit DynamicEqEditor (DynamicEqProcessor&);
+        ~DynamicEqEditor() override;
+
+        DynamicEq::Panel& getPanel() noexcept                         { return panel; }
+        void refresh();
+
+        void paint (juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        void timerCallback() override                                 { refresh(); }
+        void panelChanged();
+
+        DynamicEqProcessor& effect;
+        EffectPresets::Bar presets;
+        DynamicEq::Panel panel;
+        std::vector<float> shown;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicEqEditor)
     };
 }

@@ -2,30 +2,29 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric and graphic EQ, compressor, multiband compressor, true-peak limiter, de-esser, noise reduction from a noise print, reduce reverb, click repair, hum removal, de-clip, repair, spectral attenuate/remove/heal, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs.
+Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric, dynamic and graphic EQ, compressor, multiband compressor, true-peak limiter, de-esser, noise reduction from a noise print, reduce reverb, click repair, hum removal, de-clip, repair, spectral attenuate/remove/heal, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs.
 
-1. **Dynamic EQ:** bands that cut or boost only while their band is over (or under) a threshold, with attack and release; on the parametric EQ's drawing.
-2. **Mid/side and per-channel EQ and dynamics:** each band or compressor working on mid, side, left or right.
-3. **A linear-phase mode for the EQ.**
-4. **Multiband stereo width:** width set per band, with a low-end mono below a frequency.
-5. **Exciter:** multiband saturation (tube, tape and transistor curves) with a mix.
-6. **Maximizer:** a loudness limiter with selectable character, transient emphasis and a ceiling, beyond the plain limiter.
-7. **Transient shaper:** attack and sustain up or down, per band.
-8. **Match EQ:** the spectrum of a reference (a file or a selection) taken onto the sound, smoothed and with an amount.
-9. **Tonal balance view:** the sound's spectrum against target ranges for a genre.
-10. **Dither and word length:** noise-shaped dither to 16 or 24 bits, as a last step.
-11. **Dialogue isolation:** speech kept and everything else lowered, with an amount for each.
-12. **Voice de-noise (adaptive):** noise tracked as it changes, with no noise print needed.
-13. **Mouth de-click, de-crackle and de-plosive.**
-14. **Breath control:** breaths found between words and lowered.
-15. **Wind, rustle and bleed reduction.**
-16. **Wow and flutter:** pitch drift from tape or vinyl found and taken out.
-17. **Spectral recovery:** the highs missing from band-limited audio (phone, low-rate MP3) rebuilt.
-18. **Music rebalance:** voice, bass, drums and the rest each turned up or down (source separation).
-19. **Ambience match:** the room tone of one part laid under another.
-20. **Dialogue contour:** the pitch of a phrase's ending reshaped.
-21. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
-22. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
+1. **Mid/side and per-channel EQ and dynamics:** each band or compressor working on mid, side, left or right.
+2. **A linear-phase mode for the EQ.**
+3. **Multiband stereo width:** width set per band, with a low-end mono below a frequency.
+4. **Exciter:** multiband saturation (tube, tape and transistor curves) with a mix.
+5. **Maximizer:** a loudness limiter with selectable character, transient emphasis and a ceiling, beyond the plain limiter.
+6. **Transient shaper:** attack and sustain up or down, per band.
+7. **Match EQ:** the spectrum of a reference (a file or a selection) taken onto the sound, smoothed and with an amount.
+8. **Tonal balance view:** the sound's spectrum against target ranges for a genre.
+9. **Dither and word length:** noise-shaped dither to 16 or 24 bits, as a last step.
+10. **Dialogue isolation:** speech kept and everything else lowered, with an amount for each.
+11. **Voice de-noise (adaptive):** noise tracked as it changes, with no noise print needed.
+12. **Mouth de-click, de-crackle and de-plosive.**
+13. **Breath control:** breaths found between words and lowered.
+14. **Wind, rustle and bleed reduction.**
+15. **Wow and flutter:** pitch drift from tape or vinyl found and taken out.
+16. **Spectral recovery:** the highs missing from band-limited audio (phone, low-rate MP3) rebuilt.
+17. **Music rebalance:** voice, bass, drums and the rest each turned up or down (source separation).
+18. **Ambience match:** the room tone of one part laid under another.
+19. **Dialogue contour:** the pitch of a phrase's ending reshaped.
+20. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
+21. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
 
 Sound Library: a browser for a large sound-effects library (100k to a million files and more), with drag and drop into the app and out of it.
 

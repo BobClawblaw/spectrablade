@@ -46,6 +46,7 @@ namespace
 
     juce::PluginDescription multibandDescription()      { return describe ("Multiband Compressor", "Dynamics", multibandId, 0x53424d42); }   // "SBMB"
     juce::PluginDescription deEsserDescription()        { return describe ("De-esser", "Dynamics", deEsserId, 0x53424445); }                 // "SBDE"
+    juce::PluginDescription dynamicEqDescription()      { return describe ("Dynamic EQ", "EQ", dynamicEqId, 0x53424451); }                   // "SBDQ"
 
     juce::PluginDescription graphicEqDescription (int bands)
     {
@@ -121,6 +122,8 @@ namespace
                 effect = std::make_unique<MultibandProcessor>();
             else if (d.fileOrIdentifier == deEsserId)
                 effect = std::make_unique<DeEsserProcessor>();
+            else if (d.fileOrIdentifier == dynamicEqId)
+                effect = std::make_unique<DynamicEqProcessor>();
 
             if (effect == nullptr)
             {
@@ -142,7 +145,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription() };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -1540,5 +1543,193 @@ void DeEsserProcessor::reset()
 juce::AudioProcessorEditor* DeEsserProcessor::createEditor()
 {
     return new PresetsAndParameters (*this, [this] { return getReductionDb(); });
+}
+
+//==============================================================================
+DynamicEqProcessor::DynamicEqProcessor()
+    : BuiltInEffect (dynamicEqDescription(), "SPECTRABLADE_DYNAMIC_EQ")
+{
+    const auto start = DynamicEq::defaultSettings();
+
+    for (size_t i = 0; i < bands.size(); ++i)
+    {
+        const auto id = "band" + juce::String ((int) i + 1), name = "Band " + juce::String ((int) i + 1);
+        const auto& b = start.bands[i];
+        auto& p = bands[i];
+        p.on = addBool (id + "On", name + " On", b.on);
+        p.shape = addChoice (id + "Shape", name + " Shape", { "Bell", "Low Shelf", "High Shelf" }, (int) b.shape);
+        p.mode = addChoice (id + "Mode", name + " Mode", { "Over", "Under" }, (int) b.mode);
+        p.frequency = addFloat (id + "Frequency", name + " Frequency", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) b.frequency, "Hz");
+        p.q = addFloat (id + "Q", name + " Q", { 0.1f, 20.0f, 0.0f, 0.4f }, (float) b.q);
+        p.gain = addFloat (id + "Gain", name + " Gain", { -24.0f, 24.0f }, (float) b.gainDb, "dB");
+        p.threshold = addFloat (id + "Threshold", name + " Threshold", { -80.0f, 0.0f }, (float) b.thresholdDb, "dB");
+        p.ratio = addFloat (id + "Ratio", name + " Ratio", { 1.0f, 20.0f, 0.0f, 0.5f }, (float) b.ratio, ":1");
+        p.attack = addFloat (id + "Attack", name + " Attack", { 0.1f, 500.0f, 0.0f, 0.25f }, (float) b.attackMs, "ms");
+        p.release = addFloat (id + "Release", name + " Release", { 5.0f, 5000.0f, 0.0f, 0.3f }, (float) b.releaseMs, "ms");
+    }
+
+    output = addFloat ("output", "Output", { -24.0f, 24.0f }, (float) start.outputDb, "dB");
+}
+
+std::vector<float> DynamicEqProcessor::parameterValues() const
+{
+    std::vector<float> v { output->get() };
+
+    for (auto& p : bands)
+        v.insert (v.end(), { p.on->get() ? 1.0f : 0.0f, (float) p.shape->getIndex(), (float) p.mode->getIndex(), p.frequency->get(), p.q->get(),
+                             p.gain->get(), p.threshold->get(), p.ratio->get(), p.attack->get(), p.release->get() });
+
+    return v;
+}
+
+DynamicEq::Settings DynamicEqProcessor::getParameterSettings() const
+{
+    DynamicEq::Settings s;
+    s.outputDb = output->get();
+
+    for (size_t i = 0; i < bands.size(); ++i)
+    {
+        const auto& p = bands[i];
+        s.bands[i] = { p.on->get(), (DynamicEq::Shape) p.shape->getIndex(), (double) p.frequency->get(), (double) p.q->get(), (double) p.gain->get(),
+                       (double) p.threshold->get(), (double) p.ratio->get(), (double) p.attack->get(), (double) p.release->get(), (DynamicEq::Mode) p.mode->getIndex() };
+    }
+
+    return s;
+}
+
+DynamicEq::Settings DynamicEqProcessor::getSettings() const
+{
+    return DynamicEq::withinRate (getParameterSettings(), rate);
+}
+
+void DynamicEqProcessor::setSettings (const DynamicEq::Settings& s)
+{
+    for (size_t i = 0; i < bands.size(); ++i)
+    {
+        const auto& b = s.bands[i];
+        auto& p = bands[i];
+        *p.on = b.on;
+        *p.shape = (int) b.shape;
+        *p.mode = (int) b.mode;
+        setExactly (*p.frequency, (float) b.frequency);
+        setExactly (*p.q, (float) b.q);
+        setExactly (*p.gain, (float) b.gainDb);
+        setExactly (*p.threshold, (float) b.thresholdDb);
+        setExactly (*p.ratio, (float) b.ratio);
+        setExactly (*p.attack, (float) b.attackMs);
+        setExactly (*p.release, (float) b.releaseMs);
+    }
+
+    setExactly (*output, (float) s.outputDb);
+}
+
+DynamicEq::Panel::Readings DynamicEqProcessor::getReadings() const noexcept
+{
+    DynamicEq::Panel::Readings r;
+
+    for (size_t i = 0; i < bands.size(); ++i)
+    {
+        r.gainDb[i] = gainDb[i].load();
+        r.levelDb[i] = levelDb[i].load();
+    }
+
+    return r;
+}
+
+juce::AudioProcessorEditor* DynamicEqProcessor::createEditor()
+{
+    return new DynamicEqEditor (*this);
+}
+
+void DynamicEqProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
+    core.prepare (channelsPrepared, rate);
+    applied = parameterValues();
+    core.set (getSettings());
+    core.reset();
+}
+
+void DynamicEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    if (auto now = parameterValues(); now != applied)
+    {
+        applied = now;
+        core.set (getSettings());
+    }
+
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
+    const auto& gains = core.getGainDb();
+    const auto levels = core.getLevelDb();
+
+    for (size_t i = 0; i < bands.size(); ++i)
+    {
+        gainDb[i] = gains[i];
+        levelDb[i] = levels[i];
+    }
+}
+
+void DynamicEqProcessor::reset()
+{
+    core.reset();
+
+    for (size_t i = 0; i < bands.size(); ++i)
+    {
+        gainDb[i] = 0.0;
+        levelDb[i] = -150.0;
+    }
+}
+
+//==============================================================================
+DynamicEqEditor::DynamicEqEditor (DynamicEqProcessor& owner)
+    : AudioProcessorEditor (owner), effect (owner),
+      presets (EffectPresets::userStore(), owner.getPresetKey(), [&owner] { return owner.getPresetValues(); },
+               [this, &owner] (const EffectPresets::Values& v)
+               {
+                   owner.setPresetValues (v);
+                   refresh();
+               }),
+      panel (owner.getParameterSettings(), owner.getSampleRate() > 0.0 ? owner.getSampleRate() : 48000.0)
+{
+    shown = effect.parameterValues();
+    panel.onChange = [this] { panelChanged(); };
+    panel.readLive = [this] { return effect.getReadings(); };
+    addAndMakeVisible (presets);
+    addAndMakeVisible (panel);
+    setSize (panel.getWidth(), panel.getHeight() + 40);
+    startTimerHz (20);
+}
+
+DynamicEqEditor::~DynamicEqEditor()
+{
+    stopTimer();
+}
+
+void DynamicEqEditor::panelChanged()
+{
+    effect.setSettings (panel.getSettings());
+    shown = effect.parameterValues();
+}
+
+void DynamicEqEditor::refresh()
+{
+    if (auto now = effect.parameterValues(); now != shown)
+    {
+        shown = std::move (now);
+        panel.setSettings (effect.getParameterSettings());
+    }
+}
+
+void DynamicEqEditor::paint (juce::Graphics& g)
+{
+    g.fillAll (getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId));
+}
+
+void DynamicEqEditor::resized()
+{
+    auto r = getLocalBounds();
+    presets.setBounds (r.removeFromTop (40).reduced (8, 6));
+    panel.setBounds (r);
 }
 }

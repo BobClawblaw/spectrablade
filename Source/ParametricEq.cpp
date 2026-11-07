@@ -1,5 +1,6 @@
 #include "ParametricEq.h"
 #include "Theme.h"
+#include "EqDrawing.h"
 
 namespace
 {
@@ -87,41 +88,18 @@ ParametricEq::ParametricEq (const Settings& initial, double rate)
 
 juce::Colour ParametricEq::bandColour (int index)
 {
-    // Five hues spread round the wheel, bright enough to read on a dark or a light drawing.
-    static const juce::Colour colours[] { juce::Colour (0xffff7a59), juce::Colour (0xfff2c14e), juce::Colour (0xff5fd38d),
-                                          juce::Colour (0xff4fb3f6), juce::Colour (0xffb58cf5) };
-    return colours[(size_t) juce::jlimit (0, numBands - 1, index)];
+    return EqDrawing::bandColour (index);
 }
 
 void ParametricEq::takeSpectrum (const std::vector<float>& levels, double rate)
 {
-    // Falls back 0.6 dB a frame (15 dB a second at 25 frames), so peaks linger long enough to read.
-    if (spectrum.size() != levels.size() || ! juce::exactlyEqual (rate, spectrumRate))
-        spectrum.assign (levels.size(), -150.0f);
-
-    spectrumRate = rate;
-
-    for (size_t i = 0; i < levels.size(); ++i)
-        spectrum[i] = juce::jmax (levels[i], spectrum[i] - 0.6f);
+    spectrum.take (levels, rate);
 }
 
 void ParametricEq::timerCallback()
 {
-    if (readOutput == nullptr || ! isShowing())
-        return;
-
-    const auto rate = readOutput (recent);
-
-    if (rate <= 0.0)
-        return;
-
-    std::vector<float> mono ((size_t) Analysis::fftSize);
-
-    for (int i = 0; i < Analysis::fftSize; ++i)
-        mono[(size_t) i] = 0.5f * (recent.getSample (0, i) + recent.getSample (1, i));
-
-    takeSpectrum (Analysis::spectrumDb (mono.data(), Analysis::fftSize), rate);
-    repaint (getCurveArea().toNearestInt());
+    if (isShowing() && spectrum.read (readOutput, recent))
+        repaint (getCurveArea().toNearestInt());
 }
 
 void ParametricEq::setSettings (const Settings& s)
@@ -191,14 +169,12 @@ juce::Rectangle<float> ParametricEq::getCurveArea() const
 
 float ParametricEq::xForFrequency (double frequency) const
 {
-    const auto area = getCurveArea();
-    return area.getX() + area.getWidth() * (float) (std::log (frequency / minHz) / std::log (maxHz / minHz));
+    return EqDrawing::xForFrequency (getCurveArea(), frequency);
 }
 
 double ParametricEq::frequencyForX (float x) const
 {
-    const auto area = getCurveArea();
-    return minHz * std::pow (maxHz / minHz, (double) ((x - area.getX()) / area.getWidth()));
+    return EqDrawing::frequencyForX (getCurveArea(), x);
 }
 
 float ParametricEq::yForDb (double db) const
@@ -407,50 +383,6 @@ juce::Path ParametricEq::responsePath (int band) const
     return path;
 }
 
-void ParametricEq::paintSpectrum (juce::Graphics& g, juce::Rectangle<float> area) const
-{
-    if (spectrum.empty() || spectrumRate <= 0.0)
-        return;
-
-    // -90 dBFS at the bottom to 0 at the top, one point a pixel and a half.
-    constexpr float floorDb = -90.0f;
-    juce::Path shape;
-    shape.startNewSubPath (area.getX(), area.getBottom());
-
-    const auto binOf = [this] (double hz) { return hz * Analysis::fftSize / spectrumRate; };
-    const auto last = (int) spectrum.size() - 1;
-
-    for (auto x = area.getX(); x <= area.getRight(); x += 1.5f)
-    {
-        // Where a point covers less than a bin (the lows), between the two bins round it, so the
-        // shape is smooth rather than stepped; where it covers several, the loudest of them.
-        const auto from = binOf (frequencyForX (x)), to = binOf (frequencyForX (x + 1.5f));
-        auto level = -150.0f;
-
-        if (to - from < 1.0)
-        {
-            const auto below = juce::jlimit (0, last, (int) std::floor (from));
-            const auto above = juce::jmin (last, below + 1);
-            level = juce::jmap ((float) (from - std::floor (from)), spectrum[(size_t) below], spectrum[(size_t) above]);
-        }
-        else
-        {
-            for (auto b = juce::jlimit (0, last, (int) std::floor (from)); b <= juce::jlimit (0, last, (int) std::ceil (to)); ++b)
-                level = juce::jmax (level, spectrum[(size_t) b]);
-        }
-
-        shape.lineTo (x, area.getBottom() - area.getHeight() * juce::jlimit (0.0f, 1.0f, (level - floorDb) / -floorDb));
-    }
-
-    shape.lineTo (area.getRight(), area.getBottom());
-    shape.closeSubPath();
-    g.setGradientFill (juce::ColourGradient (Theme::overlay.withAlpha (0.16f), area.getX(), area.getY(),
-                                             Theme::overlay.withAlpha (0.03f), area.getX(), area.getBottom(), false));
-    g.fillPath (shape);
-    g.setColour (Theme::overlay.withAlpha (0.22f));
-    g.strokePath (shape, juce::PathStrokeType (1.0f));
-}
-
 void ParametricEq::paintReadout (juce::Graphics& g, int band) const
 {
     const auto& b = settings[(size_t) band].band;
@@ -465,20 +397,8 @@ void ParametricEq::paintReadout (juce::Graphics& g, int band) const
     if (! settings[(size_t) band].on)
         text = "Off: double-click to switch on";
 
-    const juce::Font font (juce::FontOptions (12.0f));
-    const auto width = juce::GlyphArrangement::getStringWidth (font, text) + 16.0f;
-    const auto area = getCurveArea();
     const auto at = settings[(size_t) band].on ? pointFor (band) : juce::Point<float> (xForFrequency (b.frequency), yForDb (0.0));
-    auto box = juce::Rectangle<float> (width, 22.0f).withCentre (at.translated (0.0f, at.y - area.getY() > 40.0f ? -30.0f : 30.0f));
-    box = box.withX (juce::jlimit (area.getX() + 2.0f, area.getRight() - width - 2.0f, box.getX()));
-
-    g.setColour (Theme::inset.withAlpha (0.92f));
-    g.fillRoundedRectangle (box, 5.0f);
-    g.setColour (bandColour (band).withAlpha (0.8f));
-    g.drawRoundedRectangle (box, 5.0f, 1.0f);
-    g.setColour (Theme::textStrong);
-    g.setFont (font);
-    g.drawText (text, box, juce::Justification::centred);
+    EqDrawing::paintReadout (g, getCurveArea(), at, text, bandColour (band));
 }
 
 void ParametricEq::paint (juce::Graphics& g)
@@ -502,41 +422,14 @@ void ParametricEq::paint (juce::Graphics& g)
     }
 
     // The drawing: a well, darker at the bottom, with the spectrum behind everything else.
-    g.setGradientFill (juce::ColourGradient (Theme::canvas.brighter (0.06f), area.getX(), area.getY(),
-                                             Theme::canvas.darker (0.25f), area.getX(), area.getBottom(), false));
-    g.fillRoundedRectangle (area, 6.0f);
+    EqDrawing::paintWell (g, area);
     {
         juce::Graphics::ScopedSaveState clip (g);
         g.reduceClipRegion (area.toNearestInt());
-        paintSpectrum (g, area);
+        EqDrawing::paintSpectrum (g, area, spectrum);
     }
 
-    g.setFont (juce::FontOptions (10.5f));
-
-    for (auto hz : { 30.0, 50.0, 100.0, 200.0, 300.0, 500.0, 1000.0, 2000.0, 3000.0, 5000.0, 10000.0 })
-    {
-        const auto x = xForFrequency (hz);
-        const auto major = hz == 100.0 || hz == 1000.0 || hz == 10000.0;
-        g.setColour (Theme::overlay.withAlpha (major ? 0.12f : 0.06f));
-        g.drawVerticalLine ((int) x, area.getY(), area.getBottom());
-        g.setColour (Theme::dimText);
-        g.drawText (hz >= 1000.0 ? juce::String ((int) (hz / 1000.0)) + "k" : juce::String ((int) hz),
-                    juce::Rectangle<float> (x - 15.0f, area.getBottom() - 15.0f, 30.0f, 12.0f), juce::Justification::centred);
-    }
-
-    for (auto db : { -18.0, -12.0, -6.0, 0.0, 6.0, 12.0, 18.0 })
-    {
-        const auto y = yForDb (db);
-        g.setColour (Theme::overlay.withAlpha (juce::exactlyEqual (db, 0.0) ? 0.22f : 0.06f));
-        g.drawHorizontalLine ((int) y, area.getX(), area.getRight());
-
-        if (std::abs (db) > 3.0 && std::fmod (std::abs (db), 12.0) < 0.5)
-        {
-            g.setColour (Theme::dimText);
-            g.drawText ((db > 0.0 ? "+" : "") + juce::String ((int) db), juce::Rectangle<float> (area.getRight() - 30.0f, y - 7.0f, 26.0f, 14.0f),
-                        juce::Justification::right);
-        }
-    }
+    EqDrawing::paintGrid (g, area, rangeDb);
 
     juce::Graphics::ScopedSaveState clip (g);
     g.reduceClipRegion (area.toNearestInt());
@@ -561,48 +454,17 @@ void ParametricEq::paint (juce::Graphics& g)
         g.strokePath (line, juce::PathStrokeType (strong ? 1.5f : 1.0f));
     }
 
-    // All of them together, glowing.
-    const auto total = responsePath (-1);
-    const auto glow = Theme::accentLight;
-    g.setColour (glow.withAlpha (0.10f));
-    g.strokePath (total, juce::PathStrokeType (9.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour (glow.withAlpha (0.22f));
-    g.strokePath (total, juce::PathStrokeType (4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.setColour (glow.interpolatedWith (juce::Colours::white, 0.5f));
-    g.strokePath (total, juce::PathStrokeType (2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    // The handles: numbered discs with a halo, rings for the bands switched off.
-    g.setFont (juce::FontOptions (11.0f, juce::Font::bold));
+    // All of them together, glowing, and the handles: numbered discs, rings for the bands switched off.
+    EqDrawing::paintGlow (g, responsePath (-1));
 
     for (int i = 0; i < numBands; ++i)
     {
-        const auto colour = bandColour (i);
         const auto strong = i == selected || i == hovered;
 
-        if (! settings[(size_t) i].on)
-        {
-            const auto p = juce::Point<float> (xForFrequency (settings[(size_t) i].band.frequency), zero);
-            g.setColour (colour.withAlpha (strong ? 0.8f : 0.35f));
-            g.drawEllipse (juce::Rectangle<float> (14.0f, 14.0f).withCentre (p), 1.5f);
-            g.drawText (juce::String (i + 1), juce::Rectangle<float> (14.0f, 14.0f).withCentre (p), juce::Justification::centred);
-            continue;
-        }
-
-        const auto p = pointFor (i);
-        const auto radius = strong ? 9.5f : 8.0f;
-        g.setColour (colour.withAlpha (strong ? 0.30f : 0.16f));
-        g.fillEllipse (juce::Rectangle<float> (radius * 3.2f, radius * 3.2f).withCentre (p));
-        g.setColour (colour);
-        g.fillEllipse (juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (p));
-
-        if (i == selected)
-        {
-            g.setColour (juce::Colours::white.withAlpha (0.9f));
-            g.drawEllipse (juce::Rectangle<float> (radius * 2.0f + 5.0f, radius * 2.0f + 5.0f).withCentre (p), 1.5f);
-        }
-
-        g.setColour (juce::Colour (0xff15171c));
-        g.drawText (juce::String (i + 1), juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (p), juce::Justification::centred);
+        if (settings[(size_t) i].on)
+            EqDrawing::paintHandle (g, pointFor (i), i, strong, i == selected);
+        else
+            EqDrawing::paintOffRing (g, { xForFrequency (settings[(size_t) i].band.frequency), zero }, i, strong);
     }
 
     const auto shown = dragging >= 0 ? dragging : hovered;

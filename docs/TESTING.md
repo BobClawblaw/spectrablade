@@ -174,6 +174,7 @@ What they check:
 - Reverse Each Region: regions turned round in place, the rest untouched, overlapping and one-frame regions skipped.
 - Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.
 - Graphic EQ: the bands, a band's gain at and off its centre, the cascade against the bands' responses, refused settings; live bit for bit with offline; the panel: pressing sets a band, one stroke across sets every band passed over along its line, double-click resets one, the wheel steps it, setting the gains from outside says nothing.
+- Dynamic EQ: every band at 0 dB (or under its threshold) passing the sound bit for bit; a bell cutting a loud 1 kHz by its full gain at a ratio of 20 while 100 Hz and 8 kHz keep within 0.3 dB, letting go once it falls quiet; a high shelf lifting a quiet 10 kHz under its threshold by the static gain at 2:1; the response (a bell's gain at its centre, flat a decade off, a shelf's 6 dB an octave); refused settings and withinRate; live bit for bit with offline in uneven blocks, the readings the core's, state and presets restoring every setting, the window both ways and left alone on closing; the panel's dragging, wheel, double-click, the meter's threshold line and a quiet setSettings.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.

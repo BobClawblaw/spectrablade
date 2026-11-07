@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1324,6 +1324,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdDynamicEq:  info.setInfo ("Dynamic EQ...", "EQ bands that cut or boost only while their part of the sound is over (or under) a threshold", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdChorus:     info.setInfo ("Chorus...", "Thicken the sound with a slowly swept copy of it, a few milliseconds late", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -2012,6 +2013,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdLimiter:    showLimiter(); break;
         case cmdMultiband:  showMultiband(); break;
         case cmdDeEsser:    showDeEsser(); break;
+        case cmdDynamicEq:  showDynamicEq(); break;
         case cmdChorus:     showSweptDelay (false); break;
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
@@ -2545,7 +2547,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats });
             group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
-            group ("EQ", { cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31 });
+            group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31 });
             group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, cmdNoiseGate });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
@@ -7776,6 +7778,94 @@ void MainComponent::showMultiband()
 
         if (auto next = Multiband::compress (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), rate, multibandSettings))
             applyEdit (std::move (next), "Multiband Compressor", waveform.getSelection());
+    }), true);
+}
+
+void MainComponent::showDynamicEq()
+{
+    auto* box = new juce::AlertWindow ("Dynamic EQ",
+                                       "Five bands, each a bell or a shelf that moves only while its own part of the sound is over (or under) its "
+                                       "threshold, by as much as that part is past it (at the ratio), up to the band's gain: a cut at 3 kHz over "
+                                       "-30 dB leaves the sound alone until the 3 kHz part gets loud. Drag a handle for its frequency and gain, the "
+                                       "wheel for a bell's Q, the line on the meter for the picked band's threshold. A band at 0 dB changes nothing.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    const auto rate = engine.document.getSampleRate();
+    auto panel = std::make_shared<DynamicEq::Panel> (dynamicEqSettings, rate);
+    panel->readOutput = [this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); };
+    box->addCustomComponent (panel.get());
+
+    auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
+    preview->setSize (260, 24);
+    box->addCustomComponent (preview.get());
+
+    // The live dynamic EQ with the panel's settings, on the selection over and over; its gains and
+    // levels drawn on the panel as it plays.
+    const auto update = [this, p = panel.get(), toggle = preview.get()]
+    {
+        if (! toggle->getToggleState())
+        {
+            if (previewOwner == PreviewOwner::dynamicEq)
+                stopPreview();
+
+            p->readLive = nullptr;
+            p->setReadings ({});
+            return;
+        }
+
+        if (auto* live = dynamic_cast<BuiltInEffects::DynamicEqProcessor*> (previewEffectOf (PreviewOwner::dynamicEq)))
+        {
+            live->setSettings (p->getSettings());
+            return;
+        }
+
+        auto made = std::make_unique<BuiltInEffects::DynamicEqProcessor>();
+        made->setSettings (p->getSettings());
+        auto* live = made.get();
+        startPreview (PreviewOwner::dynamicEq, std::move (made), [toggle, p] { toggle->setToggleState (false, juce::dontSendNotification); p->readLive = nullptr; });
+
+        if (previewOwner != PreviewOwner::dynamicEq)
+            toggle->setToggleState (false, juce::dontSendNotification);
+        else
+            p->readLive = [live] { return live->getReadings(); };
+    };
+    preview->onClick = update;
+    panel->onChange = update;
+
+    auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::dynamicEqId,
+                                                         [p = panel.get()]
+                                                         {
+                                                             BuiltInEffects::DynamicEqProcessor holder;
+                                                             holder.setSettings (p->getSettings());
+                                                             return holder.getPresetValues();
+                                                         },
+                                                         [p = panel.get(), update] (const EffectPresets::Values& v)
+                                                         {
+                                                             BuiltInEffects::DynamicEqProcessor holder;
+                                                             holder.setSettings (p->getSettings());
+                                                             holder.setPresetValues (v);
+                                                             p->setSettings (holder.getParameterSettings());
+                                                             update();
+                                                         });
+    box->addCustomComponent (presets.get());
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, panel, preview, presets] (int result)
+    {
+        if (previewOwner == PreviewOwner::dynamicEq)
+            stopPreview();
+
+        panel->readLive = nullptr;
+
+        if (result != 1)
+            return;
+
+        const auto fileRate = engine.document.getSampleRate();
+        dynamicEqSettings = DynamicEq::withinRate (panel->getSettings(), fileRate);
+        const auto r = selectionOrAll();
+
+        if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
+            applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
 }
 

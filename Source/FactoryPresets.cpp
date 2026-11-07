@@ -89,6 +89,23 @@ namespace
         return v;
     }
 
+    /** A dynamic EQ preset: each band as on, shape (0 bell, 1 low shelf, 2 high shelf), mode (0 over, 1 under), frequency, Q, gain,
+        threshold, ratio, attack and release; the bands not named are off at their starting places. */
+    Values dynamicEq (const std::vector<std::array<double, 10>>& bands, double output = 0.0)
+    {
+        Values v { { "output", output } };
+        const std::array<const char*, 10> names { "On", "Shape", "Mode", "Frequency", "Q", "Gain", "Threshold", "Ratio", "Attack", "Release" };
+        const std::array<std::array<double, 10>, 5> starts {{ { 0, 1, 0, 100, 1, 0, -30, 4, 10, 150 }, { 0, 0, 0, 400, 1, 0, -30, 4, 10, 150 },
+                                                              { 0, 0, 0, 1000, 1, 0, -30, 4, 10, 150 }, { 0, 0, 0, 3000, 1, 0, -30, 4, 10, 150 },
+                                                              { 0, 2, 0, 8000, 1, 0, -30, 4, 10, 150 } }};
+
+        for (size_t b = 0; b < 5; ++b)
+            for (size_t i = 0; i < 10; ++i)
+                v["band" + juce::String ((int) b + 1) + names[i]] = b < bands.size() ? bands[b][i] : starts[b][i];
+
+        return v;
+    }
+
     /** A multiband preset: the crossovers, then each band's threshold, ratio, attack, release and makeup, then the output. */
     Values multiband (double lowCrossover, double highCrossover, const std::array<std::array<double, 5>, 3>& bands, double output)
     {
@@ -267,6 +284,12 @@ namespace
             { "Gentle", { { "frequency", 6500.0 }, { "threshold", -24.0 }, { "reduction", 3.0 }, { "mode", 0.0 }, { "listen", 0.0 } } },
             { "Strong", { { "frequency", 6000.0 }, { "threshold", -36.0 }, { "reduction", 10.0 }, { "mode", 0.0 }, { "listen", 0.0 } } },
             { "Podcast (whole sound)", { { "frequency", 6000.0 }, { "threshold", -30.0 }, { "reduction", 6.0 }, { "mode", 1.0 }, { "listen", 0.0 } } } };
+        t["spectrablade:dynamic-eq"] = {
+            { "Tame harsh vocals", dynamicEq ({ { 1, 0, 0, 3200, 1.5, -6, -30, 4, 5, 120 } }) },
+            { "Control a boomy low end", dynamicEq ({ { 1, 1, 0, 120, 1, -6, -24, 4, 20, 200 } }) },
+            { "Hold down sibilance and mud", dynamicEq ({ { 1, 0, 0, 250, 1.2, -4, -26, 3, 15, 180 }, { 1, 0, 0, 7000, 2, -6, -34, 4, 2, 80 } }) },
+            { "Lift quiet presence", dynamicEq ({ { 1, 0, 1, 2500, 1, 4, -36, 3, 20, 250 } }) },
+            { "Air that never gets harsh", dynamicEq ({ { 1, 2, 0, 9000, 1, -4, -30, 3, 5, 120 }, { 1, 0, 1, 12000, 0.8, 3, -45, 2, 20, 300 } }) } };
         t["spectrablade:multiband-compressor"] = {
             { "Master glue", multiband (200, 3000, {{ { -20, 2, 30, 200, 1 }, { -18, 1.8, 20, 150, 1 }, { -22, 2, 10, 100, 1 } }}, 0) },
             { "Tame a boomy low end", multiband (150, 3000, {{ { -28, 4, 20, 150, 0 }, { -10, 1, 20, 150, 0 }, { -10, 1, 10, 100, 0 } }}, 0) },

@@ -2,6 +2,7 @@
 
 #include "Equalizer.h"
 #include "Analysis.h"
+#include "EqDrawing.h"
 
 /** Five equalizer bands at once, each with an on switch, a type, a frequency, a gain and a Q,
     over a drawing of the response they make together (20 Hz to 20 kHz across, -24 to +24 dB up).
@@ -58,7 +59,7 @@ public:
 
     /** The spectrum drawn behind the curve (dB by bin, as Analysis::spectrumDb), as from readOutput. */
     void takeSpectrum (const std::vector<float>& spectrumDb, double spectrumRate);
-    const std::vector<float>& getSpectrum() const noexcept   { return spectrum; }
+    const std::vector<float>& getSpectrum() const noexcept   { return spectrum.levels; }
 
     /** Each band's colour, the same in every theme. */
     static juce::Colour bandColour (int index);
@@ -107,16 +108,14 @@ private:
     void readRow (int index);
     void timerCallback() override;
     juce::Path responsePath (int band) const;   // one band's response, or (-1) all of them together
-    void paintSpectrum (juce::Graphics&, juce::Rectangle<float> area) const;
     void paintReadout (juce::Graphics&, int band) const;
 
     Settings settings;
     double sampleRate;
     std::array<std::unique_ptr<Row>, numBands> rows;
     int dragging = -1, hovered = -1, selected = -1;
-    std::vector<float> spectrum;
-    double spectrumRate = 0.0;
-    juce::AudioBuffer<float> recent { 2, Analysis::fftSize };
+    EqDrawing::HeldSpectrum spectrum;
+    juce::AudioBuffer<float> recent;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEq)
 };

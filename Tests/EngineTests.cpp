@@ -37,6 +37,7 @@
 #include "DuckingTests.h"
 #include "FadeHandleTests.h"
 #include "MultibandTests.h"
+#include "DynamicEqTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -561,6 +562,7 @@ int main (int argc, char* argv[])
         runEqTests();
         runGraphicEqTests();
         runMultibandTests();
+        runDynamicEqTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();
