@@ -216,6 +216,24 @@ void runBatchTests (AudioEngine& engine)
                    + Loudness::format (cappedLoud->integrated, "LUFS") + ", said in the report, and through the limiter it reaches "
                    + Loudness::format (limitedLoud->integrated, "LUFS") + " (true peak " + Loudness::format (limitedLoud->truePeak, "dBTP") + ")");
 
+        // A delivery spec as the level: brought to it, with what it measures in the notes.
+        Batch::Settings d;
+        d.folder = out;
+        d.bitDepth = 32;
+        d.level = Batch::Level::spec;
+        d.specLufs = -14.0;
+        d.specToleranceLu = 1.0;
+        d.specCeilingDbtp = -1.0;
+        d.suffix = " delivered";
+        const auto delivered = run (aiff, d, engine);
+        const auto deliveredBack = AudioFileIO::load (delivered.written, formats);
+        const auto deliveredLoud = Loudness::measure (*deliveredBack.snapshot, 0, deliveredBack.snapshot->getNumFrames(), 48000.0);
+        check (delivered.error.isEmpty() && std::abs (deliveredLoud->integrated + 14.0) < 0.06 && deliveredLoud->truePeak <= -1.0
+                   && delivered.notes.joinIntoString ("|").contains ("Meet Online -14 LUFS: meets it at")
+                   && Batch::report ({ delivered }).contains ("Meet Online -14 LUFS: meets it at"),
+               "batch: to the -14 LUFS delivery spec it measures " + Loudness::format (deliveredLoud->integrated, "LUFS") + ", true peak "
+                   + Loudness::format (deliveredLoud->truePeak, "dBTP") + ", and the report says it meets it: " + delivered.notes.joinIntoString ("; "));
+
         Batch::Settings q = l;
         q.suffix = " quiet";
         q.limit = false;

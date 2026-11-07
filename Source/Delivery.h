@@ -20,6 +20,10 @@ namespace Delivery
         -2 dBTP), and two common online targets (-16 and -14 LUFS, +/-1 LU, -1 dBTP). */
     const std::vector<Spec>& specs();
 
+    /** The spec with these numbers: one of specs() when it matches, otherwise one named after its
+        target ("Delivery spec -20.0 LUFS"). */
+    Spec specFor (double targetLufs, double toleranceLu, double maxTruePeak);
+
     /** One line of a report: what is measured, what the spec asks, and whether it passes. A
         line with an empty `required` is for information and always passes. */
     struct Line

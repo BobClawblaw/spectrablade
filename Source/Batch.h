@@ -10,13 +10,13 @@
     Each file is read whole (any type the app opens, through ffmpeg where it must), then, in
     order: run through the effects rack (fresh plug-ins, latency compensated, as Apply Rack does),
     played through a recorded sequence (on the whole file), converted to another sample rate, fitted to one or two channels, brought to a level (its peak,
-    or its integrated loudness under a true-peak ceiling), and written in the chosen type. Markers,
+    its integrated loudness under a true-peak ceiling, or a delivery spec, with what it measures in the notes), and written in the chosen type. Markers,
     tags and cover art go with it where the new type holds them. The source is never changed:
     the new file goes in the chosen folder (or beside the source), named after the source with
     any suffix, and numbered when that name is taken. */
 namespace Batch
 {
-    enum class Level { none, peak, loudness };
+    enum class Level { none, peak, loudness, spec };
 
     struct Settings
     {
@@ -29,6 +29,7 @@ namespace Batch
         double lufs = -16.0;           // integrated loudness, for Level::loudness
         double ceilingDbtp = -1.0;     // the true peak it may not pass
         bool limit = false;            // reach the loudness with a true-peak limiter where gain alone can't
+        double specLufs = -23.0, specToleranceLu = 0.5, specCeilingDbtp = -1.0;   // for Level::spec, as Meet Delivery Spec does it
 
         /** "wav", "aiff", "flac", "mp3", "aac", or "ffmpeg:" and an ffmpeg target's codec. */
         juce::String type = "wav";

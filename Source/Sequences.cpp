@@ -1,4 +1,5 @@
 #include "Sequences.h"
+#include "Delivery.h"
 #include "TimeStretch.h"
 #include "AudioEdits.h"
 #include "CentreChannel.h"
@@ -41,6 +42,7 @@ namespace
             { "gain", "Gain", { "db" } },
             { "normalize", "Normalize", { "db", "apart" } },
             { "matchLoudness", "Match Loudness", { "target", "ceiling", "limit" } },
+            { "deliverySpec", "Meet Delivery Spec", { "target", "tolerance", "ceiling" } },
             { "invert", "Invert", {} },
             { "reverse", "Reverse", {} },
             { "removeDc", "Remove DC Offset", {} },
@@ -170,6 +172,9 @@ juce::String Step::name() const
     if (kind == "matchLoudness")
         return "Match Loudness " + Loudness::format (get (values, "target"), "LUFS");
 
+    if (kind == "deliverySpec")
+        return "Meet " + Delivery::specFor (get (values, "target"), get (values, "tolerance"), get (values, "ceiling")).name;
+
     if (kind == "convertRate")
         return "Convert to " + juce::String (get (values, "rate") / 1000.0, 1) + " kHz";
 
@@ -234,6 +239,10 @@ juce::String problem (const Step& step, double rate)
 
     if ((step.kind == "stretch" && (get (v, "percent") < TimeStretch::shortest * 100.0 || get (v, "percent") > TimeStretch::longest * 100.0))
         || (step.kind == "pitch" && std::abs (get (v, "semitones")) > TimeStretch::widestShift))
+        return bad();
+
+    if (step.kind == "deliverySpec" && (get (v, "target") < -70.0 || get (v, "target") > 0.0 || get (v, "tolerance") < 0.0 || get (v, "tolerance") > 10.0
+                                        || get (v, "ceiling") < -30.0 || get (v, "ceiling") > 0.0))
         return bad();
 
     if (step.kind == "matchLoudness" && (get (v, "target") < -70.0 || get (v, "target") > 0.0 || get (v, "ceiling") < -30.0 || get (v, "ceiling") > 0.0))
@@ -438,6 +447,32 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
 
         if (s.getNumFrames() > 0 && s.getNumChannels() != channels)
             out.snapshot = AudioEdits::convertChannels (s, channels);
+    }
+    else if (k == "deliverySpec" && end > start)
+    {
+        // As Meet Delivery Spec does it, and what the result measures against the spec, as notes.
+        const auto spec = Delivery::specFor (get (v, "target"), get (v, "tolerance"), get (v, "ceiling"));
+        auto d = Delivery::deliver (s, start, end, rate, spec, progress);
+
+        if (d.error.isNotEmpty())
+        {
+            out.notes.add ("nothing above the -70 LUFS gate, so its loudness wasn't changed");
+        }
+        else if (d.snapshot == nullptr)
+        {
+            out.error = "Stopped.";
+            return out;
+        }
+        else
+        {
+            out.snapshot = std::move (d.snapshot);
+
+            if (d.limited)
+                out.notes.add ("limited, with " + juce::String (d.gainDb, 1) + " dB of gain into the true-peak limiter");
+
+            out.notes.add (juce::String (Delivery::passes (spec, d.after) ? "meets it at " : "does not meet it, at ")
+                           + Loudness::format (d.after.integrated, "LUFS") + ", true peak " + Loudness::format (d.after.truePeak, "dBTP"));
+        }
     }
     else if (k == "matchLoudness")
     {

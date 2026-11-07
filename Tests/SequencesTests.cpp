@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/Delivery.h"
 #include "../Source/AudioEngine.h"
 #include "../Source/AudioEdits.h"
 #include "../Source/AudioFileIO.h"
@@ -117,6 +118,8 @@ void runSequencesTests (AudioEngine& engine)
             { { "normalize", { { "db", -0.5 }, { "apart", 1.0 } }, nullptr }, AudioEdits::normalizeChannels (s, a, b, -0.5f) },
             { { "matchLoudness", { { "target", -18.0 }, { "ceiling", -1.0 }, { "limit", 0.0 } }, nullptr },
               AudioEdits::gain (s, a, b, (float) juce::jmin (wanted, -1.0 - measured->truePeak)) },
+            { { "deliverySpec", { { "target", -23.0 }, { "tolerance", 0.5 }, { "ceiling", -1.0 } }, nullptr },
+              Delivery::deliver (s, a, b, rate, Delivery::specs()[0]).snapshot },
             { { "invert", {}, nullptr }, AudioEdits::invert (s, a, b) },
             { { "reverse", {}, nullptr }, AudioEdits::reverse (s, a, b) },
             { { "removeDc", {}, nullptr }, AudioEdits::removeDcOffset (s, a, b) },
@@ -223,8 +226,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 34,
-               "sequences: each of the 34 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 35,
+               "sequences: each of the 35 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }
@@ -275,6 +278,24 @@ void runSequencesTests (AudioEngine& engine)
         const auto refused = Sequences::run (bad, audio, a, b, rate, markers, nullptr);
         check (stopped.error == "Stopped." && stopped.snapshot == audio && refused.error == "EQ Band: a setting is out of range." && refused.snapshot == audio,
                "sequences: stopping ends the run, and a step that can't run stops it with its name and leaves the audio as it was");
+    }
+
+    // Meet Delivery Spec as a step: named after its spec, refused out of range, and its result in the notes.
+    {
+        const Step r128 { "deliverySpec", { { "target", -23.0 }, { "tolerance", 0.5 }, { "ceiling", -1.0 } }, nullptr };
+        const Step own { "deliverySpec", { { "target", -20.0 }, { "tolerance", 1.0 }, { "ceiling", -2.0 } }, nullptr };
+        const Step wide { "deliverySpec", { { "target", -23.0 }, { "tolerance", 12.0 }, { "ceiling", -1.0 } }, nullptr };
+        const auto ran = Sequences::run ({ "Deliver", { r128 } }, audio, a, b, rate, markers, nullptr);
+        const auto after = Loudness::measure (*ran.snapshot, a, b, rate);
+        juce::AudioBuffer<float> zeros (2, 4800);
+        zeros.clear();
+        const auto silent = Sequences::apply (r128, AudioEdits::fromBuffer (std::move (zeros)), 0, 4800, rate, {}, nullptr);
+        check (r128.name() == "Meet EBU R128" && own.name() == "Meet Delivery spec -20.0 LUFS" && Sequences::problem (r128, rate).isEmpty()
+                   && Sequences::problem (wide, rate).isNotEmpty() && ran.error.isEmpty() && std::abs (after->integrated + 23.0) < 0.06
+                   && ran.notes.size() == 1 && ran.notes[0].startsWith ("Meet EBU R128: meets it at ")
+                   && silent.snapshot == nullptr && silent.error.isEmpty() && silent.notes[0].contains ("-70 LUFS"),
+               "sequences: the delivery spec step is named after its spec (or its target), refuses a tolerance past 10 LU, and says what "
+               "the result measures: " + ran.notes.joinIntoString ("; ") + "; on silence it leaves the audio, with a note");
     }
 
     // Saving and loading, and the store.

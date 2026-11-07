@@ -191,6 +191,9 @@ Outcome process (const juce::File& source, const Settings& settings, juce::Audio
     {
         const auto step = settings.level == Level::peak
                               ? Sequences::Step { "normalize", { { "db", settings.peakDb }, { "apart", 0.0 } }, nullptr }
+                          : settings.level == Level::spec
+                              ? Sequences::Step { "deliverySpec", { { "target", settings.specLufs }, { "tolerance", settings.specToleranceLu },
+                                                                    { "ceiling", settings.specCeilingDbtp } }, nullptr }
                               : Sequences::Step { "matchLoudness", { { "target", settings.lufs }, { "ceiling", settings.ceilingDbtp },
                                                                      { "limit", settings.limit ? 1.0 : 0.0 } }, nullptr };
         auto levelled = Sequences::apply (step, audio, 0, frames, rate, markers, nullptr);
@@ -204,7 +207,8 @@ Outcome process (const juce::File& source, const Settings& settings, juce::Audio
         if (levelled.snapshot != nullptr)
             audio = std::move (levelled.snapshot);
 
-        out.notes.addArray (levelled.notes);
+        for (auto& note : levelled.notes)
+            out.notes.add (settings.level == Level::spec ? step.name() + ": " + note : note);
     }
 
     if (! keepGoing (0.8f))

@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 272: Meet Delivery Spec in sequences and Batch Process**
+- Meet Delivery Spec is recorded as a sequence step, which keeps the spec's numbers (target, tolerance and true-peak ceiling), so a saved sequence plays the same on any machine. It is named after its spec ("Meet EBU R128"), and when played it notes what the result measures and whether it meets the spec.
+- Batch Process's Level can be a delivery spec too: each file is brought to it as Meet Delivery Spec does, and the batch report says, for each file, what it measures and whether it meets the spec.
+- Measured by the tests: the step gives Meet Delivery Spec's result bit for bit (one of the 35 steps checked against their commands); it is named "Meet EBU R128", or "Meet Delivery spec -20.0 LUFS" for numbers that match no spec, and refuses a tolerance past 10 LU; played on a part of a file it notes "Meet EBU R128: meets it at -23.0 LUFS, true peak -16.2 dBTP", and on silence it leaves the audio with a note; a batch to the -14 LUFS spec writes a file measuring -14.0 LUFS, true peak -10.6 dBTP, and its report says it meets it. The whole suite passed (1265 checks). Not tried: recording the step from the menu, and the Batch Process dialog's spec choices, in the running app; a batch file that needs the limiter (the limiter path is the one tested in Milestone 270).
+
 **Milestone 271: Delivery specs on mixdowns and stems**
 - Mix Down has a Loudness choice: as mixed, or one of the delivery specs. With a spec, the mix is brought to it as Meet Delivery Spec brings a file (gain, and the true-peak limiter only where gain alone would pass the ceiling) before it is written, and the report follows, with Save Report... suggesting a name beside the mixdown.
 - Export Stems and Export Folder Stems ask the same before they start. Stems can't each be limited and still add up to the mix, so every stem gets one gain: the one that brings the whole mix to the spec's loudness. The mix is rendered once more to measure it, and the report gives the mix's lines with that gain; where its true peak would pass the ceiling, the report fails that line and says the mix would need limiting. Stems are written as 32-bit float, so the gain does not clip them.

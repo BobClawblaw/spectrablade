@@ -4788,7 +4788,13 @@ void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
     box->addComboBox ("sequence", sequenceChoices, "Recorded sequence (on the whole file)");
     box->addComboBox ("rate", { "Keep each file's", "44.1 kHz", "48 kHz", "88.2 kHz", "96 kHz", "192 kHz" }, "Sample rate");
     box->addComboBox ("channels", { "Keep each file's", "Mono", "Stereo" }, "Channels");
-    box->addComboBox ("level", { "Leave it", "Normalize the peak", "Match loudness, stopping at the ceiling", "Match loudness, limiting at the ceiling" }, "Level");
+    // Then each delivery spec, as Meet Delivery Spec does it.
+    juce::StringArray levels { "Leave it", "Normalize the peak", "Match loudness, stopping at the ceiling", "Match loudness, limiting at the ceiling" };
+
+    for (auto& spec : Delivery::specs())
+        levels.add ("Meet " + spec.name + " (" + Loudness::format (spec.targetLufs, "LUFS") + ", " + Loudness::format (spec.maxTruePeak, "dBTP") + ")");
+
+    box->addComboBox ("level", levels, "Level");
     box->addTextEditor ("peak", juce::String (settings->getDoubleValue ("batchPeak", -1.0), 1), "Peak (dBFS)");
     box->addTextEditor ("lufs", juce::String (settings->getDoubleValue ("batchLufs", -16.0), 1), "Loudness (LUFS)");
     box->addTextEditor ("ceiling", juce::String (settings->getDoubleValue ("batchCeiling", -1.0), 1), "True peak ceiling (dBTP)");
@@ -4836,7 +4842,16 @@ void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
         s.applyRack = index ("rack") == 1;
         s.sampleRate = rates[index ("rate")];
         s.channels = index ("channels");
-        s.level = index ("level") == 0 ? Batch::Level::none : index ("level") == 1 ? Batch::Level::peak : Batch::Level::loudness;
+        const auto level = index ("level");
+        s.level = level == 0 ? Batch::Level::none : level == 1 ? Batch::Level::peak : level <= 3 ? Batch::Level::loudness : Batch::Level::spec;
+
+        if (s.level == Batch::Level::spec)
+        {
+            const auto& spec = Delivery::specs()[(size_t) juce::jlimit (0, (int) Delivery::specs().size() - 1, level - 4)];
+            s.specLufs = spec.targetLufs;
+            s.specToleranceLu = spec.toleranceLu;
+            s.specCeilingDbtp = spec.maxTruePeak;
+        }
         s.limit = index ("level") == 3;
         s.peakDb = (float) box->getTextEditorContents ("peak").getDoubleValue();
         s.lufs = box->getTextEditorContents ("lufs").getDoubleValue();
@@ -8743,6 +8758,7 @@ void MainComponent::meetDeliverySpec (const Delivery::Spec& spec)
 
             const auto name = engine.document.getFile().getFileName();
             applyEdit (std::move (delivered->snapshot), "Meet " + spec.name, waveform.getSelection());
+            recordStep ({ "deliverySpec", { { "target", spec.targetLufs }, { "tolerance", spec.toleranceLu }, { "ceiling", spec.maxTruePeak } }, nullptr });
             showDeliveryReport (Delivery::report (spec, *delivered, name.isNotEmpty() ? name : juce::String ("Untitled")));
         });
     backgroundJob->launchThread();

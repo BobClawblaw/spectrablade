@@ -14,6 +14,16 @@ const std::vector<Spec>& specs()
     return all;
 }
 
+Spec specFor (double targetLufs, double toleranceLu, double maxTruePeak)
+{
+    for (auto& spec : specs())
+        if (juce::exactlyEqual (spec.targetLufs, targetLufs) && juce::exactlyEqual (spec.toleranceLu, toleranceLu)
+            && juce::exactlyEqual (spec.maxTruePeak, maxTruePeak))
+            return spec;
+
+    return { "Delivery spec " + Loudness::format (targetLufs, "LUFS"), targetLufs, toleranceLu, maxTruePeak };
+}
+
 std::vector<Line> check (const Spec& spec, const Loudness::Result& r)
 {
     std::vector<Line> lines;
