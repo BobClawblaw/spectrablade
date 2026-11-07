@@ -948,6 +948,24 @@ AudioDocument::Snapshot pitchedAudio (const SessionClip& c, double semitones, do
     return shifted.getNumSamples() > 0 ? AudioEdits::fromBuffer (std::move (shifted)) : nullptr;
 }
 
+juce::Range<juce::int64> pitchRange (const SessionClip& c, juce::Range<juce::int64> timeSelection)
+{
+    const juce::Range<juce::int64> played (c.position, c.getEnd());
+    const auto under = played.getIntersectionWith (timeSelection);
+    const auto in = under.isEmpty() ? played : under;
+    return in - c.position + c.offset;
+}
+
+AudioDocument::Snapshot playedPart (const SessionClip& c, const AudioDocument::Snapshot& audio)
+{
+    if (audio == nullptr || c.length <= 0 || c.offset + c.length > audio->getNumFrames())
+        return nullptr;
+
+    juce::AudioBuffer<float> part (audio->getNumChannels(), (int) c.length);
+    audio->read (part, 0, c.offset, (int) c.length);
+    return AudioEdits::fromBuffer (std::move (part));
+}
+
 bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched)
 {
     auto* c = findUnlocked (s, clipId);

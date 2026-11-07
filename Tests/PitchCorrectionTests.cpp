@@ -5,6 +5,7 @@
 #include "../Source/PitchCorrection.h"
 #include "../Source/AudioEdits.h"
 #include "../Source/PitchEditor.h"
+#include "../Source/Session.h"
 #include "TestUtils.h"
 #include "PitchCorrectionTests.h"
 
@@ -724,8 +725,76 @@ namespace
     }
 }
 
+namespace
+{
+    void testClipNotes()
+    {
+        // A clip playing the melody from 0.3 s into its audio, placed at 1 s in the session.
+        const auto melody = melodySnapshot();
+        const auto pad = (int) (0.3 * rate), length = (int) melody->getNumFrames();
+        juce::AudioBuffer<float> padded (2, pad + length + pad);
+        padded.clear();
+        juce::AudioBuffer<float> m (2, length);
+        melody->read (m, 0, 0, length);
+
+        for (int ch = 0; ch < 2; ++ch)
+            padded.copyFrom (ch, pad, m, ch, 0, length);
+
+        SessionState s;
+        s.sampleRate = rate;
+        auto& t = s.addTrack();
+        SessionClip c;
+        c.id = s.nextId++;
+        c.audio = AudioEdits::fromBuffer (std::move (padded));
+        c.offset = pad;
+        c.length = length;
+        c.position = second;
+        c.fadeIn = 480;
+        t.clips.push_back (c);
+
+        const auto all = SessionEdits::pitchRange (c, {});
+        const auto under = SessionEdits::pitchRange (c, { second + second / 2, 2 * second });
+        const auto missed = SessionEdits::pitchRange (c, { 0, second / 2 });
+        const auto across = SessionEdits::pitchRange (c, { 0, 2 * second });
+        check (all == juce::Range<juce::int64> (pad, pad + length) && under == juce::Range<juce::int64> (pad + second / 2, pad + second)
+                   && missed == all && across == juce::Range<juce::int64> (pad, pad + second),
+               "pitch editor on a clip: it works on the part of the clip's audio that plays (after its offset), or on the part under "
+               "the time selection; a selection that misses the clip gives all it plays");
+
+        // B3 moved up a semitone in the clip: its own copy plays it, the clip where and as long as it was.
+        const auto track = PitchCorrection::analyse (*c.audio, all.getStart(), all.getEnd(), rate);
+        auto notes = PitchCorrection::findNotes (track);
+
+        if (notes.size() != 4)
+        {
+            check (false, "pitch editor on a clip: the melody in the clip is found as four notes (found " + juce::String ((int) notes.size()) + ")");
+            return;
+        }
+
+        notes[1].shiftCents = 100.0;
+        const auto moved = PitchCorrection::moveNotes (*c.audio, all.getStart(), all.getEnd(), rate, track, notes);
+        const auto part = SessionEdits::playedPart (c, moved);
+        const auto b3 = juce::Range<juce::int64> (track.first + (juce::int64) notes[1].first * track.hop, track.first + (juce::int64) notes[1].end * track.hop) - pad;
+        const auto a3 = juce::Range<juce::int64> (track.first + (juce::int64) notes[0].first * track.hop, track.first + (juce::int64) notes[0].end * track.hop) - pad;
+        const auto clipId = c.id;
+        const auto applied = part != nullptr && SessionEdits::stretchClip (s, clipId, juce::File(), part);
+        const auto& now = s.tracks[0].clips[0];
+        const auto inset = (b3.getLength()) / 4;
+        const auto raised = cents (medianPitch (*now.audio, b3.getStart() + inset, b3.getEnd() - inset), medianPitch (*melody, b3.getStart() + inset, b3.getEnd() - inset));
+        const auto kept = cents (medianPitch (*now.audio, a3.getStart() + inset, a3.getEnd() - inset), medianPitch (*melody, a3.getStart() + inset, a3.getEnd() - inset));
+
+        check (applied && now.position == second && now.length == length && now.offset == 0 && now.audio->getNumFrames() == length
+                   && now.fadeIn == 480 && std::abs (raised - 100.0) < 10.0 && std::abs (kept) < 5.0
+                   && SessionEdits::playedPart (c, nullptr) == nullptr,
+               "pitch editor on a clip: B3 moved up a semitone plays " + juce::String (raised, 1) + " cents higher from the clip's own "
+               "copy of what it plays, A3 beside it " + juce::String (kept, 1) + " cents from where it was; the clip keeps its place, "
+               "length and fades");
+    }
+}
+
 void runPitchCorrectionTests()
 {
+    testClipNotes();
     testFormants();
     testEditorMovingInTime();
     testMovingInTime();

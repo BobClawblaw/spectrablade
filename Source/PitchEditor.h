@@ -3,7 +3,8 @@
 #include <JuceHeader.h>
 #include "PitchCorrection.h"
 
-/** The Pitch Editor panel: the pitch of the selection (or a short file) as a curve over a grid of
+/** The Pitch Editor panel: the pitch of the selection (or a short file), or in a session of the
+    selected clip (under the time selection, or all it plays), as a curve over a grid of
     semitones, split into notes that can be dragged up and down, then applied as one edit.
 
     Analyse reads the selection's pitch and finds its notes. Dragging a note moves it to whole
@@ -14,7 +15,8 @@
     squeezed to fill, never past the next note or more than four times); a drag moves a note in
     pitch or in time, whichever way it first goes. Reset puts every note back where it was, in
     pitch and time (and leaves splits and joins as they are). Apply moves the
-    notes in the file (by PSOLA, as Pitch Correction does), as one step to undo. */
+    notes in the file (by PSOLA, as Pitch Correction does), or in a clip's own copy of its audio,
+    as one step to undo. */
 class PitchEditor final : public juce::Component
 {
 public:
@@ -27,8 +29,8 @@ public:
         juce::uint32 version = 0;
     };
 
-    std::function<std::optional<Source>()> readSource;   // the selection, or the whole file without one
-    std::function<juce::uint32()> readVersion;            // the document's version now
+    std::function<std::optional<Source>()> readSource;   // the selection, or the whole file without one; or a clip's audio
+    std::function<juce::uint32()> readVersion;            // the document's (or the clip's) version now
     std::function<void (const Source&, const PitchCorrection::Track&, const std::vector<PitchCorrection::Note>&)> apply;
 
     static constexpr double longestSeconds = 30.0;

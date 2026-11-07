@@ -85,13 +85,13 @@ void PitchEditor::analyse()
 
     if (! got.has_value() || got->audio == nullptr || got->end <= got->start)
     {
-        clear ("Open a file and select what to analyse.");
+        clear ("Open a file and select what to analyse, or select a clip in a session (unlocked).");
         return;
     }
 
     if ((double) (got->end - got->start) / got->sampleRate > longestSeconds)
     {
-        clear ("Select 30 s or less to analyse.");
+        clear ("Select 30 s or less to analyse (of a longer clip, select a time range across it).");
         return;
     }
 
@@ -103,7 +103,7 @@ void PitchEditor::analyse()
 
     if (notes.empty())
     {
-        clear ("No notes found: the selection has no clear pitch.");
+        clear ("No notes found: what was analysed has no clear pitch.");
         return;
     }
 

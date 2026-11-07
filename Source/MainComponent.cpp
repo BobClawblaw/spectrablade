@@ -1503,7 +1503,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                info.setActive (backgroundJob == nullptr); break;
         case cmdKeepProjectHistory: info.setInfo ("Keep Undo History in Projects", "Save each file's undo steps with a project (writing the audio of every version they hold)", "File", 0);
                                     info.setTicked (appProperties.getUserSettings()->getBoolValue (projectHistoryKey, true)); break;
-        case cmdShowPitchEditor: info.setInfo ("Pitch Editor", "Show or hide the panel for moving the notes of a voice or solo line by hand", "Window", 0);
+        case cmdShowPitchEditor: info.setInfo ("Pitch Editor", "Show or hide the panel for moving the notes of a voice or solo line by hand, in a file or a session clip", "Window", 0);
                            info.setTicked (dock->isShown (Panels::pitch)); break;
         case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's or session's video, following the playhead", "Window", 0);
                            info.setTicked (dock->isShown (Panels::video)); break;
@@ -5055,6 +5055,81 @@ void MainComponent::moveNotesInBackground (const PitchEditor::Source& source, co
                 return;
 
             applyEdit (*result, "Move Notes", selected ? juce::Range<juce::int64> (source.start, source.end) : juce::Range<juce::int64>());
+
+            if (panel != nullptr)
+                panel->clear ("Applied. Analyse again to move more.");
+        });
+    backgroundJob->launchThread();
+}
+
+juce::uint32 MainComponent::clipPitchVersion (juce::uint32 clipId) const
+{
+    const auto state = engine.session.getState();
+    const auto where = state->findClip (clipId);
+
+    if (! where.has_value())
+        return 0;
+
+    const auto& c = state->tracks[(size_t) where->first].clips[(size_t) where->second];
+    auto h = std::hash<const void*>() (c.audio.get());
+    h = h * 1000003u ^ std::hash<juce::int64>() (c.offset);
+    h = h * 1000003u ^ std::hash<juce::int64>() (c.length);
+    h = h * 1000003u ^ clipId;
+    return (juce::uint32) (h ^ (h >> 32)) | 1u;
+}
+
+void MainComponent::moveClipNotesInBackground (const PitchEditor::Source& source, const PitchCorrection::Track& track,
+                                               const std::vector<PitchCorrection::Note>& notes)
+{
+    const auto state = engine.session.getState();
+    const auto clipId = pitchClipId;
+    const auto where = state->findClip (clipId);
+
+    if (! where.has_value() || backgroundJob != nullptr || clipPitchVersion (clipId) != source.version)
+        return;
+
+    engine.getPlayer().pause();
+    const auto clip = state->tracks[(size_t) where->first].clips[(size_t) where->second];
+    const auto folder = recordingsFolder();
+    const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (clip.name) + " Notes", ".wav", false);
+    auto part = std::make_shared<AudioDocument::Snapshot>();
+    auto error = std::make_shared<juce::String>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Moving the notes...",
+        [this, source, track, notes, clip, folder, file, part, error] (const std::function<bool (float)>& progress)
+        {
+            const auto moved = PitchCorrection::moveNotes (*source.audio, source.start, source.end, source.sampleRate, track, notes, progress);
+            *part = SessionEdits::playedPart (clip, moved);
+
+            if (*part == nullptr)
+                return false;
+
+            *error = ! folder.createDirectory() ? "Could not make the folder " + folder.getFullPathName()
+                                                : AudioFileIO::save (**part, source.sampleRate, file, 32, engine.formatManager);
+            return true;
+        },
+        [this, clipId, source, file, part, error]
+        {
+            auto* panel = dynamic_cast<PitchEditor*> (madePanels.count (Panels::pitch) > 0 ? madePanels[Panels::pitch].get() : nullptr);
+
+            if (error->isNotEmpty())
+            {
+                showError ("Pitch Editor", *error);
+                return;
+            }
+
+            if (clipPitchVersion (clipId) != source.version)
+            {
+                showError ("Pitch Editor", "The clip changed meanwhile, so the result was discarded.");
+                return;
+            }
+
+            auto next = *engine.session.getState();
+
+            if (*part == nullptr || ! SessionEdits::stretchClip (next, clipId, file, *part))
+                return;
+
+            engine.session.apply (std::move (next), "Move Notes");
 
             if (panel != nullptr)
                 panel->clear ("Applied. Analyse again to move more.");
@@ -9402,16 +9477,39 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
         {
             auto& doc = engine.document;
 
-            if (multitrackMode || ! doc.hasAudio())
+            // In a session: the selected clip, under the time selection or all it plays.
+            if (multitrackMode)
+            {
+                const auto state = engine.session.getState();
+                const auto clipId = multitrack.getSelectedClip();
+                const auto where = state->findClip (clipId);
+
+                if (! where.has_value())
+                    return std::nullopt;
+
+                const auto& clip = state->tracks[(size_t) where->first].clips[(size_t) where->second];
+
+                if (clip.audio == nullptr || clip.locked)
+                    return std::nullopt;
+
+                pitchClipId = clipId;
+                const auto range = SessionEdits::pitchRange (clip, multitrack.getTimeSelection());
+                return PitchEditor::Source { clip.audio, range.getStart(), range.getEnd(), state->sampleRate, clipPitchVersion (clipId) };
+            }
+
+            if (! doc.hasAudio())
                 return std::nullopt;
 
             const auto range = selectionOrAll();
             return PitchEditor::Source { doc.getSnapshot(), range.getStart(), range.getEnd(), doc.getSampleRate(), doc.getVersion() };
         };
-        panel->readVersion = [this] { return engine.document.getVersion(); };
+        panel->readVersion = [this] { return multitrackMode ? clipPitchVersion (pitchClipId) : engine.document.getVersion(); };
         panel->apply = [this] (const PitchEditor::Source& source, const PitchCorrection::Track& track, const std::vector<PitchCorrection::Note>& notes)
         {
-            moveNotesInBackground (source, track, notes);
+            if (multitrackMode)
+                moveClipNotesInBackground (source, track, notes);
+            else
+                moveNotesInBackground (source, track, notes);
         };
         made = std::move (panel);
     }

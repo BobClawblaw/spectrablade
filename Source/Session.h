@@ -523,6 +523,14 @@ namespace SessionEdits
     AudioDocument::Snapshot pitchedAudio (const SessionClip&, double semitones, double sampleRate,
                                           const std::function<bool (float)>& progress = {});
 
+    /** The frames of the clip's audio the Pitch Editor works on: the part it plays under the
+        session's time selection, or all it plays when the selection is empty or misses it. */
+    juce::Range<juce::int64> pitchRange (const SessionClip&, juce::Range<juce::int64> timeSelection);
+
+    /** The part of `audio` (the clip's, or that with notes moved in it) that the clip plays: from
+        its offset, its length. Null when audio is null or too short. */
+    AudioDocument::Snapshot playedPart (const SessionClip&, const AudioDocument::Snapshot& audio);
+
     /** Makes a clip play processed audio of the part it played (from stretchedAudio() or
         pitchedAudio(), saved as file), all of it, from where it starts; its fades scale with
         its length, and its takes go. False for a locked clip. */

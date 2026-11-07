@@ -189,6 +189,15 @@ private:
     void askForPhaseCorrection();
     void askForPitchCorrection();
     void moveNotesInBackground (const PitchEditor::Source&, const PitchCorrection::Track&, const std::vector<PitchCorrection::Note>&);
+
+    /** The Pitch Editor on a session clip: the notes moved in the part of its audio it plays, saved
+       as a file of its own and played by the clip from then on (as Shift Clip Pitch does), as one
+       step to undo. */
+    void moveClipNotesInBackground (const PitchEditor::Source&, const PitchCorrection::Track&, const std::vector<PitchCorrection::Note>&);
+
+    /** Something that changes when the clip's audio, offset or length do (0 when it's gone). */
+    juce::uint32 clipPitchVersion (juce::uint32 clipId) const;
+    juce::uint32 pitchClipId = 0;   // the clip the Pitch Editor last analysed
     void askToLevelSpeech();
     void askForVideoStart();
     void detachVideo();

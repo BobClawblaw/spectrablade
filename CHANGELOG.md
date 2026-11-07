@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 268: The Pitch Editor on session clips**
+- In a session, Analyse in the Pitch Editor reads the selected clip (unlocked): all of it that plays, or the part under the time selection when there is one across it (up to 30 s, as for files). Its notes move, split, join and move in time as in a file.
+- Apply moves them in the part of the clip's audio that plays, writes that to a file of its own (beside recordings, as Shift Clip Pitch does) and has the clip play it from then on, in the same place, as long, with its fades and gain envelope, as one step to undo. Like Shift Clip Pitch, the clip's other takes go. If the clip's audio, offset or length changes before Apply, or while it works, nothing is applied and it asks for a new analysis.
+- Measured by the tests: the part worked on is what the clip plays after its offset, or the part under a time selection across it, and all it plays when the selection misses it; in a clip playing a melody from 0.3 s into its audio, B3 moved up a semitone plays 100.1 cents higher from the clip's own copy, A3 beside it 0.0 cents from where it was, and the clip keeps its place, length and fades. The whole suite passed (1254 checks). Not tried: Analyse and Apply on a clip in the running app, including refusing a clip that changed after analysis.
+
 **Milestone 267: Effects while scrubbing a session**
 - Scrubbing a stopped session now plays the mix through its track and bus effects, in time with any latency they have. The roadmap had planned only effects with no memory or latency; instead every effect is run, as follows.
 - While the head moves forward, the mix is rendered on from where it was last rendered, so the effects run through it unbroken, as when playing from where the scrub began; the stretch most recently rendered is kept (at least twice the scrubber's widest window), so going back over it plays what was rendered. Further back, or a jump of more than 4096 frames ahead, resets the effects and runs them over the 4096 frames (85 ms at 48 kHz) before the window first. Effects whose memory is shorter than that, such as EQs and short look-ahead, sound as when played; reverb tails and slow releases are heard only with what those frames leave in them.
