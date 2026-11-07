@@ -8,6 +8,7 @@
 #include "../Source/EffectDialog.h"
 #include "../Source/EffectPreview.h"
 #include "../Source/EffectPresets.h"
+#include "../Source/Generator.h"
 #include "TestUtils.h"
 #include "EffectPreviewTests.h"
 
@@ -117,6 +118,46 @@ namespace
         preview.cancel();
         TestUtils::runUntil ([] { return false; }, 200);
         check (firstAnswers == 0 && ! preview.isBusy(), "a cancelled request isn't answered");
+    }
+
+    // A generator's preview is what Generate puts in, at the same place, bit for bit (the noise with
+    // the same seed); a long one plays only its first 30 s; the place is kept within the audio.
+    void testGenerated()
+    {
+        const auto audio = tone (2.0);
+        EffectPreview preview;
+        std::optional<EffectPreview::Rendered> got;
+        const auto run = [&] (const EffectPreview::Request& request)
+        {
+            got.reset();
+            preview.render (request, audio, { 0, audio->getNumFrames() }, rate, [&] (const EffectPreview::Rendered& r) { got = r; });
+            TestUtils::runUntil ([&] { return got.has_value(); }, 30000);
+        };
+
+        Generator::Noise n;
+        n.colour = Generator::Colour::pink;
+        n.levelDb = -30.0;
+        n.seed = 1234;
+        const auto noise = Generator::noise (n, 2, 24000, rate);
+        run (EffectPreview::generated ("noise", 12000, [n] { return Generator::noise (n, 2, 24000, rate); }));
+        const auto inserted = Generator::insert (*audio, 12000, noise);
+        check (got.has_value() && got->error.isEmpty() && got->snapshot != nullptr && same (*got->snapshot, *inserted)
+                   && got->start == 12000 && got->end == 36000 && got->note.isEmpty(),
+               "a generated preview is the noise put in at the cursor, bit for bit, playing where it went");
+
+        Generator::Tone t;
+        t.frequency = 1000.0;
+        t.endFrequency = 1000.0;
+        t.levelDb = -12.0;
+        constexpr int longFrames = (int) (45.0 * rate);
+        run (EffectPreview::generated ("tone", 999999999, [t] { return Generator::tone (t, 2, longFrames, rate); }));
+        const auto first = (juce::int64) (30.0 * rate);
+        check (got.has_value() && got->snapshot != nullptr && got->start == audio->getNumFrames() && got->end == got->start + first
+                   && got->snapshot->getNumFrames() == audio->getNumFrames() + first && got->note.contains ("first 30 s"),
+               "a generated preview past the end goes in at the end, and of 45 s only the first 30 s play (it says so)");
+
+        const auto a = EffectPreview::generated ("tone a=1", 0, {}), b = EffectPreview::generated ("tone a=1", 0, {});
+        check (a.generates && a.key == b.key && ! a.wholeRange, "a generated preview is marked as one, keyed by its settings");
     }
 
     void testStandIn()
@@ -368,6 +409,7 @@ void runEffectPreviewTests (AudioEngine& engine)
     testFactoryPresets();
     testRequests();
     testRendering();
+    testGenerated();
     testStandIn();
     testBypass (engine);
     testDialog();

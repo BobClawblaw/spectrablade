@@ -6671,6 +6671,25 @@ void MainComponent::insertGenerated (const juce::AudioBuffer<float>& audio, cons
         applyEdit (std::move (next), name, { at, at + frames }, MarkerEdits::afterReplace (doc.getMarkers(), at, at, frames));
 }
 
+std::optional<EffectPreview::Request> MainComponent::generatedPreview (const juce::String& kind, const EffectValues& values,
+                                                                      std::function<juce::AudioBuffer<float>()> make)
+{
+    if (! engine.document.hasAudio())
+        return std::nullopt;
+
+    const auto sel = waveform.getSelection();
+    const auto at = sel.isEmpty() ? waveform.getCursor() : sel.getStart();
+    auto key = kind + " at=" + juce::String (at);
+
+    for (const auto& [id, value] : values)
+        key << " " << id << "=" << juce::String (value, 9);
+
+    for (const auto& [id, text] : effectTexts)
+        key << " " << id << "=" << text;
+
+    return EffectPreview::generated (key, at, std::move (make));
+}
+
 void MainComponent::showGenerateTone()
 {
     const auto rate = engine.document.getSampleRate();
@@ -6694,7 +6713,7 @@ void MainComponent::showGenerateTone()
                         { "frequency", "Frequency (Hz)", toneHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 }, { "end", "End frequency (Hz)", toneEndHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 },
                         { "level", "Level (dBFS peak)", toneLevelDb, 1, {}, -96, 0, 0.5 }, { "length", "Length (s)", toneSeconds, 3, {}, 0.001, 600, 0.1 },
                         { "fade", "Fade ends (ms)", toneFadeMs, 1, {}, 0, 1000, 1 } },
-                      "spectrablade:generate-tone", PreviewOwner::none,
+                      "spectrablade:generate-tone", PreviewOwner::rendered,
                       [toTone, rate] (const EffectValues& v) { return Generator::isValid (toTone (v), rate) && v.at ("length") > 0.0 && v.at ("length") <= 600.0; },
                       "The frequencies must be from 1 Hz to below " + juce::String (0.5 * rate, 0) + " Hz, the level from -96 to 0 dBFS, "
                           "the length above 0 and up to 600 s, and the fade from 0 to 1000 ms.",
@@ -6709,6 +6728,12 @@ void MainComponent::showGenerateTone()
                           toneSeconds = v.at ("length");
                           toneFadeMs = t.fadeMs;
                           insertGenerated (Generator::tone (t, channels, (int) std::round (toneSeconds * rate), rate), "Generate Tone");
+                      },
+                      [this, toTone, rate, channels] (const EffectValues& v)
+                      {
+                          const auto t = toTone (v);
+                          const auto frames = (int) std::round (v.at ("length") * rate);
+                          return generatedPreview ("tone", v, [t, channels, frames, rate] { return Generator::tone (t, channels, frames, rate); });
                       });
 }
 
@@ -6727,7 +6752,7 @@ void MainComponent::showGenerateTones()
                         { "tone", "Each tone (ms)", settings->getDoubleValue ("tonesToneMs", 100.0), 0, {}, 20.0, 2000.0, 10.0 },
                         { "gap", "Between (ms)", settings->getDoubleValue ("tonesGapMs", 100.0), 0, {}, 0.0, 2000.0, 10.0 },
                         { "level", "Level (dBFS peak)", settings->getDoubleValue ("tonesLevel", -6.0), 1, {}, -96.0, 0.0, 0.5 } },
-                      "spectrablade:dtmf-tones", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      "spectrablade:dtmf-tones", PreviewOwner::rendered, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
                       [this, settings] (const EffectValues& v)
                       {
                           if (! engine.document.hasAudio())
@@ -6755,7 +6780,26 @@ void MainComponent::showGenerateTones()
                           settings->setValue ("tonesLevel", t.levelDb);
                           insertGenerated (Generator::toneSequence (t, engine.document.getSnapshot()->getNumChannels(), rate), "Generate DTMF Tones");
                       },
-                      nullptr, "Generate");
+                      [this] (const EffectValues& v) -> std::optional<EffectPreview::Request>
+                      {
+                          if (! engine.document.hasAudio())
+                              return std::nullopt;
+
+                          const auto rate = engine.document.getSampleRate();
+                          const auto channels = engine.document.getSnapshot()->getNumChannels();
+                          Generator::ToneSequence t;
+                          t.kind = v.at ("kind") > 0.5 ? Generator::Signalling::mf : Generator::Signalling::dtmf;
+                          t.characters = effectTexts["characters"].removeCharacters (" ");
+                          t.toneMs = v.at ("tone");
+                          t.gapMs = v.at ("gap");
+                          t.levelDb = v.at ("level");
+
+                          if (! Generator::isValid (t, rate))
+                              return std::nullopt;
+
+                          return generatedPreview ("dtmf", v, [t, channels, rate] { return Generator::toneSequence (t, channels, rate); });
+                      },
+                      "Generate");
 }
 
 void MainComponent::showGenerateNoise()
@@ -6771,6 +6815,9 @@ void MainComponent::showGenerateNoise()
         return n;
     };
 
+    // One seed for the dialog, so what is put in starts as the preview did.
+    const auto seed = juce::Random::getSystemRandom().nextInt64();
+
     showEffectDialog ("Generate Noise", "Puts noise in at the cursor, or the start of the selection, moving what follows on; each channel "
                                         "gets its own. White is even across frequencies, pink falls 3 dB an octave (as much in every "
                                         "octave) and brown 6 dB. The level is the RMS: white up to -6 dBFS, pink and brown up to -20, "
@@ -6778,20 +6825,27 @@ void MainComponent::showGenerateNoise()
                       { { "colour", "Colour", (double) noiseColour, 0, { "White", "Pink", "Brown" } },
                         { "level", "Level (dBFS RMS)", noiseLevelDb, 1, {}, -96, -6, 0.5 }, { "length", "Length (s)", noiseSeconds, 3, {}, 0.001, 600, 0.1 },
                         { "fade", "Fade ends (ms)", noiseFadeMs, 1, {}, 0, 1000, 1 } },
-                      "spectrablade:generate-noise", PreviewOwner::none,
+                      "spectrablade:generate-noise", PreviewOwner::rendered,
                       [toNoise] (const EffectValues& v) { return Generator::isValid (toNoise (v)) && v.at ("length") > 0.0 && v.at ("length") <= 600.0; },
                       "The level must be from -96 dBFS to -6 for white noise or -20 for pink and brown, the length above 0 and up to "
                       "600 s, and the fade from 0 to 1000 ms.",
                       nullptr, nullptr,
-                      [this, toNoise, rate, channels] (const EffectValues& v)
+                      [this, toNoise, rate, channels, seed] (const EffectValues& v)
                       {
                           auto n = toNoise (v);
-                          n.seed = juce::Random::getSystemRandom().nextInt64();
+                          n.seed = seed;
                           noiseColour = (int) n.colour;
                           noiseLevelDb = n.levelDb;
                           noiseSeconds = v.at ("length");
                           noiseFadeMs = n.fadeMs;
                           insertGenerated (Generator::noise (n, channels, (int) std::round (noiseSeconds * rate), rate), "Generate Noise");
+                      },
+                      [this, toNoise, rate, channels, seed] (const EffectValues& v)
+                      {
+                          auto n = toNoise (v);
+                          n.seed = seed;
+                          const auto frames = (int) std::round (v.at ("length") * rate);
+                          return generatedPreview ("noise", v, [n, channels, frames, rate] { return Generator::noise (n, channels, frames, rate); });
                       });
 }
 
@@ -7824,7 +7878,9 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
             return;
         }
 
+        effectTexts = safe->getTexts();   // a generator's typed digits, as applying sees them
         const auto request = valid (values) ? rendered (values) : std::nullopt;
+        effectTexts.clear();
 
         if (! request.has_value())
         {
@@ -9234,10 +9290,12 @@ void MainComponent::startRenderedPreview (const EffectPreview::Request& request,
     const auto shortened = part.getLength() < range.getLength();
 
     if (status != nullptr)
-        status (request.wholeRange && range.getLength() > (juce::int64) (EffectPreview::longestSeconds * rate)
+        status (request.generates ? "Generating..."
+                : request.wholeRange && range.getLength() > (juce::int64) (EffectPreview::longestSeconds * rate)
                     ? "Processing all of it (as long as applying)..." : "Processing...");
 
-    effectPreview.render (request, doc.getSnapshot(), range, rate, [this, part, shortened, status] (const EffectPreview::Rendered& r)
+    const auto generates = request.generates;
+    effectPreview.render (request, doc.getSnapshot(), range, rate, [this, part, shortened, status, generates] (const EffectPreview::Rendered& r)
     {
         if (previewOwner != PreviewOwner::rendered || engine.document.getVersion() != renderedVersion)
             return;
@@ -9252,7 +9310,7 @@ void MainComponent::startRenderedPreview (const EffectPreview::Request& request,
 
         renderedAudio = r.snapshot != nullptr ? r.snapshot : engine.document.getSnapshot();
         renderedLoop = { r.start, juce::jmax (r.start + 1, r.end) };
-        renderedPart = part;
+        renderedPart = generates ? renderedLoop : part;   // bypassed, a generator plays what is there now
 
         auto& player = engine.getPlayer();
         const auto loop = previewBypassed ? renderedPart : renderedLoop;
@@ -9264,7 +9322,7 @@ void MainComponent::startRenderedPreview (const EffectPreview::Request& request,
             player.play (loop.getStart(), -1);
 
         if (status != nullptr)
-            status (shortened ? "Playing the first " + juce::String ((int) EffectPreview::longestSeconds) + " s" : juce::String());
+            status (generates ? r.note : shortened ? "Playing the first " + juce::String ((int) EffectPreview::longestSeconds) + " s" : juce::String());
     });
 }
 

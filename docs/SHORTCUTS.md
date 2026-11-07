@@ -146,7 +146,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 
 ## Effect dialogs
 
-Every settings dialog in the Effects menu, and Clip Gain and Normalize Clip in the multitrack view (the generators, Insert Silence, Trim Silence and the silence finders have no preview):
+Every settings dialog in the Effects menu, and Clip Gain and Normalize Clip in the multitrack view (Insert Silence, Trim Silence and the silence finders have no preview; the generators' preview plays what they would put in at the cursor):
 
 | What | Keys and mouse |
 |---|---|

@@ -20,6 +20,7 @@ public:
         AudioDocument::Snapshot snapshot;    // the whole audio, the range processed; null: left as it was
         juce::int64 start = 0, end = 0;      // where the processed range is now (a stretch moves its end)
         juce::String error;
+        juce::String note {};                // said while it plays (a generator's "Playing the first 30 s")
     };
 
     /** Processes [start, end) of the audio; progress gets 0 to 1 and returns false to stop. */
@@ -31,11 +32,17 @@ public:
         juce::String key;          // the settings, so the same ones aren't processed again
         Render render;
         bool wholeRange = false;   // processes all of the range (the result depends on all of it)
+        bool generates = false;    // puts new audio in rather than processing the range: start and end
+                                   // in the result are where it went, and bypassing plays what was there
     };
 
     /** A sequence step as a request (wholeRange as given), or nothing when the step can't run
         with these settings (Sequences::problem). */
     static std::optional<Request> ofStep (const Sequences::Step&, double sampleRate, bool wholeRange = false);
+
+    /** Generated audio put in at `at` (clamped to the audio's length), as Generate does: make runs on
+        the preview's thread, and only its first longestSeconds go in (the note says so). */
+    static Request generated (const juce::String& key, juce::int64 at, std::function<juce::AudioBuffer<float>()> make);
 
     /** What a request processes of a range: the range's first longestSeconds, or all of it. */
     static juce::Range<juce::int64> partOf (juce::Range<juce::int64> range, double sampleRate, bool wholeRange);

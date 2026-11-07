@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 293: Previews for the generators**
+- Generate Tone, Generate DTMF Tones and Generate Noise get the Preview button (and Space) the other effect dialogs have. The preview plays the sound as it would go in: put in at the cursor (or the start of the selection) with what follows moved on, so you hear it against what is around it. It follows the settings as they change; Bypass plays what is there now. Of a sound longer than 30 s, the first 30 s play, and the dialog says so.
+- Generate Noise keeps one seed while its dialog is open, so the noise put in starts as the noise previewed did.
+- Measured by the tests: a noise preview is the noise put in at the cursor, bit for bit, with its place given right; with the cursor past the end it goes in at the end; of 45 s of tone, 30 s play and the note says so. The whole suite passed (1353 checks).
+- Not tried by hand: the dialogs' Preview in the app (MainComponent, which wires them, is not in the test build).
+
 **Milestone 292: SpectraBlade Stretch places hits on their highs**
 - Each hit is now placed where its highs (the size of each sample's step) start to rise, and on the level only when the highs don't rise to a new high. Before, the level came first, and a bass line or a kick's body under a hit could move it: a hat over a bass note could be placed up to 8 ms away from where it starts, and a kick's click on the louder body that follows it.
 - The drop at 200% reported for Milestone 291 on the drum loop (0.61 to 0.54) was the judge's, not the stretch's. The judge marked each hit where the 2 ms window whose level jumped begins, which is 2 ms before the hit (2.0 ms early on 19 of 23 synthetic hits with known times). At 200% that puts a well-placed hit right at the edge of the ±2 ms the likeness search allows. Measured from where the hit really starts, Milestone 291 scores 0.80, 0.60 and 0.61 on the drum loop at 75%, 150% and 200%, and level-only placement 0.73, 0.63 and 0.63. The figures below use the corrected judge.

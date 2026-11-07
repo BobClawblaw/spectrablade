@@ -237,6 +237,11 @@ private:
     int sequencePosition = 0, sequenceResetCount = 0;      // where the document was after the last recorded step
     void showFileInfo();
     void insertGenerated (const juce::AudioBuffer<float>&, const juce::String& name);
+
+    /** A preview of generated audio as Generate would put it in (at the cursor, or the start of
+        the selection): make runs on the preview's thread; the first EffectPreview::longestSeconds play. */
+    std::optional<EffectPreview::Request> generatedPreview (const juce::String& kind, const EffectPresets::Values&,
+                                                            std::function<juce::AudioBuffer<float>()> make);
     int toneWave = 0;                // the generators' last settings
     double toneHz = 1000.0, toneEndHz = 1000.0, toneLevelDb = -12.0, toneSeconds = 1.0, toneFadeMs = 5.0;
     int noiseColour = 0;
