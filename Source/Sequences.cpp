@@ -241,8 +241,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "pitch" && std::abs (get (v, "semitones")) > TimeStretch::widestShift))
         return bad();
 
-    if (step.kind == "deliverySpec" && (get (v, "target") < -70.0 || get (v, "target") > 0.0 || get (v, "tolerance") < 0.0 || get (v, "tolerance") > 10.0
-                                        || get (v, "ceiling") < -30.0 || get (v, "ceiling") > 0.0))
+    if (step.kind == "deliverySpec" && ! Delivery::isValid (get (v, "target"), get (v, "tolerance"), get (v, "ceiling")))
         return bad();
 
     if (step.kind == "matchLoudness" && (get (v, "target") < -70.0 || get (v, "target") > 0.0 || get (v, "ceiling") < -30.0 || get (v, "ceiling") > 0.0))

@@ -373,8 +373,13 @@ private:
     void exportStems (const juce::File& folder, juce::Range<juce::int64>, bool folders, std::optional<Delivery::Spec> spec = std::nullopt);
 
     /** "As mixed", then each delivery spec's name: the choices for a mixdown's or stems' loudness. */
-    static juce::StringArray loudnessChoices();
-    static std::optional<Delivery::Spec> loudnessChoice (int index);
+    juce::StringArray loudnessChoices();
+    std::optional<Delivery::Spec> loudnessChoice (int index);
+
+    /** The delivery specs offered: Delivery::specs(), then the custom spec set in Meet Delivery
+        Spec (kept in the settings; -20 LUFS +/- 1 LU at -1 dBTP until one is set). */
+    std::vector<Delivery::Spec> deliverySpecs();
+    static juce::String describe (const Delivery::Spec&);
 
     // Transport and windows
     void togglePlay();

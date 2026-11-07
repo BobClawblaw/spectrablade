@@ -1,4 +1,5 @@
 #include "Batch.h"
+#include "Delivery.h"
 #include "AudioFileIO.h"
 #include "AudioEdits.h"
 #include "OfflineRender.h"
@@ -40,6 +41,9 @@ juce::String Settings::problem() const
 
     if (level == Level::loudness && (lufs < -70.0 || lufs > 0.0 || ceilingDbtp < -20.0 || ceilingDbtp > 0.0))
         return "Choose a loudness from -70 to 0 LUFS and a true-peak ceiling from -20 to 0 dBTP.";
+
+    if (level == Level::spec && ! Delivery::isValid (specLufs, specToleranceLu, specCeilingDbtp))
+        return "Choose a delivery spec with a target from -70 to 0 LUFS, a tolerance from 0.1 to 10 LU and a true-peak ceiling from -30 to 0 dBTP.";
 
     if (folder != juce::File() && ! folder.isDirectory())
         return "The folder to write into isn't there.";

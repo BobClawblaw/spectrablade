@@ -336,5 +336,20 @@ void runBatchTests (AudioEngine& engine)
                "batch: an unreadable file or settings that can't run write nothing and say why; the report gives each file's outcome");
     }
 
+    // A delivery spec out of range is refused before anything runs.
+    {
+        Batch::Settings own;
+        own.level = Batch::Level::spec;
+        own.specLufs = -20.0;
+        own.specToleranceLu = 1.0;
+        own.specCeilingDbtp = -2.0;
+        auto tight = own;
+        tight.specToleranceLu = 0.05;
+        auto high = own;
+        high.specCeilingDbtp = 0.5;
+        check (own.problem().isEmpty() && tight.problem().contains ("0.1 to 10 LU") && high.problem().contains ("-30 to 0 dBTP"),
+               "batch: a custom delivery spec in range runs; a tolerance under 0.1 LU or a ceiling over 0 dBTP is refused, saying the ranges");
+    }
+
     dir.deleteRecursively();
 }

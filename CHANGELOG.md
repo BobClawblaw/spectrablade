@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 277: Custom delivery specs**
+- Meet Delivery Spec offers a custom spec after the four fixed ones: a target from -70 to 0 LUFS, a tolerance from 0.1 to 10 LU and a true-peak ceiling from -30 to 0 dBTP, set in the same dialog. It is kept in the settings, and Mix Down, Export Stems and Batch Process offer it too, with its values shown. Until one is set it is -20 LUFS +/- 1 LU at -1 dBTP.
+- A recorded Meet Delivery Spec step, and Batch Process, refuse a spec out of those ranges, where a step used to take any tolerance from 0 to 10 LU.
+- Measured by the tests: the ranges hold at their edges and refuse just past them (-70.1 and +0.1 LUFS, 0.05 and 10.1 LU, -30.1 and +0.1 dBTP); a custom spec of -20 LUFS +/- 1 LU at most -2 dBTP brings a programme with clicks to full scale to -20.0 LUFS, true peak -2.1 dBTP, through the limiter, and its report reads "Meets Custom spec."; Batch Process refuses a tolerance of 0.05 LU or a ceiling of +0.5 dBTP, saying the ranges. The whole suite passed (1278 checks). Not tried: setting the custom spec in the Meet Delivery Spec dialog, and choosing it in Mix Down, Export Stems and Batch Process, in the running app.
+
 **Milestone 276: Reverse Clip keeps takes**
 - Reverse Clip now keeps a clip's takes, as Stretch Clip does since Milestone 273: each take's part under the clip is reversed too, written to a file of its own, and kept lined up, so choosing another take afterwards plays it back to front in the same place. Before, the other takes were dropped.
 - Measured by the tests: a clip with three takes (one shorter than the clip) reversed keeps all three, the one playing still chosen; choosing the first afterwards plays what the clip played of it, sample for sample back to front, in the same place and length; takes of other lengths are refused. The whole suite passed (1276 checks). Not tried: Reverse Clip on a clip with takes in the running app.

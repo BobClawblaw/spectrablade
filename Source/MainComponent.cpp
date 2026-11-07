@@ -3283,22 +3283,45 @@ void MainComponent::showTempoDialog (bool atCursor)
         }), true);
 }
 
+std::vector<Delivery::Spec> MainComponent::deliverySpecs()
+{
+    auto* settings = appProperties.getUserSettings();
+    auto all = Delivery::specs();
+    auto own = Delivery::specFor (settings->getDoubleValue ("deliveryOwnLufs", -20.0), settings->getDoubleValue ("deliveryOwnTolerance", 1.0),
+                                  settings->getDoubleValue ("deliveryOwnCeiling", -1.0));
+
+    if (! Delivery::isValid (own.targetLufs, own.toleranceLu, own.maxTruePeak))
+        own = Delivery::specFor (-20.0, 1.0, -1.0);
+
+    own.name = "Custom spec";
+    all.push_back (own);
+    return all;
+}
+
+juce::String MainComponent::describe (const Delivery::Spec& spec)
+{
+    return spec.name + ": " + Loudness::format (spec.targetLufs, "LUFS") + " +/- " + juce::String (spec.toleranceLu, 1) + " LU, true peak "
+           + Loudness::format (spec.maxTruePeak, "dBTP");
+}
+
 juce::StringArray MainComponent::loudnessChoices()
 {
     juce::StringArray names { "As mixed" };
 
-    for (auto& spec : Delivery::specs())
-        names.add (spec.name + " (" + Loudness::format (spec.targetLufs, "LUFS") + ", " + Loudness::format (spec.maxTruePeak, "dBTP") + ")");
+    for (auto& spec : deliverySpecs())
+        names.add (describe (spec));
 
     return names;
 }
 
 std::optional<Delivery::Spec> MainComponent::loudnessChoice (int index)
 {
-    if (! juce::isPositiveAndBelow (index - 1, (int) Delivery::specs().size()))
+    const auto all = deliverySpecs();
+
+    if (! juce::isPositiveAndBelow (index - 1, (int) all.size()))
         return std::nullopt;
 
-    return Delivery::specs()[(size_t) index - 1];
+    return all[(size_t) index - 1];
 }
 
 void MainComponent::mixDown (const juce::File& file, int bitDepth, juce::Range<juce::int64> range, std::optional<Delivery::Spec> spec)
@@ -4834,8 +4857,8 @@ void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
     // Then each delivery spec, as Meet Delivery Spec does it.
     juce::StringArray levels { "Leave it", "Normalize the peak", "Match loudness, stopping at the ceiling", "Match loudness, limiting at the ceiling" };
 
-    for (auto& spec : Delivery::specs())
-        levels.add ("Meet " + spec.name + " (" + Loudness::format (spec.targetLufs, "LUFS") + ", " + Loudness::format (spec.maxTruePeak, "dBTP") + ")");
+    for (auto& spec : deliverySpecs())
+        levels.add ("Meet " + describe (spec));
 
     box->addComboBox ("level", levels, "Level");
     box->addTextEditor ("peak", juce::String (settings->getDoubleValue ("batchPeak", -1.0), 1), "Peak (dBFS)");
@@ -4890,7 +4913,8 @@ void MainComponent::askForBatchSettings (const juce::Array<juce::File>& files)
 
         if (s.level == Batch::Level::spec)
         {
-            const auto& spec = Delivery::specs()[(size_t) juce::jlimit (0, (int) Delivery::specs().size() - 1, level - 4)];
+            const auto specs = deliverySpecs();
+            const auto& spec = specs[(size_t) juce::jlimit (0, (int) specs.size() - 1, level - 4)];
             s.specLufs = spec.targetLufs;
             s.specToleranceLu = spec.toleranceLu;
             s.specCeilingDbtp = spec.maxTruePeak;
@@ -8741,11 +8765,12 @@ void MainComponent::askForLoudnessTarget()
 void MainComponent::askForDeliverySpec()
 {
     auto* settings = appProperties.getUserSettings();
+    const auto specs = deliverySpecs();
+    const auto& own = specs.back();
     juce::StringArray names;
 
-    for (auto& spec : Delivery::specs())
-        names.add (spec.name + ": " + Loudness::format (spec.targetLufs, "LUFS") + " +/- " + juce::String (spec.toleranceLu, 1) + " LU, true peak "
-                   + Loudness::format (spec.maxTruePeak, "dBTP"));
+    for (auto& spec : specs)
+        names.add (&spec == &own ? juce::String ("Custom spec, as set below") : describe (spec));
 
     auto* box = new juce::AlertWindow ("Meet Delivery Spec",
                                        "Brings the selection (or the whole file) to the spec's loudness in one step: gain, and a true-peak "
@@ -8754,6 +8779,15 @@ void MainComponent::askForDeliverySpec()
                                        juce::MessageBoxIconType::NoIcon, this);
     box->addComboBox ("spec", names, "Spec");
     box->getComboBoxComponent ("spec")->setSelectedItemIndex (juce::jlimit (0, names.size() - 1, settings->getIntValue ("deliverySpec", 0)));
+
+    // The custom spec: used when chosen above, and kept for Mix Down, Export Stems and Batch Process.
+    box->addTextEditor ("target", juce::String (own.targetLufs, 1), "Custom: target (LUFS, -70 to 0)");
+    box->addTextEditor ("tolerance", juce::String (own.toleranceLu, 1), "Custom: tolerance (LU, 0.1 to 10)");
+    box->addTextEditor ("ceiling", juce::String (own.maxTruePeak, 1), "Custom: true peak at most (dBTP, -30 to 0)");
+
+    for (auto* name : { "target", "tolerance", "ceiling" })
+        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
+
     box->addButton ("Meet", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
     box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
@@ -8761,9 +8795,29 @@ void MainComponent::askForDeliverySpec()
         if (result != 1)
             return;
 
-        const auto index = juce::jlimit (0, (int) Delivery::specs().size() - 1, box->getComboBoxComponent ("spec")->getSelectedItemIndex());
+        const auto target = box->getTextEditorContents ("target").getDoubleValue();
+        const auto tolerance = box->getTextEditorContents ("tolerance").getDoubleValue();
+        const auto ceiling = box->getTextEditorContents ("ceiling").getDoubleValue();
+        const auto count = (int) deliverySpecs().size();
+        const auto index = juce::jlimit (0, count - 1, box->getComboBoxComponent ("spec")->getSelectedItemIndex());
+        const auto valid = Delivery::isValid (target, tolerance, ceiling);
+
+        // Kept only when in range; refused only when it is the spec chosen.
+        if (valid)
+        {
+            settings->setValue ("deliveryOwnLufs", target);
+            settings->setValue ("deliveryOwnTolerance", tolerance);
+            settings->setValue ("deliveryOwnCeiling", ceiling);
+        }
+        else if (index == count - 1)
+        {
+            showError ("Meet Delivery Spec", "The custom spec needs a target from -70 to 0 LUFS, a tolerance from 0.1 to 10 LU and a "
+                                             "true-peak ceiling from -30 to 0 dBTP.");
+            return;
+        }
+
         settings->setValue ("deliverySpec", index);
-        meetDeliverySpec (Delivery::specs()[(size_t) index]);
+        meetDeliverySpec (deliverySpecs()[(size_t) index]);
     }), true);
 }
 

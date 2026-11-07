@@ -24,6 +24,10 @@ namespace Delivery
         target ("Delivery spec -20.0 LUFS"). */
     Spec specFor (double targetLufs, double toleranceLu, double maxTruePeak);
 
+    /** The ranges a spec of your own may have: a target from -70 to 0 LUFS, a tolerance from 0.1
+        to 10 LU and a true-peak ceiling from -30 to 0 dBTP. */
+    bool isValid (double targetLufs, double toleranceLu, double maxTruePeak);
+
     /** One line of a report: what is measured, what the spec asks, and whether it passes. A
         line with an empty `required` is for information and always passes. */
     struct Line

@@ -212,12 +212,35 @@ namespace
                "delivery: stems whose mix would pass -1 dBTP at -14 LUFS (" + juce::String (loud.gainDb, 2) + " dB) are reported as failing "
                    + "the true peak and needing limiting, not limited; a silent mix is refused");
     }
+
+    void testCustomSpec()
+    {
+        constexpr double rate = 48000.0;
+
+        // The ranges, at their edges.
+        const auto inRange = Delivery::isValid (-70.0, 0.1, -30.0) && Delivery::isValid (0.0, 10.0, 0.0) && Delivery::isValid (-20.0, 1.0, -2.0);
+        const auto outOfRange = ! Delivery::isValid (-70.1, 1.0, -1.0) && ! Delivery::isValid (0.1, 1.0, -1.0) && ! Delivery::isValid (-20.0, 0.05, -1.0)
+                                && ! Delivery::isValid (-20.0, 10.1, -1.0) && ! Delivery::isValid (-20.0, 1.0, -30.1) && ! Delivery::isValid (-20.0, 1.0, 0.1);
+
+        // A spec of your own: -20 LUFS +/- 1 LU, at most -2 dBTP, met by a peaky programme through the limiter.
+        auto own = Delivery::specFor (-20.0, 1.0, -2.0);
+        own.name = "Custom spec";
+        const auto loud = AudioEdits::fromBuffer (programme (rate, 0.12, true));
+        const auto d = Delivery::deliver (*loud, 0, loud->getNumFrames(), rate, own);
+        const auto text = Delivery::report (own, d, "own.wav");
+        check (inRange && outOfRange && d.limited && Delivery::passes (own, d.after) && d.after.truePeak <= -2.0
+                   && text.contains ("-20.0 LUFS +/- 1.0 LU, true peak at most -2.0 dBTP") && text.contains ("Meets Custom spec."),
+               "delivery: a custom spec takes a target from -70 to 0 LUFS, a tolerance from 0.1 to 10 LU and a ceiling from -30 to 0 dBTP, "
+               "nothing past them; -20 LUFS +/- 1 LU at most -2 dBTP is met through the limiter: " + Loudness::format (d.after.integrated, "LUFS")
+                   + ", true peak " + Loudness::format (d.after.truePeak, "dBTP") + ", and the report names it");
+    }
 }
 
 void runLoudnessTests()
 {
     testDelivery();
     testDeliveryStems();
+    testCustomSpec();
     // EBU Tech 3341, cases 1-5, at 48 kHz and again at 44.1 kHz (the K-weighting is derived per rate).
     for (auto rate : { 48000.0, 44100.0 })
     {

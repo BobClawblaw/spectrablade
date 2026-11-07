@@ -24,6 +24,11 @@ Spec specFor (double targetLufs, double toleranceLu, double maxTruePeak)
     return { "Delivery spec " + Loudness::format (targetLufs, "LUFS"), targetLufs, toleranceLu, maxTruePeak };
 }
 
+bool isValid (double targetLufs, double toleranceLu, double maxTruePeak)
+{
+    return targetLufs >= -70.0 && targetLufs <= 0.0 && toleranceLu >= 0.1 && toleranceLu <= 10.0 && maxTruePeak >= -30.0 && maxTruePeak <= 0.0;
+}
+
 std::vector<Line> check (const Spec& spec, const Loudness::Result& r)
 {
     std::vector<Line> lines;
