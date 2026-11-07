@@ -4,7 +4,21 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 287: Previewing every effect, and a better effect dialog**
+- Every built-in effect with settings now has a preview, not only the ones that run live. Noise Reduction, Click and Pop Repair, Reduce Reverb, Remove Hum, Repair Clipping, Stretch, Shift Pitch, Pitch Correction, Level Speech, Centre Channel, Automatic Phase Correction, Gain, Normalize, Match Loudness, Balance, Stereo Width, Gain Ramp, Pan Ramp, Echo, Tremolo and EQ Band process the selection (or the file) in the background with the dialog's settings, then loop the result in place of the audio, before the effects rack. They process its first 30 s, or all of it when the result depends on all of it: Normalize, Match Loudness, the ramps, Phase Correction, and Repair Clipping keeping the peak level. A change of settings is processed once the settings have stood still for a quarter of a second; the last result plays meanwhile, and the dialog says when it is processing.
+- One dialog for the built-in effects: a slider and its value for each number, a menu for each choice, presets for every one of them, Preview and Bypass (the audio as it is, to compare), and Apply and Cancel.
+  - The mouse wheel steps a value up or down, as do the arrow keys; Shift steps a tenth as far, and double-clicking a slider sets it back.
+  - Space starts and stops the preview; Return applies; Escape cancels.
+  - Wide ranges of frequencies and times spread out evenly by ratio.
+- Right-clicking the waveform gives a menu with Play/Pause, Loop Playback, Cut, Copy, Paste, Delete, Crop, Select All and the Effects menu. Loop Playback was already in the Transport menu (Cmd-L) and the transport bar.
+- Measured by the tests:
+  - A rendered preview is, bit for bit, what applying the step gives, and a stretched one says where its range now ends.
+  - Only the newest request is answered: a newer one stops the one under way at its next progress check, and a cancelled one isn't answered.
+  - The player plays a preview in place of the file, past the file's end too, until it is taken away. The live preview effect can be bypassed and put back.
+  - In the dialog, a wheel notch or arrow key moves a value one step onto the step's grid, Shift a tenth of a step, within its range, and the wheel steps a menu. Space passes the fields by and starts and stops the preview; Return applies what is shown.
+  - The whole suite passed (1337 checks).
+- Not tried by hand in the app: the dialogs, the previews by ear, the right-click menu, and the wheel with a real mouse or trackpad. A trackpad's smooth scrolling counts a step for every 0.08 of scroll, a figure not tuned on a trackpad.
+- Not converted yet: Meet Delivery Spec, DTMF Tones, Noise Gate and the fade, silence and region dialogs keep their old plain dialogs. Parametric EQ, the graphic EQs and the multiband compressor keep their own windows, which already had a live preview.
 
 ## Released
 

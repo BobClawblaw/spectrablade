@@ -863,6 +863,12 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     if (getMarkerLane().toFloat().contains (e.position))
         return;
 
+    if (e.mods.isPopupMenu() && onContextMenu != nullptr)
+    {
+        onContextMenu();
+        return;
+    }
+
     // Option-drag in a spectrogram selects a box of time and frequency.
     if (e.mods.isAltDown())
     {

@@ -25,6 +25,7 @@ public:
 
     std::function<void (const juce::Array<juce::File>&)> onFilesDropped;   // every audio file dropped, in order
     std::function<void()> onSelectionChanged;
+    std::function<void()> onContextMenu;   // a right-click on the audio; the selection stays as it was
 
     enum class Display { waveform, spectrogram, both };
     void setDisplay (Display);

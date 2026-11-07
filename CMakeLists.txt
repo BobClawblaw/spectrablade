@@ -76,6 +76,8 @@ target_sources(SpectraBlade PRIVATE
     Source/AudioEdits.cpp
     Source/Batch.cpp
     Source/Sequences.cpp
+    Source/EffectPreview.cpp
+    Source/EffectDialog.cpp
     Source/Surround.cpp
     Source/Video.cpp
     Source/Project.cpp
@@ -223,6 +225,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SidechainTests.cpp
     Tests/BatchTests.cpp
     Tests/SequencesTests.cpp
+    Tests/EffectPreviewTests.cpp
     Tests/SurroundTests.cpp
     Tests/SurroundSessionTests.cpp
     Tests/SurroundEffectsTests.cpp
@@ -258,6 +261,8 @@ target_sources(SpectraBladeTests PRIVATE
     Source/AudioEdits.cpp
     Source/Batch.cpp
     Source/Sequences.cpp
+    Source/EffectPreview.cpp
+    Source/EffectDialog.cpp
     Source/Surround.cpp
     Source/Video.cpp
     Source/Project.cpp

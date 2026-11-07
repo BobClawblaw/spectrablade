@@ -11,7 +11,20 @@
 //==============================================================================
 juce::int64 DocumentSource::getTotalLength() const
 {
-    return document.getSnapshot()->getNumFrames();
+    const auto frames = document.getSnapshot()->getNumFrames();
+    const juce::SpinLock::ScopedLockType lock (standInLock);
+    return standIn != nullptr ? juce::jmax (frames, standIn->getNumFrames()) : frames;
+}
+
+void DocumentSource::setStandIn (AudioDocument::Snapshot s)
+{
+    AudioDocument::Snapshot old;   // let go of after the lock, not under it
+    {
+        const juce::SpinLock::ScopedLockType lock (standInLock);
+        old = std::exchange (standIn, std::move (s));
+        standInSet = standIn != nullptr;
+        ++standInVersion;
+    }
 }
 
 void DocumentSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
@@ -22,6 +35,21 @@ void DocumentSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info
         snapshot = document.getSnapshot();
         snapshotVersion = v;
     }
+
+    // A stand-in plays in place of the document while there is one (taken when the lock is free,
+    // else on a later block).
+    if (const auto sv = standInVersion.load(); sv != takenStandIn)
+    {
+        const juce::SpinLock::ScopedTryLockType lock (standInLock);
+
+        if (lock.isLocked())
+        {
+            heldStandIn = standIn;
+            takenStandIn = sv;
+        }
+    }
+
+    played = heldStandIn != nullptr ? heldStandIn : snapshot;
 
     auto& buffer = *info.buffer;
     auto start = position.load();
@@ -50,7 +78,7 @@ void DocumentSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info
     }
 
     // Mono documents play on both sides.
-    if (snapshot->getNumChannels() == 1)
+    if (played->getNumChannels() == 1)
         for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
             buffer.copyFrom (ch, info.startSample, buffer, 0, info.startSample, info.numSamples);
 }
@@ -63,10 +91,10 @@ void DocumentSource::readRun (juce::AudioBuffer<float>& buffer, int destStart, j
     if (stop >= 0)
         count = (int) juce::jlimit ((juce::int64) 0, (juce::int64) numFrames, stop - start);
 
-    if (snapshot->getNumChannels() > 2)
+    if (played->getNumChannels() > 2)
         readWide (buffer, destStart, start, count);
     else
-        snapshot->read (buffer, destStart, start, count);
+        played->read (buffer, destStart, start, count);
 
     if (count < numFrames)
         buffer.clear (destStart + count, numFrames - count);
@@ -80,7 +108,7 @@ void DocumentSource::prepareToPlay (int blockSize, double)
 void DocumentSource::readWide (juce::AudioBuffer<float>& buffer, int destStart, juce::int64 start, int numFrames)
 {
     const auto first = separateFirst.load();
-    const auto channels = juce::jmin (snapshot->getNumChannels(), Surround::maxPlayedChannels);
+    const auto channels = juce::jmin (played->getNumChannels(), Surround::maxPlayedChannels);
 
     for (int done = 0; done < numFrames;)
     {
@@ -95,11 +123,11 @@ void DocumentSource::readWide (juce::AudioBuffer<float>& buffer, int destStart, 
 
         buffer.clear (at, n);
 
-        snapshot->read (wide, 0, start + done, n);
+        played->read (wide, 0, start + done, n);
 
-        if (first < 0 && Surround::isSurround (snapshot->getNumChannels()) && buffer.getNumChannels() >= 2)
+        if (first < 0 && Surround::isSurround (played->getNumChannels()) && buffer.getNumChannels() >= 2)
         {
-            Surround::foldDown (wide.getArrayOfReadPointers(), snapshot->getNumChannels(), buffer.getWritePointer (0, at), buffer.getWritePointer (1, at), n);
+            Surround::foldDown (wide.getArrayOfReadPointers(), played->getNumChannels(), buffer.getWritePointer (0, at), buffer.getWritePointer (1, at), n);
         }
         else
         {
@@ -1558,6 +1586,17 @@ void AudioEngine::setPreviewEffect (std::unique_ptr<juce::AudioPluginInstance> e
 juce::AudioPluginInstance* AudioEngine::getPreviewEffect() const
 {
     return previewNode != nullptr ? dynamic_cast<juce::AudioPluginInstance*> (previewNode->getProcessor()) : nullptr;
+}
+
+void AudioEngine::setPreviewBypassed (bool bypassed)
+{
+    if (previewNode != nullptr)
+        previewNode->setBypassed (bypassed);
+}
+
+bool AudioEngine::isPreviewBypassed() const
+{
+    return previewNode != nullptr && previewNode->isBypassed();
 }
 
 //==============================================================================

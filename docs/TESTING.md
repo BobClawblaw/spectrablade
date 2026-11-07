@@ -159,6 +159,8 @@ What they check:
 - Its window: the EQ panel setting the parameters as gestures, and showing changes made from outside.
 - Live compressor and limiter: bit for bit with the offline effects (the limiter a look-ahead late), the limiter's latency reported and counted on a track.
 - Preview: the live effects take the dialogs' settings; the engine's preview slot swaps and clears, and stays out of the rack.
+- Rendered previews: a preview processes the range's first 30 s (or all of it for effects that need it all) and gives, bit for bit, what applying the step gives; a stretch says where its range ends now; a newer request stops one under way at its next progress check and only the newest is answered; a cancelled one isn't; the player plays the result in place of the document (past the document's end too) until it is taken away; the live preview effect bypassed and put back.
+- The effect dialog: a wheel notch or arrow key moves a number a step onto the step's grid (Shift a tenth), within its range, and the wheel steps a menu; the settings settle once they stop changing; Space passes by the fields and starts and stops the preview, stopping ending Bypass; Return applies the settings shown, a preset's too.
 - Chorus, flanger, phaser: delays and notches where the arithmetic puts them, the spread, bounded feedback, refused settings; live bit for bit with offline.
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.

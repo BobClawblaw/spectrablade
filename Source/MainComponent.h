@@ -23,6 +23,8 @@
 #include "Reverb.h"
 #include "Convolver.h"
 #include "EffectPresets.h"
+#include "EffectDialog.h"
+#include "EffectPreview.h"
 #include "RackView.h"
 #include "SessionOverview.h"
 #include "SessionRecording.h"
@@ -508,35 +510,50 @@ private:
         before the rack, until stopPreview. A preview from another owner takes over, and the old
         one's ended callback is called (so it can untick its Preview button); stopPreview calls
         it too. An owner already previewing just has its effect swapped. Files only. */
-    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution, graphicEq, multiband, deEsser };
+    enum class PreviewOwner { none, parametricEq, compressor, limiter, chorus, flanger, phaser, reverb, convolution, graphicEq, multiband, deEsser, rendered };
     void startPreview (PreviewOwner, std::unique_ptr<juce::AudioPluginInstance>, std::function<void()> ended);
     void stopPreview();
     juce::AudioPluginInstance* previewEffectOf (PreviewOwner) const;
     PreviewOwner previewOwner = PreviewOwner::none;
     std::function<void()> previewEnded;
 
-    /** An effect's dialog: a text field (or a menu, for a field with choices, its value the
-        choice's index) for each setting, the effect's presets (under presetKey, the fields' IDs
-        naming the values), and, when `make` is given, a Preview switch that plays the selection
-        through the live effect (made by `make` for the values, set by `setLive` as the fields change,
-        the last valid settings while one is being typed; setLive returns false when it needs a new one).
-        OK applies the effect when the values are valid (else shows invalidText); the preview ends
-        whenever the dialog closes. */
-    struct EffectField
-    {
-        juce::String id;      // its own copies, as the dialog's callbacks keep the fields after the call
-        juce::String label;
-        double value;
-        int decimals;
-        juce::StringArray choices {};
-    };
+    /** Previewing an effect that can't run live (PreviewOwner::rendered): the request is processed
+        in the background on the selection (or the whole file; its first EffectPreview::longestSeconds
+        unless the request needs it all), and the result plays over and over in place of the audio.
+        A new request replaces the one playing once it is processed; until then the last one plays.
+        status gets what it is doing ("Processing...") and anything that stops it. */
+    void startRenderedPreview (const EffectPreview::Request&, std::function<void()> ended, std::function<void (const juce::String&)> status);
+    EffectPreview effectPreview;
+    AudioDocument::Snapshot renderedAudio;      // the preview's audio, once processed
+    juce::Range<juce::int64> renderedLoop, renderedPart;   // where it plays processed, and the part as it was
+    juce::String renderedKey;                   // the settings processed or being processed
+    juce::uint32 renderedVersion = 0;           // the document's version it was processed from
+
+    /** Bypass in a preview: the selection plays as it is, to compare, until put back. */
+    void setPreviewBypassed (bool);
+    bool previewBypassed = false;
+
+    /** An effect's dialog (EffectDialog): a slider or menu for each setting (a menu's value is the
+        choice's index), the effect's presets (under presetKey, the fields' IDs naming the values),
+        and Preview and Bypass. The preview plays the selection through the live effect when `make`
+        is given (made by `make` for the values, set by `setLive` as the fields change; setLive
+        returns false when it needs a new one), else through `rendered`'s request for the values
+        once they settle (none: no preview). Apply applies the effect when the values are valid
+        (else shows invalidText); the preview ends whenever the dialog closes. */
+    using EffectField = EffectDialog::Field;
     using EffectValues = EffectPresets::Values;
     void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&,
                            const juce::String& presetKey, PreviewOwner,
                            std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
                            std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
                            std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
-                           std::function<void (const EffectValues&)> apply);
+                           std::function<void (const EffectValues&)> apply,
+                           std::function<std::optional<EffectPreview::Request> (const EffectValues&)> rendered = nullptr,
+                           const juce::String& applyText = "Apply");
+
+    /** A step's request for the document's rate (nothing when the step can't run with these settings). */
+    std::optional<EffectPreview::Request> previewOf (const Sequences::Step&, bool wholeRange = false) const;
+
     bool inputMonitoring = false;                        // the armed tracks play their inputs
     bool countIn = false;                                // record after a bar of clicks
     SessionRecording::Rolls rolls;                       // pre-roll and post-roll, kept in the settings

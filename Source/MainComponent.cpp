@@ -800,6 +800,22 @@ MainComponent::MainComponent()
     fadeShape = FadeShapes::fromId (settings->getValue (fadeShapeKey));
     waveform.onFilesDropped = [this] (const juce::Array<juce::File>& files) { openDocuments (files); };
     waveform.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
+    waveform.onContextMenu = [this]
+    {
+        juce::PopupMenu menu;
+
+        for (int id : std::initializer_list<int> { cmdPlayPause, cmdLoopPlayback, 0, cmdCut, cmdCopy, cmdPaste, cmdDelete, cmdCrop, cmdSelectAll })
+        {
+            if (id == 0)
+                menu.addSeparator();
+            else
+                menu.addCommandItem (&commands, id);
+        }
+
+        menu.addSeparator();
+        menu.addSubMenu ("Effects", getMenuForIndex (2, "Effects"));
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&waveform).withMousePosition());
+    };
 
     editorBar = std::make_unique<EditorBar> (commands, waveform, engine.document,
                                              EditorBar::Commands { cmdZoomOut, cmdZoomIn, cmdZoomFit, cmdShorterTracks, cmdTallerTracks,
@@ -5165,106 +5181,69 @@ void MainComponent::askToStretch()
 {
     const auto range = selectionOrAll();
     const auto seconds = (double) range.getLength() / engine.document.getSampleRate();
-    auto* box = new juce::AlertWindow ("Stretch",
-                                       juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection") + " ("
-                                           + juce::String (seconds, 2) + " s) longer or shorter, keeping its pitch. Markers in it keep their place in it.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("percent", juce::String (stretchPercent, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."),
-                        "Length (% of now, " + juce::String (juce::roundToInt (TimeStretch::shortest * 100.0)) + " to "
-                            + juce::String (juce::roundToInt (TimeStretch::longest * 100.0)) + ")");
-    box->getTextEditor ("percent")->setInputRestrictions (7, ".0123456789");
-    box->addButton ("Stretch", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        const auto percent = box->getTextEditorContents ("percent").getDoubleValue();
 
-        if (result != 1)
-            return;
+    showEffectDialog ("Stretch", juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection") + " ("
+                                     + juce::String (seconds, 2) + " s) longer or shorter, keeping its pitch. Markers in it keep their place in it.",
+                      { { "percent", "Length (% of now)", stretchPercent, 2, {}, TimeStretch::shortest * 100.0, TimeStretch::longest * 100.0, 1.0 } },
+                      "spectrablade:stretch", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          stretchPercent = v.at ("percent");
 
-        if (percent < TimeStretch::shortest * 100.0 || percent > TimeStretch::longest * 100.0)
-        {
-            showError ("Stretch", "The length must be from 50% to 200% of what it is now.");
-            return;
-        }
-
-        stretchPercent = percent;
-
-        if (std::abs (percent - 100.0) >= 0.005)
-            runStepInBackground ({ "stretch", { { "percent", percent } }, nullptr }, "Stretching...");
-    }), true);
+                          if (std::abs (stretchPercent - 100.0) >= 0.005)
+                              runStepInBackground ({ "stretch", v, nullptr }, "Stretching...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "stretch", v, nullptr }); },
+                      "Stretch");
 }
 
 void MainComponent::askToShiftPitch()
 {
-    auto* box = new juce::AlertWindow ("Shift Pitch",
-                                       juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection")
-                                           + " higher or lower, keeping its length (12 semitones is an octave).",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("semitones", juce::String (pitchSemitones, 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."), "Semitones (-12 to +12)");
-    box->getTextEditor ("semitones")->setInputRestrictions (7, "-+.0123456789");
-    box->addButton ("Shift", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        const auto semitones = box->getTextEditorContents ("semitones").getDoubleValue();
+    showEffectDialog ("Shift Pitch", juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection")
+                                         + " higher or lower, keeping its length (12 semitones is an octave).",
+                      { { "semitones", "Semitones", pitchSemitones, 2, {}, -TimeStretch::widestShift, TimeStretch::widestShift, 1.0 } },
+                      "spectrablade:shift-pitch", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          pitchSemitones = v.at ("semitones");
 
-        if (result != 1)
-            return;
-
-        if (std::abs (semitones) > TimeStretch::widestShift)
-        {
-            showError ("Shift Pitch", "The shift must be from -12 to +12 semitones.");
-            return;
-        }
-
-        pitchSemitones = semitones;
-
-        if (std::abs (semitones) >= 0.005)
-            runStepInBackground ({ "pitch", { { "semitones", semitones } }, nullptr }, "Shifting the pitch...");
-    }), true);
+                          if (std::abs (pitchSemitones) >= 0.005)
+                              runStepInBackground ({ "pitch", v, nullptr }, "Shifting the pitch...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "pitch", v, nullptr }); },
+                      "Shift");
 }
 
 void MainComponent::askToLevelSpeech()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Level Speech",
-                                       "Raises quiet passages and lowers loud ones towards the target, smoothly over about a second. Pauses "
-                                       "quieter than the silence threshold take the gain of the speech around them rather than being raised "
-                                       "themselves, and no sample comes out above -1 dBFS.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("target", juce::String (settings->getDoubleValue ("levelTarget", -20.0), 1), "Target (LUFS, -40 to -5)");
-    box->addTextEditor ("boost", juce::String (settings->getDoubleValue ("levelBoost", 12.0), 1), "Largest boost (dB, 0 to 30)");
-    box->addTextEditor ("cut", juce::String (settings->getDoubleValue ("levelCut", 12.0), 1), "Largest cut (dB, 0 to 30)");
-    box->addTextEditor ("silence", juce::String (settings->getDoubleValue ("levelSilence", -50.0), 1), "Silence below (LUFS, -80 to -20)");
-
-    for (auto* name : { "target", "boost", "cut", "silence" })
-        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
-
-    box->addButton ("Level", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    const auto toSettings = [] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
+        return Leveller::Settings { (float) v.at ("target"), (float) v.at ("boost"), (float) v.at ("cut"), (float) v.at ("silence") };
+    };
 
-        const Leveller::Settings s { box->getTextEditorContents ("target").getFloatValue(), box->getTextEditorContents ("boost").getFloatValue(),
-                                     box->getTextEditorContents ("cut").getFloatValue(), box->getTextEditorContents ("silence").getFloatValue() };
-
-        if (! Leveller::isValid (s))
-        {
-            showError ("Level Speech", "The target must be from -40 to -5 LUFS, the boost and cut from 0 to 30 dB, and the silence "
-                                       "threshold from -80 to -20 LUFS.");
-            return;
-        }
-
-        settings->setValue ("levelTarget", s.targetLufs);
-        settings->setValue ("levelBoost", s.maxBoostDb);
-        settings->setValue ("levelCut", s.maxCutDb);
-        settings->setValue ("levelSilence", s.silenceLufs);
-        runStepInBackground ({ "levelSpeech", { { "target", s.targetLufs }, { "boost", s.maxBoostDb }, { "cut", s.maxCutDb }, { "silence", s.silenceLufs } }, nullptr },
-                             "Levelling speech...");
-    }), true);
+    showEffectDialog ("Level Speech",
+                      "Raises quiet passages and lowers loud ones towards the target, smoothly over about a second. Pauses "
+                      "quieter than the silence threshold take the gain of the speech around them rather than being raised "
+                      "themselves, and no sample comes out above -1 dBFS.",
+                      { { "target", "Target (LUFS)", settings->getDoubleValue ("levelTarget", -20.0), 1, {}, -40.0, -5.0, 0.5 },
+                        { "boost", "Largest boost (dB)", settings->getDoubleValue ("levelBoost", 12.0), 1, {}, 0.0, 30.0, 0.5 },
+                        { "cut", "Largest cut (dB)", settings->getDoubleValue ("levelCut", 12.0), 1, {}, 0.0, 30.0, 0.5 },
+                        { "silence", "Silence below (LUFS)", settings->getDoubleValue ("levelSilence", -50.0), 1, {}, -80.0, -20.0, 1.0 } },
+                      "spectrablade:level-speech", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return Leveller::isValid (toSettings (v)); },
+                      "The target must be from -40 to -5 LUFS, the boost and cut from 0 to 30 dB, and the silence threshold from -80 to -20 LUFS.",
+                      nullptr, nullptr,
+                      [this, settings] (const EffectValues& v)
+                      {
+                          settings->setValue ("levelTarget", v.at ("target"));
+                          settings->setValue ("levelBoost", v.at ("boost"));
+                          settings->setValue ("levelCut", v.at ("cut"));
+                          settings->setValue ("levelSilence", v.at ("silence"));
+                          runStepInBackground ({ "levelSpeech", v, nullptr }, "Levelling speech...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "levelSpeech", v, nullptr }); },
+                      "Level");
 }
 
 void MainComponent::moveNotesInBackground (const PitchEditor::Source& source, const PitchCorrection::Track& track,
@@ -5385,166 +5364,114 @@ void MainComponent::moveClipNotesInBackground (const PitchEditor::Source& source
 void MainComponent::askForPitchCorrection()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Pitch Correction",
-                                       "For one voice or instrument at a time: finds its pitch every 5 ms (60 to 1000 Hz) and moves it to the "
-                                       "nearest note of the scale (A = 440 Hz), keeping its length. The speed is how long a correction takes "
-                                       "to settle: 0 moves it at once, slower keeps more of the slides and vibrato. Breaths, consonants and "
-                                       "noise are left as they are.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addComboBox ("key", { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, "Key");
-    box->getComboBoxComponent ("key")->setSelectedItemIndex (juce::jlimit (0, 11, settings->getIntValue ("tuneKey", 0)));
-    box->addComboBox ("scale", { "Chromatic (every note)", "Major", "Minor" }, "Scale");
-    box->getComboBoxComponent ("scale")->setSelectedItemIndex (juce::jlimit (0, 2, settings->getIntValue ("tuneScale", 0)));
-    box->addTextEditor ("speed", juce::String (settings->getDoubleValue ("tuneSpeed", 20.0), 0), "Speed (ms, 0 to 500)");
-    box->addTextEditor ("strength", juce::String (settings->getDoubleValue ("tuneStrength", 100.0), 0), "Strength (%, 0 to 100)");
 
-    for (auto* name : { "speed", "strength" })
-        box->getTextEditor (name)->setInputRestrictions (6, ".0123456789");
+    showEffectDialog ("Pitch Correction",
+                      "For one voice or instrument at a time: finds its pitch every 5 ms (60 to 1000 Hz) and moves it to the "
+                      "nearest note of the scale (A = 440 Hz), keeping its length. The speed is how long a correction takes "
+                      "to settle: 0 moves it at once, slower keeps more of the slides and vibrato. Breaths, consonants and "
+                      "noise are left as they are.",
+                      { { "key", "Key", (double) juce::jlimit (0, 11, settings->getIntValue ("tuneKey", 0)), 0,
+                          { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" } },
+                        { "scale", "Scale", (double) juce::jlimit (0, 2, settings->getIntValue ("tuneScale", 0)), 0, { "Chromatic (every note)", "Major", "Minor" } },
+                        { "speed", "Speed (ms)", settings->getDoubleValue ("tuneSpeed", 20.0), 0, {}, 0.0, 500.0, 5.0 },
+                        { "strength", "Strength (%)", settings->getDoubleValue ("tuneStrength", 100.0), 0, {}, 0.0, 100.0, 1.0 } },
+                      "spectrablade:pitch-correction", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings] (const EffectValues& v)
+                      {
+                          settings->setValue ("tuneKey", (int) v.at ("key"));
+                          settings->setValue ("tuneScale", (int) v.at ("scale"));
+                          settings->setValue ("tuneSpeed", v.at ("speed"));
+                          settings->setValue ("tuneStrength", v.at ("strength"));
 
-    box->addButton ("Correct", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
-    {
-        if (result != 1)
-            return;
-
-        const PitchCorrection::Settings s { box->getComboBoxComponent ("key")->getSelectedItemIndex(),
-                                            (PitchCorrection::Scale) box->getComboBoxComponent ("scale")->getSelectedItemIndex(),
-                                            box->getTextEditorContents ("speed").getFloatValue(), box->getTextEditorContents ("strength").getFloatValue() };
-
-        if (! PitchCorrection::isValid (s))
-        {
-            showError ("Pitch Correction", "The speed must be from 0 to 500 ms and the strength from 0 to 100%.");
-            return;
-        }
-
-        settings->setValue ("tuneKey", s.key);
-        settings->setValue ("tuneScale", (int) s.scale);
-        settings->setValue ("tuneSpeed", s.speedMs);
-        settings->setValue ("tuneStrength", s.strengthPercent);
-
-        if (s.strengthPercent > 0.0f)
-            runStepInBackground ({ "pitchCorrect", { { "key", (double) s.key }, { "scale", (double) s.scale }, { "speed", s.speedMs },
-                                                     { "strength", s.strengthPercent } }, nullptr }, "Correcting the pitch...");
-    }), true);
+                          if (v.at ("strength") > 0.0)
+                              runStepInBackground ({ "pitchCorrect", v, nullptr }, "Correcting the pitch...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "pitchCorrect", v, nullptr }); },
+                      "Correct");
 }
 
 void MainComponent::askForPhaseCorrection()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Automatic Phase Correction",
-                                       "Finds how far the right channel is late or early on the left (as with two microphones at different "
-                                       "distances, or a tape head out of line), to a small fraction of a frame, and moves each channel half of "
-                                       "that so they line up. It looks up to the most offset either way.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("most", juce::String (settings->getDoubleValue ("phaseMost", 5.0), 1), "Most offset (ms, 0.1 to 50)");
-    box->getTextEditor ("most")->setInputRestrictions (6, ".0123456789");
-    box->addComboBox ("turnOver", { "Turn over a channel found upside down", "Leave a channel found upside down" }, "Polarity");
-    box->getComboBoxComponent ("turnOver")->setSelectedItemIndex (settings->getBoolValue ("phaseTurnOver", true) ? 0 : 1);
-    box->addButton ("Correct", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    const auto toStep = [] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
+        return Sequences::Step { "phase", { { "most", v.at ("most") }, { "turnOver", v.at ("polarity") < 0.5 ? 1.0 : 0.0 } }, nullptr };
+    };
 
-        const auto most = box->getTextEditorContents ("most").getDoubleValue();
-        const auto turnOver = box->getComboBoxComponent ("turnOver")->getSelectedItemIndex() == 0;
-
-        if (most < PhaseCorrection::shortestMs || most > PhaseCorrection::longestMs)
-        {
-            showError ("Automatic Phase Correction", "The most offset must be from 0.1 to 50 ms.");
-            return;
-        }
-
-        settings->setValue ("phaseMost", most);
-        settings->setValue ("phaseTurnOver", turnOver);
-        runStepInBackground ({ "phase", { { "most", most }, { "turnOver", turnOver ? 1.0 : 0.0 } }, nullptr }, "Lining up the channels...");
-    }), true);
+    // The offset is found across the whole selection, so the preview processes all of it.
+    showEffectDialog ("Automatic Phase Correction",
+                      "Finds how far the right channel is late or early on the left (as with two microphones at different "
+                      "distances, or a tape head out of line), to a small fraction of a frame, and moves each channel half of "
+                      "that so they line up. It looks up to the most offset either way.",
+                      { { "most", "Most offset (ms)", settings->getDoubleValue ("phaseMost", 5.0), 1, {}, PhaseCorrection::shortestMs, PhaseCorrection::longestMs, 0.1 },
+                        { "polarity", "Polarity", settings->getBoolValue ("phaseTurnOver", true) ? 0.0 : 1.0, 0,
+                          { "Turn over a channel found upside down", "Leave a channel found upside down" } } },
+                      "spectrablade:phase-correction", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings, toStep] (const EffectValues& v)
+                      {
+                          settings->setValue ("phaseMost", v.at ("most"));
+                          settings->setValue ("phaseTurnOver", v.at ("polarity") < 0.5);
+                          runStepInBackground (toStep (v), "Lining up the channels...");
+                      },
+                      [this, toStep] (const EffectValues& v) { return previewOf (toStep (v), true); },
+                      "Correct");
 }
 
 void MainComponent::askForCentreChannel()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Centre Channel",
-                                       "Finds what is panned to the middle of the mix (a voice, dialogue, a lead instrument) band by band, "
-                                       "from what the two channels share, and either removes it or keeps it alone, lowering the rest. "
-                                       "Only the frequencies between the low and high are changed. A sound off to the side at the same "
-                                       "moment and pitch can't be told apart fully, so some of each stays with the other.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addComboBox ("mode", { "Remove the centre", "Keep the centre alone" }, "Centre");
-    box->getComboBoxComponent ("mode")->setSelectedItemIndex (settings->getBoolValue ("centreKeep", false) ? 1 : 0);
-    box->addTextEditor ("low", juce::String (settings->getDoubleValue ("centreLow", 100.0), 0), "Low (Hz, from 20)");
-    box->addTextEditor ("high", juce::String (settings->getDoubleValue ("centreHigh", 8000.0), 0), "High (Hz, to 20000)");
-    box->addTextEditor ("reduction", juce::String (settings->getDoubleValue ("centreReduction", 20.0), 1), "Reduction (dB, 0 to 40)");
-
-    for (auto* name : { "low", "high", "reduction" })
-        box->getTextEditor (name)->setInputRestrictions (8, ".0123456789");
-
-    box->addButton ("Apply", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    const auto toSettings = [] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
+        return CentreChannel::Settings { v.at ("keep") > 0.5, (float) v.at ("low"), (float) v.at ("high"), (float) v.at ("reduction") };
+    };
 
-        const CentreChannel::Settings s { box->getComboBoxComponent ("mode")->getSelectedItemIndex() == 1,
-                                          box->getTextEditorContents ("low").getFloatValue(), box->getTextEditorContents ("high").getFloatValue(),
-                                          box->getTextEditorContents ("reduction").getFloatValue() };
+    showEffectDialog ("Centre Channel",
+                      "Finds what is panned to the middle of the mix (a voice, dialogue, a lead instrument) band by band, "
+                      "from what the two channels share, and either removes it or keeps it alone, lowering the rest. "
+                      "Only the frequencies between the low and high are changed. A sound off to the side at the same "
+                      "moment and pitch can't be told apart fully, so some of each stays with the other.",
+                      { { "keep", "Centre", settings->getBoolValue ("centreKeep", false) ? 1.0 : 0.0, 0, { "Remove the centre", "Keep the centre alone" } },
+                        { "low", "Low (Hz)", settings->getDoubleValue ("centreLow", 100.0), 0, {}, 20.0, 20000.0, 10.0 },
+                        { "high", "High (Hz)", settings->getDoubleValue ("centreHigh", 8000.0), 0, {}, 20.0, 20000.0, 10.0 },
+                        { "reduction", "Reduction (dB)", settings->getDoubleValue ("centreReduction", 20.0), 1, {}, 0.0, 40.0, 0.5 } },
+                      "spectrablade:centre-channel", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return CentreChannel::isValid (toSettings (v)); },
+                      "The low must be below the high.", nullptr, nullptr,
+                      [this, settings, toSettings] (const EffectValues& v)
+                      {
+                          const auto s = toSettings (v);
+                          settings->setValue ("centreKeep", s.keepCentre);
+                          settings->setValue ("centreLow", s.lowHz);
+                          settings->setValue ("centreHigh", s.highHz);
+                          settings->setValue ("centreReduction", s.reductionDb);
 
-        if (! CentreChannel::isValid (s))
-        {
-            showError ("Centre Channel", "The low and high must be from 20 to 20000 Hz with the low below the high, and the reduction "
-                                         "from 0 to 40 dB.");
-            return;
-        }
-
-        settings->setValue ("centreKeep", s.keepCentre);
-        settings->setValue ("centreLow", s.lowHz);
-        settings->setValue ("centreHigh", s.highHz);
-        settings->setValue ("centreReduction", s.reductionDb);
-
-        if (s.reductionDb > 0.0f)
-            runStepInBackground ({ "centre", { { "keep", s.keepCentre ? 1.0 : 0.0 }, { "low", s.lowHz }, { "high", s.highHz }, { "reduction", s.reductionDb } }, nullptr },
-                                 s.keepCentre ? "Extracting the centre..." : "Removing the centre...");
-    }), true);
+                          if (s.reductionDb > 0.0f)
+                              runStepInBackground ({ "centre", v, nullptr }, s.keepCentre ? "Extracting the centre..." : "Removing the centre...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "centre", v, nullptr }); });
 }
 
 void MainComponent::askToReduceReverb()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Reduce Reverb",
-                                       "Lowers the room's reverberation after each sound by up to the reduction, keeping the sound itself and "
-                                       "notes held steady. The reverb time is how long the room takes to die away: set it longer to take "
-                                       "away more of the tail, shorter to leave more.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("time", juce::String (settings->getDoubleValue ("dereverbTime", 1.0), 2), "Reverb time (s, 0.1 to 10)");
-    box->addTextEditor ("reduction", juce::String (settings->getDoubleValue ("dereverbReduction", 12.0), 1), "Reduction (dB, 0 to 30)");
 
-    for (auto* name : { "time", "reduction" })
-        box->getTextEditor (name)->setInputRestrictions (8, ".0123456789");
+    showEffectDialog ("Reduce Reverb",
+                      "Lowers the room's reverberation after each sound by up to the reduction, keeping the sound itself and "
+                      "notes held steady. The reverb time is how long the room takes to die away: set it longer to take "
+                      "away more of the tail, shorter to leave more.",
+                      { { "time", "Reverb time (s)", settings->getDoubleValue ("dereverbTime", 1.0), 2, {}, 0.1, 10.0, 0.05 },
+                        { "reduction", "Reduction (dB)", settings->getDoubleValue ("dereverbReduction", 12.0), 1, {}, 0.0, 30.0, 0.5 } },
+                      "spectrablade:reduce-reverb", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings] (const EffectValues& v)
+                      {
+                          settings->setValue ("dereverbTime", v.at ("time"));
+                          settings->setValue ("dereverbReduction", v.at ("reduction"));
 
-    box->addButton ("Reduce", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
-    {
-        if (result != 1)
-            return;
-
-        const Dereverb::Settings s { box->getTextEditorContents ("time").getFloatValue(), box->getTextEditorContents ("reduction").getFloatValue() };
-
-        if (! Dereverb::isValid (s))
-        {
-            showError ("Reduce Reverb", "The reverb time must be from 0.1 to 10 seconds, and the reduction from 0 to 30 dB.");
-            return;
-        }
-
-        settings->setValue ("dereverbTime", s.reverbSeconds);
-        settings->setValue ("dereverbReduction", s.reductionDb);
-
-        if (s.reductionDb > 0.0f)
-            runStepInBackground ({ "dereverb", { { "time", s.reverbSeconds }, { "reduction", s.reductionDb } }, nullptr }, "Reducing reverb...");
-    }), true);
+                          if (v.at ("reduction") > 0.0)
+                              runStepInBackground ({ "dereverb", v, nullptr }, "Reducing reverb...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "dereverb", v, nullptr }); },
+                      "Reduce");
 }
 
 void MainComponent::recordStep (const Sequences::Step& step)
@@ -6724,9 +6651,9 @@ void MainComponent::showGenerateTone()
                                        "The level is the peak, from -96 to 0 dBFS; the ends fade over the time given (0 for none, up to "
                                        "1000 ms). Length up to ten minutes.",
                       { { "wave", "Wave", (double) toneWave, 0, { "Sine", "Square", "Triangle", "Sawtooth" } },
-                        { "frequency", "Frequency (Hz)", toneHz, 1 }, { "end", "End frequency (Hz)", toneEndHz, 1 },
-                        { "level", "Level (dBFS peak)", toneLevelDb, 1 }, { "length", "Length (s)", toneSeconds, 3 },
-                        { "fade", "Fade ends (ms)", toneFadeMs, 1 } },
+                        { "frequency", "Frequency (Hz)", toneHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 }, { "end", "End frequency (Hz)", toneEndHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 },
+                        { "level", "Level (dBFS peak)", toneLevelDb, 1, {}, -96, 0, 0.5 }, { "length", "Length (s)", toneSeconds, 3, {}, 0.001, 600, 0.1 },
+                        { "fade", "Fade ends (ms)", toneFadeMs, 1, {}, 0, 1000, 1 } },
                       "spectrablade:generate-tone", PreviewOwner::none,
                       [toTone, rate] (const EffectValues& v) { return Generator::isValid (toTone (v), rate) && v.at ("length") > 0.0 && v.at ("length") <= 600.0; },
                       "The frequencies must be from 1 Hz to below " + juce::String (0.5 * rate, 0) + " Hz, the level from -96 to 0 dBFS, "
@@ -6816,8 +6743,8 @@ void MainComponent::showGenerateNoise()
                                         "octave) and brown 6 dB. The level is the RMS: white up to -6 dBFS, pink and brown up to -20, "
                                         "so the peaks stay below full scale. The ends fade over the time given. Length up to ten minutes.",
                       { { "colour", "Colour", (double) noiseColour, 0, { "White", "Pink", "Brown" } },
-                        { "level", "Level (dBFS RMS)", noiseLevelDb, 1 }, { "length", "Length (s)", noiseSeconds, 3 },
-                        { "fade", "Fade ends (ms)", noiseFadeMs, 1 } },
+                        { "level", "Level (dBFS RMS)", noiseLevelDb, 1, {}, -96, -6, 0.5 }, { "length", "Length (s)", noiseSeconds, 3, {}, 0.001, 600, 0.1 },
+                        { "fade", "Fade ends (ms)", noiseFadeMs, 1, {}, 0, 1000, 1 } },
                       "spectrablade:generate-noise", PreviewOwner::none,
                       [toNoise] (const EffectValues& v) { return Generator::isValid (toNoise (v)) && v.at ("length") > 0.0 && v.at ("length") <= 600.0; },
                       "The level must be from -96 dBFS to -6 for white noise or -20 for pink and brown, the length above 0 and up to "
@@ -7200,66 +7127,52 @@ void MainComponent::showSetSelection()
 
 void MainComponent::showBalance()
 {
-    auto* box = new juce::AlertWindow ("Balance", "From -100 (all left) to 100 (all right). The side moved away from is lowered.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("pan", "0");
-    box->getTextEditor ("pan")->setInputRestrictions (4, "-0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        const auto pan = juce::jlimit (-100, 100, box->getTextEditorContents ("pan").getIntValue());
-
-        if (result == 1)
-            runStep ({ "balance", { { "pan", (double) pan } }, nullptr });
-    }), true);
+    showEffectDialog ("Balance", "From -100 (all left) to 100 (all right). The side moved away from is lowered.",
+                      { { "pan", "Balance", 0.0, 0, {}, -100.0, 100.0, 1.0 } },
+                      "spectrablade:balance", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v) { runStep ({ "balance", v, nullptr }); },
+                      [this] (const EffectValues& v) { return previewOf ({ "balance", v, nullptr }); });
 }
 
 void MainComponent::showStereoWidth()
 {
-    auto* box = new juce::AlertWindow ("Stereo Width", "0 % makes it mono, 100 % leaves it as it is, and up to 200 % widens it, "
-                                       "by scaling the difference between the channels.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("width", juce::String (stereoWidthPercent), "Width (%)");
-    box->getTextEditor ("width")->setInputRestrictions (3, "0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        if (result != 1)
-            return;
-
-        stereoWidthPercent = juce::jlimit (0, 200, box->getTextEditorContents ("width").getIntValue());
-        runStep ({ "stereoWidth", { { "width", (double) stereoWidthPercent } }, nullptr });
-    }), true);
+    showEffectDialog ("Stereo Width", "0 % makes it mono, 100 % leaves it as it is, and up to 200 % widens it, "
+                                      "by scaling the difference between the channels.",
+                      { { "width", "Width (%)", (double) stereoWidthPercent, 0, {}, 0.0, 200.0, 1.0 } },
+                      "spectrablade:stereo-width", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          stereoWidthPercent = juce::roundToInt (v.at ("width"));
+                          runStep ({ "stereoWidth", v, nullptr });
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "stereoWidth", v, nullptr }); });
 }
 
 void MainComponent::showPanRamp()
 {
-    auto* box = new juce::AlertWindow ("Pan Ramp", "The balance moves evenly from the first position at the start of the selection to the second "
-                                       "at its end, each from -100 (all left) to 100 (all right). The side moved away from is lowered.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("from", "-100", "Start");
-    box->addTextEditor ("to", "100", "End");
+    // The ramp spans the whole selection, so the preview processes all of it.
+    showEffectDialog ("Pan Ramp", "The balance moves evenly from the first position at the start of the selection to the second "
+                                  "at its end, each from -100 (all left) to 100 (all right). The side moved away from is lowered.",
+                      { { "from", "Start", -100.0, 0, {}, -100.0, 100.0, 1.0 }, { "to", "End", 100.0, 0, {}, -100.0, 100.0, 1.0 } },
+                      "spectrablade:pan-ramp", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          const auto sel = waveform.getSelection();
 
-    for (auto* name : { "from", "to" })
-        box->getTextEditor (name)->setInputRestrictions (4, "-0123456789");
-
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        const auto from = juce::jlimit (-100, 100, box->getTextEditorContents ("from").getIntValue());
-        const auto to = juce::jlimit (-100, 100, box->getTextEditorContents ("to").getIntValue());
-        const auto sel = waveform.getSelection();
-
-        if (result == 1 && ! sel.isEmpty())
-            if (auto next = AudioEdits::balanceRamp (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), (float) from / 100.0f, (float) to / 100.0f))
-                applyEdit (std::move (next), "Pan Ramp", sel);
-    }), true);
+                          if (! sel.isEmpty())
+                              if (auto next = AudioEdits::balanceRamp (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(),
+                                                                       (float) v.at ("from") / 100.0f, (float) v.at ("to") / 100.0f))
+                                  applyEdit (std::move (next), "Pan Ramp", sel);
+                      },
+                      [] (const EffectValues& v)
+                      {
+                          const auto from = (float) v.at ("from") / 100.0f, to = (float) v.at ("to") / 100.0f;
+                          return std::optional<EffectPreview::Request> ({ "panRamp " + juce::String (from, 3) + " " + juce::String (to, 3),
+                              [from, to] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double, const std::function<bool (float)>&)
+                              {
+                                  return EffectPreview::Rendered { AudioEdits::balanceRamp (*audio, start, end, from, to), start, end, {} };
+                              }, true });
+                      });
 }
 
 void MainComponent::showRepeatSelection()
@@ -7394,25 +7307,18 @@ void MainComponent::showCropMargins()
 
 void MainComponent::showEcho()
 {
-    auto* box = new juce::AlertWindow ("Echo", "Each repeat comes this long after the one before (1 to 5,000 ms) at this share of its level "
-                                       "(up to 95 %). The repeats stop at the end of the selection, so leave room after the sound.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("delay", juce::String (echoDelayMs), "Delay (ms)");
-    box->addTextEditor ("feedback", juce::String (echoFeedbackPercent), "Feedback (%)");
-    box->getTextEditor ("delay")->setInputRestrictions (4, "0123456789");
-    box->getTextEditor ("feedback")->setInputRestrictions (2, "0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        if (result != 1)
-            return;
-
-        echoDelayMs = juce::jlimit (1, 5000, box->getTextEditorContents ("delay").getIntValue());
-        echoFeedbackPercent = juce::jlimit (0, 95, box->getTextEditorContents ("feedback").getIntValue());
-        runStep ({ "echo", { { "delay", (double) echoDelayMs }, { "feedback", (double) echoFeedbackPercent } }, nullptr });
-    }), true);
+    showEffectDialog ("Echo", "Each repeat comes this long after the one before at this share of its level. The repeats stop at "
+                              "the end of the selection, so leave room after the sound.",
+                      { { "delay", "Delay (ms)", (double) echoDelayMs, 0, {}, 1.0, 5000.0, 10.0 },
+                        { "feedback", "Feedback (%)", (double) echoFeedbackPercent, 0, {}, 0.0, 95.0, 1.0 } },
+                      "spectrablade:echo", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          echoDelayMs = juce::roundToInt (v.at ("delay"));
+                          echoFeedbackPercent = juce::roundToInt (v.at ("feedback"));
+                          runStep ({ "echo", v, nullptr });
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "echo", v, nullptr }); });
 }
 
 void MainComponent::showRemoveHum()
@@ -7431,7 +7337,7 @@ void MainComponent::showRemoveHum()
                                     "number given, each as wide in hertz as the first (the mains frequency divided by the narrowness: "
                                     "1.7 Hz at 50 Hz and 30). Harmonics from 1 to 40; narrowness from 5 (wide) to 200 (narrow).",
                       { { "mains", "Mains", humIs60 ? 1.0 : 0.0, 0, { "50 Hz", "60 Hz" } },
-                        { "harmonics", "Harmonics", (double) humHarmonics, 0 }, { "q", "Narrowness (Q)", humQ, 0 } },
+                        { "harmonics", "Harmonics", (double) humHarmonics, 0, {}, 1, 40, 1 }, { "q", "Narrowness (Q)", humQ, 0, {}, 5, 200, 1 } },
                       "spectrablade:remove-hum", PreviewOwner::none,
                       [toHum, rate] (const EffectValues& v) { return Restoration::isValid (toHum (v), rate); },
                       "The harmonics must be from 1 to 40 and the narrowness from 5 to 200.",
@@ -7446,6 +7352,15 @@ void MainComponent::showRemoveHum()
 
                           if (auto next = Restoration::removeHum (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), rate, hum))
                               applyEdit (std::move (next), "Remove Hum", waveform.getSelection());
+                      },
+                      [toHum] (const EffectValues& v)
+                      {
+                          const auto hum = toHum (v);
+                          return std::optional<EffectPreview::Request> ({ "hum " + juce::String (hum.frequency) + " " + juce::String (hum.harmonics) + " " + juce::String (hum.q),
+                              [hum] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>&)
+                              {
+                                  return EffectPreview::Rendered { Restoration::removeHum (*audio, start, end, sampleRate, hum), start, end, {} };
+                              } });
                       });
 }
 
@@ -7464,7 +7379,7 @@ void MainComponent::showDeclip()
                                          "channel's peak given, and rebuilds each as the curve that best fits the samples on either side. "
                                          "Rebuilt peaks rise above the clipped level; Keep the Peak Level lowers the selection so they "
                                          "reach it, and no higher. Clipping longer than 5 ms is left as it is.",
-                      { { "threshold", "Clipped at or above (% of the peak)", declipThreshold * 100.0, 1 },
+                      { { "threshold", "Clipped at or above (% of the peak)", declipThreshold * 100.0, 1, {}, 50, 100, 0.5 },
                         { "keep", "Keep the Peak Level", declipKeepPeak ? 0.0 : 1.0, 0, { "Yes", "No" } } },
                       "spectrablade:declip", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { const auto d = toSettings (v); return d.threshold >= 0.5 && d.threshold <= 1.0; },
@@ -7490,6 +7405,16 @@ void MainComponent::showDeclip()
 
                           if (tooLong.isNotEmpty())
                               showNote ("Repair Clipping", juce::String (result.repaired) + " clipped peaks were rebuilt." + tooLong);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          // Keeping the peak level lowers the whole selection by what its loudest rebuilt peak needs.
+                          const auto d = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "declip " + juce::String (d.threshold, 9) + (d.keepPeak ? " keep" : ""),
+                              [d] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>&)
+                              {
+                                  return EffectPreview::Rendered { Restoration::declip (*audio, start, end, sampleRate, d).audio, start, end, {} };
+                              }, d.keepPeak });
                       });
 }
 
@@ -7505,7 +7430,7 @@ void MainComponent::showEqBand()
                                  "everything below or above it, half as much at the frequency; a high-pass or low-pass removes what is "
                                  "below or above it, 3 dB down at the frequency with a Q of 0.71. Gain from -48 to +48 dB; Q from 0.05 to 50.",
                       { { "type", "Type", (double) eqBandType, 0, { "Bell", "Low Shelf", "High Shelf", "High-Pass", "Low-Pass" } },
-                        { "frequency", "Frequency (Hz)", eqBandHz, 1 }, { "gain", "Gain (dB)", eqBandGainDb, 1 }, { "q", "Q", eqBandQ, 2 } },
+                        { "frequency", "Frequency (Hz)", eqBandHz, 1, {}, 20, juce::jmin (20000.0, nyquist - 1.0), 1 }, { "gain", "Gain (dB)", eqBandGainDb, 1, {}, -48, 48, 0.5 }, { "q", "Q", eqBandQ, 2, {}, 0.05, 50, 0.05 } },
                       "spectrablade:eq-band", PreviewOwner::none,
                       [this, toBand] (const EffectValues& v) { return Equalizer::isValid (toBand (v), engine.document.getSampleRate()); },
                       "The frequency must be above 0 and below " + juce::String (nyquist, 0) + " Hz, the gain within 48 dB either way, and the Q from 0.05 to 50.",
@@ -7518,7 +7443,8 @@ void MainComponent::showEqBand()
                           eqBandGainDb = band.gainDb;
                           eqBandQ = band.q;
                           runStep ({ "eqBand", v, nullptr });
-                      });
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "eqBand", v, nullptr }); });
 }
 
 void MainComponent::toggleParametricEq()
@@ -7623,8 +7549,8 @@ void MainComponent::showCompressor()
     showEffectDialog ("Compressor", "Above the threshold, each ratio dB in comes out as 1 dB, eased in over the knee's width. "
                                     "The gain falls with the attack time and recovers with the release time, the same on every channel. "
                                     "Threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.",
-                      { { "threshold", "Threshold (dB)", s.thresholdDb, 1 }, { "ratio", "Ratio (to 1)", s.ratio, 1 }, { "knee", "Knee (dB)", s.kneeDb, 1 },
-                        { "attack", "Attack (ms)", s.attackMs, 2 }, { "release", "Release (ms)", s.releaseMs, 0 }, { "makeup", "Makeup gain (dB)", s.makeupDb, 1 } },
+                      { { "threshold", "Threshold (dB)", s.thresholdDb, 1, {}, -80, 0, 0.5 }, { "ratio", "Ratio (to 1)", s.ratio, 1, {}, 1, 100, 0.1 }, { "knee", "Knee (dB)", s.kneeDb, 1, {}, 0, 24, 0.5 },
+                        { "attack", "Attack (ms)", s.attackMs, 2, {}, 0.01, 1000, 0.1 }, { "release", "Release (ms)", s.releaseMs, 0, {}, 1, 5000, 5 }, { "makeup", "Makeup gain (dB)", s.makeupDb, 1, {}, -48, 48, 0.5 } },
                       BuiltInEffects::compressorId, PreviewOwner::compressor,
                       [toSettings] (const EffectValues& v) { return Dynamics::isValid (toSettings (v)); },
                       "A setting is out of range: threshold -80 to 0 dB, ratio 1 to 100, knee 0 to 24 dB, attack 0.01 to 1,000 ms, release 1 to 5,000 ms, makeup within 48 dB.",
@@ -7738,8 +7664,8 @@ void MainComponent::showDeEsser()
                       "up to the reduction, within a millisecond, coming back over 60 ms. Turn down the high band alone (the rest of the voice "
                       "untouched) or the whole sound. Frequency 1 to 16 kHz, threshold -60 to 0 dB, reduction 0 to 24 dB. "
                       "Listen plays only what it takes out, to set the frequency and threshold by ear; OK always applies the result.",
-                      { { "frequency", "Frequency (Hz)", s.frequency, 0 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1 },
-                        { "reduction", "Reduction (dB)", s.maxReductionDb, 1 },
+                      { { "frequency", "Frequency (Hz)", s.frequency, 0, {}, 1000, 16000, 50 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1, {}, -60, 0, 0.5 },
+                        { "reduction", "Reduction (dB)", s.maxReductionDb, 1, {}, 0, 24, 0.5 },
                         { "mode", "Turn down", s.wholeSound ? 1.0 : 0.0, 0, { "The high band", "The whole sound" } },
                         { "listen", "Listen", 0.0, 0, { "To the result", "Only to what it takes out" } } },
                       BuiltInEffects::deEsserId, PreviewOwner::deEsser,
@@ -7778,8 +7704,8 @@ void MainComponent::showLimiter()
                                  "The gain starts falling the look-ahead time before each peak and recovers with the release time. "
                                  "Gain within 48 dB, ceiling -48 to 0 dBFS, release 1 to 5,000 ms, look-ahead 0.1 to 50 ms. "
                                  "The preview holds sample peaks.",
-                      { { "gain", "Gain before (dB)", s.inputGainDb, 1 }, { "ceiling", "Ceiling (dBFS)", s.ceilingDb, 1 },
-                        { "release", "Release (ms)", s.releaseMs, 0 }, { "lookahead", "Look-ahead (ms)", s.lookaheadMs, 1 },
+                      { { "gain", "Gain before (dB)", s.inputGainDb, 1, {}, -48, 48, 0.5 }, { "ceiling", "Ceiling (dBFS)", s.ceilingDb, 1, {}, -48, 0, 0.1 },
+                        { "release", "Release (ms)", s.releaseMs, 0, {}, 1, 5000, 5 }, { "lookahead", "Look-ahead (ms)", s.lookaheadMs, 1, {}, 0.1, 50, 0.1 },
                         { "peaks", "Hold under the ceiling", s.truePeak ? 1.0 : 0.0, 0, { "Sample peaks", "True peaks (between samples)" } } },
                       BuiltInEffects::limiterId, PreviewOwner::limiter,
                       [toSettings] (const EffectValues& v) { return Dynamics::isValid (toSettings (v)); },
@@ -7809,124 +7735,110 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
                                       std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
                                       std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
                                       std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
-                                      std::function<void (const EffectValues&)> apply)
+                                      std::function<void (const EffectValues&)> apply,
+                                      std::function<std::optional<EffectPreview::Request> (const EffectValues&)> rendered,
+                                      const juce::String& applyText)
 {
-    auto* box = new juce::AlertWindow (title, message, juce::MessageBoxIconType::NoIcon, this);
+    const auto live = make != nullptr && owner != PreviewOwner::none;
+    auto dialog = std::make_unique<EffectDialog> (EffectDialog::Options { message, fields, presetKey, live || rendered != nullptr, applyText });
+    juce::Component::SafePointer<EffectDialog> safe (dialog.get());
 
-    for (auto& f : fields)
+    const auto previewEndedHere = [safe]
     {
-        if (f.choices.isEmpty())
-        {
-            box->addTextEditor (f.id, juce::String (f.value, f.decimals), f.label);
-            box->getTextEditor (f.id)->setInputRestrictions (9, "-.0123456789");
-        }
-        else
-        {
-            box->addComboBox (f.id, f.choices, f.label);
-            box->getComboBoxComponent (f.id)->setSelectedItemIndex ((int) f.value, juce::dontSendNotification);
-        }
-    }
-
-    const auto read = [box, fields]
-    {
-        EffectValues v;
-
-        for (auto& f : fields)
-            v[f.id] = f.choices.isEmpty() ? box->getTextEditorContents (f.id).getDoubleValue()
-                                          : (double) box->getComboBoxComponent (f.id)->getSelectedItemIndex();
-
-        return v;
+        if (safe != nullptr)
+            safe->setPreviewOn (false, juce::dontSendNotification);
     };
 
-    // The custom components live until the dialog's callback has run (it holds them).
-    std::vector<std::shared_ptr<juce::Component>> extras;
-    std::function<void()> update = [] {};
-
-    if (make != nullptr)
+    // The live effect with the dialog's settings (the last valid ones while they are out of range);
+    // a new one when setLive can't take the settings (the limiter's look-ahead).
+    const auto updateLive = [this, owner, valid, make, setLive, safe, previewEndedHere] (const EffectValues& values)
     {
-        auto preview = std::make_shared<juce::ToggleButton> ("Preview on the selection");
-        preview->setSize (260, 24);
-        box->addCustomComponent (preview.get());
-        extras.push_back (preview);
-
-        // The live effect with the fields' settings (the last valid ones while a field is being
-        // typed); a new one when setLive can't take the settings (the limiter's look-ahead).
-        update = [this, owner, read, valid, make, setLive, toggle = preview.get()]
+        if (safe == nullptr || ! safe->isPreviewOn())
         {
-            if (! toggle->getToggleState())
-            {
-                if (previewOwner == owner)
-                    stopPreview();
+            if (previewOwner == owner)
+                stopPreview();
 
-                return;
-            }
-
-            const auto values = read();
-
-            if (! valid (values))
-                return;
-
-            if (auto* live = previewEffectOf (owner); live != nullptr && setLive (*live, values))
-                return;
-
-            auto made = make (values);
-            setLive (*made, values);
-            startPreview (owner, std::move (made), [toggle] { toggle->setToggleState (false, juce::dontSendNotification); });
-
-            if (previewOwner != owner)
-                toggle->setToggleState (false, juce::dontSendNotification);
-        };
-        preview->onClick = update;
-    }
-
-    for (auto& f : fields)
-    {
-        if (f.choices.isEmpty())
-            box->getTextEditor (f.id)->onTextChange = update;
-        else
-            box->getComboBoxComponent (f.id)->onChange = update;
-    }
-
-    // Presets: the fields' values under their IDs; a preset fills the fields it names.
-    auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), presetKey, read, [box, fields] (const EffectValues& v)
-    {
-        for (auto& f : fields)
-        {
-            const auto found = v.find (f.id);
-
-            if (found == v.end() || ! std::isfinite (found->second))
-                continue;
-
-            if (f.choices.isEmpty())
-                box->getTextEditor (f.id)->setText (juce::String (found->second, f.decimals), true);
-            else
-                box->getComboBoxComponent (f.id)->setSelectedItemIndex (juce::jlimit (0, f.choices.size() - 1, (int) std::lround (found->second)));
+            return;
         }
-    });
-    box->addCustomComponent (presets.get());
-    extras.push_back (presets);
 
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, owner, read, valid, invalidText, apply, title, extras] (int result)
-    {
-        if (owner != PreviewOwner::none && previewOwner == owner)
-            stopPreview();
-
-        if (result != 1)
+        if (! valid (values))
             return;
 
-        const auto values = read();
+        if (auto* effect = previewEffectOf (owner); effect != nullptr && setLive (*effect, values))
+            return;
+
+        auto made = make (values);
+        setLive (*made, values);
+        startPreview (owner, std::move (made), previewEndedHere);
+
+        if (previewOwner != owner)
+            safe->setPreviewOn (false, juce::dontSendNotification);
+    };
+
+    // The effect processed with the settings once they settle; the last ones play meanwhile.
+    const auto updateRendered = [this, valid, invalidText, rendered, safe, previewEndedHere] (const EffectValues& values)
+    {
+        if (safe == nullptr || ! safe->isPreviewOn())
+        {
+            if (previewOwner == PreviewOwner::rendered)
+                stopPreview();
+
+            if (safe != nullptr)
+                safe->setStatus ({});
+
+            return;
+        }
+
+        const auto request = valid (values) ? rendered (values) : std::nullopt;
+
+        if (! request.has_value())
+        {
+            safe->setStatus (invalidText.isNotEmpty() ? invalidText : juce::String ("These settings can't be previewed."));
+            return;
+        }
+
+        if (previewOwner == PreviewOwner::rendered && request->key == renderedKey)
+            return;
+
+        startRenderedPreview (*request, previewEndedHere, [safe] (const juce::String& text)
+        {
+            if (safe != nullptr)
+                safe->setStatus (text);
+        });
+    };
+
+    if (live)
+    {
+        dialog->onPreview = [updateLive, safe] (bool) { if (safe != nullptr) updateLive (safe->getValues()); };
+        dialog->onChange = updateLive;
+    }
+    else if (rendered != nullptr)
+    {
+        dialog->onPreview = [updateRendered, safe] (bool) { if (safe != nullptr) updateRendered (safe->getValues()); };
+        dialog->onSettled = updateRendered;
+    }
+
+    dialog->onBypass = [this] (bool bypassed) { setPreviewBypassed (bypassed); };
+    dialog->onApply = [this, valid, invalidText, apply, title] (const EffectValues& values)
+    {
+        previewEnded = {};
+        stopPreview();
 
         if (! valid (values))
         {
-            showError (title, invalidText);
+            juce::MessageManager::callAsync ([title, invalidText] { showError (title, invalidText); });
             return;
         }
 
         apply (values);
-    }), true);
+    };
+    dialog->onClose = [this]
+    {
+        previewEnded = {};
+        stopPreview();
+    };
+
+    EffectDialog::show (std::move (dialog), title, this);
 }
 
 void MainComponent::showSweptDelay (bool flanger)
@@ -7944,9 +7856,9 @@ void MainComponent::showSweptDelay (bool flanger)
                                             : "A copy of the sound a few milliseconds late, its delay slowly swept, thickens it. ")
                           + "The delay moves between its shortest and that plus the depth at the rate; the second channel's sweep runs the spread behind. "
                             "Rate 0.01 to 10 Hz, delay and depth 0 to 50 ms, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
-                      { { "rate", "Rate (Hz)", s.rateHz, 2 }, { "delay", "Delay (ms)", s.delayMs, 1 }, { "depth", "Depth (ms)", s.depthMs, 1 },
-                        { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2 }, { "mix", "Mix (%)", s.mixPercent, 0 },
-                        { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0 } },
+                      { { "rate", "Rate (Hz)", s.rateHz, 2, {}, 0.01, 10, 0.01 }, { "delay", "Delay (ms)", s.delayMs, 1, {}, 0, 50, 0.1 }, { "depth", "Depth (ms)", s.depthMs, 1, {}, 0, 50, 0.1 },
+                        { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2, {}, -0.95, 0.95, 0.01 }, { "mix", "Mix (%)", s.mixPercent, 0, {}, 0, 100, 1 },
+                        { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0, {}, 0, 180, 1 } },
                       flanger ? BuiltInEffects::flangerId : BuiltInEffects::chorusId, flanger ? PreviewOwner::flanger : PreviewOwner::chorus,
                       [toDelay] (const EffectValues& v) { return Modulation::isValid (toDelay (v)); },
                       "A setting is out of range: rate 0.01 to 10 Hz, delay and depth 0 to 50 ms, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
@@ -7981,9 +7893,9 @@ void MainComponent::showPhaser()
                       "A chain of all-pass filters, swept between the low and high frequencies at the rate and mixed with the sound, "
                       "sweeps notches through it (one for every two stages; deepest at a 50 % mix). The second channel's sweep runs the spread behind. "
                       "Rate 0.01 to 10 Hz, frequencies 20 Hz to 20 kHz (low up to high), 2 to 12 stages, feedback -0.95 to 0.95, mix 0 to 100 %, spread 0 to 180 degrees.",
-                      { { "rate", "Rate (Hz)", s.rateHz, 2 }, { "low", "Low frequency (Hz)", s.lowHz, 0 }, { "high", "High frequency (Hz)", s.highHz, 0 },
-                        { "stages", "Stages", (double) (s.stages / 2 - 1), 0, { "2", "4", "6", "8", "10", "12" } }, { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2 },
-                        { "mix", "Mix (%)", s.mixPercent, 0 }, { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0 } },
+                      { { "rate", "Rate (Hz)", s.rateHz, 2, {}, 0.01, 10, 0.01 }, { "low", "Low frequency (Hz)", s.lowHz, 0, {}, 20, 20000, 10 }, { "high", "High frequency (Hz)", s.highHz, 0, {}, 20, 20000, 10 },
+                        { "stages", "Stages", (double) (s.stages / 2 - 1), 0, { "2", "4", "6", "8", "10", "12" } }, { "feedback", "Feedback (-0.95 to 0.95)", s.feedback, 2, {}, -0.95, 0.95, 0.01 },
+                        { "mix", "Mix (%)", s.mixPercent, 0, {}, 0, 100, 1 }, { "spread", "Stereo spread (degrees)", s.spreadDegrees, 0, {}, 0, 180, 1 } },
                       BuiltInEffects::phaserId, PreviewOwner::phaser,
                       [toPhaser] (const EffectValues& v) { return Modulation::isValid (toPhaser (v)); },
                       "A setting is out of range: rate 0.01 to 10 Hz, frequencies 20 Hz to 20 kHz with the low one no higher than the high, "
@@ -8018,8 +7930,8 @@ void MainComponent::showReverb()
                       "selection (added to what follows) for the pre-delay plus the decay. Size scales the room; damping takes the highs away "
                       "faster; width spreads the reverb across the sides. Pre-delay 0 to 200 ms, decay 0.1 to 20 s, size 50 to 150 %, "
                       "damping, width and mix 0 to 100 %.",
-                      { { "preDelay", "Pre-delay (ms)", s.preDelayMs, 0 }, { "decay", "Decay (s)", s.decaySeconds, 2 }, { "size", "Size (%)", s.sizePercent, 0 },
-                        { "damping", "Damping (%)", s.dampingPercent, 0 }, { "width", "Width (%)", s.widthPercent, 0 }, { "mix", "Mix (%)", s.mixPercent, 0 } },
+                      { { "preDelay", "Pre-delay (ms)", s.preDelayMs, 0, {}, 0, 200, 1 }, { "decay", "Decay (s)", s.decaySeconds, 2, {}, 0.1, 20, 0.05 }, { "size", "Size (%)", s.sizePercent, 0, {}, 50, 150, 1 },
+                        { "damping", "Damping (%)", s.dampingPercent, 0, {}, 0, 100, 1 }, { "width", "Width (%)", s.widthPercent, 0, {}, 0, 100, 1 }, { "mix", "Mix (%)", s.mixPercent, 0, {}, 0, 100, 1 } },
                       BuiltInEffects::reverbId, PreviewOwner::reverb,
                       [toSettings] (const EffectValues& v) { return RoomReverb::isValid (toSettings (v)); },
                       "A setting is out of range: pre-delay 0 to 200 ms, decay 0.1 to 20 s, size 50 to 150 %, damping, width and mix 0 to 100 %.",
@@ -8073,7 +7985,7 @@ void MainComponent::showConvolutionDialog (std::shared_ptr<const Convolver::Impu
                       "The sound convolved with " + impulse->name.quoted() + " (" + juce::String (seconds, 2) + " s, "
                           + (impulse->samples.getNumChannels() == 1 ? "mono" : "stereo") + "), scaled so noise comes out about as loud, "
                           "ringing on past the selection (added to what follows) for the impulse's length. Mix 0 to 100 %.",
-                      { { "mix", "Mix (%)", convolutionMix, 0 } },
+                      { { "mix", "Mix (%)", convolutionMix, 0, {}, 0, 100, 1 } },
                       BuiltInEffects::convolutionId, PreviewOwner::convolution,
                       [] (const EffectValues& v) { return v.at ("mix") >= 0.0 && v.at ("mix") <= 100.0; },
                       "The mix must be from 0 to 100 %.",
@@ -8206,53 +8118,44 @@ void MainComponent::showGraphicEq (int numBands)
 
 void MainComponent::showTremolo()
 {
-    auto* box = new juce::AlertWindow ("Tremolo", "The level dips by the depth and comes back this many times a second "
-                                       "(0.1 to 50 Hz), starting at full level.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("rate", juce::String (tremoloRateHz, 2), "Rate (Hz)");
-    box->addTextEditor ("depth", juce::String (tremoloDepthPercent), "Depth (%)");
-    box->getTextEditor ("rate")->setInputRestrictions (6, ".0123456789");
-    box->getTextEditor ("depth")->setInputRestrictions (3, "0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        if (result != 1)
-            return;
-
-        tremoloRateHz = juce::jlimit (0.1, 50.0, box->getTextEditorContents ("rate").getDoubleValue());
-        tremoloDepthPercent = juce::jlimit (0, 100, box->getTextEditorContents ("depth").getIntValue());
-        runStep ({ "tremolo", { { "rate", tremoloRateHz }, { "depth", (double) tremoloDepthPercent } }, nullptr });
-    }), true);
+    showEffectDialog ("Tremolo", "The level dips by the depth and comes back this many times a second, starting at full level.",
+                      { { "rate", "Rate (Hz)", tremoloRateHz, 2, {}, 0.1, 50.0, 0.1 },
+                        { "depth", "Depth (%)", (double) tremoloDepthPercent, 0, {}, 0.0, 100.0, 1.0 } },
+                      "spectrablade:tremolo", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          tremoloRateHz = v.at ("rate");
+                          tremoloDepthPercent = juce::roundToInt (v.at ("depth"));
+                          runStep ({ "tremolo", v, nullptr });
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "tremolo", v, nullptr }); });
 }
 
 void MainComponent::showGainRamp()
 {
-    auto* box = new juce::AlertWindow ("Gain Ramp", "The gain moves evenly in decibels from the first level at the start of the selection "
-                                       "to the second at its end (each from -96 to +24 dB).",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("from", juce::String (rampFromDb, 1), "Start (dB)");
-    box->addTextEditor ("to", juce::String (rampToDb, 1), "End (dB)");
+    // The ramp spans the whole selection, so the preview processes all of it.
+    showEffectDialog ("Gain Ramp", "The gain moves evenly in decibels from the first level at the start of the selection "
+                                   "to the second at its end.",
+                      { { "from", "Start (dB)", rampFromDb, 1, {}, -96.0, 24.0, 0.5 }, { "to", "End (dB)", rampToDb, 1, {}, -96.0, 24.0, 0.5 } },
+                      "spectrablade:gain-ramp", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          rampFromDb = (float) v.at ("from");
+                          rampToDb = (float) v.at ("to");
+                          const auto sel = waveform.getSelection();
 
-    for (auto* name : { "from", "to" })
-        box->getTextEditor (name)->setInputRestrictions (8, "-+.0123456789");
-
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        if (result != 1)
-            return;
-
-        rampFromDb = juce::jlimit (-96.0f, 24.0f, box->getTextEditorContents ("from").getFloatValue());
-        rampToDb = juce::jlimit (-96.0f, 24.0f, box->getTextEditorContents ("to").getFloatValue());
-        const auto sel = waveform.getSelection();
-
-        if (! sel.isEmpty())
-            applyEdit (AudioEdits::gainRamp (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), rampFromDb, rampToDb), "Gain Ramp", sel);
-    }), true);
+                          if (! sel.isEmpty())
+                              applyEdit (AudioEdits::gainRamp (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), rampFromDb, rampToDb), "Gain Ramp", sel);
+                      },
+                      [] (const EffectValues& v)
+                      {
+                          const auto from = (float) v.at ("from"), to = (float) v.at ("to");
+                          return std::optional<EffectPreview::Request> ({ "gainRamp " + juce::String (from, 3) + " " + juce::String (to, 3),
+                              [from, to] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double, const std::function<bool (float)>&)
+                              {
+                                  return EffectPreview::Rendered { AudioEdits::gainRamp (*audio, start, end, from, to), start, end, {} };
+                              }, true });
+                      });
 }
 
 void MainComponent::showFadeEdges (bool eachRegion)
@@ -8638,10 +8541,11 @@ void MainComponent::applyGain()
         return;
     }
 
-    askForDecibels ("Gain", "Gain (dB)", 0.0f, [this] (float db)
-    {
-        runStep ({ "gain", { { "db", db } }, nullptr });
-    });
+    showEffectDialog ("Gain", "Raises or lowers the selection, or the whole file, by this many decibels.",
+                      { { "db", "Gain (dB)", 0.0, 1, {}, -48.0, 48.0, 0.5 } },
+                      "spectrablade:gain", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues& v) { runStep ({ "gain", v, nullptr }); },
+                      [this] (const EffectValues& v) { return previewOf ({ "gain", v, nullptr }); });
 }
 
 void MainComponent::applyNormalize()
@@ -8664,27 +8568,29 @@ void MainComponent::applyNormalize()
         return;
     }
 
-    auto* box = new juce::AlertWindow ("Normalize", {}, juce::MessageBoxIconType::NoIcon);
-    box->addTextEditor ("db", juce::String (-0.1f, 2), "Peak level (dBFS)");
-    box->getTextEditor ("db")->setInputRestrictions (8, "-.0123456789");
-    auto apart = std::make_shared<juce::ToggleButton> ("Each channel on its own");
-    apart->setSize (260, 24);
-    apart->setToggleState (normalizeChannelsApart, juce::dontSendNotification);
-    apart->setEnabled (engine.document.getNumChannels() > 1);
-    box->addCustomComponent (apart.get());
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, apart] (int result)
+    // Its peak is found across the whole selection, so the preview processes all of it.
+    const auto toStep = [] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
+        return Sequences::Step { "normalize", { { "db", juce::jmin (v.at ("db"), 0.0) }, { "apart", v.count ("apart") > 0 ? v.at ("apart") : 0.0 } }, nullptr };
+    };
 
-        normalizeChannelsApart = apart->getToggleState();
-        const auto db = juce::jmin (box->getTextEditorContents ("db").getFloatValue(), 0.0f);
-        if (runStep ({ "normalize", { { "db", db }, { "apart", normalizeChannelsApart ? 1.0 : 0.0 } }, nullptr }).snapshot == nullptr)
-            showError ("Normalize", "The selection is silent.");
-    }), true);
+    std::vector<EffectField> fields { { "db", "Peak level (dBFS)", -0.1, 2, {}, -48.0, 0.0, 0.1 } };
+
+    if (engine.document.getNumChannels() > 1)
+        fields.push_back ({ "apart", "Channels", normalizeChannelsApart ? 1.0 : 0.0, 0, { "All together", "Each on its own" } });
+
+    showEffectDialog ("Normalize", "Raises or lowers the selection, or the whole file, so its highest peak reaches the level; with "
+                                   "Each on Its Own, each channel's peak does.",
+                      fields, "spectrablade:normalize", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, toStep] (const EffectValues& v)
+                      {
+                          const auto step = toStep (v);
+                          normalizeChannelsApart = step.values.at ("apart") > 0.5;
+
+                          if (runStep (step).snapshot == nullptr)
+                              showError ("Normalize", "The selection is silent.");
+                      },
+                      [this, toStep] (const EffectValues& v) { return previewOf (toStep (v), true); });
 }
 
 void MainComponent::measureLoudness (std::function<void (const Loudness::Result&, juce::Range<juce::int64>)> done)
@@ -8774,34 +8680,26 @@ void MainComponent::showLoudness()
 void MainComponent::askForLoudnessTarget()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Match Loudness",
-                                       "Common targets: EBU R128 -23, ATSC A/85 -24, podcasts -16, streaming -14 LUFS.\n"
-                                       "When the true peak would pass the ceiling, the gain either stops short of the target, or goes all "
-                                       "the way with a true-peak limiter holding the peaks at the ceiling.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("target", juce::String (settings->getDoubleValue ("loudnessTarget", -23.0), 1), "Target (LUFS)");
-    box->addTextEditor ("ceiling", juce::String (settings->getDoubleValue ("truePeakCeiling", -1.0), 1), "True peak ceiling (dBTP)");
-    box->addComboBox ("limit", { "Stop short of the target", "Limit to reach the target" }, "When the ceiling stops the gain");
-    box->getComboBoxComponent ("limit")->setSelectedItemIndex (settings->getBoolValue ("loudnessLimit", false) ? 1 : 0);
 
-    for (auto* name : { "target", "ceiling" })
-        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
-
-    box->addButton ("Match", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
-    {
-        if (result != 1)
-            return;
-
-        const auto target = juce::jlimit (-70.0, 0.0, box->getTextEditorContents ("target").getDoubleValue());
-        const auto ceiling = juce::jlimit (-30.0, 0.0, box->getTextEditorContents ("ceiling").getDoubleValue());
-        settings->setValue ("loudnessTarget", target);
-        const auto limitToTarget = box->getComboBoxComponent ("limit")->getSelectedItemIndex() == 1;
-        settings->setValue ("truePeakCeiling", ceiling);
-        settings->setValue ("loudnessLimit", limitToTarget);
-        matchLoudness (target, ceiling, limitToTarget);
-    }), true);
+    // The loudness is measured across the whole selection, so the preview processes all of it.
+    showEffectDialog ("Match Loudness",
+                      "Common targets: EBU R128 -23, ATSC A/85 -24, podcasts -16, streaming -14 LUFS.\n"
+                      "When the true peak would pass the ceiling, the gain either stops short of the target, or goes all "
+                      "the way with a true-peak limiter holding the peaks at the ceiling.",
+                      { { "target", "Target (LUFS)", settings->getDoubleValue ("loudnessTarget", -23.0), 1, {}, -70.0, 0.0, 0.5 },
+                        { "ceiling", "True peak ceiling (dBTP)", settings->getDoubleValue ("truePeakCeiling", -1.0), 1, {}, -30.0, 0.0, 0.1 },
+                        { "limit", "When the ceiling stops the gain", settings->getBoolValue ("loudnessLimit", false) ? 1.0 : 0.0, 0,
+                          { "Stop short of the target", "Limit to reach the target" } } },
+                      "spectrablade:match-loudness", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings] (const EffectValues& v)
+                      {
+                          settings->setValue ("loudnessTarget", v.at ("target"));
+                          settings->setValue ("truePeakCeiling", v.at ("ceiling"));
+                          settings->setValue ("loudnessLimit", v.at ("limit") > 0.5);
+                          matchLoudness (v.at ("target"), v.at ("ceiling"), v.at ("limit") > 0.5);
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "matchLoudness", v, nullptr }, true); },
+                      "Match");
 }
 
 void MainComponent::askForDeliverySpec()
@@ -9000,30 +8898,37 @@ void MainComponent::askForNoiseReduction()
     }
 
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Noise Reduction",
-                                       "Lowers whatever matches the captured noise print by up to the reduction. Raise the "
-                                       "threshold if noise is left between sounds; lower it if quiet sounds are thinned.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("reduction", juce::String (settings->getDoubleValue ("noiseReduction", 12.0), 1), "Reduction (dB)");
-    box->addTextEditor ("threshold", juce::String (settings->getDoubleValue ("noiseThreshold", 3.0), 1), "Threshold above the print (dB)");
-
-    for (auto* name : { "reduction", "threshold" })
-        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
-
-    box->addButton ("Reduce", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    const auto toSettings = [] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
-
         NoiseReduction::Settings s;
-        s.reductionDb = juce::jlimit (0.0f, 60.0f, box->getTextEditorContents ("reduction").getFloatValue());
-        s.thresholdDb = juce::jlimit (-10.0f, 20.0f, box->getTextEditorContents ("threshold").getFloatValue());
-        settings->setValue ("noiseReduction", s.reductionDb);
-        settings->setValue ("noiseThreshold", s.thresholdDb);
-        reduceNoise (s);
-    }), true);
+        s.reductionDb = (float) v.at ("reduction");
+        s.thresholdDb = (float) v.at ("threshold");
+        return s;
+    };
+
+    showEffectDialog ("Noise Reduction",
+                      "Lowers whatever matches the captured noise print by up to the reduction. Raise the "
+                      "threshold if noise is left between sounds; lower it if quiet sounds are thinned.",
+                      { { "reduction", "Reduction (dB)", settings->getDoubleValue ("noiseReduction", 12.0), 1, {}, 0.0, 60.0, 0.5 },
+                        { "threshold", "Threshold above the print (dB)", settings->getDoubleValue ("noiseThreshold", 3.0), 1, {}, -10.0, 20.0, 0.5 } },
+                      "spectrablade:noise-reduction", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings, toSettings] (const EffectValues& v)
+                      {
+                          const auto s = toSettings (v);
+                          settings->setValue ("noiseReduction", s.reductionDb);
+                          settings->setValue ("noiseThreshold", s.thresholdDb);
+                          reduceNoise (s);
+                      },
+                      [print = *noisePrint, toSettings] (const EffectValues& v)
+                      {
+                          const auto s = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "noise " + juce::String (s.reductionDb, 3) + " " + juce::String (s.thresholdDb, 3),
+                              [print, s] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  return EffectPreview::Rendered { NoiseReduction::reduce (*audio, start, end, sampleRate, print, s, progress), start, end, {} };
+                              } });
+                      },
+                      "Reduce");
 }
 
 void MainComponent::reduceNoise (NoiseReduction::Settings s)
@@ -9058,31 +8963,40 @@ void MainComponent::reduceNoise (NoiseReduction::Settings s)
 void MainComponent::askForClickRepair()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Click and Pop Repair",
-                                       "Finds clicks and pops and rebuilds those samples from the audio around them; nothing else "
-                                       "changes. Lower the threshold to catch fainter clicks; raise it if drums or plucks are "
-                                       "being taken for clicks.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("threshold", juce::String (settings->getDoubleValue ("clickThreshold", 18.0), 1), "Threshold (dB above the background)");
-    box->addTextEditor ("length", juce::String (settings->getDoubleValue ("clickMaxLength", 3.0), 1), "Longest click (ms)");
-
-    for (auto* name : { "threshold", "length" })
-        box->getTextEditor (name)->setInputRestrictions (8, ".0123456789");
-
-    box->addButton ("Repair", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    const auto toSettings = [] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
-
         ClickRepair::Settings s;
-        s.thresholdDb = juce::jlimit (6.0f, 60.0f, box->getTextEditorContents ("threshold").getFloatValue());
-        s.maxLengthMs = juce::jlimit (0.1f, 20.0f, box->getTextEditorContents ("length").getFloatValue());
-        settings->setValue ("clickThreshold", s.thresholdDb);
-        settings->setValue ("clickMaxLength", s.maxLengthMs);
-        repairClicks (s);
-    }), true);
+        s.thresholdDb = (float) v.at ("threshold");
+        s.maxLengthMs = (float) v.at ("length");
+        return s;
+    };
+
+    showEffectDialog ("Click and Pop Repair",
+                      "Finds clicks and pops and rebuilds those samples from the audio around them; nothing else "
+                      "changes. Lower the threshold to catch fainter clicks; raise it if drums or plucks are "
+                      "being taken for clicks.",
+                      { { "threshold", "Threshold (dB above the background)", settings->getDoubleValue ("clickThreshold", 18.0), 1, {}, 6.0, 60.0, 0.5 },
+                        { "length", "Longest click (ms)", settings->getDoubleValue ("clickMaxLength", 3.0), 1, {}, 0.1, 20.0, 0.1 } },
+                      "spectrablade:click-repair", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings, toSettings] (const EffectValues& v)
+                      {
+                          const auto s = toSettings (v);
+                          settings->setValue ("clickThreshold", s.thresholdDb);
+                          settings->setValue ("clickMaxLength", s.maxLengthMs);
+                          repairClicks (s);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto s = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "clicks " + juce::String (s.thresholdDb, 3) + " " + juce::String (s.maxLengthMs, 3),
+                              [s] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  const auto r = ClickRepair::repair (*audio, start, end, sampleRate, s, progress);
+                                  return EffectPreview::Rendered { r.has_value() ? r->snapshot : nullptr, start, end,
+                                                                   r.has_value() ? juce::String() : juce::String ("Stopped.") };
+                              } });
+                      },
+                      "Repair");
 }
 
 void MainComponent::repairClicks (ClickRepair::Settings s)
@@ -9226,8 +9140,11 @@ void MainComponent::updatePlaybackLoop()
 
 void MainComponent::startPreview (PreviewOwner owner, std::unique_ptr<juce::AudioPluginInstance> effect, std::function<void()> ended)
 {
-    if (multitrackMode || isRecording() || ! engine.document.hasAudio() || owner == PreviewOwner::none)
+    if (multitrackMode || isRecording() || ! engine.document.hasAudio() || owner == PreviewOwner::none || owner == PreviewOwner::rendered)
         return;
+
+    if (previewOwner == PreviewOwner::rendered)
+        stopPreview();
 
     const auto already = previewOwner != PreviewOwner::none;
 
@@ -9238,6 +9155,7 @@ void MainComponent::startPreview (PreviewOwner owner, std::unique_ptr<juce::Audi
     previewOwner = owner;
     previewEnded = std::move (ended);
     engine.setPreviewEffect (std::move (effect));
+    engine.setPreviewBypassed (previewBypassed);
 
     if (already)
         return;
@@ -9249,6 +9167,88 @@ void MainComponent::startPreview (PreviewOwner owner, std::unique_ptr<juce::Audi
     playingLoop = r;
 }
 
+void MainComponent::startRenderedPreview (const EffectPreview::Request& request, std::function<void()> ended,
+                                          std::function<void (const juce::String&)> status)
+{
+    auto& doc = engine.document;
+
+    if (multitrackMode || isRecording() || ! doc.hasAudio())
+        return;
+
+    if (previewOwner != PreviewOwner::rendered)
+    {
+        stopPreview();
+        previewOwner = PreviewOwner::rendered;
+    }
+
+    previewEnded = std::move (ended);
+    renderedKey = request.key;
+    renderedVersion = doc.getVersion();
+
+    const auto range = selectionOrAll();
+    const auto rate = doc.getSampleRate();
+    const auto part = EffectPreview::partOf (range, rate, request.wholeRange);
+    const auto shortened = part.getLength() < range.getLength();
+
+    if (status != nullptr)
+        status (request.wholeRange && range.getLength() > (juce::int64) (EffectPreview::longestSeconds * rate)
+                    ? "Processing all of it (as long as applying)..." : "Processing...");
+
+    effectPreview.render (request, doc.getSnapshot(), range, rate, [this, part, shortened, status] (const EffectPreview::Rendered& r)
+    {
+        if (previewOwner != PreviewOwner::rendered || engine.document.getVersion() != renderedVersion)
+            return;
+
+        if (r.error.isNotEmpty())
+        {
+            if (status != nullptr)
+                status ("Can't preview: " + r.error);
+
+            return;
+        }
+
+        renderedAudio = r.snapshot != nullptr ? r.snapshot : engine.document.getSnapshot();
+        renderedLoop = { r.start, juce::jmax (r.start + 1, r.end) };
+        renderedPart = part;
+
+        auto& player = engine.getPlayer();
+        const auto loop = previewBypassed ? renderedPart : renderedLoop;
+        player.setStandIn (previewBypassed ? nullptr : renderedAudio);
+        player.setLoop (loop.getStart(), loop.getEnd());
+        playingLoop = loop;
+
+        if (! player.isPlaying())
+            player.play (loop.getStart(), -1);
+
+        if (status != nullptr)
+            status (shortened ? "Playing the first " + juce::String ((int) EffectPreview::longestSeconds) + " s" : juce::String());
+    });
+}
+
+void MainComponent::setPreviewBypassed (bool bypassed)
+{
+    previewBypassed = bypassed;
+
+    if (previewOwner == PreviewOwner::rendered)
+    {
+        if (renderedAudio == nullptr)
+            return;
+
+        auto& player = engine.getPlayer();
+        const auto loop = bypassed ? renderedPart : renderedLoop;
+        player.setStandIn (bypassed ? nullptr : renderedAudio);
+        player.setLoop (loop.getStart(), loop.getEnd());
+        playingLoop = loop;
+
+        if (! loop.contains (player.getPositionFrames()))
+            player.setPositionFrames (loop.getStart());
+    }
+    else if (previewOwner != PreviewOwner::none)
+    {
+        engine.setPreviewBypassed (bypassed);
+    }
+}
+
 void MainComponent::stopPreview()
 {
     if (previewOwner == PreviewOwner::none)
@@ -9258,11 +9258,29 @@ void MainComponent::stopPreview()
     player.pause();
     player.clearLoop();
     playingLoop = {};
-    engine.setPreviewEffect (nullptr);
+
+    if (previewOwner == PreviewOwner::rendered)
+    {
+        effectPreview.cancel();
+        player.setStandIn (nullptr);
+        renderedAudio = nullptr;
+        renderedKey = {};
+    }
+    else
+    {
+        engine.setPreviewEffect (nullptr);
+    }
+
     previewOwner = PreviewOwner::none;
+    previewBypassed = false;
 
     if (auto ended = std::exchange (previewEnded, {}))
         ended();
+}
+
+std::optional<EffectPreview::Request> MainComponent::previewOf (const Sequences::Step& step, bool wholeRange) const
+{
+    return EffectPreview::ofStep (step, engine.document.getSampleRate(), wholeRange);
 }
 
 juce::AudioPluginInstance* MainComponent::previewEffectOf (PreviewOwner owner) const

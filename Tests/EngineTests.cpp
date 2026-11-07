@@ -38,6 +38,7 @@
 #include "FadeHandleTests.h"
 #include "MultibandTests.h"
 #include "BuiltInEffectsTests.h"
+#include "EffectPreviewTests.h"
 #include "NoiseTests.h"
 #include "DereverbTests.h"
 #include "LevellerTests.h"
@@ -580,6 +581,7 @@ int main (int argc, char* argv[])
         runSidechainTests();
         runBatchTests (engine);
         runSequencesTests (engine);
+        runEffectPreviewTests (engine);
         runSurroundTests (engine);
         runSurroundSessionTests (engine);
         runSurroundEffectsTests (engine);

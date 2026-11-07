@@ -26,6 +26,11 @@ public:
         this one on, one each, up to Surround::maxPlayedChannels in all. */
     void setSeparateOutputs (int firstChannel)                { separateFirst = firstChannel; }
 
+    /** Plays this audio in place of the document's until set to nullptr (a rendered effect
+        preview: the document with part of it processed). Message thread. */
+    void setStandIn (AudioDocument::Snapshot);
+    bool hasStandIn() const noexcept                          { return standInSet.load(); }
+
     void prepareToPlay (int blockSize, double) override;
     void releaseResources() override                          {}
     void getNextAudioBlock (const juce::AudioSourceChannelInfo&) override;
@@ -39,6 +44,13 @@ private:
     AudioDocument& document;
     AudioDocument::Snapshot snapshot;      // audio thread's own reference
     juce::uint32 snapshotVersion = 0;
+    juce::SpinLock standInLock;
+    AudioDocument::Snapshot standIn;       // guarded by the lock
+    std::atomic<juce::uint32> standInVersion { 0 };
+    std::atomic<bool> standInSet { false };
+    juce::uint32 takenStandIn = 0;         // audio thread: the stand-in version taken
+    AudioDocument::Snapshot heldStandIn;   // audio thread's own reference to it
+    AudioDocument::Snapshot played;        // audio thread: what this block plays
     std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
     std::atomic<int> separateFirst { -1 };
     juce::AudioBuffer<float> wide;         // a file past stereo is read through this
@@ -164,6 +176,10 @@ public:
         clearLoop() or the mode changes. The played frame keeps counting on through each pass, so
         frame f of pass k (from 0) is played frame f + k * (end - start). */
     void setLoop (juce::int64 start, juce::int64 end)      { source.setLoop (start, end); sessionSource.setLoop (start, end); }
+
+    /** Plays this audio in place of the document (see DocumentSource::setStandIn); nullptr: the document. */
+    void setStandIn (AudioDocument::Snapshot s)            { source.setStandIn (std::move (s)); }
+    bool hasStandIn() const noexcept                       { return source.hasStandIn(); }
     void clearLoop()                                       { setLoop (0, 0); }
     void pause()                                  { transport.stop(); }
     bool isPlaying() const                        { return transport.isPlaying(); }
@@ -446,6 +462,10 @@ public:
         replaced or cleared (nullptr). It is prepared at the device's rate. Not saved with the rack. */
     void setPreviewEffect (std::unique_ptr<juce::AudioPluginInstance>);
     juce::AudioPluginInstance* getPreviewEffect() const;
+
+    /** The preview effect left out (the audio plays as it is) or put back. */
+    void setPreviewBypassed (bool);
+    bool isPreviewBypassed() const;
     void loadRackXml (const juce::XmlElement& xml, AddCallback onDone);
 
     //==============================================================================

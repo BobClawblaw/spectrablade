@@ -143,3 +143,18 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Show an open file | Click its tab over the editor |
 | Close an open file | Click the × on its tab, or right-click the tab |
 | Move a panel | Drag its tab onto another panel's edge, onto its middle (as a tab), or out of the window (to float it) |
+
+## Effect dialogs
+
+The settings dialogs of Gain, Normalize, Match Loudness, Balance, Stereo Width, Gain Ramp, Pan Ramp, Echo, Tremolo, EQ Band, Compressor, Limiter, De-esser, Chorus, Flanger, Phaser, Reverb, Convolution Reverb, Stretch, Shift Pitch, Pitch Correction, Level Speech, Automatic Phase Correction, Centre Channel, Noise Reduction, Reduce Reverb, Click and Pop Repair, Remove Hum, Repair Clipping, Generate Tone and Generate Noise (the generators have no preview):
+
+| What | Keys and mouse |
+|---|---|
+| Start or stop the preview | `Space` (not while typing a value) |
+| Apply | `Return` |
+| Cancel | `Escape` |
+| Step a value up or down | mouse wheel over its slider or value, or `Up` / `Down` (also `Right` / `Left`) when it has the focus |
+| Step by a tenth | hold `Shift` while turning the wheel or pressing the key |
+| Step a menu | mouse wheel over it |
+| Set a value back to where it started | double-click its slider |
+
