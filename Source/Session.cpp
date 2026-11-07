@@ -966,12 +966,72 @@ AudioDocument::Snapshot playedPart (const SessionClip& c, const AudioDocument::S
     return AudioEdits::fromBuffer (std::move (part));
 }
 
-bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched, bool keepEnd)
+SessionClip takeAsPlayed (const SessionClip& c, int take)
+{
+    auto copy = c;
+    copy.takes.clear();
+    copy.activeTake = 0;
+
+    if (! juce::isPositiveAndBelow (take, (int) c.takes.size()) || take == c.activeTake || c.takes[(size_t) take].audio == nullptr || c.length <= 0)
+        return copy;
+
+    const auto& from = c.takes[(size_t) c.activeTake];
+    const auto& to = c.takes[(size_t) take];
+    juce::AudioBuffer<float> part (to.audio->getNumChannels(), (int) c.length);
+    to.audio->read (part, 0, c.offset + to.shift - from.shift, (int) c.length);
+    copy.source = to.source;
+    copy.audio = AudioEdits::fromBuffer (std::move (part));
+    copy.offset = 0;
+    return copy;
+}
+
+bool replaceActiveTake (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot audio)
+{
+    auto* c = findUnlocked (s, clipId);
+
+    if (c == nullptr || audio == nullptr || c->length <= 0 || audio->getNumFrames() != c->length)
+        return false;
+
+    if (c->takes.empty())
+        return stretchClip (s, clipId, file, std::move (audio));
+
+    // Each take read from where it was against the clip, now that the active one starts at 0.
+    const auto activeShift = c->takes[(size_t) c->activeTake].shift;
+
+    for (auto& t : c->takes)
+        t.shift = t.shift - activeShift + c->offset;
+
+    auto& active = c->takes[(size_t) c->activeTake];
+    active.source = file;
+    active.audio = audio;
+    active.shift = 0;
+
+    for (auto& p : c->gainEnvelope.points)
+        p.frame -= c->offset;
+
+    c->source = file;
+    c->audio = std::move (audio);
+    c->offset = 0;
+    return true;
+}
+
+bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched, bool keepEnd,
+                  std::vector<SessionClip::Take> takes)
 {
     auto* c = findUnlocked (s, clipId);
 
     if (c == nullptr || stretched == nullptr || c->length <= 0 || (keepEnd && stretched->getNumFrames() > c->getEnd()))
         return false;
+
+    if (! takes.empty())
+    {
+        if (takes.size() != c->takes.size())
+            return false;
+
+        for (size_t i = 0; i < takes.size(); ++i)
+            if ((int) i != c->activeTake && (takes[i].audio == nullptr || takes[i].audio->getNumFrames() != stretched->getNumFrames()))
+                return false;
+    }
 
     if (keepEnd)
         c->position = c->getEnd() - stretched->getNumFrames();
@@ -989,8 +1049,23 @@ bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     c->offset = 0;
     c->fadeIn = (juce::int64) std::llround ((double) c->fadeIn * scale);
     c->fadeOut = (juce::int64) std::llround ((double) c->fadeOut * scale);
-    c->takes.clear();
-    c->activeTake = 0;
+
+    if (takes.empty())
+    {
+        c->takes.clear();
+        c->activeTake = 0;
+    }
+    else
+    {
+        // Every take processed alike from the part the clip played, so all start at 0.
+        takes[(size_t) c->activeTake] = { file, c->audio, 0 };
+
+        for (auto& t : takes)
+            t.shift = 0;
+
+        c->takes = std::move (takes);
+    }
+
     limitFades (*c);
     return true;
 }

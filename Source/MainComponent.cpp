@@ -3644,21 +3644,48 @@ void MainComponent::processSelectedClip (const juce::String& action, const juce:
     const auto file = folder.getNonexistentChildFile (juce::File::createLegalFileName (clip.name) + " " + suffix, ".wav", false);
     const auto rate = state->sampleRate;
     auto stretched = std::make_shared<AudioDocument::Snapshot>();
+    auto takes = std::make_shared<std::vector<SessionClip::Take>> (clip.takes.size());
     auto error = std::make_shared<juce::String>();
 
     backgroundJob = std::make_unique<BackgroundJob> (*this, action + ": " + clip.name + "...",
-        [this, clip, process, rate, folder, file, stretched, error] (const std::function<bool (float)>& progress)
+        [this, clip, process, rate, folder, file, stretched, takes, error, suffix] (const std::function<bool (float)>& progress)
         {
-            *stretched = process (clip, progress);
+            // The active take, then each other take alike, from the part the clip plays.
+            const auto count = (float) juce::jmax ((size_t) 1, takes->size());
+            const auto share = [&progress, count] (int i) { return [&progress, count, i] (float p) { return progress (((float) i + p) / count); }; };
+            *stretched = process (clip, share (0));
 
             if (*stretched == nullptr)
                 return false;
 
-            *error = ! folder.createDirectory() ? "Could not make the folder " + folder.getFullPathName()
-                                                : AudioFileIO::save (**stretched, rate, file, 32, engine.formatManager);
+            if (! folder.createDirectory())
+            {
+                *error = "Could not make the folder " + folder.getFullPathName();
+                return true;
+            }
+
+            *error = AudioFileIO::save (**stretched, rate, file, 32, engine.formatManager);
+            auto done = 1;
+
+            for (int i = 0; i < (int) takes->size() && error->isEmpty(); ++i)
+            {
+                if (i == clip.activeTake)
+                    continue;
+
+                auto audio = process (SessionEdits::takeAsPlayed (clip, i), share (done++));
+
+                if (audio == nullptr)
+                    return false;
+
+                const auto takeFile = folder.getNonexistentChildFile (juce::File::createLegalFileName (clip.name) + " " + suffix
+                                                                          + " Take " + juce::String (i + 1), ".wav", false);
+                *error = AudioFileIO::save (*audio, rate, takeFile, 32, engine.formatManager);
+                (*takes)[(size_t) i] = { takeFile, std::move (audio), 0 };
+            }
+
             return true;
         },
-        [this, clipId, file, stretched, error, action, keepEnd]
+        [this, clipId, file, stretched, takes, error, action, keepEnd]
         {
             if (error->isNotEmpty())
             {
@@ -3668,7 +3695,7 @@ void MainComponent::processSelectedClip (const juce::String& action, const juce:
 
             auto next = *engine.session.getState();
 
-            if (SessionEdits::stretchClip (next, clipId, file, *stretched, keepEnd))
+            if (SessionEdits::stretchClip (next, clipId, file, *stretched, keepEnd, *takes))
                 engine.session.apply (std::move (next), action);
         });
     backgroundJob->launchThread();
@@ -5261,7 +5288,8 @@ void MainComponent::moveClipNotesInBackground (const PitchEditor::Source& source
 
             auto next = *engine.session.getState();
 
-            if (*part == nullptr || ! SessionEdits::stretchClip (next, clipId, file, *part))
+            // The other takes stay as they were: the notes moved are the active take's.
+            if (*part == nullptr || ! SessionEdits::replaceActiveTake (next, clipId, file, *part))
                 return;
 
             engine.session.apply (std::move (next), "Move Notes");

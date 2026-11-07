@@ -192,6 +192,110 @@ namespace
         check (refused && applied && audio->getNumFrames() == 72000 && c.position == 6000 && c.offset == 0 && c.length == 72000
                    && c.fadeIn == 7200 && c.fadeOut == 3600 && c.audio == audio && c.source.getFileName() == "tone Stretched.wav",
                "time stretch: a clip plays its stretched part from where it starts, fades scaled with it, and a locked one is refused");
+
+        // With takes: each processed alike from the part the clip plays, and kept, lined up.
+        const auto noise = [] (int seed, int frameCount)
+        {
+            juce::Random r (seed);
+            juce::AudioBuffer<float> b (2, frameCount);
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < frameCount; ++i)
+                    b.setSample (ch, i, r.nextFloat() - 0.5f);
+
+            return AudioEdits::fromBuffer (std::move (b));
+        };
+        const auto frames = [] (const AudioSnapshot& a, juce::int64 from, int count)
+        {
+            juce::AudioBuffer<float> b (2, count);
+            a.read (b, 0, from, count);
+            return b;
+        };
+        const auto same = [] (const juce::AudioBuffer<float>& x, const juce::AudioBuffer<float>& y)
+        {
+            if (x.getNumSamples() != y.getNumSamples())
+                return false;
+
+            for (int ch = 0; ch < 2; ++ch)
+                if (std::memcmp (x.getReadPointer (ch), y.getReadPointer (ch), sizeof (float) * (size_t) x.getNumSamples()) != 0)
+                    return false;
+
+            return true;
+        };
+
+        SessionState t;
+        t.sampleRate = rate;
+        t.addTrack();
+        const auto takeA = noise (1, 60000), takeB = noise (2, 60000), takeC = noise (3, 40000);
+        const auto tid = SessionEdits::addClip (t, 0, juce::File ("/takes/a.wav"), takeA, 5000);
+        auto& tc = t.tracks[0].clips[0];
+        tc.takes = { { juce::File ("/takes/a.wav"), takeA, 0 }, { juce::File ("/takes/b.wav"), takeB, 300 }, { juce::File ("/takes/c.wav"), takeC, -200 } };
+        SessionEdits::trimClip (t, tid, 5000 + 1000, 5000 + 49000);       // plays take A's frames 1000 to 49000
+        SessionEdits::chooseTake (t, tid, 1);                               // take B's 1300 to 49300
+        const auto before = t.tracks[0].clips[0];
+        const auto asA = SessionEdits::takeAsPlayed (before, 0), asC = SessionEdits::takeAsPlayed (before, 2), asB = SessionEdits::takeAsPlayed (before, 1);
+        const auto lined = before.offset == 1300 && asA.offset == 0 && asA.length == 48000 && asA.takes.empty()
+                           && same (frames (*asA.audio, 0, 48000), frames (*takeA, 1000, 48000))
+                           && same (frames (*asC.audio, 0, 48000), frames (*takeC, 800, 48000))        // silence past take C's 40000 frames
+                           && asC.audio->getNumFrames() == 48000 && asB.audio == before.audio && asB.offset == before.offset;
+
+        std::vector<SessionClip::Take> processed (3);
+
+        for (int i : { 0, 2 })
+            processed[(size_t) i] = { juce::File ("/takes/x" + juce::String (i) + ".wav"), SessionEdits::stretchedAudio (SessionEdits::takeAsPlayed (before, i), 1.5, rate), 0 };
+
+        const auto active = SessionEdits::stretchedAudio (before, 1.5, rate);
+        auto mismatched = processed;
+        mismatched[0].audio = noise (4, 100);
+        auto refusedTakes = t;
+        const auto refusedMismatch = ! SessionEdits::stretchClip (refusedTakes, tid, juce::File ("/takes/b x.wav"), active, false, mismatched);
+        const auto keptTakes = SessionEdits::stretchClip (t, tid, juce::File ("/takes/b x.wav"), active, false, processed);
+        const auto after = t.tracks[0].clips[0];
+        auto chosen = t;
+        const auto choseA = SessionEdits::chooseTake (chosen, tid, 0);
+        const auto& ca = chosen.tracks[0].clips[0];
+        check (lined && refusedMismatch && keptTakes && after.takes.size() == 3 && after.activeTake == 1 && after.length == 72000
+                   && after.takes[1].audio == active && after.takes[1].source.getFileName() == "b x.wav"
+                   && after.takes[0].shift == 0 && after.takes[2].shift == 0
+                   && choseA && ca.position == 6000 && ca.length == 72000 && ca.offset == 0 && ca.audio == processed[0].audio,
+               "takes: stretched, a clip keeps its three takes, each stretched alike from what the clip played of it (one shorter "
+               "than the clip padded with silence), lined up so choosing another plays it in the same place and length; takes "
+               "of other lengths are refused");
+
+        // The Pitch Editor's result replaces the active take alone; the others play as they did.
+        SessionState u;
+        u.sampleRate = rate;
+        u.addTrack();
+        const auto uid = SessionEdits::addClip (u, 0, juce::File ("/takes/a.wav"), takeA, 5000);
+        u.tracks[0].clips[0].takes = before.takes;
+        u.tracks[0].clips[0].takes[0] = { juce::File ("/takes/a.wav"), takeA, 0 };
+        SessionEdits::trimClip (u, uid, 5000 + 1000, 5000 + 49000);
+        SessionEdits::chooseTake (u, uid, 1);
+        const auto was = u.tracks[0].clips[0];
+        const auto edited = noise (5, 48000);
+        auto wrongLength = u;
+        const auto refusedLength = ! SessionEdits::replaceActiveTake (wrongLength, uid, juce::File ("/takes/b Notes.wav"), noise (5, 47999));
+        const auto replaced = SessionEdits::replaceActiveTake (u, uid, juce::File ("/takes/b Notes.wav"), edited);
+        const auto now = u.tracks[0].clips[0];
+        auto others = true;
+
+        for (int i : { 0, 2 })
+            others = others && same (frames (*SessionEdits::takeAsPlayed (now, i).audio, 0, 48000), frames (*SessionEdits::takeAsPlayed (was, i).audio, 0, 48000));
+
+        auto toC = u;
+        const auto choseC = SessionEdits::chooseTake (toC, uid, 2);
+        const auto& cc = toC.tracks[0].clips[0];
+        auto toCBefore = SessionState();
+        toCBefore.sampleRate = rate;
+        toCBefore.addTrack();
+        toCBefore.tracks[0].clips.push_back (was);
+        SessionEdits::chooseTake (toCBefore, was.id, 2);
+        const auto& cb = toCBefore.tracks[0].clips[0];
+        check (refusedLength && replaced && now.audio == edited && now.offset == 0 && now.takes.size() == 3 && now.takes[1].audio == edited
+                   && now.position == was.position && now.length == was.length && others
+                   && choseC && cc.position == cb.position && cc.length == cb.length && cc.audio == cb.audio && cc.offset == cb.offset,
+               "takes: with notes moved, the active take is replaced and the other two play the same frames in the same place as before, "
+               "also once chosen; audio of another length is refused");
     }
 }
 

@@ -531,11 +531,27 @@ namespace SessionEdits
         its offset, its length. Null when audio is null or too short. */
     AudioDocument::Snapshot playedPart (const SessionClip&, const AudioDocument::Snapshot& audio);
 
+    /** The clip as it would play another of its takes, cut to what it plays: the take's audio
+        under the clip (silence where the take is shorter), from offset 0, with no other takes;
+        so stretchedAudio() and pitchedAudio() can process every take alike. The clip itself
+        (with no takes) for its active take or an index out of range. */
+    SessionClip takeAsPlayed (const SessionClip&, int take);
+
     /** Makes a clip play processed audio of the part it played (from stretchedAudio() or
         pitchedAudio(), saved as file), all of it, from where it starts; its fades scale with
-        its length, and its takes go; with keepEnd it ends where it did (moved to start earlier
-        or later), not starting where it did. False for a locked clip. */
-    bool stretchClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot stretched, bool keepEnd = false);
+        its length; with keepEnd it ends where it did (moved to start earlier or later), not
+        starting where it did. `takes`, when given, holds every take processed alike (from
+        takeAsPlayed(), each as long as stretched; the active one's place is filled by stretched
+        and file), which it keeps, lined up; otherwise its takes go. False for a locked clip, or
+        takes that don't match. */
+    bool stretchClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot stretched, bool keepEnd = false,
+                      std::vector<SessionClip::Take> takes = {});
+
+    /** Makes a clip play new audio for the part it plays of its active take (as long as it,
+        e.g. with notes moved in the Pitch Editor, saved as file), from offset 0, keeping its
+        other takes as they were, lined up with it. False for a locked clip or audio of
+        another length. */
+    bool replaceActiveTake (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot audio);
 
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
         (or split in two) and lose their fade on the cut side. False when nothing was there. */

@@ -777,7 +777,7 @@ namespace
         const auto b3 = juce::Range<juce::int64> (track.first + (juce::int64) notes[1].first * track.hop, track.first + (juce::int64) notes[1].end * track.hop) - pad;
         const auto a3 = juce::Range<juce::int64> (track.first + (juce::int64) notes[0].first * track.hop, track.first + (juce::int64) notes[0].end * track.hop) - pad;
         const auto clipId = c.id;
-        const auto applied = part != nullptr && SessionEdits::stretchClip (s, clipId, juce::File(), part);
+        const auto applied = part != nullptr && SessionEdits::replaceActiveTake (s, clipId, juce::File(), part);
         const auto& now = s.tracks[0].clips[0];
         const auto inset = (b3.getLength()) / 4;
         const auto raised = cents (medianPitch (*now.audio, b3.getStart() + inset, b3.getEnd() - inset), medianPitch (*melody, b3.getStart() + inset, b3.getEnd() - inset));

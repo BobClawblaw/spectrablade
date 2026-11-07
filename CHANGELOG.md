@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 273: Keeping takes when a clip is processed**
+- Stretch Clip, Shift Clip Pitch and stretching by Option-drag now keep a clip's takes. Each take is processed the same way from the part of it the clip plays (silence where a take is shorter than the clip), written to a file of its own beside the active one's, and kept lined up, so choosing another take afterwards plays it in the same place and at the same length. Before, the other takes were dropped.
+- The Pitch Editor keeps them too: the notes moved belong to the take playing, so only that take gets the new audio, and the others play just what they did, from their own files.
+- Measured by the tests: a clip with three takes (the one playing chosen after a trim, one take shorter than the clip) shows each take as it plays it, sample for sample, with silence past the short take's end; stretched 1.5 times it keeps all three, each the stretched part of its own take, lined up, so choosing another plays it in the same place at the new length; takes of another length are refused; with notes moved, the active take is replaced and the other two play the same frames in the same place as before, also once chosen; the Pitch Editor's clip test (B3 +100.1 cents, A3 0.0 cents) passes through the new path. The whole suite passed (1267 checks). Not tried: Stretch Clip, Shift Clip Pitch, stretching by drag and the Pitch Editor on a clip with takes in the running app, and choosing a take there afterwards.
+
 **Milestone 272: Meet Delivery Spec in sequences and Batch Process**
 - Meet Delivery Spec is recorded as a sequence step, which keeps the spec's numbers (target, tolerance and true-peak ceiling), so a saved sequence plays the same on any machine. It is named after its spec ("Meet EBU R128"), and when played it notes what the result measures and whether it meets the spec.
 - Batch Process's Level can be a delivery spec too: each file is brought to it as Meet Delivery Spec does, and the batch report says, for each file, what it measures and whether it meets the spec.
