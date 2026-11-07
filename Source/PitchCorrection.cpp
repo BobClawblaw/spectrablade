@@ -308,7 +308,11 @@ namespace
         }
 
         // The range: the overlap-add divided by the windows' sum, easing from the audio as it was at
-        // edges inside the file.
+        // edges inside the file. Where the pitch is lowered, grains can be further apart than they
+        // are long (by more than about half an octave): there the sum isn't divided by less than a
+        // half, so the grains' quiet ends aren't scaled up into the voice's formants, and the gaps
+        // between them stay silent, as between the pulses of a lower voice, rather than letting
+        // the audio as it was through.
         const auto n = (int) (end - start);
         juce::AudioBuffer<float> out (channels, n);
         const auto ease = juce::jmax ((juce::int64) 1, juce::jmin ((juce::int64) std::lround (easeSeconds * sampleRate), (end - start) / 2));
@@ -318,6 +322,7 @@ namespace
             const auto frame = start + i;
             const auto at = (int) (frame - bufferStart);
             const auto w = weights[(size_t) at];
+            const auto lowered = shift[(size_t) frameAt (inputAt ((double) frame))] < 0.0;
             auto mixIn = 1.0f;
 
             if (start > 0 && frame - start < ease)
@@ -328,7 +333,7 @@ namespace
             for (int ch = 0; ch < channels; ++ch)
             {
                 const auto was = in.getSample (ch, at);
-                const auto now = w > 0.25f ? sum.getSample (ch, at) / w : was;
+                const auto now = lowered ? sum.getSample (ch, at) / juce::jmax (0.5f, w) : (w > 0.25f ? sum.getSample (ch, at) / w : was);
                 out.setSample (ch, i, was + (now - was) * mixIn);
             }
         }

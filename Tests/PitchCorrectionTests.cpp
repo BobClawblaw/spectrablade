@@ -644,8 +644,89 @@ namespace
     }
 }
 
+namespace
+{
+    double goertzel (const AudioSnapshot& a, juce::int64 from, int n, double hz)
+    {
+        juce::AudioBuffer<float> b (1, n);
+        a.read (b, 0, from, n);
+        double re = 0.0, im = 0.0;
+
+        for (int i = 0; i < n; ++i)
+        {
+            const auto w = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / (n - 1));
+            re += w * b.getSample (0, i) * std::cos (juce::MathConstants<double>::twoPi * hz * i / rate);
+            im -= w * b.getSample (0, i) * std::sin (juce::MathConstants<double>::twoPi * hz * i / rate);
+        }
+
+        return std::sqrt (re * re + im * im);
+    }
+
+    /** A buzz at 220 Hz with its formant at 800 Hz, moved by PSOLA up and down by large steps: the
+        harmonics of what comes out against the voice's envelope kept where it was, and moved with
+        the pitch (the level of each harmonic up to 3 kHz, in dB, after the best overall offset). */
+    void testFormants()
+    {
+        const auto in = buzz (second, [] (int) { return 220.0; });
+        const auto track = PitchCorrection::analyse (*in, 0, second, rate);
+        auto notes = PitchCorrection::findNotes (track);
+        const auto formant = [] (double f) { return 1.0 / std::sqrt (1.0 + std::pow ((f - 800.0) / 300.0, 2.0)); };
+        auto allKept = notes.size() == 1;
+        juce::StringArray seen;
+
+        for (auto semitones : { -12.0, -7.0, 7.0, 12.0 })
+        {
+            for (auto& n : notes)
+                n.shiftCents = semitones * 100.0;
+
+            const auto out = PitchCorrection::moveNotes (*in, 0, second, rate, track, notes);
+
+            if (out == nullptr)
+            {
+                allKept = false;
+                continue;
+            }
+
+            const auto f0 = 220.0 * std::pow (2.0, semitones / 12.0), ratio = f0 / 220.0;
+            std::vector<double> got, kept, moved;
+
+            for (int h = 1; h * f0 < 3000.0; ++h)
+            {
+                const auto f = h * f0;
+                got.push_back (20.0 * std::log10 (goertzel (*out, second / 4, second / 2, f) + 1.0e-12));
+                kept.push_back (20.0 * std::log10 ((0.3 + formant (f)) * 220.0 / f));
+                moved.push_back (20.0 * std::log10 ((0.3 + formant (f / ratio)) * 220.0 / (f / ratio)));
+            }
+
+            const auto misfit = [&] (const std::vector<double>& model)
+            {
+                double offset = 0.0, sum = 0.0;
+
+                for (size_t i = 0; i < model.size(); ++i)
+                    offset += (got[i] - model[i]) / (double) model.size();
+
+                for (size_t i = 0; i < model.size(); ++i)
+                    sum += std::pow (got[i] - model[i] - offset, 2.0);
+
+                return std::sqrt (sum / (double) model.size());
+            };
+
+            const auto pitch = cents (medianPitch (*out, second / 4, 3 * second / 4), f0);
+            const auto keptOff = misfit (kept), movedOff = misfit (moved);
+            allKept = allKept && std::abs (pitch) < 1.0 && keptOff < 2.5 && keptOff < 0.7 * movedOff;
+            seen.add (juce::String (semitones, 0) + ": " + juce::String (pitch, 2) + " cents, " + juce::String (keptOff, 2) + " dB from the kept envelope, "
+                      + juce::String (movedOff, 2) + " from a moved one");
+        }
+
+        check (allKept,
+               "pitch editing, formants: a voice-like buzz moved an octave and a fifth up and down keeps its formant where it was, its "
+               "harmonics nearer the envelope it had than one moved with the pitch, and each lands on its pitch (" + seen.joinIntoString ("; ") + ")");
+    }
+}
+
 void runPitchCorrectionTests()
 {
+    testFormants();
     testEditorMovingInTime();
     testMovingInTime();
     testSplitAndJoin();
