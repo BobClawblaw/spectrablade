@@ -201,6 +201,7 @@ What they check:
 - Batch delivery report: each file's lines against the spec written as a text file in the batch's folder, numbered when the name is taken, counting the files that meet it and saying why one wasn't written; none for other levels or when nothing was written.
 - Sound Library index: names split into words (case changes, acronyms, digits, letters past ASCII); a scan of chosen folders (headers, BWF descriptions, unreadable and non-audio files), refused folders, search by the start of words in names and descriptions, sorting and paging, rescans that read only what changed, stopping, a second connection, removing a folder; and the time of counts, searches and pages on an index of a million sounds.
 - Sound Library window: nothing scanned without a folder, a missing folder refused, an added one scanned on its own thread and listed, search and every column's text, sorting by length and rate, a drag from selected rows carrying their files (and none from a row not selected), Rescan, and removing a folder.
+- Sound Library preview: playing sample for sample at the device's rate and stopping at the end, a selected part looping, the preview volume, mono in both channels, 5.1 folded down, resampling 44.1 kHz on a 48 kHz device, an unreadable file playing silence, a selected part written as a WAV of its own (rate, channels, bits and samples kept; asked again, the same file), and the mouse: selecting by dragging, carrying the selected part out, clicking to play from a point, scrubbing along the strip; selecting a row shows its sound.
 - Centre channel: tones in the middle, on one side and below the band, removed and extracted; a voice-like sound in the middle of noise on each side; a range, no reduction, and mono files, empty ranges and settings out of range refused.
 - Automatic phase correction: offsets late and early, whole and fractional, found and taken out; two microphones with their own noise; a channel upside down; unrelated channels, silence, offsets past the most looked for, mono, short ranges and settings out of range; a range eased in, and a correction by nothing bit for bit.
 - DTMF and MF tones: every key read back from the generated pairs, each tone's level, the other frequencies, silence between, the length and peak; lower case, and characters, timings, levels and rates refused.
@@ -271,3 +272,12 @@ The plug-in sweep is opt-in too: it scans every plug-in on the machine the way S
 ```bash
 ./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --plugin-sweep plugin-sweep.txt
 ```
+
+## A real sound library
+
+The Sound Library check on a real library is opt-in as well: it indexes a folder of sounds into a new index (in a temporary folder, deleted afterwards), scans it again with nothing changed, and times searches. It only reads the library's files.
+
+```bash
+./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --library "/path/to/your sounds"
+```
+

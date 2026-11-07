@@ -1,5 +1,6 @@
 #include "SoundLibrary.h"
 #include <sqlite3.h>
+#include <thread>
 
 namespace SoundLibrary
 {
@@ -173,7 +174,10 @@ Index::Index (const juce::File& database)
 
     Statement version (db, "SELECT value FROM meta WHERE key = 'schema'");
 
-    if (version.step() && version.text (0).getIntValue() != schemaVersion)
+    const auto stored = version.step() ? version.text (0) : juce::String();
+    version.reset();
+
+    if (stored.isNotEmpty() && stored.getIntValue() != schemaVersion)
     {
         error = "The Sound Library's index is from another version of SpectraBlade.";
         sqlite3_close (db);
@@ -314,6 +318,85 @@ bool Index::putAll (std::vector<Sound>& sounds)
     return exec ("COMMIT") && all;
 }
 
+namespace
+{
+    /** A sound's header, read through a buffer: the readers ask for a few bytes at a time, and
+        unbuffered each ask is a trip to the disk. */
+    std::unique_ptr<juce::AudioFormatReader> readHeader (juce::AudioFormatManager& formats, const juce::File& file)
+    {
+        for (int i = 0; i < formats.getNumKnownFormats(); ++i)
+        {
+            auto* format = formats.getKnownFormat (i);
+
+            if (! format->canHandleFile (file))
+                continue;
+
+            auto in = file.createInputStream();
+
+            if (in == nullptr)
+                return {};
+
+            if (auto* reader = format->createReaderFor (new juce::BufferedInputStream (in.release(), 16384, true), true))
+                return std::unique_ptr<juce::AudioFormatReader> (reader);
+        }
+
+        return {};
+    }
+
+    /** What a scan learns of a file it has to read. */
+    struct ToRead
+    {
+        juce::File file, folder;
+        juce::int64 size = 0, modified = 0;
+        bool known = false;
+        std::optional<Sound> sound;
+    };
+
+    /** Reads the files' headers on several threads at once, so the disk has more than one read
+        to get on with (the index itself is written on the scanning thread). */
+    void readAll (juce::AudioFormatManager& formats, std::vector<ToRead>& files)
+    {
+        static constexpr size_t readers = 8;
+        std::atomic<size_t> next { 0 };
+
+        const auto work = [&]
+        {
+            for (auto i = next++; i < files.size(); i = next++)
+            {
+                auto& f = files[i];
+                const auto reader = readHeader (formats, f.file);
+
+                if (reader == nullptr)
+                    continue;
+
+                Sound s;
+                s.file = f.file;
+                s.folder = f.folder;
+                s.name = f.file.getFileNameWithoutExtension();
+                s.size = f.size;
+                s.modified = f.modified;
+                s.frames = reader->lengthInSamples;
+                s.sampleRate = reader->sampleRate;
+                s.channels = (int) reader->numChannels;
+                s.bitDepth = (int) reader->bitsPerSample;
+                s.format = reader->getFormatName();
+                s.description = reader->metadataValues[juce::WavAudioFormat::bwavDescription];
+                f.sound = std::move (s);
+            }
+        };
+
+        std::vector<std::thread> threads;
+
+        for (size_t t = 1; t < juce::jmin (readers, files.size()); ++t)
+            threads.emplace_back (work);
+
+        work();
+
+        for (auto& t : threads)
+            t.join();
+    }
+}
+
 ScanResult Index::scan (juce::AudioFormatManager& formats, const std::function<bool (int)>& progress)
 {
     ScanResult result;
@@ -321,13 +404,44 @@ ScanResult Index::scan (juce::AudioFormatManager& formats, const std::function<b
     if (db == nullptr)
         return result;
 
-    // Each scan marks what it finds; what is left unmarked in a scanned folder is gone.
+    // Each scan marks what it finds; what is left unmarked in a scanned folder is gone. Every
+    // statement is reset as soon as it is read: one left open holds a read of the index open,
+    // and then SQLite can't move what is written back from its log, which grows without end.
     Statement last (db, "SELECT COALESCE (MAX (seen), 0) + 1 FROM sounds");
     const auto mark = last.step() ? last.integer (0) : 1;
+    last.reset();
     Statement known (db, "SELECT id, size, modified FROM sounds WHERE path = ?");
     Statement seen (db, "UPDATE sounds SET seen = ? WHERE id = ?");
     const auto wildcard = formats.getWildcardForAllFormats();
     int looked = 0;
+    std::vector<ToRead> toRead;
+
+    const auto markSeen = [&] (juce::int64 id)
+    {
+        seen.reset();
+        seen.bind (1, mark);
+        seen.bind (2, id);
+        seen.run();
+    };
+
+    // The files read since the last batch, put into the index.
+    const auto readBatch = [&]
+    {
+        readAll (formats, toRead);
+
+        for (auto& f : toRead)
+        {
+            if (! f.sound.has_value())
+                ++result.unreadable;
+            else if (put (*f.sound))
+            {
+                markSeen (f.sound->id);
+                ++(f.known ? result.updated : result.added);
+            }
+        }
+
+        toRead.clear();
+    };
 
     exec ("BEGIN");
 
@@ -338,7 +452,10 @@ ScanResult Index::scan (juce::AudioFormatManager& formats, const std::function<b
 
         for (const auto& entry : juce::RangedDirectoryIterator (folder, true, wildcard, juce::File::findFiles))
         {
-            if (progress != nullptr && (looked++ % 200) == 0)
+            if ((looked++ % 200) == 0)
+                readBatch();
+
+            if (progress != nullptr && (looked - 1) % 200 == 0)
             {
                 // Short transactions, so a search on another connection sees the work as it goes.
                 exec ("COMMIT");
@@ -358,48 +475,29 @@ ScanResult Index::scan (juce::AudioFormatManager& formats, const std::function<b
             known.reset();
             known.bind (1, file.getFullPathName());
             const auto there = known.step();
+            const auto id = there ? known.integer (0) : 0;
+            const auto same = there && known.integer (1) == size && known.integer (2) == modified;
+            known.reset();
 
-            if (there && known.integer (1) == size && known.integer (2) == modified)
+            if (same)
             {
-                seen.reset();
-                seen.bind (1, mark);
-                seen.bind (2, known.integer (0));
-                seen.run();
+                markSeen (id);
                 ++result.unchanged;
                 continue;
             }
 
-            std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
-
-            if (reader == nullptr)
-            {
-                ++result.unreadable;
-                continue;
-            }
-
-            Sound s;
-            s.file = file;
-            s.folder = folder;
-            s.name = file.getFileNameWithoutExtension();
-            s.size = size;
-            s.modified = modified;
-            s.frames = reader->lengthInSamples;
-            s.sampleRate = reader->sampleRate;
-            s.channels = (int) reader->numChannels;
-            s.bitDepth = (int) reader->bitsPerSample;
-            s.format = reader->getFormatName();
-            s.description = reader->metadataValues[juce::WavAudioFormat::bwavDescription];
-
-            if (put (s))
-            {
-                seen.reset();
-                seen.bind (1, mark);
-                seen.bind (2, s.id);
-                seen.run();
-                ++(there ? result.updated : result.added);
-            }
+            ToRead f;
+            f.file = file;
+            f.folder = folder;
+            f.size = size;
+            f.modified = modified;
+            f.known = there;
+            toRead.push_back (std::move (f));
         }
     }
+
+    // What was gathered when the scan ended or was stopped is read and kept.
+    readBatch();
 
     // Unless stopped (when what wasn't reached isn't known to be gone), the files not found go.
     if (! result.stopped)
@@ -418,6 +516,9 @@ ScanResult Index::scan (juce::AudioFormatManager& formats, const std::function<b
     }
 
     exec ("COMMIT");
+
+    // What the scan wrote, moved from the log into the index, and the log emptied.
+    exec ("PRAGMA wal_checkpoint(TRUNCATE)");
     return result;
 }
 

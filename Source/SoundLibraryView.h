@@ -1,6 +1,7 @@
 #pragma once
 
 #include "SoundLibrary.h"
+#include "SoundLibraryPreview.h"
 
 /** The Sound Library window's contents: the folders you choose to scan (Add Folder..., and the
     Folders menu to rescan, remove or show one), a search box, and the sounds found, a page at a
@@ -12,7 +13,11 @@
 
     Dragging selected rows carries their files out as a file drag, as dragging them from the
     Finder does: into the main window's multitrack view or editor, the Finder or another app.
-    Double-clicking a row asks for the sound to be opened. */
+    Double-clicking a row asks for the sound to be opened.
+
+    Below the table, the preview shows the sound last selected (see SoundLibraryPreview); the space
+    bar plays and stops it, unless the search box is typed in. Parts dragged out of the preview are
+    written beside the index, in its Parts folder. */
 class SoundLibraryView final : public juce::Component,
                                private juce::TableListBoxModel,
                                private juce::Timer
@@ -55,6 +60,13 @@ public:
     /** Called with a sound's file when its row is double-clicked. */
     std::function<void (const juce::File&)> onOpen;
 
+    SoundLibraryPreview& getPreview() noexcept          { return preview; }
+
+    /** Plays the preview through this device (alongside whatever else plays through it); null to stop. */
+    void setAudioDevice (juce::AudioDeviceManager*);
+
+    bool keyPressed (const juce::KeyPress&) override;
+
     void resized() override;
 
 private:
@@ -63,6 +75,7 @@ private:
     void paintRowBackground (juce::Graphics&, int row, int width, int height, bool selected) override;
     void paintCell (juce::Graphics&, int row, int column, int width, int height, bool selected) override;
     void cellDoubleClicked (int row, int column, const juce::MouseEvent&) override;
+    void selectedRowsChanged (int lastRowSelected) override;
     void sortOrderChanged (int column, bool forwards) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
@@ -86,11 +99,15 @@ private:
     juce::String scanNote;                                    // what the last scan did, or why a folder was refused
     bool dragStarted = false, dragFromSelection = false;
     int ticks = 0;
+    bool refreshing = false;   // the selection changing because the rows did, not by choice
 
     juce::TextEditor search;
     juce::TextButton addButton { "Add Folder..." }, foldersButton { "Folders" };
     juce::TableListBox table { {}, this };
     juce::Label summary;
+    SoundLibraryPreview preview;
+    juce::AudioSourcePlayer previewPlayer;
+    juce::AudioDeviceManager* device = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SoundLibraryView)
 };

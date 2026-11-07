@@ -5032,6 +5032,7 @@ void MainComponent::showSoundLibrary()
         soundLibrary = std::make_unique<SoundLibraryWindow> (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                                                                  .getChildFile ("SpectraBlade").getChildFile ("Sound Library").getChildFile ("Index.sqlite"));
         soundLibrary->getView().onOpen = [this] (const juce::File& file) { openFile (file); };
+        soundLibrary->getView().setAudioDevice (&engine.deviceManager);
         rememberPlace (*soundLibrary, "Sound Library");
     }
 

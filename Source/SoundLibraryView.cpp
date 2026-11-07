@@ -68,7 +68,7 @@ private:
 };
 
 SoundLibraryView::SoundLibraryView (const juce::File& db)
-    : index (db), database (db), scanner (std::make_unique<Scanner> (db))
+    : index (db), database (db), scanner (std::make_unique<Scanner> (db)), preview (db.getSiblingFile ("Parts"))
 {
     search.setTextToShowWhenEmpty ("Search names and descriptions", Theme::dimText);
     Theme::follow (search, juce::TextEditor::backgroundColourId, Theme::inset);
@@ -102,6 +102,10 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
     addAndMakeVisible (summary);
 
     onDragOut = [this] (const juce::StringArray& files) { juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false, this); };
+    preview.onDragOut = [this] (const juce::StringArray& files) { juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false, &preview); };
+    addAndMakeVisible (preview);
+    previewPlayer.setSource (&preview.getPlayer());
+    setWantsKeyboardFocus (true);
 
     if (! index.isOpen())
         scanNote = index.getError();
@@ -112,7 +116,43 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
 
 SoundLibraryView::~SoundLibraryView()
 {
+    setAudioDevice (nullptr);
+    previewPlayer.setSource (nullptr);
     table.removeMouseListener (this);
+}
+
+void SoundLibraryView::setAudioDevice (juce::AudioDeviceManager* manager)
+{
+    if (device != nullptr)
+        device->removeAudioCallback (&previewPlayer);
+
+    device = manager;
+
+    if (device != nullptr)
+        device->addAudioCallback (&previewPlayer);
+}
+
+bool SoundLibraryView::keyPressed (const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress::spaceKey && ! search.hasKeyboardFocus (false))
+    {
+        preview.togglePlay();
+        return true;
+    }
+
+    return false;
+}
+
+void SoundLibraryView::selectedRowsChanged (int lastRowSelected)
+{
+    if (refreshing)
+        return;
+
+    const auto* s = soundAt (lastRowSelected);
+    const auto file = s != nullptr ? s->file : juce::File();
+
+    if (file != preview.getPlayer().getFile())
+        preview.show (file);
 }
 
 bool SoundLibraryView::addFolder (const juce::File& folder)
@@ -180,6 +220,7 @@ void SoundLibraryView::refresh()
     pages.clear();
     rows = index.count (text);
     total = text.isEmpty() ? rows : index.count();
+    const juce::ScopedValueSetter<bool> quiet (refreshing, true);
     table.deselectAllRows();
     table.updateContent();
     table.repaint();
@@ -234,6 +275,7 @@ void SoundLibraryView::timerCallback()
     {
         const auto selected = table.getSelectedRows();
         refresh();
+        const juce::ScopedValueSetter<bool> quiet (refreshing, true);
         table.setSelectedRows (selected, juce::dontSendNotification);
     }
     else
@@ -300,7 +342,7 @@ juce::String SoundLibraryView::getText (int row, int column)
 
 void SoundLibraryView::selectRows (const juce::SparseSet<int>& selected)
 {
-    table.setSelectedRows (selected, juce::dontSendNotification);
+    table.setSelectedRows (selected, juce::sendNotification);
 }
 
 juce::StringArray SoundLibraryView::getSelectedFiles()
@@ -405,6 +447,7 @@ void SoundLibraryView::resized()
     top.removeFromRight (6);
     search.setBounds (top);
     summary.setBounds (r.removeFromBottom (24).reduced (4, 0));
+    preview.setBounds (r.removeFromBottom (juce::jlimit (110, 220, r.getHeight() / 3)));
     table.setBounds (r);
 }
 
