@@ -48,6 +48,42 @@ target_compile_definitions(SpectraBladeLame PRIVATE HAVE_CONFIG_H=1)
 target_compile_options(SpectraBladeLame PRIVATE -w -Wno-implicit-function-declaration)
 set_target_properties(SpectraBladeLame PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
 
+# Signalsmith Stretch (time stretching and pitch shifting) and the Signalsmith Linear FFTs it uses,
+# both MIT-licensed headers, each fetched at its pinned release commit (Stretch 1.4.0, Linear 0.6.4).
+# Use local copies of those releases with -DSPECTRABLADE_STRETCH_DIR and -DSPECTRABLADE_LINEAR_DIR.
+set(SPECTRABLADE_STRETCH_DIR "" CACHE PATH "Local Signalsmith Stretch 1.4.0 (optional)")
+set(SPECTRABLADE_LINEAR_DIR "" CACHE PATH "Local Signalsmith Linear 0.6.4 (optional)")
+
+if(SPECTRABLADE_STRETCH_DIR)
+    set(spectrablade_stretch_src "${SPECTRABLADE_STRETCH_DIR}")
+else()
+    include(FetchContent)
+    FetchContent_Declare(signalsmith_stretch
+        GIT_REPOSITORY https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+        GIT_TAG        a670068d9aeb64913331d5cc29337b19a457a7df
+        SOURCE_SUBDIR  not-built)
+    FetchContent_MakeAvailable(signalsmith_stretch)
+    set(spectrablade_stretch_src "${signalsmith_stretch_SOURCE_DIR}")
+endif()
+
+if(SPECTRABLADE_LINEAR_DIR)
+    set(spectrablade_linear_src "${SPECTRABLADE_LINEAR_DIR}")
+else()
+    include(FetchContent)
+    FetchContent_Declare(signalsmith_linear
+        GIT_REPOSITORY https://github.com/Signalsmith-Audio/linear.git
+        GIT_TAG        de55e6a50ffcf6f8f43f649692d94691c7025151
+        SOURCE_SUBDIR  not-built)
+    FetchContent_MakeAvailable(signalsmith_linear)
+    set(spectrablade_linear_src "${signalsmith_linear_SOURCE_DIR}")
+endif()
+
+# The headers include "signalsmith-linear/stft.h": a folder of that name pointing at Linear.
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/signalsmith-include")
+file(CREATE_LINK "${spectrablade_linear_src}" "${CMAKE_BINARY_DIR}/signalsmith-include/signalsmith-linear" SYMBOLIC)
+add_library(SpectraBladeStretch INTERFACE)
+target_include_directories(SpectraBladeStretch SYSTEM INTERFACE "${spectrablade_stretch_src}" "${CMAKE_BINARY_DIR}/signalsmith-include")
+
 juce_add_gui_app(SpectraBlade
     PRODUCT_NAME                 "SpectraBlade"
     COMPANY_NAME                 "SpectraBlade"
@@ -181,6 +217,7 @@ juce_add_binary_data(SpectraBladeArt SOURCES Art/spectrablade-banner.png ThirdPa
 target_link_libraries(SpectraBlade PRIVATE
     SpectraBladeArt
     SpectraBladeLame
+    SpectraBladeStretch
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp
@@ -364,6 +401,7 @@ target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_APP_EXECUTABLE
 target_link_libraries(SpectraBladeTests PRIVATE
     SpectraBladeArt
     SpectraBladeLame
+    SpectraBladeStretch
     juce::juce_audio_utils
     juce::juce_audio_processors
     juce::juce_dsp

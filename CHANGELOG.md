@@ -4,6 +4,18 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 289: Stretching that doesn't stutter**
+- Stretch, Shift Pitch, stretching session clips (by menu or by Option-dragging) and the Stretch and Shift Pitch sequence steps now use Signalsmith Stretch 1.4.0 (MIT licence), a phase vocoder, instead of our WSOLA, which repeated or dropped 40 ms pieces of the audio. The library and the Signalsmith Linear 0.6.4 FFTs it uses are fetched at their release commits; their licences go into the disk image.
+- Measured on test signals, WSOLA against the new stretch:
+  - A click every 250 ms (16 in 4 s): WSOLA turned them into 26 at 200% and 11 at 50%. The new stretch keeps 16 at every length from 50% to 200%, each within 5 ms of where it belongs. This was the stutter.
+  - A four-note chord: energy more than 6 Hz from the notes was about -31 dB at every length with WSOLA. With the new stretch it is -44 to -52 dB at 50%, 75%, 90% and 110%, -39 dB at 200%, and still about -31 dB at 125% and 150%. There it sits within 30 Hz of the notes (a slow wobble on each note, as with WSOLA); further from the notes it is -64.5 dB (WSOLA -56.5 dB).
+  - 60 s of dense stereo: 0.16 s to stretch to 50%, 0.63 s to 200%.
+- The ends of a whole clip or file are padded with the audio turned through its end sample, so the level holds to the edges: off by at most 0.061 on a 0.5 tone from 50% to 200% (a plain mirror image was off by up to 0.62 at 200%).
+- Channels are no longer bit-for-bit mirrors of each other when the input's are. They stay within 0.001 (anti-phase tone), and the test says so.
+- Shift Pitch moves formants with the pitch, as before.
+- Measured by the tests: the click train; the tone's length, pitch (within 0.5%), level (within 1 dB) and edges; pitch shifts within 0.5%; the joins in a file; progress and stopping. The whole suite passed (1341 checks).
+- Not tried by hand: stretching or shifting real recordings and listening to them. The library's own notes say it sounds best between 75% and 150%.
+
 **Milestone 288: The rest of the effect dialogs, and factory presets**
 - Every settings dialog in the Effects menu now uses the new effect dialog: Meet Delivery Spec, Generate DTMF Tones, Noise Gate, Shorten Pauses, Trim Silence, Insert Silence, Fade Selection Edges, Fade Each Region, Normalize Each Region, Crossfade Loop and Attenuate Frequencies. So do the silence finders (Find Next Silence, Add Markers at Silences, Add Regions over Sounds), and Clip Gain and Normalize Clip in the multitrack view.
   - A new kind of field, a text field, takes DTMF digits and Insert Silence's length typed as 1:30. The silence finders now take their time in seconds, on a slider, instead of as typed text.

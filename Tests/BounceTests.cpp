@@ -119,11 +119,11 @@ namespace
             found << juce::String (ratio, 2) << "x: " << juce::String (f, 2) << " Hz, " << juce::String (juce::Decibels::gainToDecibels (rms), 2) << " dBFS; ";
 
             for (int i = 0; i < n && inStep; ++i)
-                inStep = juce::exactlyEqual (out.getSample (1, i), -out.getSample (0, i));
+                inStep = std::abs (out.getSample (1, i) + out.getSample (0, i)) < 1.0e-3f;
         }
 
         check (lengthsRight && pitchKept && levelKept && inStep,
-               "time stretch: lengths from 50% to 200%, a 440 Hz tone's pitch within 0.5% and level within 1 dB, channels cut in step ("
+               "time stretch: lengths from 50% to 200%, a 440 Hz tone's pitch within 0.5% and level within 1 dB, channels in step (opposite channels within 0.001 of opposite) ("
                    + found.trimEnd() + " input " + juce::String (inputFrequency, 2) + " Hz)");
 
         const auto started = juce::Time::getMillisecondCounterHiRes();
@@ -157,7 +157,7 @@ namespace
             auto inverse = true;
 
             for (int i = 0; i < n && inverse; ++i)
-                inverse = juce::exactlyEqual (out.getSample (1, i), -out.getSample (0, i));
+                inverse = std::abs (out.getSample (1, i) + out.getSample (0, i)) < 1.0e-3f;
 
             shiftsRight = shiftsRight && n == length && std::abs (f / wanted - 1.0) < 0.005 && inverse
                           && std::abs (juce::Decibels::gainToDecibels (rms / (0.5f / std::sqrt (2.0f)))) < 1.0f;
@@ -167,8 +167,61 @@ namespace
 
         auto shiftCalls = 0;
         check (shiftsRight && TimeStretch::shiftPitch (tone, 5.0, rate, [&shiftCalls] (float) { return ++shiftCalls < 2; }).getNumSamples() == 0,
-               "pitch shift: the same length, a 440 Hz tone within 0.5% of each shifted pitch and within 1 dB, channels in step, and cancelling ("
+               "pitch shift: the same length, a 440 Hz tone within 0.5% of each shifted pitch and within 1 dB, channels in step (within 0.001), and cancelling ("
                    + shifted.trimEnd() + ")");
+
+        // Attacks: a click every 250 ms comes out once each, where the stretch puts it (WSOLA, before,
+        // doubled ten of 16 clicks at 200% and lost five at 50%).
+        {
+            juce::AudioBuffer<float> clicks (2, 192000);
+            clicks.clear();
+            std::vector<double> at;
+
+            for (int t = 6000; t + 200 < clicks.getNumSamples(); t += 12000)
+            {
+                at.push_back (t);
+
+                for (int i = 0; i < 96; ++i)
+                {
+                    const auto v = 0.8f * std::sin (juce::MathConstants<float>::twoPi * 3000.0f * (float) i / (float) rate) * std::exp (-(float) i / 24.0f);
+                    clicks.setSample (0, i + t, v);
+                    clicks.setSample (1, i + t, v);
+                }
+            }
+
+            auto clicksKept = true;
+            juce::String clickCounts;
+
+            for (auto ratio : { 0.5, 0.75, 1.25, 1.5, 2.0 })
+            {
+                const auto out = TimeStretch::stretch (clicks, ratio, rate);
+                const auto* x = out.getReadPointer (0);
+                const auto loudest = out.getMagnitude (0, 0, out.getNumSamples());
+                std::vector<int> onsets;
+                auto above = false;
+
+                for (int i = 0; i < out.getNumSamples(); ++i)
+                {
+                    const auto a = std::abs (x[i]) > 0.1f * loudest;
+
+                    if (a && ! above && (onsets.empty() || i - onsets.back() > (int) (0.04 * rate)))
+                        onsets.push_back (i);
+
+                    above = a;
+                }
+
+                auto placed = onsets.size() == at.size();
+
+                for (size_t k = 0; k < onsets.size() && placed; ++k)
+                    placed = std::abs ((double) onsets[k] - at[k] * ratio) < 0.005 * rate;
+
+                clicksKept = clicksKept && placed;
+                clickCounts << juce::String (ratio, 2) << "x: " << (int) onsets.size() << "; ";
+            }
+
+            check (clicksKept, "time stretch: 16 clicks stay 16 from 50% to 200%, each within 5 ms of where the stretch puts it ("
+                                   + clickCounts.trimEnd() + ")");
+        }
 
         // On a clip: the part it plays, its fades scaled, and not when locked.
         SessionState s;
@@ -446,7 +499,9 @@ namespace
                    && tooLong.isNotEmpty() && tooHigh.isNotEmpty() && stretch.name() == "Stretch to 150.0%" && pitch.name() == "Shift Pitch +2.00 Semitones"
                    && run.error.isEmpty() && run.end == 120000 && gainOnStretched,
                "stretch and shift pitch as sequence steps: the range and markers follow the new length (so a step after acts on the stretched "
-               "part), nothing at 100% or 0 semitones, out-of-range settings refused, and stopping part way changes nothing");
+               "part), nothing at 100% or 0 semitones, out-of-range settings refused, and stopping part way changes nothing (peaks after -6 dB: "
+                   + juce::String (ran.getMagnitude (0, 60000, 48000), 4) + " inside, " + juce::String (ran.getMagnitude (0, 0, 48000), 4) + " and "
+                   + juce::String (ran.getMagnitude (0, 121000, 47000), 4) + " outside; stopping: \"" + stopped.error + "\")");
     }
 }
 

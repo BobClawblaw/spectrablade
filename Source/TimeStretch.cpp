@@ -1,158 +1,136 @@
 #include "TimeStretch.h"
-#include "SampleRateConverter.h"
+#include <signalsmith-stretch.h>
 
 namespace TimeStretch
 {
-int frameLength (double sampleRate)
+namespace
 {
-    const auto wanted = juce::jmax (64.0, sampleRate * 0.04);
-    return 1 << juce::roundToInt (std::log2 (wanted));
+    using Stretcher = signalsmith::stretch::SignalsmithStretch<float>;
+
+    /** Every channel of the input with `pad` samples either side, carried on past each end as its
+        image turned through the end sample (2 x[0] - x[i] before, likewise after): the waveform's
+        slope carries on through the end, so the stretcher starts and ends inside sound that
+        continues smoothly and the output keeps its level to its edges (a plain mirror turns the
+        slope back, and the stretcher smears that kink into the audio kept). */
+    juce::AudioBuffer<float> reflected (const juce::AudioBuffer<float>& input, int pad)
+    {
+        const auto length = input.getNumSamples();
+        juce::AudioBuffer<float> padded (input.getNumChannels(), length + 2 * pad);
+
+        for (int ch = 0; ch < input.getNumChannels(); ++ch)
+        {
+            const auto* in = input.getReadPointer (ch);
+            auto* out = padded.getWritePointer (ch);
+            std::copy (in, in + length, out + pad);
+
+            for (int i = 1; i <= pad; ++i)
+            {
+                out[pad - i] = 2.0f * in[0] - in[juce::jmin (i, length - 1)];
+                out[pad + length - 1 + i] = 2.0f * in[length - 1] - in[juce::jmax (length - 1 - i, 0)];
+            }
+        }
+
+        return padded;
+    }
+
+    /** The input (ratio within shortest to longest) to round (length * ratio) samples, through a
+        stretcher already set up for its pitch. As the library's exact(), but in pieces so progress
+        hears how far it is and can stop it (an empty buffer then). */
+    juce::AudioBuffer<float> run (Stretcher& stretcher, const juce::AudioBuffer<float>& input, double ratio,
+                                  const std::function<bool (float)>& progress)
+    {
+        const auto channels = input.getNumChannels();
+        const auto length = input.getNumSamples();
+        const auto outLength = (int) std::llround ((double) length * ratio);
+        juce::AudioBuffer<float> out (channels, outLength);
+        out.clear();
+
+        if (length == 0 || outLength == 0 || channels == 0)
+            return out;
+
+        // The library needs some input before its first output: a little more than its seek
+        // length, reflected either side, cut away again afterwards.
+        const auto playbackRate = 1.0f / (float) ratio;
+        const auto pad = stretcher.outputSeekLength (playbackRate) + stretcher.blockSamples();
+        const auto padded = reflected (input, pad);
+        const auto inTotal = padded.getNumSamples();
+        const auto outTotal = (int) std::llround ((double) inTotal * ratio);
+        const auto rate = (float) inTotal / (float) outTotal;
+        const auto seek = stretcher.outputSeekLength (rate);
+        juce::AudioBuffer<float> whole (channels, outTotal);
+        whole.clear();
+
+        const auto inputsFrom = [&padded] (int offset)
+        {
+            std::vector<const float*> p;
+
+            for (int ch = 0; ch < padded.getNumChannels(); ++ch)
+                p.push_back (padded.getReadPointer (ch) + offset);
+
+            return p;
+        };
+
+        const auto outputsFrom = [&whole] (int offset)
+        {
+            std::vector<float*> p;
+
+            for (int ch = 0; ch < whole.getNumChannels(); ++ch)
+                p.push_back (whole.getWritePointer (ch) + offset);
+
+            return p;
+        };
+
+        stretcher.outputSeek (inputsFrom (0), seek);
+        const auto outputEnd = outTotal - (int) ((float) seek / rate);
+        const auto inputCount = inTotal - seek;
+
+        // 8192 samples of output at a time (a sixth of a second at 48 kHz), so stopping is soon
+        // heard; the input to each piece in proportion.
+        const auto pieces = juce::jmax (1, outputEnd / 8192);
+
+        for (int k = 0; k < pieces; ++k)
+        {
+            if (progress != nullptr && ! progress ((float) k / (float) pieces))
+                return {};
+
+            const auto inFrom = (int) ((juce::int64) inputCount * k / pieces), inTo = (int) ((juce::int64) inputCount * (k + 1) / pieces);
+            const auto outFrom = (int) ((juce::int64) outputEnd * k / pieces), outTo = (int) ((juce::int64) outputEnd * (k + 1) / pieces);
+            stretcher.process (inputsFrom (seek + inFrom), inTo - inFrom, outputsFrom (outFrom), outTo - outFrom);
+        }
+
+        stretcher.flush (outputsFrom (outputEnd), outTotal - outputEnd, rate);
+
+        // The part that came from the input itself.
+        const auto first = juce::jlimit (0, outTotal - outLength, (int) std::llround ((double) pad * ratio));
+
+        for (int ch = 0; ch < channels; ++ch)
+            out.copyFrom (ch, 0, whole, ch, first, outLength);
+
+        return out;
+    }
+
+    void setUp (Stretcher& stretcher, int channels, double sampleRate)
+    {
+        stretcher.presetDefault (channels, (float) sampleRate);
+    }
 }
 
 juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate,
                                   const std::function<bool (float)>& progress)
 {
     ratio = juce::jlimit (shortest, longest, ratio);
-    const auto channels = input.getNumChannels();
-    const auto inLength = input.getNumSamples();
-    const auto outLength = (int) std::llround ((double) inLength * ratio);
-    juce::AudioBuffer<float> out (channels, outLength);
-    out.clear();
-
-    if (inLength == 0 || outLength == 0 || channels == 0)
-        return out;
-
-    const auto n = frameLength (sampleRate);
-    const auto synthesisHop = n / 2;
-    const auto tolerance = n / 4;
-
-    // Every channel carried on past either end as its mirror image, wide enough for any frame
-    // that is looked at: frames there read sound that carries on smoothly rather than silence, so
-    // the output keeps its level up to its edges without jumping. Frames are matched by the sum
-    // over channels of their products, so channels out of phase with each other don't cancel.
-    const auto pad = n + tolerance + (int) std::ceil ((double) synthesisHop / ratio) + 2;
-    std::vector<std::vector<float>> padded ((size_t) channels, std::vector<float> ((size_t) (inLength + 2 * pad), 0.0f));
-    const auto mirrored = [inLength] (int i)
-    {
-        for (;;)
-        {
-            if (i < 0)
-                i = -i;
-            else if (i >= inLength)
-                i = 2 * (inLength - 1) - i;
-            else
-                return i;
-
-            if (inLength == 1)
-                return 0;
-        }
-    };
-
-    for (int ch = 0; ch < channels; ++ch)
-        for (int i = -pad; i < inLength + pad; ++i)
-            padded[(size_t) ch][(size_t) (i + pad)] = input.getSample (ch, mirrored (i));
-
-    const auto similarity = [&] (int a, int b)
-    {
-        auto sum = 0.0;
-
-        if (juce::jmin (a, b) + pad < 0 || juce::jmax (a, b) + n + pad > inLength + 2 * pad)
-            return sum;
-
-        for (auto& x : padded)
-            for (int i = 0; i < n; i += 2)
-                sum += (double) x[(size_t) (a + pad + i)] * (double) x[(size_t) (b + pad + i)];
-
-        return sum;
-    };
-
-    std::vector<float> window ((size_t) n);
-
-    for (int i = 0; i < n; ++i)
-        window[(size_t) i] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) n);
-
-    std::vector<float> weight ((size_t) outLength, 0.0f);
-    auto previous = 0;   // where the last frame was taken from in the input
-
-    for (auto k = 0;; ++k)
-    {
-        const auto outStart = k * synthesisHop - synthesisHop;   // the first frame starts half a frame early
-
-        if (outStart >= outLength)
-            break;
-
-        if (progress != nullptr && k % 64 == 0 && ! progress ((float) juce::jmax (0, outStart) / (float) outLength))
-            return {};
-
-        const auto nominal = (int) std::llround ((double) outStart / ratio);
-        auto chosen = nominal;
-
-        if (k > 0)
-        {
-            // The frame that would naturally follow the last one, and the candidate around the
-            // nominal place that matches it best (over every other sample, for speed).
-            const auto natural = previous + synthesisHop;
-            auto best = -std::numeric_limits<double>::infinity();
-
-            for (auto delta = -tolerance; delta <= tolerance; ++delta)
-            {
-                const auto candidate = nominal + delta;
-                const auto sum = similarity (natural, candidate);
-
-                if (sum > best)
-                {
-                    best = sum;
-                    chosen = candidate;
-                }
-            }
-        }
-
-        for (int i = 0; i < n; ++i)
-        {
-            const auto o = outStart + i, from = chosen + i;
-
-            if (o < 0 || o >= outLength || from + pad < 0 || from + pad >= inLength + 2 * pad)
-                continue;
-
-            weight[(size_t) o] += window[(size_t) i];
-
-            for (int ch = 0; ch < channels; ++ch)
-                out.getWritePointer (ch)[o] += window[(size_t) i] * padded[(size_t) ch][(size_t) (from + pad)];
-        }
-
-        previous = chosen;
-    }
-
-    for (int o = 0; o < outLength; ++o)
-        if (weight[(size_t) o] > 1.0e-3f)
-            for (int ch = 0; ch < channels; ++ch)
-                out.getWritePointer (ch)[o] /= weight[(size_t) o];
-
-    return out;
+    Stretcher stretcher;
+    setUp (stretcher, juce::jmax (1, input.getNumChannels()), sampleRate);
+    return run (stretcher, input, ratio, progress);
 }
 
 juce::AudioBuffer<float> shiftPitch (const juce::AudioBuffer<float>& input, double semitones, double sampleRate,
                                      const std::function<bool (float)>& progress)
 {
-    // Longer by the pitch ratio, then played that much faster: higher by it, and as long as before.
-    const auto ratio = std::pow (2.0, juce::jlimit (-widestShift, widestShift, semitones) / 12.0);
-    const auto part = [&progress] (float from, float to)
-    {
-        return [&progress, from, to] (float p) { return progress == nullptr || progress (from + (to - from) * p); };
-    };
-
-    const auto stretched = stretch (input, ratio, sampleRate, part (0.0f, 0.7f));
-    juce::AudioBuffer<float> out;
-
-    if (stretched.getNumSamples() == 0 && input.getNumSamples() > 0)
-        return {};
-
-    if (! SampleRateConverter::convert (stretched, sampleRate * ratio, sampleRate, out, part (0.7f, 1.0f)))
-        return {};
-
-    // The converter rounds its length up: exactly the input's length, as silence if short.
-    out.setSize (out.getNumChannels(), input.getNumSamples(), true, true);
-    return out;
+    Stretcher stretcher;
+    setUp (stretcher, juce::jmax (1, input.getNumChannels()), sampleRate);
+    stretcher.setTransposeSemitones ((float) juce::jlimit (-widestShift, widestShift, semitones));
+    return run (stretcher, input, 1.0, progress);
 }
 
 namespace

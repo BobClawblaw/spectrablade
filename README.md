@@ -124,7 +124,7 @@ cmake --build build -j 12
 open build/SpectraBlade_artefacts/Release/SpectraBlade.app
 ```
 
-CMake fetches JUCE 9.0.4 and LAME 4.0 (checked against its SHA-256) by itself. To use a local copy instead, add `-DSPECTRABLADE_JUCE_DIR=/path/to/JUCE` or `-DSPECTRABLADE_LAME_DIR=/path/to/lame-4.0`.
+CMake fetches JUCE 9.0.4, LAME 4.0 (checked against its SHA-256) and Signalsmith Stretch 1.4.0 with Signalsmith Linear 0.6.4 (each at its release commit) by itself. To use a local copy instead, add `-DSPECTRABLADE_JUCE_DIR=/path/to/JUCE`, `-DSPECTRABLADE_LAME_DIR=/path/to/lame-4.0`, `-DSPECTRABLADE_STRETCH_DIR=/path/to/signalsmith-stretch` or `-DSPECTRABLADE_LINEAR_DIR=/path/to/signalsmith-linear`.
 
 ## Packaging
 
@@ -132,7 +132,7 @@ CMake fetches JUCE 9.0.4 and LAME 4.0 (checked against its SHA-256) by itself. T
 Scripts/package.sh
 ```
 
-This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app, `LICENSE.txt` and LAME's licence as `LAME-LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
+This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app, `LICENSE.txt`, LAME's licence as `LAME-LICENSE.txt`, and Signalsmith Stretch's and Signalsmith Linear's as `SIGNALSMITH-STRETCH-LICENSE.txt` and `SIGNALSMITH-LINEAR-LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
 
 To check a disk image's app on its own, mount it and point the tests at it:
 
@@ -150,7 +150,7 @@ They cover editing and undo bit for bit, every effect, file formats, plug-in sca
 
 ## Licence
 
-SpectraBlade is licensed under the GNU Affero General Public License, version 3; the full text is in `LICENSE`. JUCE is dual-licensed under the AGPLv3 or a commercial JUCE licence, and SpectraBlade uses it under the AGPLv3. The Sound Library's categories are the Universal Category System's list, v8.2.1 (universalcategorysystem.com, a public domain initiative), converted by `Scripts/ucs_convert.py` into `ThirdParty/UCS/`. The MP3 encoder is LAME 4.0's library (LGPL 2 or later), fetched from its pinned source release and built into the app. Anyone who passes on the app, changed or not, must offer its source code under the same licence.
+SpectraBlade is licensed under the GNU Affero General Public License, version 3; the full text is in `LICENSE`. JUCE is dual-licensed under the AGPLv3 or a commercial JUCE licence, and SpectraBlade uses it under the AGPLv3. The Sound Library's categories are the Universal Category System's list, v8.2.1 (universalcategorysystem.com, a public domain initiative), converted by `Scripts/ucs_convert.py` into `ThirdParty/UCS/`. The MP3 encoder is LAME 4.0's library (LGPL 2 or later), fetched from its pinned source release and built into the app. Stretch, Shift Pitch and stretching clips use Signalsmith Stretch 1.4.0 and the Signalsmith Linear 0.6.4 FFTs (both MIT licence, Signalsmith Audio), fetched at their release commits and built into the app. Anyone who passes on the app, changed or not, must offer its source code under the same licence.
 
 `Scripts/package.sh` signs the app ad hoc, without the hardened runtime, so it loads any plug-in's code. Releases are not signed with a Developer ID and are not notarized, so Gatekeeper asks the first time the app is opened (see [Download and install](#download-and-install)). The CMake target still asks for the hardened runtime with `disable-library-validation` (which third-party plug-ins need), which takes effect for anyone who builds and signs it with their own Developer ID.
 
