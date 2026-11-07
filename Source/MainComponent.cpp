@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1208,7 +1208,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdMeetDeliverySpec; ++id)
+    for (int id = cmdOpen; id <= cmdShowSoundLibrary; ++id)
         ids.add (id);
 }
 
@@ -1467,6 +1467,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (openFiles.size() > 1 && ! isRecording()); break;
         case cmdShowSelectionPanel: info.setInfo ("Selection/View", "Show or hide the panel with the selection's and the view's start, end and length", "Window", 0);
                             info.setTicked (dock->isShown (Panels::selection)); break;
+        case cmdShowSoundLibrary: info.setInfo ("Sound Library", "Show the Sound Library: the sounds in the folders you choose, to search, "
+                                                                 "and drag into the multitrack view, the editor or other apps", "Window", 0); break;
         case cmdSaveWorkspace: info.setInfo ("Save Workspace As...", "Keep the panels as they are now as a workspace of your own", "Window", 0); break;
         case cmdResetWorkspace: info.setInfo ("Reset Workspace", "Put the current workspace's panels back as it was saved", "Window", 0); break;
         case cmdDeleteWorkspace: info.setInfo ("Delete Workspace...", "Delete the current workspace (the built-in ones can't be deleted)", "Window", 0);
@@ -2190,6 +2192,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNextFile:   switchToFile ((openFiles.getActiveIndex() + 1) % openFiles.size()); break;
         case cmdPreviousFile: switchToFile ((openFiles.getActiveIndex() + openFiles.size() - 1) % openFiles.size()); break;
         case cmdShowSelectionPanel: dock->toggle (Panels::selection); break;
+        case cmdShowSoundLibrary: showSoundLibrary(); break;
         case cmdSaveWorkspace: askToSaveWorkspace(); break;
         case cmdResetWorkspace: resetWorkspace(); break;
         case cmdDeleteWorkspace: askToDeleteWorkspace(); break;
@@ -2501,7 +2504,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
 
             juce::PopupMenu workspaceMenu;
 
@@ -5019,6 +5022,21 @@ void MainComponent::runBatch (const juce::Array<juce::File>& files, const Batch:
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
+}
+
+void MainComponent::showSoundLibrary()
+{
+    if (soundLibrary == nullptr)
+    {
+        // The index lives with the app's settings; only folders added in the window are scanned.
+        soundLibrary = std::make_unique<SoundLibraryWindow> (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                                                                 .getChildFile ("SpectraBlade").getChildFile ("Sound Library").getChildFile ("Index.sqlite"));
+        soundLibrary->getView().onOpen = [this] (const juce::File& file) { openFile (file); };
+        rememberPlace (*soundLibrary, "Sound Library");
+    }
+
+    soundLibrary->setVisible (true);
+    soundLibrary->toFront (true);
 }
 
 void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes, const juce::File& deliveryReport)

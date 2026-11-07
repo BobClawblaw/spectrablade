@@ -4,6 +4,15 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 280: Sound Library window**
+- Window > Sound Library opens the Sound Library in a window of its own, which reopens where it was left (on any screen); closing it hides it, and a scan goes on.
+- It scans only the folders you choose: it starts with none and says so, Add Folder... adds one (scanning it at once), and the Folders menu rescans them all, removes one or shows it in the Finder. A folder that is missing, already there, or inside or around one that is, is refused, saying why.
+- Scans run on a thread of their own, the table following them every 2 seconds and the line below counting the files looked at, then saying what the scan added, updated, removed and couldn't read.
+- The table lists the sounds a page at a time from the index (so a million rows scroll like ten): name, length, rate, channels, bits, format, folder and BWF description, sorted by clicking a header. The search box narrows it to the sounds with every word typed at the start of a word of their name or description.
+- Dragging selected rows carries their files out as a file drag, as from the Finder: into the multitrack view (onto a track, at a time) or the editor of the main window, the Finder or another app. Double-clicking a row opens the sound in the editor.
+- The index is kept with the app's settings, in Application Support.
+- Measured by the tests: with no folders the window scans nothing and says to add one; a missing folder is refused, saying why; an added folder is scanned on the scanning thread and its 10 sounds listed ("10 sounds in 1 folder. Last scan: 10 added, 0 updated, 0 removed"); "creak" shows one row reading 0.50 s, 48 kHz, 2 channels, 24 bits, WAV, its folder and description; sorted by length the longest (1.27 s) comes first, and by rate 44.1, 96 and 192 kHz in order; a drag starting on one of 3 selected rows hands those 3 files out once it has moved 6 pixels, and one starting on a row not selected hands out nothing; Rescan adds a new file; removing the folder empties the list. The whole suite passed (1290 checks). Not tried: the window in the running app (opening it, its place kept, the Add Folder chooser and Folders menu), and dropping dragged sounds with a real mouse into the main window, the Finder or another app.
+
 **Milestone 279: Sound Library index**
 - The groundwork for the Sound Library, with nothing to see in the app yet: the window that uses it is the next milestone.
 - An SQLite index (the one built into macOS, with its full-text search) of the audio files in the folders you choose to watch, and only those: it starts with none and never picks a folder itself. A folder inside or around one already watched is refused.

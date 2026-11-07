@@ -32,6 +32,7 @@
 #include "EditorBar.h"
 #include "PitchEditor.h"
 #include "Delivery.h"
+#include "SoundLibraryView.h"
 
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
@@ -174,6 +175,10 @@ private:
     void batchProcess();
     void askForBatchSettings (const juce::Array<juce::File>&);
     void runBatch (const juce::Array<juce::File>&, const Batch::Settings&);
+    /** Shows the Sound Library window (making it the first time), or brings it to the front. */
+    void showSoundLibrary();
+    std::unique_ptr<SoundLibraryWindow> soundLibrary;
+
     void showBatchReport (const std::vector<Batch::Outcome>&, const juce::File& deliveryReport = {});
 
     // Recorded command sequences

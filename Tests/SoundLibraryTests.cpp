@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../Source/SoundLibrary.h"
+#include "../Source/SoundLibraryView.h"
 #include "TestUtils.h"
 #include "SoundLibraryTests.h"
 
@@ -201,12 +202,104 @@ namespace
     }
 }
 
+namespace
+{
+    juce::MouseEvent mouseAt (juce::Component& on, juce::Point<float> at, juce::Point<float> down)
+    {
+        return { juce::Desktop::getInstance().getMainMouseSource(), at, {}, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, &on, &on,
+                 juce::Time::getCurrentTime(), down, juce::Time::getCurrentTime(), 1, at != down };
+    }
+
+    void testView (const juce::File& dir)
+    {
+        const auto library = dir.getChildFile ("View Library");
+        writeWav (library.getChildFile ("Doors/DOORWood_Creak Old Barn_JD_SFX.wav"), 24000, 48000.0, 2, 24, "Old barn door creaking slowly");
+        writeWav (library.getChildFile ("Doors/DOORMetal_Slam Heavy_JD_SFX.wav"), 12000, 96000.0, 1, 16);
+        writeWav (library.getChildFile ("Doors/DOORMetal_Latch_JD_SFX.wav"), 12000, 192000.0, 1, 24);
+
+        for (int i = 0; i < 7; ++i)
+            writeWav (library.getChildFile ("Rooms/AMBRoom_Tone " + juce::String (i + 1) + ".wav"), 2000 + 9000 * i, 44100.0);
+
+        SoundLibraryView view (dir.getChildFile ("view/Index.sqlite"));
+        view.setSize (1000, 500);
+        const auto empty = view.getNumRows() == 0 && view.getSummary().startsWith ("No folders yet") && view.getFolders().isEmpty();
+        const auto refused = ! view.addFolder (dir.getChildFile ("Nowhere")) && view.getSummary().contains ("isn't a folder");
+        const auto added = view.addFolder (library);
+        const auto scanned = TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+        check (empty && refused && added && scanned && view.getNumRows() == 10
+                   && view.getSummary() == "10 sounds in 1 folder. Last scan: 10 added, 0 updated, 0 removed",
+               "sound library window: with no folders it scans nothing and says to add one; a missing folder is refused, saying why; an "
+               "added one is scanned on its own thread and its 10 sounds listed (\"" + view.getSummary() + "\")");
+
+        view.setSearch ("creak");
+        const auto oneRow = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::name) == "DOORWood_Creak Old Barn_JD_SFX"
+                            && view.getText (0, SoundLibraryView::length) == "0.50 s" && view.getText (0, SoundLibraryView::rate) == "48 kHz"
+                            && view.getText (0, SoundLibraryView::channels) == "2" && view.getText (0, SoundLibraryView::bits) == "24"
+                            && view.getText (0, SoundLibraryView::format) == "WAV" && view.getText (0, SoundLibraryView::location) == "View Library/Doors"
+                            && view.getText (0, SoundLibraryView::description) == "Old barn door creaking slowly"
+                            && view.getSummary().startsWith ("1 of 10 sounds match");
+        view.setSearch ({});
+        view.setSort (SoundLibraryView::length, false);
+        const auto longest = view.getText (0, SoundLibraryView::name) == "AMBRoom_Tone 7" && view.getText (0, SoundLibraryView::length) == "1.27 s";
+        view.setSort (SoundLibraryView::rate, true);
+        const auto slowest = view.getText (0, SoundLibraryView::rate) == "44.1 kHz" && view.getText (8, SoundLibraryView::rate) == "96 kHz"
+                             && view.getText (9, SoundLibraryView::rate) == "192 kHz";
+        check (oneRow && longest && slowest,
+               "sound library window: \"creak\" shows the one sound with its length, rate, channels, bits, format, folder and "
+               "description; sorted by length the longest comes first, by rate the slowest (44.1, 96 and 192 kHz written so)");
+
+        // Dragging from a selected row carries the selected files out; from another row, nothing.
+        juce::StringArray dragged;
+        int drags = 0;
+        view.onDragOut = [&] (const juce::StringArray& files) { dragged = files; ++drags; };
+        juce::SparseSet<int> rows;
+        rows.addRange ({ 0, 3 });
+        view.selectRows (rows);
+        juce::Component* list = nullptr;
+        auto& asComponent = static_cast<juce::Component&> (view);
+
+        for (auto* c : view.getChildren())
+            if (dynamic_cast<juce::TableListBox*> (c) != nullptr)
+                list = c;
+
+        auto& t = *dynamic_cast<juce::TableListBox*> (list);
+        const auto rowY = [&t] (int row) { return (float) (t.getHeader().getHeight() + row * t.getRowHeight() + t.getRowHeight() / 2); };
+        const juce::Point<float> onRow1 { 100.0f, rowY (1) }, onRow5 { 100.0f, rowY (5) };
+        asComponent.mouseDown (mouseAt (t, onRow1, onRow1));
+        asComponent.mouseDrag (mouseAt (t, onRow1 + juce::Point<float> (3.0f, 0.0f), onRow1));
+        const auto notYet = drags == 0;
+        asComponent.mouseDrag (mouseAt (t, onRow1 + juce::Point<float> (40.0f, 30.0f), onRow1));
+        asComponent.mouseDrag (mouseAt (t, onRow1 + juce::Point<float> (80.0f, 60.0f), onRow1));
+        const auto once = drags == 1 && dragged.size() == 3 && dragged == view.getSelectedFiles();
+        auto exist = true;
+
+        for (auto& f : dragged)
+            exist = exist && juce::File (f).existsAsFile() && juce::File (f).isAChildOf (library);
+
+        asComponent.mouseDown (mouseAt (t, onRow5, onRow5));
+        asComponent.mouseDrag (mouseAt (t, onRow5 + juce::Point<float> (40.0f, 30.0f), onRow5));
+        check (notYet && once && exist && drags == 1,
+               "sound library window: a drag from a selected row carries the 3 selected files out once it has moved 6 pixels (once per "
+               "drag); one starting on a row not selected carries nothing");
+
+        // A rescan finds what changed; removing the folder empties it.
+        writeWav (library.getChildFile ("Doors/DOORGlass_Shatter_JD_SFX.wav"), 5000);
+        view.rescan();
+        const auto rescanned = TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("1 added"); }, 20000);
+        const auto eleven = view.getNumRows() == 11;
+        const auto removed = view.removeFolder (library);
+        check (rescanned && eleven && removed && view.getNumRows() == 0 && view.getSummary().startsWith ("No folders yet"),
+               "sound library window: Rescan adds a new file (11 sounds); removing the folder takes them all out");
+    }
+}
+
 void runSoundLibraryTests()
 {
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("SoundLibraryTests", {}, false);
     dir.createDirectory();
     testWords();
     testScan (dir);
+    testView (dir);
     testLarge (dir);
     dir.deleteRecursively();
 }

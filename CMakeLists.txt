@@ -92,6 +92,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Loudness.cpp
     Source/Delivery.cpp
     Source/SoundLibrary.cpp
+    Source/SoundLibraryView.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp
@@ -270,6 +271,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Loudness.cpp
     Source/Delivery.cpp
     Source/SoundLibrary.cpp
+    Source/SoundLibraryView.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp
