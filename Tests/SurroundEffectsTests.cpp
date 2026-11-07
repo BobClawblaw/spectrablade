@@ -50,15 +50,17 @@ namespace
         return std::make_shared<const AudioSnapshot> (count, std::move (segments));
     }
 
-    /** One track playing a clip at frame 300 with no fades: a 5.1 track in a 5.1 master, or with
-        stereo audio a stereo track in a stereo master. */
+    /** One track playing a clip at frame 300 with no fades: a 5.1 (or 7.1) track in a 5.1 (or 7.1)
+        master, or with stereo audio a stereo track in a stereo master. */
     SessionState session (AudioDocument::Snapshot audio)
     {
         SessionState s;
         s.sampleRate = rate;
-        s.surround = audio->getNumChannels() == 6;
+        s.surround = audio->getNumChannels() == 6 || audio->getNumChannels() == 8;
+        s.sevenOne = audio->getNumChannels() == 8;
         auto& t = s.addTrack();
-        t.fiveOne = s.surround;
+        t.fiveOne = audio->getNumChannels() == 6;
+        t.sevenOne = s.sevenOne;
         SessionClip c;
         c.id = s.nextId++;
         c.audio = std::move (audio);
@@ -70,7 +72,7 @@ namespace
 
     juce::AudioBuffer<float> render (const SessionState& s, int blockSize, SessionMixer::Inserts* inserts)
     {
-        const auto channels = s.surround ? 6 : 2;
+        const auto channels = s.masterChannels();
         juce::AudioBuffer<float> out (channels, frames);
         SessionMixer::Buffers buffers;
         buffers.reserve (blockSize);
@@ -79,13 +81,13 @@ namespace
 
         if (inserts != nullptr)
         {
-            std::set<juce::uint32> wide;
+            std::map<juce::uint32, int> wide;
 
             for (auto& t : s.tracks)
-                if (t.fiveOne)
-                    wide.insert (t.id);
+                if (t.isWide())
+                    wide[t.id] = t.wideChannels();
 
-            inserts->setWideTracks (wide);
+            inserts->setWideChannels (wide);
             SessionMixer::prime (s, 0, buffers, *inserts);
         }
 
@@ -656,8 +658,128 @@ namespace
     }
 }
 
+namespace
+{
+    void testSevenOne (AudioEngine& engine)
+    {
+        juce::AudioPluginFormatManager formats;
+        formats.addFormat (BuiltInEffects::createFormat());
+        const auto audio = noise (8, 4000, 43);
+        const auto s = session (audio);
+        const auto id = s.tracks[0].id;
+        const auto makeCopy = [&formats] (const juce::PluginDescription& d)
+        {
+            juce::String error;
+            return formats.createPluginInstance (d, rate, TrackEffects::maxBlock, error);
+        };
+
+        // An EQ and a phaser in four pairs; made 5.1 first, the copies go from two to three.
+        TrackEffects effects;
+        effects.prepare (rate);
+        effects.makeCopy = makeCopy;
+        effects.add (id, make (formats, BuiltInEffects::parametricEqId));
+        effects.add (id, make (formats, BuiltInEffects::phaserId));
+        effects.setWideChannels ({ { id, 6 } });
+        const auto asFive = effects.getNumCopies (id, 0);
+        const auto failed = effects.setWideChannels ({ { id, 8 } });
+        setUpPairs (*effects.getPlugin (id, 0));
+        const auto copies = asFive == 2 && effects.getNumCopies (id, 0) == 3 && effects.getNumCopies (id, 1) == 3 && failed.isEmpty();
+        const auto out = render (s, 97, &effects);
+        auto pairsSame = true;
+
+        for (int pair = 0; pair < 4; ++pair)
+        {
+            const auto stereo = session (channelsOf (*audio, 2 * pair, 2));
+            TrackEffects alone;
+            alone.prepare (rate);
+            alone.add (stereo.tracks[0].id, make (formats, BuiltInEffects::parametricEqId));
+            alone.add (stereo.tracks[0].id, make (formats, BuiltInEffects::phaserId));
+            setUpPairs (*alone.getPlugin (stereo.tracks[0].id, 0));
+            const auto want = render (stereo, 97, &alone);
+            pairsSame = pairsSame && same (out, 2 * pair, want, 0) && same (out, 2 * pair + 1, want, 1) && ! silent (want, 0);
+        }
+
+        check (copies && pairsSame,
+               "7.1 track effects: a parametric EQ and a phaser run on L R, C LFE, Lrs Rrs and Lss Rss as four stereo copies, each pair "
+               "bit for bit what the same effects make of it on a stereo track (blocks of 97); a 5.1 track's two copies become three "
+               "when it becomes 7.1, and follow settings changed after");
+
+        // The compressor and the limiter link all eight, as compressing and limiting them as one file does.
+        TrackEffects dynamics;
+        dynamics.prepare (rate);
+        dynamics.makeCopy = makeCopy;
+        dynamics.setWideChannels ({ { id, 8 } });
+        dynamics.add (id, make (formats, BuiltInEffects::compressorId));
+        dynamics.add (id, make (formats, BuiltInEffects::limiterId));
+        setUp (*dynamics.getPlugin (id, 0), *dynamics.getPlugin (id, 1), -24.0f);
+        const auto linked = render (s, 97, &dynamics);
+        const auto dry = render (s, 97, nullptr);
+        const auto& compressor = dynamic_cast<BuiltInEffects::CompressorProcessor&> (*dynamics.getPlugin (id, 0));
+        const auto& limiter = dynamic_cast<BuiltInEffects::LimiterProcessor&> (*dynamics.getPlugin (id, 1));
+        const auto drySnap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (dry));
+        const auto limited = Dynamics::limit (*Dynamics::compress (*drySnap, 0, frames, rate, compressor.getSettings()), 0, frames, rate,
+                                              limiter.getSettings());
+        juce::AudioBuffer<float> want (8, frames);
+        limited->read (want, 0, 0, frames);
+        auto linkedSame = true, changed = false;
+
+        for (int ch = 0; ch < 8; ++ch)
+        {
+            linkedSame = linkedSame && same (linked, ch, want, ch);
+            changed = changed || ! same (linked, ch, dry, ch);
+        }
+
+        check (linkedSame && changed,
+               "7.1 track effects: a compressor and a limiter link all eight channels, bit for bit what compressing and then limiting "
+               "the eight as one file gives, in time (blocks of 97)");
+
+        // A mixdown makes its own three copies and gives the same eight channels.
+        std::map<juce::uint32, std::unique_ptr<juce::XmlElement>> chains;
+        chains[id] = effects.createXml (id);
+        TrackEffects offline;
+        const auto errors = OfflineRender::loadTrackEffects (chains, formats, rate, offline);
+        juce::AudioBuffer<float> mix;
+        auto mixSame = OfflineRender::mixSession (s, { 0, frames }, mix, &offline, {}) && errors.isEmpty() && mix.getNumChannels() == 8;
+
+        for (int ch = 0; mixSame && ch < 8; ++ch)
+            mixSame = same (mix, ch, out, ch);
+
+        // The engine: three copies on a 7.1 track, two once it is 5.1, none in stereo.
+        engine.session.reset (s, {});
+        engine.clearTrackEffects();
+        auto added = false;
+        juce::PluginDescription eq;
+
+        for (auto& d : BuiltInEffects::getDescriptions())
+            if (d.fileOrIdentifier == BuiltInEffects::parametricEqId)
+                eq = d;
+
+        engine.addTrackPlugin (id, eq, [&added] (const juce::String& error) { added = error.isEmpty(); });
+        TestUtils::runUntil ([&] { return added; }, 2000);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        const auto onSeven = engine.getTrackEffects().getNumCopies (id, 0);
+        auto fiveNow = *engine.session.getState();
+        SessionEdits::setTrackChannels (fiveNow, id, 6);
+        engine.session.apply (fiveNow, "5.1 Track");
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        const auto onFive = engine.getTrackEffects().getNumCopies (id, 0);
+        auto stereoNow = fiveNow;
+        SessionEdits::setTrackChannels (stereoNow, id, 2);
+        engine.session.apply (stereoNow, "Stereo Track");
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (20);
+        const auto onStereo = engine.getTrackEffects().getNumCopies (id, 0);
+        engine.clearTrackEffects();
+        engine.session.reset ({}, {});
+
+        check (mixSame && offline.getNumCopies (id, 0) == 3 && added && onSeven == 3 && onFive == 2 && onStereo == 0,
+               "7.1 track effects: a mixdown makes three copies of its own plug-ins and gives the eight channels as playback does, bit "
+               "for bit; in the app a 7.1 track's effect has three copies, two once the track is 5.1 and none in stereo");
+    }
+}
+
 void runSurroundEffectsTests (AudioEngine& engine)
 {
+    testSevenOne (engine);
     testMasterRack();
     testBuiltIns (engine);
     testFollowing();

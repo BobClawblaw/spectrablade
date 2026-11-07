@@ -108,9 +108,21 @@ namespace SessionMixer
         virtual void process (const SessionTrack&, juce::int64 frame, juce::AudioBuffer<float>&, int numFrames,
                               const std::vector<KeyAudio>& keys) = 0;
 
-        /** Which tracks are 5.1 tracks, before they are processed, so their processing can be
-            readied for six channels. Called on the message thread, or the thread rendering. */
-        virtual juce::StringArray setWideTracks (const std::set<juce::uint32>&)   { return {}; }
+        /** Which tracks are 5.1 or 7.1 tracks, and their channels (6 or 8), before they are
+            processed, so their processing can be readied for them. Called on the message thread,
+            or the thread rendering. */
+        virtual juce::StringArray setWideChannels (const std::map<juce::uint32, int>&)   { return {}; }
+
+        /** setWideChannels with these tracks all 5.1. */
+        juce::StringArray setWideTracks (const std::set<juce::uint32>& tracks)
+        {
+            std::map<juce::uint32, int> channels;
+
+            for (const auto id : tracks)
+                channels[id] = 6;
+
+            return setWideChannels (channels);
+        }
     };
 
     /** Peak levels of the tracks and buses as they go into the mix (after their volume and pan),
@@ -170,7 +182,7 @@ namespace SessionMixer
         int interfaceChannel = 2;
 
         juce::AudioBuffer<float> master, panIn;   // a 5.1 master, and what is panned into it
-        juce::AudioBuffer<float> wide, wideClip, wideHeld;   // a 5.1 track's six channels, its clips', and held back
+        juce::AudioBuffer<float> wide, wideClip, wideHeld;   // a 5.1 or 7.1 track's channels, its clips', and held back
 
         // Ducking: each key track's output for the block, and each ducked track's detector.
         struct Duck
@@ -194,7 +206,7 @@ namespace SessionMixer
                 b->setSize (2, frames);
 
             for (auto* b : { &master, &wide, &wideClip, &wideHeld })
-                b->setSize (6, frames);
+                b->setSize (8, frames);
 
             order.reserve (64);
             keyAudio.reserve (16);

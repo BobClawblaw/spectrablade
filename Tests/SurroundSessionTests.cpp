@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/AudioEdits.h"
 #include "../Source/AudioEngine.h"
 #include "../Source/Bounce.h"
 #include "../Source/MixerView.h"
@@ -101,7 +102,7 @@ namespace
 
         void reset (juce::uint32 id) override
         {
-            rings[id].setSize (6, latency);
+            rings[id].setSize (8, latency);
             rings[id].clear();
             writes[id] = 0;
         }
@@ -1160,8 +1161,164 @@ namespace
     }
 }
 
+namespace
+{
+    /** A clip's eight channels (or a 5.1 one's six, its surrounds in the side pair) at its position, times gain. */
+    juce::AudioBuffer<float> placedEight (const SessionClip& clip, float gain)
+    {
+        juce::AudioBuffer<float> raw (clip.audio->getNumChannels(), (int) clip.length), out (8, frames);
+        clip.audio->read (raw, 0, 0, raw.getNumSamples());
+        out.clear();
+
+        for (int ch = 0; ch < raw.getNumChannels() && ch < 8; ++ch)
+            for (int i = 0; i < raw.getNumSamples() && (int) clip.position + i < frames; ++i)
+                out.setSample (raw.getNumChannels() == 6 && ch >= 4 ? ch + 2 : ch, (int) clip.position + i, raw.getSample (ch, i) * gain);
+
+        return out;
+    }
+
+    SessionTrack& addSevenOneTrack (SessionState& s, int channels, juce::int64 position, int seed)
+    {
+        auto& t = addFiveOneTrack (s, channels, position, seed);
+        t.fiveOne = false;
+        t.sevenOne = true;
+        return t;
+    }
+
+    void testSevenOneTracks (AudioEngine& engine)
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        SessionEdits::setMasterChannels (s, 8);
+        const auto id = addSevenOneTrack (s, 8, 300, 81).id;
+        const auto master = render (s, 8, 2, -1);
+        const auto expected = placedEight (s.tracks[0].clips[0], 1.0f);
+        auto exact = true;
+
+        for (int ch = 0; ch < 8; ++ch)
+            exact = exact && same (master, ch, expected, ch);
+
+        auto fromFive = s;
+        fromFive.tracks.clear();
+        addSevenOneTrack (fromFive, 6, 300, 82);
+        const auto five = render (fromFive, 8, 2, -1);
+        const auto fiveExpected = placedEight (fromFive.tracks[0].clips[0], 1.0f);
+        auto fiveExact = silent (five, 4) && silent (five, 5);
+
+        for (int ch = 0; ch < 8; ++ch)
+            fiveExact = fiveExact && same (five, ch, fiveExpected, ch);
+
+        check (exact && fiveExact, "7.1 track: a 7.1 clip plays its eight channels to a 7.1 master's eight, bit for bit; a 5.1 clip on it "
+                                   "plays L R C LFE as they are and its surrounds from the side pair, the rears silent");
+
+        // Volume and polarity on all eight; its effects given all eight, in time.
+        auto quieter = s;
+        quieter.tracks[0].gainDb = -6.0f;
+        quieter.tracks[0].invertPolarity = true;
+        quieter.tracks[0].pan = 1.0f;
+        const auto q = render (quieter, 8, 2, -1);
+        const auto scaled = placedEight (s.tracks[0].clips[0], -juce::Decibels::decibelsToGain (-6.0f));
+        Delays fx;
+        fx.latency = 37;
+        const auto withFx = render (s, 8, 2, -1, 97, &fx);
+        auto volumes = true, halved = true;
+
+        for (int ch = 0; ch < 8; ++ch)
+        {
+            volumes = volumes && worst (q, ch, scaled, ch) < 1.0e-7f;
+
+            for (int i = 0; i < frames; ++i)
+                halved = halved && withFx.getSample (ch, i) == 0.5f * master.getSample (ch, i);
+        }
+
+        check (volumes && halved && fx.channels[id] == 8,
+               "7.1 track: its volume and polarity act on all eight channels and its pan does nothing; its effects are given all "
+               "eight, and with 37 frames of latency they come out in time (bit for bit, in blocks of 97)");
+
+        // In a 5.1 master: L R C LFE as they are, the rears and sides each into Ls and Rs at -3 dB.
+        auto inFive = s;
+        inFive.sevenOne = false;
+        const auto six = render (inFive, 6, 2, -1);
+        juce::AudioBuffer<float> surrounds (2, frames);
+
+        for (int side = 0; side < 2; ++side)
+            for (int i = 0; i < frames; ++i)
+                surrounds.setSample (side, i, Surround::foldGain * expected.getSample (4 + side, i) + Surround::foldGain * expected.getSample (6 + side, i));
+
+        // In a stereo master: the 7.1 fold-down.
+        auto plain = s;
+        plain.surround = plain.sevenOne = false;
+        const auto two = render (plain, 2, -1);
+        juce::AudioBuffer<float> folded (2, frames);
+        Surround::foldDown (expected.getArrayOfReadPointers(), 8, folded.getWritePointer (0), folded.getWritePointer (1), frames);
+
+        check (same (six, 0, expected, 0) && same (six, 1, expected, 1) && same (six, 2, expected, 2) && same (six, 3, expected, 3)
+                   && worst (six, 4, surrounds, 0) < 1.0e-6f && worst (six, 5, surrounds, 1) < 1.0e-6f
+                   && same (two, 0, folded, 0) && same (two, 1, folded, 1),
+               "7.1 track: in a 5.1 master L, R, C and LFE play as they are and each side's rear and side surround into Ls or Rs at "
+               "-3 dB; in a stereo master it is folded down as a 7.1 file is, bit for bit");
+
+        // Import, edits, the file, templates, freezing and bouncing.
+        auto fresh = s;
+        fresh.tracks.clear();
+        SessionEdits::addClip (fresh, 99, juce::File(), noise (8, 100, 1), 0);
+        SessionEdits::addClip (fresh, 99, juce::File(), noise (6, 100, 2), 0);
+        auto stereoMaster = SessionState();
+        SessionEdits::addClip (stereoMaster, 99, juce::File(), noise (8, 100, 3), 0);
+        check (fresh.tracks.size() == 2 && fresh.tracks[0].sevenOne && ! fresh.tracks[0].fiveOne && fresh.tracks[1].fiveOne && ! fresh.tracks[1].sevenOne
+                   && ! stereoMaster.tracks[0].isWide(),
+               "7.1 track: eight-channel audio brought onto a new track in a surround master makes it a 7.1 track (six channels a "
+               "5.1 one); in a stereo master, neither");
+
+        auto edits = s;
+        auto& b2 = edits.addBus();
+        auto& f2 = edits.addFolder();
+        const auto changed = ! SessionEdits::setTrackChannels (edits, id, 8) && ! SessionEdits::setTrackChannels (edits, id, 4)
+                             && SessionEdits::setTrackChannels (edits, id, 6) && edits.tracks[0].fiveOne && ! edits.tracks[0].sevenOne
+                             && SessionEdits::setTrackChannels (edits, id, 8) && edits.tracks[0].sevenOne && ! edits.tracks[0].fiveOne
+                             && SessionEdits::setTrackChannels (edits, id, 2) && ! edits.tracks[0].isWide()
+                             && ! SessionEdits::setTrackChannels (edits, b2.id, 8) && ! SessionEdits::setTrackChannels (edits, f2.id, 8);
+        check (changed, "7.1 track edits: stereo, 5.1 and 7.1 in turn (never both wide kinds), other counts, buses and folders refused");
+
+        const juce::TemporaryFile temp (".sbsession");
+        SessionFile::save (s, temp.getFile(), nullptr);
+        const auto loaded = SessionFile::load (temp.getFile(), engine.formatManager);
+        const auto xml = TrackTemplate::create (s, id, nullptr);
+        auto other = mixed();
+        const auto added = TrackTemplate::add (other, *xml);
+        auto bounced = s;
+        const auto landed = Bounce::land (bounced, id, juce::File(), noise (8, 100, 6), 0);
+        const auto landedSix = Bounce::land (bounced, id, juce::File(), noise (6, 100, 7), 0);
+        check (loaded.state.tracks.size() == 1 && loaded.state.tracks[0].sevenOne && ! loaded.state.tracks[0].fiveOne
+                   && temp.getFile().loadFileAsString().contains ("sevenOne=\"1\"") && other.findTrack (added.trackId)->sevenOne
+                   && bounced.findTrack (landed)->sevenOne && ! bounced.findTrack (landedSix)->isWide(),
+               "7.1 track: the session file and track templates keep it, and an eight-channel bounce lands on a 7.1 track");
+
+        // Frozen: its eight channels rendered alone, then played from the file as the live track plays, in any master.
+        const auto alone = SessionEdits::frozenSource (s, id);
+        juce::AudioBuffer<float> rendered;
+        OfflineRender::mixSession (alone, { 0, frames }, rendered, nullptr, nullptr);
+        auto frozen = s;
+        SessionEdits::freezeTrack (frozen, id, juce::File(), AudioEdits::fromBuffer (juce::AudioBuffer<float> (rendered)));
+        auto frozenFive = frozen;
+        frozenFive.sevenOne = false;
+        const auto fromFile = render (frozen, 8, 2, -1), fromFileFive = render (frozenFive, 6, 2, -1);
+        auto frozenSame = alone.sevenOne && rendered.getNumChannels() == 8 && frozen.tracks[0].isFrozen();
+
+        for (int ch = 0; ch < 8; ++ch)
+            frozenSame = frozenSame && same (fromFile, ch, master, ch);
+
+        for (int ch = 0; ch < 6; ++ch)
+            frozenSame = frozenSame && same (fromFileFive, ch, six, ch);
+
+        check (frozenSame, "7.1 track: frozen, it renders its eight channels and plays them from the file as it played live, bit "
+                           "for bit, in a 7.1 master and in a 5.1 one");
+    }
+}
+
 void runSurroundSessionTests (AudioEngine& engine)
 {
+    testSevenOneTracks (engine);
     testSevenOneMaster (engine);
     testFiveOneTracks (engine);
     testFiveOneControls (engine);

@@ -19,6 +19,9 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
     if (t->fiveOne)
         xml->setAttribute ("fiveOne", true);
 
+    if (t->sevenOne)
+        xml->setAttribute ("sevenOne", true);
+
     if (! t->surroundPan.isDefault())
     {
         xml->setAttribute ("surroundX", t->surroundPan.x);
@@ -70,7 +73,7 @@ Added add (SessionState& s, const juce::XmlElement& xml)
     t.input.first = xml.getIntAttribute ("inputFirst", t.input.first);
     t.input.channels = xml.getIntAttribute ("inputChannels", t.input.channels);
     const auto id = t.id;
-    SessionEdits::setTrackFiveOne (s, id, xml.getBoolAttribute ("fiveOne"));
+    SessionEdits::setTrackChannels (s, id, xml.getBoolAttribute ("fiveOne") ? 6 : xml.getBoolAttribute ("sevenOne") ? 8 : 2);
     SessionEdits::setSurroundPan (s, id, { (float) xml.getDoubleAttribute ("surroundX", 0.0), (float) xml.getDoubleAttribute ("surroundY", 1.0),
                                            (float) xml.getDoubleAttribute ("surroundWidth", 1.0),
                                            (float) xml.getDoubleAttribute ("lfeDb", SurroundPan::lfeOff) });

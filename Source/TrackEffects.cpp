@@ -6,7 +6,7 @@ namespace
     // Set while an effect is given a value from an envelope, so its echo isn't taken for a touch.
     thread_local bool followingEnvelope = false;
 
-    void release (std::array<std::unique_ptr<juce::AudioPluginInstance>, 2>& copies)
+    void release (std::array<std::unique_ptr<juce::AudioPluginInstance>, 3>& copies)
     {
         for (auto& c : copies)
             if (c != nullptr)
@@ -116,18 +116,25 @@ void TrackEffects::prepareInstance (juce::AudioPluginInstance& p) const
     p.prepareToPlay (rate, maxBlock);
 }
 
-TrackEffects::Copies TrackEffects::copiesOf (Slot& slot) const
+int TrackEffects::copiesFor (juce::uint32 trackId) const
+{
+    const auto found = wide.find (trackId);
+    return found == wide.end() ? 0 : found->second / 2 - 1;
+}
+
+TrackEffects::Copies TrackEffects::copiesOf (Slot& slot, int count) const
 {
     Copies made;
 
-    if (makeCopy == nullptr)
+    if (makeCopy == nullptr || count <= 0)
         return made;
 
     juce::MemoryBlock state;
     slot.plugin->getStateInformation (state);
 
-    for (auto& c : made)
+    for (int i = 0; i < juce::jmin (count, (int) made.size()); ++i)
     {
+        auto& c = made[(size_t) i];
         c = makeCopy (slot.plugin->getPluginDescription());
 
         if (c == nullptr)
@@ -147,8 +154,10 @@ void TrackEffects::install (juce::uint32 trackId, Slot* slot, Copies made)
         const juce::ScopedLock sl (lock);
         const auto* chain = find (trackId);
 
-        // Only if the slot is still there, on a 5.1 track.
-        if (chain != nullptr && wide.count (trackId) != 0
+        // Only if the slot is still there, on a 5.1 or 7.1 track as wide as the copies are made for.
+        const auto count = (int) std::count_if (made.begin(), made.end(), [] (auto& c) { return c != nullptr; });
+
+        if (chain != nullptr && copiesFor (trackId) == count
             && std::any_of (chain->begin(), chain->end(), [slot] (auto& s) { return s.get() == slot; }))
             std::swap (slot->copies, made);
     }
@@ -156,22 +165,27 @@ void TrackEffects::install (juce::uint32 trackId, Slot* slot, Copies made)
     release (made);
 }
 
-juce::StringArray TrackEffects::setWideTracks (const std::set<juce::uint32>& tracks)
+juce::StringArray TrackEffects::setWideChannels (const std::map<juce::uint32, int>& tracks)
 {
-    std::vector<std::pair<juce::uint32, Slot*>> needed;
+    std::vector<std::tuple<juce::uint32, Slot*, int>> needed;
     std::vector<Copies> dropped;
 
     {
         const juce::ScopedLock sl (lock);
         wide = tracks;
 
+        // A track whose width changed has its copies dropped and made again, as many as it needs.
         for (auto& [id, chain] : chains)
             for (auto& s : chain)
             {
-                if (wide.count (id) != 0 && s->copies[0] == nullptr)
-                    needed.emplace_back (id, s.get());
-                else if (wide.count (id) == 0 && s->copies[0] != nullptr)
+                const auto want = copiesFor (id);
+                const auto have = (int) std::count_if (s->copies.begin(), s->copies.end(), [] (auto& c) { return c != nullptr; });
+
+                if (have != want && have != 0)
                     dropped.push_back (std::move (s->copies));
+
+                if (want != 0 && have != want)
+                    needed.emplace_back (id, s.get(), want);
             }
     }
 
@@ -181,9 +195,9 @@ juce::StringArray TrackEffects::setWideTracks (const std::set<juce::uint32>& tra
     // Made here, off the lock; slots are added and removed only on this thread.
     juce::StringArray failed;
 
-    for (auto& [id, slot] : needed)
+    for (auto& [id, slot, count] : needed)
     {
-        auto made = copiesOf (*slot);
+        auto made = copiesOf (*slot, count);
 
         if (made[0] == nullptr)
             failed.add (slot->plugin->getName());
@@ -198,6 +212,7 @@ void TrackEffects::refreshCopies (const juce::AudioProcessor& processor)
 {
     juce::uint32 trackId = 0;
     Slot* found = nullptr;
+    int count = 0;
 
     {
         const juce::ScopedLock sl (lock);
@@ -208,11 +223,12 @@ void TrackEffects::refreshCopies (const juce::AudioProcessor& processor)
                 {
                     trackId = id;
                     found = s.get();
+                    count = copiesFor (id);
                 }
     }
 
     if (found != nullptr)
-        if (auto made = copiesOf (*found); made[0] != nullptr)
+        if (auto made = copiesOf (*found, count); made[0] != nullptr)
             install (trackId, found, std::move (made));
 }
 
@@ -338,15 +354,15 @@ juce::uint32 TrackEffects::add (juce::uint32 trackId, std::unique_ptr<juce::Audi
     // Prepared before it joins the chain, so the audio thread waits only for the insertion.
     // The rate changes only on this thread, so it needs no lock here.
     prepareSlot (*slot);
-    bool onWide = false;
+    int count = 0;
 
     {
         const juce::ScopedLock sl (lock);
-        onWide = wide.count (trackId) != 0;
+        count = copiesFor (trackId);
     }
 
-    if (onWide)
-        slot->copies = copiesOf (*slot);
+    if (count > 0)
+        slot->copies = copiesOf (*slot, count);
 
     const juce::ScopedLock sl (lock);
     slot->id = slotId != 0 ? slotId : nextSlotId;
@@ -557,8 +573,8 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
         return;
     }
 
-    // A 5.1 track's six channels go through as three pairs: L R, C LFE, Ls Rs.
-    const auto pairs = track.fiveOne && buffer.getNumChannels() >= 6 ? 3 : 1;
+    // A 5.1 track's six channels go through as three pairs: L R, C LFE, Ls Rs; a 7.1 track's eight as four.
+    const auto pairs = track.isWide() && buffer.getNumChannels() >= track.wideChannels() ? track.wideChannels() / 2 : 1;
 
     // Steps line up with session time, so the result doesn't depend on how the mix is split into blocks.
     const auto automated = std::any_of (track.effectEnvelopes.begin(), track.effectEnvelopes.end(), [chain] (const EffectEnvelope& e)
@@ -651,13 +667,13 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
 
             delayed += juce::jmax (0, s->plugin->getLatencySamples());
 
-            // A built-in effect that can link the six (the compressor and the limiter) hears them as one.
-            if (pairs == 3)
+            // A built-in effect that can link them all (the compressor and the limiter) hears them as one.
+            if (pairs > 1)
                 if (auto* builtIn = dynamic_cast<BuiltInEffects::BuiltInEffect*> (s->plugin.get()))
                 {
-                    juce::AudioBuffer<float> six (buffer.getArrayOfWritePointers(), 6, done, n);
+                    juce::AudioBuffer<float> all (buffer.getArrayOfWritePointers(), 2 * pairs, done, n);
 
-                    if (builtIn->processLinked (six))
+                    if (builtIn->processLinked (all))
                         continue;
                 }
 

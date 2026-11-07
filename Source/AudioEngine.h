@@ -467,7 +467,7 @@ private:
     void rebuildConnections();
     juce::String deviceSignature() const;   // the device in use, its rate, block size and channels
     juce::String lastDeviceSignature;       // as of the last change handled
-    std::set<juce::uint32> wideTracks;      // the 5.1 tracks the track effects were last told of
+    std::map<juce::uint32, int> wideTracks; // the 5.1 and 7.1 tracks (and their channels) the track effects were last told of
 
     void updateWideTracks();
     void addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr<juce::XmlElement>>> slots,

@@ -1,5 +1,6 @@
 #include "MultitrackView.h"
 #include "Theme.h"
+#include "Surround.h"
 #include "PluginMenu.h"
 #include "Metronome.h"
 #include "TrackColours.h"
@@ -226,15 +227,17 @@ public:
         automationButton.setToggleState (t.isAutomated(), juce::dontSendNotification);
         const auto writing = view.isWritingAutomation();
         gain.setEnabled (! volumeAutomated || writing);
-        pan.setEnabled ((! panAutomated || writing) && ! t.fiveOne);
+        pan.setEnabled ((! panAutomated || writing) && ! t.isWide());
         const juce::String automatedTip = writing ? " follows its envelope; drag while playing to write it" : " follows its envelope (A to edit it)";
         gain.setTooltip (isFolder ? "Folder volume: added to the volume of each track and bus in it"
                          : volumeAutomated ? "Volume" + automatedTip : writing ? "Track volume; drag while playing to write automation" : "Track volume");
-        pan.setTooltip (t.fiveOne ? "A 5.1 track plays its channels to their own speakers: it has no pan"
+        pan.setTooltip (t.isWide() ? juce::String (t.sevenOne ? "A 7.1" : "A 5.1") + " track plays its channels to their own speakers: it has no pan"
                         : panAutomated ? "Pan" + automatedTip : writing ? "Pan; drag while playing to write automation" : "Pan");
 
         if (t.fiveOne)
             effectsButton.setTooltip ("This 5.1 track's effects: each runs on L R, C LFE and Ls Rs as three stereo copies; the built-in compressor and limiter hear all six at once");
+        else if (t.sevenOne)
+            effectsButton.setTooltip ("This 7.1 track's effects: each runs on L R, C LFE, Lrs Rrs and Lss Rss as four stereo copies; the built-in compressor and limiter hear all eight at once");
 
         const auto frame = view.controlFrame();
 
@@ -525,7 +528,10 @@ public:
             menu.addItem ("Invert Polarity", true, t->invertPolarity, [this, on = t->invertPolarity] { view.setTrackPolarityInverted (trackId, ! on); });
 
         if (! t->isFolder && ! t->isBus)
-            menu.addItem ("5.1 Track", ! t->isFrozen(), t->fiveOne, [this, on = t->fiveOne] { view.setTrackFiveOne (trackId, ! on); });
+        {
+            menu.addItem ("5.1 Track", ! t->isFrozen(), t->fiveOne, [this, on = t->fiveOne] { view.setTrackChannels (trackId, on ? 2 : 6); });
+            menu.addItem ("7.1 Track", ! t->isFrozen(), t->sevenOne, [this, on = t->sevenOne] { view.setTrackChannels (trackId, on ? 2 : 8); });
+        }
 
         menu.addSubMenu ("Colour", colours);
         menu.addItem ("Note...", [this] { view.askForTrackNote (trackId); });
@@ -943,8 +949,8 @@ void MultitrackView::showAutomationMenu (juce::uint32 trackId, juce::Component& 
     menu.addItem (showVolume, "Show Volume Envelope", true, showing == AutomationParameter::volume);
     menu.addItem (showPan, "Show Pan Envelope", true, showing == AutomationParameter::pan);
 
-    // Where it plays in a 5.1 master (or kept from one): a 5.1 track has no surround pan.
-    if ((shown().surround || track->hasSurroundAutomation()) && ! track->isFolder && ! track->fiveOne)
+    // Where it plays in a surround master (or kept from one): a 5.1 or 7.1 track has no surround pan.
+    if ((shown().surround || track->hasSurroundAutomation()) && ! track->isFolder && ! track->isWide())
     {
         juce::PopupMenu surround;
 
@@ -2176,11 +2182,11 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
     }
 
     // Waveform: one peak per pixel column, each channel in its own band; the channels that play
-    // (the first two, or up to six on a 5.1 track, a 5.1 clip's named down the left).
+    // (the first two, or up to six or eight on a 5.1 or 7.1 track, a 5.1 or 7.1 clip's named down the left).
     if (c.audio != nullptr && body.getHeight() > 4)
     {
-        const auto fiveOne = shown().tracks[(size_t) track].fiveOne;
-        const auto channels = juce::jmin (fiveOne ? 6 : 2, c.audio->getNumChannels());
+        const auto wideChannels = shown().tracks[(size_t) track].wideChannels();
+        const auto channels = juce::jmin (wideChannels > 0 ? wideChannels : 2, c.audio->getNumChannels());
         const auto clipGain = juce::Decibels::decibelsToGain (c.gainDb);
         const auto left = juce::jmax (body.getX(), headerWidth);
         const auto right = juce::jmin (body.getRight(), timelineArea().getRight());
@@ -2203,11 +2209,11 @@ void MultitrackView::drawClip (juce::Graphics& g, int track, const SessionClip& 
                 g.drawVerticalLine (x, top, juce::jmax (top + 1.0f, bottom));
             }
 
-            if (channels == 6 && bandHeight >= 10.0f)
+            if (Surround::isSurround (channels) && bandHeight >= 10.0f)
             {
                 g.setColour (juce::Colours::white.withAlpha (0.6f));
                 g.setFont (9.0f);
-                g.drawText (juce::StringArray { "L", "R", "C", "LFE", "Ls", "Rs" }[ch],
+                g.drawText (Surround::channelName (channels, ch),
                             juce::Rectangle<float> ((float) left + 3.0f, mid - bandHeight * 0.5f, 24.0f, bandHeight), juce::Justification::centredLeft, false);
                 g.setColour (colour.withAlpha (0.9f));
             }
@@ -3824,10 +3830,15 @@ void MultitrackView::setTrackColour (juce::uint32 trackId, int colour)
 
 void MultitrackView::setTrackFiveOne (juce::uint32 trackId, bool fiveOne)
 {
+    setTrackChannels (trackId, fiveOne ? 6 : 2);
+}
+
+void MultitrackView::setTrackChannels (juce::uint32 trackId, int channels)
+{
     auto next = *engine.session.getState();
 
-    if (SessionEdits::setTrackFiveOne (next, trackId, fiveOne))
-        engine.session.apply (std::move (next), fiveOne ? "5.1 Track" : "Stereo Track");
+    if (SessionEdits::setTrackChannels (next, trackId, channels))
+        engine.session.apply (std::move (next), channels == 8 ? "7.1 Track" : channels == 6 ? "5.1 Track" : "Stereo Track");
 }
 
 void MultitrackView::setTrackPolarityInverted (juce::uint32 trackId, bool inverted)

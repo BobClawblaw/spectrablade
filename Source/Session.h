@@ -247,6 +247,17 @@ struct SessionTrack
         to stereo (Surround::foldDown). */
     bool fiveOne = false;
 
+    /** A 7.1 track (tracks only), as a 5.1 track but eight channels, L R C LFE Lrs Rrs Lss Rss (a
+        7.1 clip as it is, a 5.1 one with its surrounds in the side pair Lss Rss as in a 7.1 master, a
+        mono one to C, a stereo one to L and R), its effects in four pairs. Into a 7.1
+        master it plays straight to the speakers; into a 5.1 master its rear and side surrounds
+        both go to Ls and Rs at -3 dB each. Never with fiveOne. */
+    bool sevenOne = false;
+
+    /** The channels a 5.1 or 7.1 track plays (6 or 8), 0 for any other. */
+    int wideChannels() const noexcept       { return sevenOne ? 8 : fiveOne ? 6 : 0; }
+    bool isWide() const noexcept            { return fiveOne || sevenOne; }
+
     /** Ducking under another track (tracks only). It acts with the volume: on the track's
         output and post-fader sends, not its pre-fader sends. */
     Ducking ducking;
@@ -644,6 +655,10 @@ namespace SessionEdits
     /** Makes a track a 5.1 track or a stereo one. False for a bus, folder or frozen track, a track
         that is gone, or when it is already so. */
     bool setTrackFiveOne (SessionState&, juce::uint32 trackId, bool fiveOne);
+
+    /** Makes a track stereo (2), 5.1 (6) or 7.1 (8); false for other counts, buses, folders,
+        frozen tracks and no change. */
+    bool setTrackChannels (SessionState&, juce::uint32 trackId, int channels);
 
     /** Makes the master 5.1 or stereo. False when it is already so. */
     bool setSurround (SessionState&, bool fiveOne);

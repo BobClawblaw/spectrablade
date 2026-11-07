@@ -323,6 +323,9 @@ public:
         nothing for a bus, folder or frozen track. */
     void setTrackFiveOne (juce::uint32 trackId, bool fiveOne);
 
+    /** Makes the track stereo (2), 5.1 (6) or 7.1 (8), as one step to undo. */
+    void setTrackChannels (juce::uint32 trackId, int channels);
+
     /** Moves a track or bus to another place in the list, as an undo step; it stays selected. */
     void moveTrack (int from, int to);
 

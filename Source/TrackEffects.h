@@ -23,11 +23,11 @@
 
     On a 5.1 track each effect runs three times, on L R, on C LFE and on Ls Rs: the slot's own
     plug-in on the first pair, and two more of the same plug-in (made by makeCopy, given its state)
-    on the others. The copies follow its parameters (set to the same values before each step) and
+    on the others; on a 7.1 track four times (L R, C LFE, Lrs Rrs, Lss Rss), with three copies. The copies follow its parameters (set to the same values before each step) and
     are given its whole state again when refreshCopies is called for it, after its window closes;
     their latency is taken to be its. A pair whose copy couldn't be made plays silence. A built-in
     effect that can link channels (BuiltInEffect::processLinked: the compressor and the limiter)
-    runs once on all six instead, its gain from the loudest of them.
+    runs once on all six (or eight) instead, its gain from the loudest of them.
 
     Changes are made on the message thread; the mixer calls the SessionMixer::Inserts methods on
     the audio thread. A track whose chain is being changed plays silence for that block. */
@@ -53,21 +53,21 @@ public:
     /** While a parameter is touched, its envelope doesn't set it, so what the hand does wins. */
     void setTouched (juce::uint32 trackId, juce::uint32 slotId, const juce::String& parameterId, bool touched);
 
-    /** Makes another instance of a plug-in, for a 5.1 track's copies (null if it can't). */
+    /** Makes another instance of a plug-in, for a 5.1 or 7.1 track's copies (null if it can't). */
     std::function<std::unique_ptr<juce::AudioPluginInstance> (const juce::PluginDescription&)> makeCopy;
 
-    /** Makes the copies for these tracks' effects (and for effects added to them later), and drops
-        those of tracks no longer in the set. Returns the names of the effects that couldn't be
-        copied. */
-    juce::StringArray setWideTracks (const std::set<juce::uint32>&) override;
+    /** Makes the copies for these tracks' effects (two on a 5.1 track, three on a 7.1 one, and for
+        effects added to them later), and drops those of tracks no longer in the map. Returns the
+        names of the effects that couldn't be copied. */
+    juce::StringArray setWideChannels (const std::map<juce::uint32, int>&) override;
 
-    /** Gives the copies of this plug-in (if it is a slot's on a 5.1 track) its whole state again. */
+    /** Gives the copies of this plug-in (if it is a slot's on a 5.1 or 7.1 track) its whole state again. */
     void refreshCopies (const juce::AudioProcessor&);
 
     /** Sets a copy's parameters to the plug-in's (by index), where they differ. */
     static void followParameters (juce::AudioPluginInstance& original, juce::AudioPluginInstance& copy);
 
-    /** How many copies the slot has: 2 on a 5.1 track, else 0. */
+    /** How many copies the slot has: 2 on a 5.1 track, 3 on a 7.1 one, else 0. */
     int getNumCopies (juce::uint32 trackId, int slot) const;
 
     /** The largest block a plug-in is given; longer runs are split. */
@@ -146,12 +146,12 @@ private:
         std::map<int, std::pair<juce::AudioProcessorParameter*, juce::String>> byIndex;
     };
 
-    using Copies = std::array<std::unique_ptr<juce::AudioPluginInstance>, 2>;
+    using Copies = std::array<std::unique_ptr<juce::AudioPluginInstance>, 3>;
 
     struct Slot
     {
         std::unique_ptr<juce::AudioPluginInstance> plugin;
-        Copies copies;                         // on a 5.1 track: for C LFE and Ls Rs
+        Copies copies;                         // on a 5.1 track: for C LFE and Ls Rs (7.1: and Lss Rss)
         juce::uint32 id = 0;
         bool bypassed = false;
         juce::AudioBuffer<float> work;
@@ -166,7 +166,8 @@ private:
 
     void prepareSlot (Slot&) const;
     void prepareInstance (juce::AudioPluginInstance&) const;
-    Copies copiesOf (Slot&) const;
+    Copies copiesOf (Slot&, int count) const;
+    int copiesFor (juce::uint32 trackId) const;   // under the lock
     void install (juce::uint32 trackId, Slot*, Copies);
     Chain* find (juce::uint32 trackId);
     const Chain* find (juce::uint32 trackId) const;
@@ -177,7 +178,7 @@ private:
     double rate = 48000.0;
     juce::uint32 nextSlotId = 1;
     std::set<std::tuple<juce::uint32, juce::uint32, juce::String>> touched;   // guarded by lock
-    std::set<juce::uint32> wide;   // 5.1 tracks; guarded by lock
+    std::map<juce::uint32, int> wide;   // 5.1 and 7.1 tracks, and their channels; guarded by lock
 
     juce::SpinLock touchesLock;
     std::vector<ParameterTouch> touches;   // waiting for the message thread

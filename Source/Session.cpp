@@ -451,7 +451,10 @@ juce::uint32 addClip (SessionState& s, int track, const juce::File& source, Audi
 {
     if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
     {
-        s.addTrack().fiveOne = s.surround && audio != nullptr && audio->getNumChannels() == Surround::fiveOneChannels;
+        // Six- or eight-channel audio makes a 5.1 or 7.1 track, in a surround master.
+        auto& added = s.addTrack();
+        added.fiveOne = s.surround && audio != nullptr && audio->getNumChannels() == Surround::fiveOneChannels;
+        added.sevenOne = s.surround && audio != nullptr && audio->getNumChannels() == Surround::sevenOneChannels;
         track = (int) s.tracks.size() - 1;
     }
 
@@ -1603,10 +1606,11 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
 {
     auto alone = s;
     alone.tracks.clear();
-    // The track's own sound: stereo, which its surround pan places afterwards, or a 5.1 track's six channels.
+    // The track's own sound: stereo, which its surround pan places afterwards, or a 5.1 or 7.1
+    // track's six or eight channels.
     const auto* found = s.findTrack (trackId);
-    alone.surround = found != nullptr && found->fiveOne;
-    alone.sevenOne = false;
+    alone.surround = found != nullptr && found->isWide();
+    alone.sevenOne = found != nullptr && found->sevenOne;
 
     if (const auto* track = s.findTrack (trackId))
     {
@@ -1722,12 +1726,19 @@ bool setTrackDeviceOutput (SessionState& s, juce::uint32 trackId, int firstChann
 
 bool setTrackFiveOne (SessionState& s, juce::uint32 trackId, bool fiveOne)
 {
+    return setTrackChannels (s, trackId, fiveOne ? 6 : 2);
+}
+
+bool setTrackChannels (SessionState& s, juce::uint32 trackId, int channels)
+{
     auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
 
-    if (track == s.tracks.end() || track->isBus || track->isFolder || track->isFrozen() || track->fiveOne == fiveOne)
+    if ((channels != 2 && channels != 6 && channels != 8) || track == s.tracks.end() || track->isBus || track->isFolder
+        || track->isFrozen() || juce::jmax (2, track->wideChannels()) == channels)
         return false;
 
-    track->fiveOne = fiveOne;
+    track->fiveOne = channels == 6;
+    track->sevenOne = channels == 8;
     return true;
 }
 
@@ -2206,6 +2217,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.fiveOne)
             track->setAttribute ("fiveOne", true);
 
+        if (t.sevenOne)
+            track->setAttribute ("sevenOne", true);
+
         if (! t.isFolder && ! t.surroundPan.isDefault())
         {
             track->setAttribute ("surroundX", t.surroundPan.x);
@@ -2481,6 +2495,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             track.deviceOutput = pair;
 
         track.fiveOne = ! track.isBus && ! track.isFolder && trackXml->getBoolAttribute ("fiveOne");
+        track.sevenOne = ! track.isBus && ! track.isFolder && ! track.fiveOne && trackXml->getBoolAttribute ("sevenOne");
 
         if (! track.isFolder)
             SessionEdits::setSurroundPan (state, track.id, { (float) trackXml->getDoubleAttribute ("surroundX", 0.0),

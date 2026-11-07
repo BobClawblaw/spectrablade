@@ -1178,18 +1178,18 @@ void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 
 void AudioEngine::updateWideTracks()
 {
-    std::set<juce::uint32> now;
+    std::map<juce::uint32, int> now;
 
     for (auto& t : session.getState()->tracks)
-        if (t.fiveOne && ! t.isFrozen())
-            now.insert (t.id);
+        if (t.isWide() && ! t.isFrozen())
+            now[t.id] = t.wideChannels();
 
     if (now == wideTracks)
         return;
 
     wideTracks = now;
 
-    if (const auto failed = trackEffects.setWideTracks (now); ! failed.isEmpty() && onEffectsNotCopied != nullptr)
+    if (const auto failed = trackEffects.setWideChannels (now); ! failed.isEmpty() && onEffectsNotCopied != nullptr)
         onEffectsNotCopied (failed);
 }
 
@@ -1699,9 +1699,9 @@ void AudioEngine::addTrackPlugin (juce::uint32 trackId, const juce::PluginDescri
                           const auto slotId = trackEffects.add (trackId, std::move (instance));
                           session.markEffectsChanged();
 
-                          if (wideTracks.count (trackId) != 0 && onEffectsNotCopied != nullptr)
+                          if (const auto wide = wideTracks.find (trackId); wide != wideTracks.end() && onEffectsNotCopied != nullptr)
                               for (int i = 0; i < trackEffects.getNumSlots (trackId); ++i)
-                                  if (trackEffects.getSlotId (trackId, i) == slotId && trackEffects.getNumCopies (trackId, i) < 2)
+                                  if (trackEffects.getSlotId (trackId, i) == slotId && trackEffects.getNumCopies (trackId, i) < wide->second / 2 - 1)
                                       onEffectsNotCopied ({ description.name });
                       }
 

@@ -353,13 +353,13 @@ bool mixSession (const SessionState& state, juce::Range<juce::int64> range, juce
 
     if (inserts != nullptr)
     {
-        std::set<juce::uint32> wide;
+        std::map<juce::uint32, int> wide;
 
         for (auto& t : state.tracks)
-            if (t.fiveOne && ! t.isFrozen())
-                wide.insert (t.id);
+            if (t.isWide() && ! t.isFrozen())
+                wide[t.id] = t.wideChannels();
 
-        inserts->setWideTracks (wide);
+        inserts->setWideChannels (wide);
         SessionMixer::prime (state, range.getStart(), buffers, *inserts);
     }
 

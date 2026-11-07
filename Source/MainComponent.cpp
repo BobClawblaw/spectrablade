@@ -3327,10 +3327,10 @@ void MainComponent::bounceTrack()
                                                                       + juce::Time::getCurrentTime().formatted ("%Y-%m-%d %H%M%S"),
                                                                   ".wav", false);
     auto alone = std::make_shared<SessionState> (Bounce::isolate (*state, trackId));
-    // The track's own stereo sound, which the new track's surround pan places; a 5.1 track's
-    // six channels in a surround master (as 5.1, in a 7.1 one too).
-    alone->surround = state->surround && track.fiveOne;
-    alone->sevenOne = false;
+    // The track's own stereo sound, which the new track's surround pan places; a 5.1 or 7.1
+    // track's own channels in a surround master (whichever that is).
+    alone->surround = state->surround && track.isWide();
+    alone->sevenOne = alone->surround && track.sevenOne;
     auto effects = std::make_shared<std::map<juce::uint32, std::unique_ptr<juce::XmlElement>>>();
 
     for (auto& t : alone->tracks)   // the track's, and its keys'

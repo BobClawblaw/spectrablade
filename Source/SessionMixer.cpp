@@ -285,12 +285,13 @@ namespace
         return most;
     }
 
-    /** Adds the first n frames of src's first channels (two, or six for a 5.1 track's), held back
-        by frames, times gain, into dest from destStart. The delay line is the path's own, so it
-        carries over from block to block. */
+    /** Adds the first n frames of src's first channels (two, or six or eight for a 5.1 or 7.1
+        track's), held back by frames, times gain, into dest from destStart: into channels from
+        destChannel on, or each into destChannels[ch] times channelGains[ch] (when given). The
+        delay line is the path's own, so it carries over from block to block. */
     void addHeld (Buffers& buffers, std::pair<juce::uint32, juce::uint32> path, int frames, const juce::AudioBuffer<float>& src,
                   int n, juce::AudioBuffer<float>& dest, int destStart, float gain, int destChannel = 0, int channels = 2,
-                  const int* destChannels = nullptr)
+                  const int* destChannels = nullptr, const float* channelGains = nullptr)
     {
         const juce::AudioBuffer<float>* from = &src;
 
@@ -332,7 +333,8 @@ namespace
         }
 
         for (int ch = 0; ch < channels; ++ch)
-            dest.addFrom (destChannels != nullptr ? destChannels[ch] : destChannel + ch, destStart, *from, ch, 0, n, gain);
+            dest.addFrom (destChannels != nullptr ? destChannels[ch] : destChannel + ch, destStart, *from, ch, 0, n,
+                          channelGains != nullptr ? gain * channelGains[ch] : gain);
     }
 
     /** The first of dest's channels a track's or bus's output goes to when it isn't a bus: 0 for
@@ -498,16 +500,17 @@ namespace
         return channels;
     }
 
-    /** Where a source channel plays on a 5.1 track: mono to C, stereo to L and R, others in order. */
-    int fiveOneChannel (int sourceChannels, int channel)
+    /** Where a source channel plays on a 5.1 or 7.1 track (width 6 or 8): mono to C, stereo to L
+        and R, 5.1's surrounds on a 7.1 track to the side pair (Lss Rss), others in order. */
+    int wideChannel (int sourceChannels, int channel, int width)
     {
-        return sourceChannels == 1 ? 2 : channel;
+        return sourceChannels == 1 ? 2 : width == 8 && sourceChannels == 6 && channel >= 4 ? channel + 2 : channel;
     }
 
-    /** A frozen 5.1 track's audio from frame start, six channels, into frames [0, numFrames) of
-        out (a file of fewer channels placed as a clip of them would be). */
-    void readFrozenFiveOne (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
-                            juce::AudioBuffer<float>& scratch)
+    /** A frozen 5.1 or 7.1 track's audio from frame start, all out's channels (6 or 8), into
+        frames [0, numFrames) of out (a file of fewer channels placed as a clip of them would be). */
+    void readFrozenWide (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
+                         juce::AudioBuffer<float>& scratch)
     {
         out.clear (0, numFrames);
         const auto& audio = *track.frozenAudio;
@@ -516,21 +519,22 @@ namespace
         if (to <= from)
             return;
 
-        const auto count = (int) (to - from), channels = juce::jmin (6, audio.getNumChannels());
+        const auto count = (int) (to - from), channels = juce::jmin (out.getNumChannels(), audio.getNumChannels());
 
         if (scratch.getNumChannels() < audio.getNumChannels() || scratch.getNumSamples() < count)
-            scratch.setSize (juce::jmax (6, audio.getNumChannels()), count, false, false, true);
+            scratch.setSize (juce::jmax (8, audio.getNumChannels()), count, false, false, true);
 
         juce::AudioBuffer<float> part (scratch.getArrayOfWritePointers(), audio.getNumChannels(), count);
         audio.read (part, 0, from, count);
 
         for (int ch = 0; ch < channels; ++ch)
-            out.copyFrom (fiveOneChannel (channels, ch), (int) (from - start), scratch, ch, 0, count);
+            out.copyFrom (wideChannel (channels, ch, out.getNumChannels()), (int) (from - start), scratch, ch, 0, count);
     }
 
-    /** A 5.1 track's clips, six channels, before its volume, into frames [0, numFrames) of out. */
-    void renderFiveOne (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
-                        juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains)
+    /** A 5.1 or 7.1 track's clips, all out's channels (6 or 8), before its volume, into frames
+        [0, numFrames) of out. */
+    void renderWide (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
+                     juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains)
     {
         out.clear (0, numFrames);
         const auto end = start + numFrames;
@@ -545,14 +549,14 @@ namespace
 
             const auto count = (int) (to - from);
 
-            if (scratch.getNumChannels() < 6 || scratch.getNumSamples() < count)
-                scratch.setSize (6, count, false, false, true);
+            if (scratch.getNumChannels() < 8 || scratch.getNumSamples() < count)
+                scratch.setSize (8, count, false, false, true);
 
-            const auto channels = readClip (clip, from, count, scratch, gains);
+            const auto channels = juce::jmin (out.getNumChannels(), readClip (clip, from, count, scratch, gains));
             const auto clipGain = juce::Decibels::decibelsToGain (clip.gainDb, -150.0f);
 
             for (int ch = 0; ch < channels; ++ch)
-                out.addFrom (fiveOneChannel (channels, ch), (int) (from - start), scratch, ch, 0, count, clipGain);
+                out.addFrom (wideChannel (channels, ch, out.getNumChannels()), (int) (from - start), scratch, ch, 0, count, clipGain);
         }
     }
 
@@ -723,7 +727,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         const auto own = latencyOf (inserts, track);
         const auto ahead = aheadOf (state, track, inserts);
-        const auto fiveOne = track.fiveOne;
+        const auto fiveOne = track.isWide();   // a 5.1 or 7.1 track
+        const auto width = track.wideChannels();
         const auto panAutomated = ! track.panEnvelope.isEmpty() && ! fiveOne;
 
         // The clips are read at start + own + ahead, so that is where their pan is taken from.
@@ -732,19 +737,23 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
 
         // A frozen track's audio already has its clips, pan and effects: it is the track's
         // output at start + ahead.
-        if (fiveOne && (buffers.wide.getNumChannels() < 6 || buffers.wide.getNumSamples() < numFrames))
-            buffers.wide.setSize (6, numFrames, false, false, true);
+        if (fiveOne && (buffers.wide.getNumChannels() < 8 || buffers.wide.getNumSamples() < numFrames))
+            buffers.wide.setSize (8, numFrames, false, false, true);
+
+        // The wide track's own channels, and no more.
+        auto& wideFrom = fiveOne ? buffers.wide : buffers.track;
+        juce::AudioBuffer<float> wide (wideFrom.getArrayOfWritePointers(), fiveOne ? width : 2, wideFrom.getNumSamples());
 
         if (track.isFrozen() && fiveOne)
-            readFrozenFiveOne (track, start + ahead, buffers.wide, numFrames, buffers.wideClip);
+            readFrozenWide (track, start + ahead, wide, numFrames, buffers.wideClip);
         else if (track.isFrozen())
             readFrozen (track, start + ahead, buffers.track, numFrames);
         else if (fiveOne)
         {
             if (live == nullptr || live->clips)
-                renderFiveOne (track, start + own + ahead, buffers.wide, numFrames, buffers.wideClip, buffers.clipGains);
+                renderWide (track, start + own + ahead, wide, numFrames, buffers.wideClip, buffers.clipGains);
             else
-                buffers.wide.clear (0, numFrames);
+                wide.clear (0, numFrames);
         }
         else if (live == nullptr || live->clips)
             renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, buffers.clipGains, panAutomated ? pans : nullptr);
@@ -758,26 +767,26 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 {
                     if (fiveOne)
                         for (int ch = 0; ch < juce::jlimit (1, 2, in.numChannels); ++ch)
-                            buffers.wide.addFrom (fiveOneChannel (juce::jlimit (1, 2, in.numChannels), ch), 0, *live->audio, in.firstChannel + ch, 0, numFrames);
+                            wide.addFrom (wideChannel (juce::jlimit (1, 2, in.numChannels), ch, width), 0, *live->audio, in.firstChannel + ch, 0, numFrames);
                     else
                         addLive (in, *live->audio, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
                 }
 
         if (inserts != nullptr && runsEffects (track) && inserts->isActive (track.id))
-            inserts->process (track, start + own + ahead, fiveOne ? buffers.wide : buffers.track, numFrames,
+            inserts->process (track, start + own + ahead, fiveOne ? wide : buffers.track, numFrames,
                               sidechainKeys (state, track, own + ahead, numFrames, buffers, inserts));
 
         if (track.invertPolarity)
-            for (int ch = 0; ch < (fiveOne ? 6 : 2); ++ch)
+            for (int ch = 0; ch < (fiveOne ? width : 2); ++ch)
             {
-                auto& b = fiveOne ? buffers.wide : buffers.track;
+                auto& b = fiveOne ? wide : buffers.track;
                 juce::FloatVectorOperations::negate (b.getWritePointer (ch), b.getReadPointer (ch), numFrames);
             }
 
-        // A 5.1 track: folded down into the track buffer for all it feeds but a 5.1 master, its
-        // volume and ducking applied to both.
+        // A 5.1 or 7.1 track: folded down into the track buffer for all it feeds but a surround
+        // master, its volume and ducking applied to both.
         if (fiveOne)
-            Surround::foldDown (buffers.wide.getArrayOfReadPointers(), buffers.track.getWritePointer (0), buffers.track.getWritePointer (1), numFrames);
+            Surround::foldDown (wide.getArrayOfReadPointers(), width, buffers.track.getWritePointer (0), buffers.track.getWritePointer (1), numFrames);
 
         const auto applyGains = [&] (const float* gains)
         {
@@ -785,8 +794,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 juce::FloatVectorOperations::multiply (buffers.track.getWritePointer (ch), gains, numFrames);
 
             if (fiveOne)
-                for (int ch = 0; ch < 6; ++ch)
-                    juce::FloatVectorOperations::multiply (buffers.wide.getWritePointer (ch), gains, numFrames);
+                for (int ch = 0; ch < width; ++ch)
+                    juce::FloatVectorOperations::multiply (wide.getWritePointer (ch), gains, numFrames);
         };
 
         // The track's output is now the audio at start + ahead.
@@ -872,13 +881,17 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         }
         else if (state.surround && track.deviceOutput < 0)
         {
-            // A 5.1 track's channels go to their own; as it starts, a pan is left to L and right
-            // to R: straight there, as in a stereo master.
+            // A 5.1 or 7.1 track's channels go to their own: a 5.1 track's surrounds to a 7.1
+            // master's sides, a 7.1 track's rears and sides both to a 5.1 master's surrounds at
+            // -3 dB. As it starts, a pan is left to L and right to R: straight there, as in a stereo master.
             if (fiveOne)
             {
-                static constexpr int intoSevenOne[] { 0, 1, 2, 3, 6, 7 };
-                addHeld (buffers, { track.id, 0 }, ahead, buffers.wide, numFrames, buffers.master, 0, volume, 0, 6,
-                         state.sevenOne ? intoSevenOne : nullptr);
+                static constexpr int fiveIntoSeven[] { 0, 1, 2, 3, 6, 7 }, sevenIntoFive[] { 0, 1, 2, 3, 4, 5, 4, 5 };
+                static constexpr float sevenIntoFiveGains[] { 1.0f, 1.0f, 1.0f, 1.0f, Surround::foldGain, Surround::foldGain,
+                                                              Surround::foldGain, Surround::foldGain };
+                const auto fiveToSeven = width == 6 && state.sevenOne, sevenToFive = width == 8 && ! state.sevenOne;
+                addHeld (buffers, { track.id, 0 }, ahead, wide, numFrames, buffers.master, 0, volume, 0, width,
+                         fiveToSeven ? fiveIntoSeven : sevenToFive ? sevenIntoFive : nullptr, sevenToFive ? sevenIntoFiveGains : nullptr);
             }
             else if (plainSurround (track))
             {

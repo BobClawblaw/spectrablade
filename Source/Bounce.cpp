@@ -37,12 +37,14 @@ juce::uint32 land (SessionState& s, juce::uint32 trackId, const juce::File& file
     const auto deviceOutput = source->deviceOutput;
     const auto surroundPan = source->surroundPan;
     const auto fiveOne = source->fiveOne && audio != nullptr && audio->getNumChannels() == Surround::fiveOneChannels;
+    const auto sevenOne = source->sevenOne && audio != nullptr && audio->getNumChannels() == Surround::sevenOneChannels;
     source->mute = true;
 
     auto& added = s.addTrack();
     added.name = name;
     added.surroundPan = surroundPan;
     added.fiveOne = fiveOne;
+    added.sevenOne = sevenOne;
     const auto id = added.id;
     SessionEdits::addClip (s, (int) s.tracks.size() - 1, file, std::move (audio), position);
 
