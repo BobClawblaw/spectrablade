@@ -57,6 +57,11 @@ namespace
         if (numChannels == 6)   // L R C LFE Ls Rs
             return channel == 3 ? 0.0 : channel >= 4 ? 1.41 : 1.0;
 
+        // L R C LFE Lrs Rrs Lss Rss: the sides (at 90 degrees) count 1.41 times, the rears (at 135) once,
+        // as BS.1770-4 weights channels by where they are.
+        if (numChannels == 8)
+            return channel == 3 ? 0.0 : channel >= 6 ? 1.41 : 1.0;
+
         return 1.0;
     }
 

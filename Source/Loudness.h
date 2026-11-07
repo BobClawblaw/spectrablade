@@ -5,8 +5,9 @@
 /** Loudness as defined by ITU-R BS.1770-4 and EBU R128 (EBU Tech 3341 and 3342).
 
     Channels are K-weighted (a high shelf and a high-pass, worked out for the file's rate) and
-    summed by power with BS.1770 weights: 1.0 for the front channels, 1.41 for the surrounds, and
-    the LFE (channel 4 of a 6-channel file) left out. True peak is the largest absolute value
+    summed by power with BS.1770 weights: 1.0 for the front channels, 1.41 for the surrounds of a
+    6-channel (5.1) file and the side surrounds of an 8-channel (7.1) one, 1.0 for 7.1's rear
+    surrounds (at 135 degrees), and the LFE (channel 4 of a 6- or 8-channel file) left out. True peak is the largest absolute value
     after 4x oversampling with the sample-rate converter. */
 namespace Loudness
 {

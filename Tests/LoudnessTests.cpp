@@ -60,11 +60,11 @@ namespace
 
     bool near (double value, double expected, double tolerance)  { return std::abs (value - expected) <= tolerance; }
 
-    void integrated (const juce::String& name, const juce::AudioBuffer<float>& b, double rate, double expected)
+    void integrated (const juce::String& name, const juce::AudioBuffer<float>& b, double rate, double expected, const char* source = "EBU")
     {
         const auto r = Loudness::measure (b, rate);
         check (near (r.integrated, expected, 0.1), name + " reads " + Loudness::format (r.integrated, "LUFS")
-                                                       + " (EBU: " + juce::String (expected, 1) + " +-0.1)");
+                                                       + " (" + source + ": " + juce::String (expected, 2) + " +-0.1)");
     }
 
     void range (const juce::String& name, const juce::AudioBuffer<float>& b, double rate, double expected)
@@ -252,6 +252,30 @@ void runLoudnessTests()
             surround.clear (ch, 0, surround.getNumSamples());
 
         integrated ("loudness: 5.1 left surround alone is weighted +1.5 dB", surround, 48000.0, -23.0 + 10.0 * std::log10 (1.41));
+    }
+
+    // 7.1 (L R C LFE Lrs Rrs Lss Rss): the LFE left out, the sides +1.5 dB, the rears as the fronts.
+    {
+        const auto alone = [] (int keep)
+        {
+            auto b = tone ({ { 10, -20 } }, 48000.0, 8);
+
+            for (int ch = 0; ch < 8; ++ch)
+                if (ch != keep)
+                    b.clear (ch, 0, b.getNumSamples());
+
+            return b;
+        };
+
+        check (! std::isfinite (Loudness::measure (alone (3), 48000.0).integrated), "loudness: 7.1 LFE alone does not count");
+        integrated ("loudness: 7.1 left side surround alone is weighted +1.5 dB", alone (6), 48000.0, -23.0 + 10.0 * std::log10 (1.41), "BS.1770");
+        integrated ("loudness: 7.1 right side surround alone is weighted +1.5 dB", alone (7), 48000.0, -23.0 + 10.0 * std::log10 (1.41), "BS.1770");
+        integrated ("loudness: 7.1 left rear surround alone counts as a front channel", alone (4), 48000.0, -23.0, "BS.1770");
+        integrated ("loudness: 7.1 left front alone counts once", alone (0), 48000.0, -23.0, "BS.1770");
+
+        // All eight at -20 dBFS: five channels once, two at 1.41, the LFE not at all.
+        integrated ("loudness: 7.1, all eight channels at -20 dBFS", tone ({ { 10, -20 } }, 48000.0, 8), 48000.0,
+                    -23.0 + 10.0 * std::log10 (5.0 + 2.0 * 1.41), "BS.1770");
     }
 
     {

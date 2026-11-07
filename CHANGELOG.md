@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 275: Loudness of 7.1 audio**
+- Fixed: eight-channel (7.1) audio was measured with every channel weighted 1.0, the LFE included, so 7.1 loudness (in Loudness Statistics, Match Loudness, Meet Delivery Spec, and 7.1 mixdowns and stems to a spec) read wrong whenever the LFE or the side surrounds had sound. Now it is weighted as BS.1770-4 places the channels: the LFE left out, the side surrounds (at 90 degrees) counted 1.41 times (+1.5 dB), the rear surrounds (at 135 degrees) and front channels once. 5.1 was already weighted this way.
+- EBU's test signals (Tech 3341) have no 7.1 case, so the checks below are against BS.1770's sum.
+- Measured by the tests, each channel alone with a 1 kHz sine at -20 dBFS: the 7.1 LFE alone does not count; each side surround reads -21.5 LUFS (BS.1770: -21.51); a rear surround and a front channel read -23.0 LUFS (BS.1770: -23.00); all eight together read -14.1 LUFS (BS.1770: -14.07). The 5.1 checks still pass. The whole suite passed (1275 checks). Not tried: a real 7.1 recording measured against another loudness meter.
+
 **Milestone 274: Ducking on 7.1 tracks, tested**
 - No change to how it works: ducking on 5.1 and 7.1 tracks, and with them as the key, was there since those tracks were, but untested. Now it is tested.
 - Measured by the tests: in a 7.1 master, a 7.1 track ducked under a stereo voice comes down on all eight channels by the gains a steady stereo track ducked the same way does (within 0.000000030), and a 5.1 track on all six (within 0.000000028), both to -12.00 dB, and untouched bit for bit before the voice; a 7.1 track as the key ducks a stereo track as a stereo key playing its fold-down does (within 0.000000030, to -12.00 dB). The whole suite passed (1269 checks). Not tried: ducking on surround tracks in the running app.
