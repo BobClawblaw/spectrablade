@@ -167,7 +167,7 @@ namespace
     /** Moves the pitch over [start, end) by the shift given for each frame of the track (in cents;
         frames without a pitch, and frames outside the range, are left), by PSOLA. */
     AudioDocument::Snapshot render (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate, const Track& track,
-                                    std::vector<double> shift, const std::function<bool (float)>& progress)
+                                    std::vector<double> shift, const std::function<bool (float)>& progress, const TimeMap& times = {})
     {
         const auto length = snapshot.getNumFrames();
         const auto channels = snapshot.getNumChannels();
@@ -256,25 +256,33 @@ namespace
             return p1 + 0.5f * x * (p2 - p0 + x * (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3 + x * (3.0f * (p1 - p2) + p3 - p0)));
         };
 
+        // The moment of the input an output frame plays, and the other way, as the time map says.
+        const auto hop = (double) track.hop, first = (double) track.first;
+        const auto inputAt = [&] (double t) { return times.isIdentity() ? t : first + hop * times.toInput ((t - first) / hop); };
+        const auto outputAt = [&] (double s) { return times.isIdentity() ? s : first + hop * times.toOutput ((s - first) / hop); };
+
         // Synthesis: from each output mark to the next a period of the new pitch, each taking the
-        // grain of the analysis mark nearest it, the grain's centre put exactly at the mark. A note's
-        // first grain goes where it was cut, so the note starts in step with the audio before it.
+        // grain of the analysis mark nearest the moment it plays, the grain's centre put exactly at
+        // the mark. A note's first grain goes where it was cut (moved as the time map moves it), so
+        // the note starts in step with the audio before it.
         size_t k = 0;
         auto count = 0;
         auto inNote = false;
 
         for (auto t = (double) workStart; t < (double) workEnd; ++count)
         {
-            while (k + 1 < marks.size() && std::abs (marks[k + 1].at - t) <= std::abs (marks[k].at - t))
+            const auto s = inputAt (t);
+
+            while (k + 1 < marks.size() && std::abs (marks[k + 1].at - s) <= std::abs (marks[k].at - s))
                 ++k;
 
             const auto& m = marks[k];
 
             if (m.voiced && ! inNote)
-                t = m.at;
+                t = outputAt (m.at);
 
             inNote = m.voiced;
-            const auto f = frameAt (t);
+            const auto f = frameAt (inputAt (t));
             const auto hz = (double) track.hz[(size_t) f];
             const auto step = hz > 0.0 ? sampleRate / hz / std::pow (2.0, shift[(size_t) f] / 1200.0) : (double) m.period;
             const auto centre = t - (double) bufferStart, source = m.at - (double) bufferStart;
@@ -523,6 +531,7 @@ std::vector<Note> joinNotes (const Track& track, std::vector<Note> notes, int in
     joined.end = b.end;
     joined.pitch = pitchOf (track, joined.first, joined.end);
     joined.shiftCents = b.end - b.first > a.end - a.first ? b.shiftCents : a.shiftCents;
+    joined.moveFrames = a.moveFrames;
     notes[(size_t) index] = joined;
     notes.erase (notes.begin() + index + 1);
     return notes;
@@ -584,6 +593,96 @@ AudioDocument::Snapshot moveNotes (const AudioSnapshot& snapshot, juce::int64 st
         || track.first + (juce::int64) track.hz.size() * track.hop < end)
         return nullptr;
 
-    return render (snapshot, start, end, sampleRate, track, shiftsFor (track, notes), progress);
+    const auto times = timeMapFor (track, start, end, notes);
+
+    if (! times.has_value())
+        return nullptr;
+
+    return render (snapshot, start, end, sampleRate, track, shiftsFor (track, notes), progress, *times);
+}
+
+double TimeMap::toOutput (double inputFrame) const noexcept
+{
+    if (knots.empty() || inputFrame <= knots.front().first || inputFrame >= knots.back().first)
+        return inputFrame;
+
+    auto k = (size_t) 1;
+
+    while (knots[k].first < inputFrame)
+        ++k;
+
+    const auto& a = knots[k - 1];
+    const auto& b = knots[k];
+    return a.second + (inputFrame - a.first) * (b.second - a.second) / (b.first - a.first);
+}
+
+double TimeMap::toInput (double outputFrame) const noexcept
+{
+    if (knots.empty() || outputFrame <= knots.front().second || outputFrame >= knots.back().second)
+        return outputFrame;
+
+    auto k = (size_t) 1;
+
+    while (knots[k].second < outputFrame)
+        ++k;
+
+    const auto& a = knots[k - 1];
+    const auto& b = knots[k];
+    return a.first + (outputFrame - a.second) * (b.first - a.first) / (b.second - a.second);
+}
+
+std::optional<TimeMap> timeMapFor (const Track& track, juce::int64 start, juce::int64 end, const std::vector<Note>& notes)
+{
+    if (track.hop <= 0 || std::all_of (notes.begin(), notes.end(), [] (const Note& n) { return n.moveFrames == 0; }))
+        return TimeMap {};
+
+    // The range in the track's frames: its ends stay.
+    const auto from = (int) std::ceil ((double) (start - track.first) / track.hop);
+    const auto to = (int) std::floor ((double) (end - track.first) / track.hop);
+    const auto inside = [&] (const Note& n) { return n.first >= from && n.end <= to; };
+
+    TimeMap map;
+    auto clash = false;
+
+    // A knot where the last one is: the same one again (a note starting at the range's start, or
+    // ending at its end, not moved), else two places for one moment.
+    const auto add = [&] (double in, double out)
+    {
+        if (! map.knots.empty() && juce::exactlyEqual (map.knots.back().first, in))
+            clash = clash || ! juce::exactlyEqual (map.knots.back().second, out);
+        else
+            map.knots.push_back ({ in, out });
+    };
+
+    add (from, from);
+
+    for (size_t k = 0; k < notes.size(); ++k)
+    {
+        const auto& n = notes[k];
+
+        if (! inside (n))
+            continue;
+
+        add (n.first, n.first + n.moveFrames);
+        const auto touched = k + 1 < notes.size() && notes[k + 1].first == n.end && inside (notes[k + 1]);
+
+        if (! touched)
+            add (n.end, n.end + n.moveFrames);
+    }
+
+    add (to, to);
+
+    if (clash)
+        return std::nullopt;
+
+    for (size_t k = 1; k < map.knots.size(); ++k)
+    {
+        const auto in = map.knots[k].first - map.knots[k - 1].first, out = map.knots[k].second - map.knots[k - 1].second;
+
+        if (in < 1.0 || out < 1.0 || out > in * mostStretch || in > out * mostStretch)
+            return std::nullopt;
+    }
+
+    return map;
 }
 }

@@ -2,7 +2,7 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-1. **A fuller Pitch Editor:** moving notes in time, keeping formants on large shifts, and editing session clips (notes are split and joined since milestone 260).
+1. **Formants in the Pitch Editor:** keeping a voice's formants where they are on large shifts (notes are split, joined and moved in time since milestones 260 and 261; editing session clips is item 5).
 2. **7.1:** a 7.1 master and 7.1 tracks, as 5.1 has them.
 3. **Automation in track templates:** templates keep the track's envelopes.
 4. **Effects while scrubbing a session:** the effects that can follow a head going backwards (no latency, no memory) heard while scrubbing.

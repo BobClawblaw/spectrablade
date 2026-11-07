@@ -522,8 +522,132 @@ namespace
     }
 }
 
+namespace
+{
+    void testMovingInTime()
+    {
+        const auto in = melodySnapshot();
+        const auto length = in->getNumFrames();
+        const auto track = PitchCorrection::analyse (*in, 0, length, rate);
+        auto notes = PitchCorrection::findNotes (track);
+
+        if (notes.size() != 4)
+        {
+            check (false, "pitch editing, moving in time: the melody's four notes are found");
+            return;
+        }
+
+        // C4 (1.0 to 1.5 s, touching B3 before it, a pause after) 100 ms later: B3 stretched to
+        // meet it, the pause squeezed to 100 ms, the last note left where it is.
+        const auto frames100ms = (int) std::lround (0.1 * rate / track.hop);
+        notes[2].moveFrames = frames100ms;
+        const auto map = PitchCorrection::timeMapFor (track, 0, length, notes);
+        const auto out = PitchCorrection::moveNotes (*in, 0, length, rate, track, notes);
+
+        if (out == nullptr || ! map.has_value())
+        {
+            check (false, "pitch editing, moving in time: C4 moved 100 ms later is rendered");
+            return;
+        }
+
+        const auto pitchOver = [&] (const AudioSnapshot& a, double from, double to) { return medianPitch (a, (juce::int64) (from * rate), (juce::int64) (to * rate)); };
+        const auto levelOver = [&] (const AudioSnapshot& a, double from, double to) { return rms (a, (juce::int64) (from * rate), (juce::int64) (to * rate)); };
+        const auto c4 = cents (pitchOver (*out, 1.2, 1.5), 261.63);
+        const auto b3Late = cents (pitchOver (*out, 1.0, 1.08), 246.94);
+        const auto last = cents (pitchOver (*out, 1.8, 2.1), 228.0);
+        const auto c4Was = levelOver (*in, 1.3, 1.45);
+        const auto stillSounding = levelOver (*out, 1.52, 1.58) / c4Was, pause = levelOver (*out, 1.62, 1.68) / c4Was;
+        const auto lastLevel = levelOver (*out, 1.75, 2.1) / levelOver (*in, 1.75, 2.1);
+        const auto c4Frame = (double) notes[2].first;
+        const auto roundTrip = std::abs (map->toInput (map->toOutput (c4Frame + 3.5)) - (c4Frame + 3.5)) < 1.0e-9
+                               && juce::exactlyEqual (map->toOutput (c4Frame), c4Frame + frames100ms);
+
+        check (out->getNumFrames() == length && std::abs (c4) < 1.0 && std::abs (b3Late) < 50.0 && std::abs (last) < 1.0
+                   && stillSounding > 0.5 && pause < 0.01 && std::abs (lastLevel - 1.0) < 0.05 && roundTrip,
+               "pitch editing, moving in time: C4 moved 100 ms later keeps its pitch (" + juce::String (c4, 2) + " cents), B3 stretched to meet "
+               "it is still B3 where C4 used to start (" + juce::String (b3Late, 1) + " cents, with its vibrato), C4 sounds on to 1.6 s ("
+                   + juce::String (stillSounding, 2) + " of its level) and the pause after it is squeezed to 100 ms (" + juce::String (pause, 4)
+                   + " of the level), the last note stays (" + juce::String (last, 2) + " cents, " + juce::String (lastLevel, 3) + " of its level), "
+               "and the length doesn't change");
+
+        // Moves that would squeeze something to nothing, or stretch it more than four times, are refused.
+        auto tooFar = notes;
+        tooFar[2].moveFrames = 3 * frames100ms;
+        auto tooStretched = notes;
+        tooStretched[2].moveFrames = 0;
+        tooStretched[3].moveFrames = -frames100ms * 2 + 1;
+        auto none = notes;
+        none[2].moveFrames = 0;
+
+        check (! PitchCorrection::timeMapFor (track, 0, length, tooFar).has_value() && PitchCorrection::moveNotes (*in, 0, length, rate, track, tooFar) == nullptr
+                   && ! PitchCorrection::timeMapFor (track, 0, length, tooStretched).has_value()
+                   && PitchCorrection::timeMapFor (track, 0, length, none)->isIdentity(),
+               "pitch editing, moving in time: C4 moved 300 ms later (through the 200 ms pause) is refused, and so is the last note moved "
+               "earlier until the pause is under a quarter of its length; with nothing moved in time, the map changes nothing");
+    }
+}
+
+namespace
+{
+    void testEditorMovingInTime()
+    {
+        const auto audio = melodySnapshot();
+        PitchEditor editor;
+        editor.setSize (900, 320);
+        editor.readSource = [&] { return std::optional<PitchEditor::Source> ({ audio, 0, audio->getNumFrames(), rate, 7 }); };
+        editor.analyse();
+
+        if (editor.getNotes().size() != 4)
+        {
+            check (false, "pitch editor, moving in time: the melody's four notes are shown");
+            return;
+        }
+
+        const auto drag = [&] (int note, juce::Point<float> by)
+        {
+            const auto from = editor.centreOf (note);
+            editor.mouseDown (mouseAt (editor, from, from));
+            editor.mouseDrag (mouseAt (editor, from + by * 0.5f, from));
+            editor.mouseDrag (mouseAt (editor, from + by, from));
+            editor.mouseUp (mouseAt (editor, from + by, from));
+            return editor.getNotes()[(size_t) note];
+        };
+
+        // Pixels per frame, from where C4 and A3 are drawn.
+        const auto& notes = editor.getNotes();
+        const auto perFrame = (editor.centreOf (2).x - editor.centreOf (0).x) / (float) ((notes[2].first + notes[2].end - notes[0].first - notes[0].end) / 2);
+        const auto wasX = editor.centreOf (2).x;
+        const auto later = drag (2, { 20.0f * perFrame, 1.0f });
+        const auto movedX = editor.centreOf (2).x - wasX;
+
+        // Further than the pause allows: it stops where the pause is a quarter of its length.
+        const auto pause = notes[3].first - notes[2].end;
+        const auto stopped = drag (2, { 60.0f * perFrame, 0.0f });
+
+        // A drag mostly up moves only the pitch.
+        const auto up = drag (1, { 3.0f, -40.0f });
+        const auto reset = [&]
+        {
+            for (auto* child : editor.getChildren())
+                if (auto* b = dynamic_cast<juce::TextButton*> (child); b != nullptr && b->getButtonText() == "Reset")
+                    b->onClick();
+
+            return std::all_of (editor.getNotes().begin(), editor.getNotes().end(), [] (auto& n) { return n.moveFrames == 0 && juce::exactlyEqual (n.shiftCents, 0.0); });
+        }();
+
+        check (std::abs (later.moveFrames - 20) <= 1 && juce::exactlyEqual (later.shiftCents, 0.0) && std::abs (movedX - (float) later.moveFrames * perFrame) < 2.0f
+                   && stopped.moveFrames == pause - (pause + 3) / 4 && up.moveFrames == 0 && up.shiftCents > 50.0 && reset,
+               "pitch editor, moving in time: dragging C4 sideways moves it in time (" + juce::String (later.moveFrames) + " frames, 100 ms, "
+               "drawn " + juce::String (movedX, 1) + " points later) and not in pitch; dragged on into the pause it stops where the pause "
+               "is a quarter of its length (moved " + juce::String (stopped.moveFrames) + " frames); a drag mostly up moves only the pitch; "
+               "Reset puts every note back in pitch and time");
+    }
+}
+
 void runPitchCorrectionTests()
 {
+    testEditorMovingInTime();
+    testMovingInTime();
     testSplitAndJoin();
     testEditorSplitAndJoin();
     testPitchEditor();

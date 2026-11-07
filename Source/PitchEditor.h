@@ -10,7 +10,10 @@
     semitones (with Option held, freely in cents); double-clicking a note snaps it to the nearest
     semitone, and Snap to Notes does that to them all. Cmd-clicking a note splits it where it is
     clicked; right-clicking one offers Split Here, and Join with the note before or after where
-    they touch. Reset puts every note back (and leaves splits and joins as they are). Apply moves the
+    they touch. Dragging a note sideways moves it in time (the audio around it stretched or
+    squeezed to fill, never past the next note or more than four times); a drag moves a note in
+    pitch or in time, whichever way it first goes. Reset puts every note back where it was, in
+    pitch and time (and leaves splits and joins as they are). Apply moves the
     notes in the file (by PSOLA, as Pitch Correction does), as one step to undo. */
 class PitchEditor final : public juce::Component
 {
@@ -83,6 +86,11 @@ private:
     double lowNote = 48.0, highNote = 72.0;   // the grid shown, in MIDI numbers
     int dragging = -1;
     double dragShift = 0.0;
+    int dragMove = 0;
+    enum class Axis { undecided, pitch, time } axis = Axis::undecided;
+    PitchCorrection::TimeMap times;   // where the notes' moves in time put each frame
+
+    void refreshTimes();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PitchEditor)
 };

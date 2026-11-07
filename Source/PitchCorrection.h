@@ -59,7 +59,31 @@ namespace PitchCorrection
         int first = 0, end = 0;
         double pitch = 0.0;
         double shiftCents = 0.0;
+        int moveFrames = 0;   // how far it is to be moved in time, in the track's frames (later: positive)
     };
+
+    /** Where notes moved in time put each moment: knots of (frame in the track, frame it moves to),
+        in order, with straight lines between them and no change outside them. A note moved starts
+        moveFrames later and lasts as long, unless the next note touches it: then it ends where that
+        one starts, so it is stretched or squeezed to meet it; the audio between notes that don't
+        touch, and before the first and after the last moved, is stretched or squeezed to fill. The
+        range's ends stay where they are. */
+    struct TimeMap
+    {
+        std::vector<std::pair<double, double>> knots;
+
+        bool isIdentity() const noexcept                    { return knots.empty(); }
+        double toOutput (double inputFrame) const noexcept;
+        double toInput (double outputFrame) const noexcept;
+    };
+
+    /** The most a stretch of audio between knots is stretched or squeezed (4: to a quarter, or four times as long). */
+    constexpr double mostStretch = 4.0;
+
+    /** The time map the notes' moves give over [start, end) (the range the track was analysed for);
+        notes not wholly inside it don't move. Nothing if the moves would put two knots out of order,
+        a stretch shorter than a frame, or stretch anything by more than mostStretch. */
+    std::optional<TimeMap> timeMapFor (const Track&, juce::int64 start, juce::int64 end, const std::vector<Note>&);
 
     /** The audio's pitch over [start, end) and 50 ms either side (so the edges have context), as
         correcting needs it. Empty when cancelled or for an empty range. */
@@ -78,14 +102,15 @@ namespace PitchCorrection
     constexpr int shortestNote = 2;
 
     /** Note `index` cut in two at frame `at`: two notes either side, each with the pitch of its own
-        frames and the note's shift. Unchanged when `at` would leave either shorter than shortestNote. */
+        frames and the note's shift and move in time. Unchanged when `at` would leave either shorter than shortestNote. */
     std::vector<Note> splitNote (const Track&, std::vector<Note>, int index, int at);
 
     /** Whether note `index` ends where the next begins, so the two can be joined. */
     bool canJoin (const std::vector<Note>&, int index);
 
     /** Note `index` and the next made one, with the pitch of all their frames and the shift of the
-        longer (the first's when they are as long). Unchanged when they don't touch (canJoin). */
+        longer (the first's when they are as long), moved in time as the first was. Unchanged when
+        they don't touch (canJoin). */
     std::vector<Note> joinNotes (const Track&, std::vector<Note>, int index);
 
     /** Each note moved to the nearest semitone (A = 440 Hz). */
@@ -95,9 +120,11 @@ namespace PitchCorrection
         the next over 25 ms where they touch, 0 elsewhere. */
     std::vector<double> shiftsFor (const Track&, const std::vector<Note>&);
 
-    /** Moves the notes over [start, end) as their shifts say (the track from analyse over the same
-        range), easing at the range's edges as correct does. nullptr for an empty range, a track
-        that doesn't fit, or when cancelled. */
+    /** Moves the notes over [start, end) as their shifts and moves say (the track from analyse over
+        the same range), easing at the range's edges as correct does. A moved note's grains are put
+        where the time map says, so it keeps its pitch, and the audio around it is stretched or
+        squeezed (by repeating or leaving out periods) to fill; the length doesn't change. nullptr
+        for an empty range, a track that doesn't fit, moves timeMapFor refuses, or when cancelled. */
     AudioDocument::Snapshot moveNotes (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Track&,
                                        const std::vector<Note>&, const std::function<bool (float)>& progress = {});
 

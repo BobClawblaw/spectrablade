@@ -36,8 +36,12 @@ PitchEditor::PitchEditor()
     resetButton.onClick = [this]
     {
         for (auto& n : notes)
+        {
             n.shiftCents = 0.0;
+            n.moveFrames = 0;
+        }
 
+        refreshTimes();
         repaint();
     };
     applyButton.onClick = [this]
@@ -57,11 +61,18 @@ PitchEditor::PitchEditor()
     refreshButtons();
 }
 
+void PitchEditor::refreshTimes()
+{
+    const auto map = source.has_value() ? PitchCorrection::timeMapFor (track, source->start, source->end, notes) : std::nullopt;
+    times = map.value_or (PitchCorrection::TimeMap {});
+}
+
 void PitchEditor::clear (const juce::String& message)
 {
     source.reset();
     track = {};
     notes.clear();
+    times = {};
     dragging = -1;
     status.setText (message, juce::dontSendNotification);
     refreshButtons();
@@ -88,6 +99,7 @@ void PitchEditor::analyse()
     notes = PitchCorrection::findNotes (track);
     source = got;
     dragging = -1;
+    times = {};
 
     if (notes.empty())
     {
@@ -106,7 +118,7 @@ void PitchEditor::analyse()
     lowNote = std::floor (lowest) - 4.0;
     highNote = std::ceil (highest) + 4.0;
     status.setText (juce::String ((int) notes.size()) + (notes.size() == 1 ? " note" : " notes")
-                        + ". Drag a note to move it (Option: in cents), double-click to snap it, Cmd-click to split it; right-click to join.",
+                        + ". Drag a note up or down (Option: in cents) or sideways in time; double-click to snap it, Cmd-click to split it, right-click to join.",
                     juce::dontSendNotification);
     refreshButtons();
     repaint();
@@ -163,7 +175,7 @@ juce::Point<float> PitchEditor::centreOf (int note) const
         return {};
 
     const auto& n = notes[(size_t) note];
-    return { 0.5f * (xOf (n.first) + xOf (n.end)), yOf (n.pitch + n.shiftCents / 100.0) };
+    return { 0.5f * (xOf (times.toOutput (n.first)) + xOf (times.toOutput (n.end))), yOf (n.pitch + n.shiftCents / 100.0) };
 }
 
 int PitchEditor::noteAt (juce::Point<float> p) const
@@ -175,7 +187,7 @@ int PitchEditor::noteAt (juce::Point<float> p) const
         const auto& n = notes[(size_t) k];
         const auto y = yOf (n.pitch + n.shiftCents / 100.0);
 
-        if (p.x >= xOf (n.first) && p.x < xOf (n.end) && std::abs (p.y - y) <= juce::jmax (4.0f, half))
+        if (p.x >= xOf (times.toOutput (n.first)) && p.x < xOf (times.toOutput (n.end)) && std::abs (p.y - y) <= juce::jmax (4.0f, half))
             return k;
     }
 
@@ -246,7 +258,7 @@ void PitchEditor::paint (juce::Graphics& g)
             }
 
             const auto note = 69.0 + 12.0 * std::log2 (hz / 440.0) + (moved ? shifts[(size_t) f] / 100.0 : 0.0);
-            const juce::Point<float> p (xOf (f + 0.5), yOf (note));
+            const juce::Point<float> p (xOf (moved ? times.toOutput (f + 0.5) : f + 0.5), yOf (note));
 
             if (drawing)
                 path.lineTo (p);
@@ -266,7 +278,8 @@ void PitchEditor::paint (juce::Graphics& g)
         const auto& n = notes[(size_t) k];
         const auto y = yOf (n.pitch + n.shiftCents / 100.0);
         const auto h = juce::jmax (6.0f, 0.7f * (yOf (0.0) - yOf (1.0)));
-        const juce::Rectangle<float> box (xOf (n.first), y - 0.5f * h, juce::jmax (2.0f, xOf (n.end) - xOf (n.first)), h);
+        const auto left = xOf (times.toOutput (n.first)), right = xOf (times.toOutput (n.end));
+        const juce::Rectangle<float> box (left, y - 0.5f * h, juce::jmax (2.0f, right - left), h);
         g.setColour ((k == dragging ? Theme::accent : Theme::accentDeep).withAlpha (0.55f));
         g.fillRoundedRectangle (box, 3.0f);
         g.setColour (Theme::accent);
@@ -297,10 +310,18 @@ bool PitchEditor::splitAt (juce::Point<float> p)
     if (k < 0)
         return false;
 
+    // Cut where it is shown; the second piece is moved to start there, as it is drawn now.
+    const auto at = (int) std::lround (times.toInput (frameAt (p.x)));
     const auto before = notes.size();
-    notes = PitchCorrection::splitNote (track, std::move (notes), k, frameAt (p.x));
+    notes = PitchCorrection::splitNote (track, std::move (notes), k, at);
+
+    if (notes.size() == before)
+        return false;
+
+    notes[(size_t) k + 1].moveFrames = (int) std::lround (times.toOutput (at)) - at;
+    refreshTimes();
     repaint();
-    return notes.size() > before;
+    return true;
 }
 
 bool PitchEditor::joinWithNext (int index)
@@ -308,7 +329,17 @@ bool PitchEditor::joinWithNext (int index)
     if (! PitchCorrection::canJoin (notes, index))
         return false;
 
+    const auto kept = notes;
     notes = PitchCorrection::joinNotes (track, std::move (notes), index);
+
+    // A join that would move the second's end where the time map can't put it isn't made.
+    if (source.has_value() && ! PitchCorrection::timeMapFor (track, source->start, source->end, notes).has_value())
+    {
+        notes = kept;
+        return false;
+    }
+
+    refreshTimes();
     repaint();
     return true;
 }
@@ -321,7 +352,7 @@ juce::PopupMenu PitchEditor::menuAt (juce::Point<float> p)
     if (k < 0)
         return menu;
 
-    const auto at = frameAt (p.x);
+    const auto at = (int) std::lround (times.toInput (frameAt (p.x)));
     const auto& n = notes[(size_t) k];
     const auto splits = at - n.first >= PitchCorrection::shortestNote && n.end - at >= PitchCorrection::shortestNote;
     menu.addItem ("Split Here", splits, false, [this, p] { splitAt (p); });
@@ -351,9 +382,13 @@ void PitchEditor::mouseDown (const juce::MouseEvent& e)
     }
 
     dragging = noteAt (e.position);
+    axis = Axis::undecided;
 
     if (dragging >= 0)
+    {
         dragShift = notes[(size_t) dragging].shiftCents;
+        dragMove = notes[(size_t) dragging].moveFrames;
+    }
 
     repaint();
 }
@@ -362,6 +397,36 @@ void PitchEditor::mouseDrag (const juce::MouseEvent& e)
 {
     if (dragging < 0)
         return;
+
+    // The way it first goes, 4 points from where it was pressed, is the way it moves.
+    if (axis == Axis::undecided)
+    {
+        const auto offset = e.position - e.mouseDownPosition;
+
+        if (offset.getDistanceFromOrigin() < 4.0f)
+            return;
+
+        axis = std::abs (offset.x) > std::abs (offset.y) ? Axis::time : Axis::pitch;
+    }
+
+    if (axis == Axis::time)
+    {
+        // As far as the mouse has gone, or back to the furthest the time map allows on the way.
+        const auto wanted = dragMove + frameAt (e.position.x) - frameAt (e.mouseDownPosition.x);
+        const auto step = wanted > dragMove ? -1 : 1;
+
+        for (auto move = wanted; ; move += step)
+        {
+            notes[(size_t) dragging].moveFrames = move;
+
+            if (move == dragMove || (source.has_value() && PitchCorrection::timeMapFor (track, source->start, source->end, notes).has_value()))
+                break;
+        }
+
+        refreshTimes();
+        repaint();
+        return;
+    }
 
     auto& n = notes[(size_t) dragging];
     const auto moved = pitchAt (e.position.y) - pitchAt ((float) e.getMouseDownY());
