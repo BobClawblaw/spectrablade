@@ -4,6 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 276: Reverse Clip keeps takes**
+- Reverse Clip now keeps a clip's takes, as Stretch Clip does since Milestone 273: each take's part under the clip is reversed too, written to a file of its own, and kept lined up, so choosing another take afterwards plays it back to front in the same place. Before, the other takes were dropped.
+- Measured by the tests: a clip with three takes (one shorter than the clip) reversed keeps all three, the one playing still chosen; choosing the first afterwards plays what the clip played of it, sample for sample back to front, in the same place and length; takes of other lengths are refused. The whole suite passed (1276 checks). Not tried: Reverse Clip on a clip with takes in the running app.
+
 **Milestone 275: Loudness of 7.1 audio**
 - Fixed: eight-channel (7.1) audio was measured with every channel weighted 1.0, the LFE included, so 7.1 loudness (in Loudness Statistics, Match Loudness, Meet Delivery Spec, and 7.1 mixdowns and stems to a spec) read wrong whenever the LFE or the side surrounds had sound. Now it is weighted as BS.1770-4 places the channels: the LFE left out, the side surrounds (at 90 degrees) counted 1.41 times (+1.5 dB), the rear surrounds (at 135 degrees) and front channels once. 5.1 was already weighted this way.
 - EBU's test signals (Tech 3341) have no 7.1 case, so the checks below are against BS.1770's sum.

@@ -296,6 +296,37 @@ namespace
                    && choseC && cc.position == cb.position && cc.length == cb.length && cc.audio == cb.audio && cc.offset == cb.offset,
                "takes: with notes moved, the active take is replaced and the other two play the same frames in the same place as before, "
                "also once chosen; audio of another length is refused");
+
+        // Reversed, each take turns round alike and they stay lined up.
+        SessionState v;
+        v.sampleRate = rate;
+        v.addTrack();
+        v.tracks[0].clips.push_back (before);
+        std::vector<SessionClip::Take> backwards (3);
+
+        for (int i : { 0, 2 })
+            backwards[(size_t) i] = { juce::File ("/takes/r" + juce::String (i) + ".wav"), SessionEdits::reversedAudio (SessionEdits::takeAsPlayed (before, i)), 0 };
+
+        const auto reversedActive = SessionEdits::reversedAudio (before);
+        auto wrong = v;
+        auto shortTakes = backwards;
+        shortTakes[2].audio = noise (6, 10);
+        const auto refusedShort = ! SessionEdits::reverseClip (wrong, before.id, juce::File ("/takes/b r.wav"), reversedActive, shortTakes);
+        const auto reversedKept = SessionEdits::reverseClip (v, before.id, juce::File ("/takes/b r.wav"), reversedActive, backwards);
+        auto toA = v;
+        const auto choseFirst = SessionEdits::chooseTake (toA, before.id, 0);
+        const auto& ra = toA.tracks[0].clips[0];
+        auto turned = true;
+        const auto aPlayed = frames (*asA.audio, 0, 48000), aNow = frames (*ra.audio, 0, 48000);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000 && turned; ++i)
+                turned = juce::exactlyEqual (aNow.getSample (ch, i), aPlayed.getSample (ch, 47999 - i));
+
+        check (refusedShort && reversedKept && v.tracks[0].clips[0].takes.size() == 3 && v.tracks[0].clips[0].activeTake == 1
+                   && choseFirst && ra.position == before.position && ra.length == 48000 && ra.offset == 0 && turned,
+               "takes: reversed, a clip keeps its three takes, each what the clip played of it back to front, so choosing another "
+               "plays it reversed in the same place; takes of other lengths are refused");
     }
 }
 

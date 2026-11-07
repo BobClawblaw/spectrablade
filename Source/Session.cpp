@@ -900,11 +900,51 @@ namespace
 
 namespace SessionEdits
 {
-bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot reversed)
+namespace
+{
+    /** Whether processed takes fit a clip: none (its takes go), or one for each, every other
+        take as long as the processed audio. */
+    bool takesMatch (const SessionClip& c, const std::vector<SessionClip::Take>& takes, juce::int64 frames)
+    {
+        if (takes.empty())
+            return true;
+
+        if (takes.size() != c.takes.size())
+            return false;
+
+        for (size_t i = 0; i < takes.size(); ++i)
+            if ((int) i != c.activeTake && (takes[i].audio == nullptr || takes[i].audio->getNumFrames() != frames))
+                return false;
+
+        return true;
+    }
+
+    /** After the clip's audio is replaced by processed audio (saved as file): its takes, each
+        processed alike from the part the clip played so all start at 0; or none. */
+    void keepTakes (SessionClip& c, const juce::File& file, std::vector<SessionClip::Take> takes)
+    {
+        if (takes.empty())
+        {
+            c.takes.clear();
+            c.activeTake = 0;
+            return;
+        }
+
+        takes[(size_t) c.activeTake] = { file, c.audio, 0 };
+
+        for (auto& t : takes)
+            t.shift = 0;
+
+        c.takes = std::move (takes);
+    }
+}
+
+bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot reversed,
+                  std::vector<SessionClip::Take> takes)
 {
     auto* c = findUnlocked (s, clipId);
 
-    if (c == nullptr || reversed == nullptr)
+    if (c == nullptr || reversed == nullptr || ! takesMatch (*c, takes, reversed->getNumFrames()))
         return false;
 
     // The line across the part heard, back to front, as the new audio is.
@@ -920,8 +960,7 @@ bool reverseClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     c->audio = std::move (reversed);
     c->offset = 0;
     std::swap (c->fadeIn, c->fadeOut);
-    c->takes.clear();
-    c->activeTake = 0;
+    keepTakes (*c, file, std::move (takes));
     limitFades (*c);
     return true;
 }
@@ -1023,15 +1062,8 @@ bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     if (c == nullptr || stretched == nullptr || c->length <= 0 || (keepEnd && stretched->getNumFrames() > c->getEnd()))
         return false;
 
-    if (! takes.empty())
-    {
-        if (takes.size() != c->takes.size())
-            return false;
-
-        for (size_t i = 0; i < takes.size(); ++i)
-            if ((int) i != c->activeTake && (takes[i].audio == nullptr || takes[i].audio->getNumFrames() != stretched->getNumFrames()))
-                return false;
-    }
+    if (! takesMatch (*c, takes, stretched->getNumFrames()))
+        return false;
 
     if (keepEnd)
         c->position = c->getEnd() - stretched->getNumFrames();
@@ -1050,22 +1082,7 @@ bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, 
     c->fadeIn = (juce::int64) std::llround ((double) c->fadeIn * scale);
     c->fadeOut = (juce::int64) std::llround ((double) c->fadeOut * scale);
 
-    if (takes.empty())
-    {
-        c->takes.clear();
-        c->activeTake = 0;
-    }
-    else
-    {
-        // Every take processed alike from the part the clip played, so all start at 0.
-        takes[(size_t) c->activeTake] = { file, c->audio, 0 };
-
-        for (auto& t : takes)
-            t.shift = 0;
-
-        c->takes = std::move (takes);
-    }
-
+    keepTakes (*c, file, std::move (takes));
     limitFades (*c);
     return true;
 }

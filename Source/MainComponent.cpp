@@ -3559,6 +3559,22 @@ void MainComponent::reverseSelectedClip()
                                      : ! folder.createDirectory() ? "Could not make the folder " + folder.getFullPathName()
                                                                   : AudioFileIO::save (*reversed, state->sampleRate, file, 32, engine.formatManager);
 
+    // Its other takes reversed alike, each to a file of its own.
+    std::vector<SessionClip::Take> takes (clip.takes.size());
+
+    for (int i = 0; i < (int) takes.size() && error.isEmpty(); ++i)
+    {
+        if (i == clip.activeTake)
+            continue;
+
+        auto audio = SessionEdits::reversedAudio (SessionEdits::takeAsPlayed (clip, i));
+        const auto takeFile = folder.getNonexistentChildFile (juce::File::createLegalFileName (clip.name) + " Reversed Take " + juce::String (i + 1),
+                                                              ".wav", false);
+        error = audio == nullptr ? juce::String ("Take " + juce::String (i + 1) + " has no audio.")
+                                 : AudioFileIO::save (*audio, state->sampleRate, takeFile, 32, engine.formatManager);
+        takes[(size_t) i] = { takeFile, std::move (audio), 0 };
+    }
+
     if (error.isNotEmpty())
     {
         showError ("Reverse Clip", error);
@@ -3566,7 +3582,7 @@ void MainComponent::reverseSelectedClip()
     }
 
     auto next = *state;
-    SessionEdits::reverseClip (next, clipId, file, reversed);
+    SessionEdits::reverseClip (next, clipId, file, reversed, std::move (takes));
     engine.session.apply (std::move (next), "Reverse Clip");
 }
 

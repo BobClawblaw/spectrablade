@@ -509,8 +509,11 @@ namespace SessionEdits
     AudioDocument::Snapshot reversedAudio (const SessionClip&);
 
     /** Makes a clip play reversed audio (from reversedAudio(), saved as file): it plays all of it
-        from its start, its fades change ends, and other takes go. */
-    bool reverseClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot reversed);
+        from its start, and its fades change ends. `takes`, when given, holds every take reversed
+        alike (from takeAsPlayed(), each as long as reversed; the active one's place is filled by
+        reversed and file), which it keeps, lined up; otherwise its takes go. */
+    bool reverseClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot reversed,
+                      std::vector<SessionClip::Take> takes = {});
 
     /** The part of the clip's audio that plays, stretched to `ratio` times its length (within
         TimeStretch::shortest to longest) at the same pitch. Null with no audio, or when
