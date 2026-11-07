@@ -31,6 +31,7 @@
 #include "Batch.h"
 #include "EditorBar.h"
 #include "PitchEditor.h"
+#include "Delivery.h"
 
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
@@ -307,6 +308,12 @@ private:
     void measureLoudness (std::function<void (const Loudness::Result&, juce::Range<juce::int64>)> done);
     void showLoudness();
     void askForLoudnessTarget();
+
+    /** Meet Delivery Spec: the selection or file brought to a chosen spec (Delivery::deliver) as
+        one step to undo, then its report, which can be saved as a text file. */
+    void askForDeliverySpec();
+    void meetDeliverySpec (const Delivery::Spec&);
+    void showDeliveryReport (const juce::String& report);
     void matchLoudness (double target, double ceiling, bool limitToTarget);
 
     // Noise reduction

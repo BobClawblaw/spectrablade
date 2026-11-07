@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster
+        cmdSevenOneMaster, cmdMeetDeliverySpec
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1208,7 +1208,7 @@ void MainComponent::resized()
 //==============================================================================
 void MainComponent::getAllCommands (juce::Array<juce::CommandID>& ids)
 {
-    for (int id = cmdOpen; id <= cmdSevenOneMaster; ++id)
+    for (int id = cmdOpen; id <= cmdMeetDeliverySpec; ++id)
         ids.add (id);
 }
 
@@ -1563,6 +1563,9 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdLoudnessStats: info.setInfo ("Loudness Statistics...", "Measure loudness (EBU R128) and true peak of the selection or file", "Effects", 0);
             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdMatchLoudness: info.setInfo ("Match Loudness...", "Set the integrated loudness of the selection or file", "Effects", 0);
+            info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdMeetDeliverySpec: info.setInfo ("Meet Delivery Spec...", "Bring the selection or file to a loudness spec (EBU R128, ATSC A/85 or an online target) "
+                                                                         "in one step, with a report of what it measures", "Effects", 0);
             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdCaptureNoisePrint: info.setInfo ("Capture Noise Print", "Learn the noise from a selection of noise alone", "Effects", 0);
             info.addDefaultKeypress ('p', juce::ModifierKeys::shiftModifier);
@@ -2353,6 +2356,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdBrushSmaller: waveform.setBrushRadius (waveform.getBrushRadius() / 1.25f); break;
         case cmdLoudnessStats: showLoudness(); break;
         case cmdMatchLoudness: askForLoudnessTarget(); break;
+        case cmdMeetDeliverySpec: askForDeliverySpec(); break;
         case cmdCaptureNoisePrint: captureNoisePrint(); break;
         case cmdNoiseReduction: askForNoiseReduction(); break;
         case cmdDereverb:   askToReduceReverb(); break;
@@ -2451,7 +2455,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdLevelSpeech, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
+            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -8569,6 +8573,102 @@ void MainComponent::askForLoudnessTarget()
         settings->setValue ("truePeakCeiling", ceiling);
         settings->setValue ("loudnessLimit", limitToTarget);
         matchLoudness (target, ceiling, limitToTarget);
+    }), true);
+}
+
+void MainComponent::askForDeliverySpec()
+{
+    auto* settings = appProperties.getUserSettings();
+    juce::StringArray names;
+
+    for (auto& spec : Delivery::specs())
+        names.add (spec.name + ": " + Loudness::format (spec.targetLufs, "LUFS") + " +/- " + juce::String (spec.toleranceLu, 1) + " LU, true peak "
+                   + Loudness::format (spec.maxTruePeak, "dBTP"));
+
+    auto* box = new juce::AlertWindow ("Meet Delivery Spec",
+                                       "Brings the selection (or the whole file) to the spec's loudness in one step: gain, and a true-peak "
+                                       "limiter only where the gain alone would take the true peak past the ceiling. Then it is measured "
+                                       "again and checked against the spec.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    box->addComboBox ("spec", names, "Spec");
+    box->getComboBoxComponent ("spec")->setSelectedItemIndex (juce::jlimit (0, names.size() - 1, settings->getIntValue ("deliverySpec", 0)));
+    box->addButton ("Meet", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto index = juce::jlimit (0, (int) Delivery::specs().size() - 1, box->getComboBoxComponent ("spec")->getSelectedItemIndex());
+        settings->setValue ("deliverySpec", index);
+        meetDeliverySpec (Delivery::specs()[(size_t) index]);
+    }), true);
+}
+
+void MainComponent::meetDeliverySpec (const Delivery::Spec& spec)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr || doc.getNumFrames() == 0)
+        return;
+
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+    auto delivered = std::make_shared<Delivery::Delivered>();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Meeting " + spec.name + "...",
+        [delivered, snapshot, rate, range, spec] (const std::function<bool (float)>& progress)
+        {
+            *delivered = Delivery::deliver (*snapshot, range.getStart(), range.getEnd(), rate, spec, progress);
+            return delivered->snapshot != nullptr || delivered->error.isNotEmpty();
+        },
+        [this, delivered, version, spec]
+        {
+            if (delivered->error.isNotEmpty())
+            {
+                showError ("Meet Delivery Spec", delivered->error);
+                return;
+            }
+
+            if (engine.document.getVersion() != version)
+            {
+                showError ("Meet Delivery Spec", "The audio changed meanwhile, so the result was discarded.");
+                return;
+            }
+
+            const auto name = engine.document.getFile().getFileName();
+            applyEdit (std::move (delivered->snapshot), "Meet " + spec.name, waveform.getSelection());
+            showDeliveryReport (Delivery::report (spec, *delivered, name.isNotEmpty() ? name : juce::String ("Untitled")));
+        });
+    backgroundJob->launchThread();
+}
+
+void MainComponent::showDeliveryReport (const juce::String& report)
+{
+    auto* box = new juce::AlertWindow ("Delivery Report", {}, juce::MessageBoxIconType::NoIcon, this);
+    box->addTextBlock (report);
+    box->addButton ("Save Report...", 1);
+    box->addButton ("OK", 0, juce::KeyPress (juce::KeyPress::returnKey));
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, report] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto from = engine.document.getFile();
+        const auto start = from != juce::File() ? from.getSiblingFile (from.getFileNameWithoutExtension() + " Delivery Report.txt")
+                                                : juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Delivery Report.txt");
+        chooser = std::make_unique<juce::FileChooser> ("Save the delivery report", start, "*.txt");
+        chooser->launchAsync (juce::FileBrowserComponent::saveMode | juce::FileBrowserComponent::canSelectFiles
+                                  | juce::FileBrowserComponent::warnAboutOverwriting,
+                              [report] (const juce::FileChooser& fc)
+                              {
+                                  const auto file = fc.getResult();
+
+                                  if (file != juce::File() && ! file.replaceWithText (report + "\n"))
+                                      showError ("Delivery Report", "Could not write " + file.getFullPathName());
+                              });
     }), true);
 }
 

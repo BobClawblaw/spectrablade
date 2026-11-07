@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 270: Loudness to a delivery spec**
+- Effects > Meet Delivery Spec... brings the selection (or the whole file) to a loudness spec in one step, as one step to undo: EBU R128 (-23 LUFS +/- 0.5 LU, true peak at most -1 dBTP), ATSC A/85 (-24 LKFS +/- 2 dB, at most -2 dBTP), or an online target of -16 or -14 LUFS (+/- 1 LU, at most -1 dBTP). The online targets are common published ones, not any one service's current rules.
+- It uses gain alone where that keeps the true peak under the ceiling, and otherwise gain into the true-peak limiter Match Loudness uses, set 0.1 dB under the ceiling so the result measures within it.
+- Then it measures the result and shows a report: integrated loudness and true peak, each PASS or FAIL against the spec, with the loudness range, the loudest momentary and short-term loudness and the sample peak for information, each beside what it was before. Save Report... writes it as a text file.
+- Measured by the tests: the specs' values; -22.5 LUFS at -1.0 dBTP passes EBU R128 and -22.4 LUFS or -0.9 dBTP fails on that line alone; a quiet programme at -33.1 LUFS meets EBU R128 with 10.08 dB of gain alone (-23.0 LUFS, true peak -17.2 dBTP), the report passing each line and showing the loudness before; a programme with clicks to full scale at -23.0 LUFS and +0.8 dBTP meets -14 LUFS through the limiter (-14.0 LUFS, true peak -1.1 dBTP); on a selection only it changes, the rest bit for bit; silence is refused. The whole suite passed (1261 checks). Not tried: the dialog, the report window and Save Report in the running app, and ATSC A/85 and -16 LUFS on audio (only their values are checked).
+
 **Milestone 269: Stretching session clips by dragging**
 - Option-dragging a clip's end (or start) in the multitrack view stretches it instead of trimming it: while dragging, an outline shows where it would play with its new length as a percentage; let go, and Stretch Clip runs on it (the same time stretch, in the background, its own file), as one step to undo. Dragged by the end it keeps its start; by the start, its end. It snaps as trimming does, and goes from half to twice its length, as Stretch Clip does.
 - A drag that ends at the length it began with does nothing, and without Option an edge still trims.

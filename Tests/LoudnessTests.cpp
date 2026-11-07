@@ -1,5 +1,7 @@
 #include <JuceHeader.h>
 #include "../Source/Loudness.h"
+#include "../Source/AudioEdits.h"
+#include "../Source/Delivery.h"
 #include "TestUtils.h"
 #include "LoudnessTests.h"
 
@@ -73,8 +75,98 @@ namespace
     }
 }
 
+namespace
+{
+    /** Noise with a gentle low tilt, ten seconds of it, at this peak level; with clicks to full
+        scale every second when `peaky`. */
+    juce::AudioBuffer<float> programme (double rate, double gain, bool peaky)
+    {
+        juce::Random r (17);
+        juce::AudioBuffer<float> b (2, (int) (10.0 * rate));
+        float last[2] {};
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                last[ch] = 0.7f * last[ch] + 0.3f * (r.nextFloat() * 2.0f - 1.0f);
+                b.setSample (ch, i, (float) gain * last[ch]);
+            }
+
+        if (peaky)
+            for (int i = (int) rate / 2; i < b.getNumSamples(); i += (int) rate)
+                for (int k = 0; k < 24; ++k)
+                    for (int ch = 0; ch < 2; ++ch)
+                        b.setSample (ch, i + k, (k % 2 == 0 ? 0.98f : -0.98f));
+
+        return b;
+    }
+
+    void testDelivery()
+    {
+        constexpr double rate = 48000.0;
+        const auto& specs = Delivery::specs();
+        const auto& r128 = specs[0];
+        const auto& online14 = specs[3];
+
+        // The specs and the checks at their edges.
+        Loudness::Result edge;
+        edge.integrated = -22.5;
+        edge.truePeak = -1.0;
+        auto over = edge;
+        over.integrated = -22.4;
+        auto peaked = edge;
+        peaked.truePeak = -0.9;
+        check (specs.size() == 4 && r128.name == "EBU R128" && juce::exactlyEqual (r128.targetLufs, -23.0) && juce::exactlyEqual (r128.toleranceLu, 0.5)
+                   && juce::exactlyEqual (r128.maxTruePeak, -1.0) && juce::exactlyEqual (specs[1].targetLufs, -24.0) && juce::exactlyEqual (specs[1].maxTruePeak, -2.0)
+                   && Delivery::passes (r128, edge) && ! Delivery::passes (r128, over) && ! Delivery::passes (r128, peaked)
+                   && ! Delivery::check (r128, peaked)[1].pass && Delivery::check (r128, peaked)[0].pass,
+               "delivery: EBU R128 is -23 LUFS +/- 0.5 LU at most -1 dBTP and ATSC A/85 -24 at most -2 dBTP; -22.5 LUFS at -1.0 dBTP passes, "
+               "-22.4 LUFS or -0.9 dBTP fails on that line alone");
+
+        // A quiet programme: gain alone meets R128.
+        const auto quiet = AudioEdits::fromBuffer (programme (rate, 0.05, false));
+        const auto d = Delivery::deliver (*quiet, 0, quiet->getNumFrames(), rate, r128);
+        const auto text = Delivery::report (r128, d, "quiet.wav");
+        check (d.snapshot != nullptr && ! d.limited && ! Delivery::passes (r128, d.before) && Delivery::passes (r128, d.after)
+                   && std::abs (d.after.integrated + 23.0) < 0.01 && text.contains ("PASS  Integrated loudness") && text.contains ("PASS  True peak")
+                   && text.contains ("Meets EBU R128.") && text.contains ("before " + Loudness::format (d.before.integrated, "LUFS")),
+               "delivery: a quiet programme at " + Loudness::format (d.before.integrated, "LUFS") + " meets EBU R128 with "
+                   + juce::String (d.gainDb, 2) + " dB of gain alone: " + Loudness::format (d.after.integrated, "LUFS") + ", true peak "
+                   + Loudness::format (d.after.truePeak, "dBTP") + ", and the report says so line by line");
+
+        // A peaky one: to -14 LUFS the gain would pass -1 dBTP, so it is limited, and still meets it.
+        const auto loud = AudioEdits::fromBuffer (programme (rate, 0.12, true));
+        const auto l = Delivery::deliver (*loud, 0, loud->getNumFrames(), rate, online14);
+        check (l.snapshot != nullptr && l.limited && l.before.truePeak + (online14.targetLufs - l.before.integrated) > online14.maxTruePeak
+                   && Delivery::passes (online14, l.after) && Delivery::report (online14, l, "loud.wav").contains ("true-peak limiter"),
+               "delivery: a programme with clicks to full scale, at " + Loudness::format (l.before.integrated, "LUFS") + " and "
+                   + Loudness::format (l.before.truePeak, "dBTP") + ", meets -14 LUFS through the true-peak limiter: "
+                   + Loudness::format (l.after.integrated, "LUFS") + ", true peak " + Loudness::format (l.after.truePeak, "dBTP"));
+
+        // Only the range given changes; silence is refused.
+        const auto from = (juce::int64) (2.0 * rate), to = (juce::int64) (7.0 * rate);
+        const auto part = Delivery::deliver (*quiet, from, to, rate, r128);
+        juce::AudioBuffer<float> was (2, (int) quiet->getNumFrames()), now (2, (int) quiet->getNumFrames());
+        quiet->read (was, 0, 0, was.getNumSamples());
+        part.snapshot->read (now, 0, 0, now.getNumSamples());
+        auto outsideSame = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            outsideSame = outsideSame && std::memcmp (was.getReadPointer (ch), now.getReadPointer (ch), sizeof (float) * (size_t) from) == 0
+                          && std::memcmp (was.getReadPointer (ch, (int) to), now.getReadPointer (ch, (int) to), sizeof (float) * (size_t) (was.getNumSamples() - to)) == 0;
+
+        juce::AudioBuffer<float> zeros (2, (int) rate);
+        zeros.clear();
+        const auto silent = AudioEdits::fromBuffer (std::move (zeros));
+        const auto none = Delivery::deliver (*silent, 0, silent->getNumFrames(), rate, r128);
+        check (outsideSame && Delivery::passes (r128, part.after) && none.snapshot == nullptr && none.error.contains ("-70 LUFS"),
+               "delivery: on a selection only it changes, the rest bit for bit as it was; silence is refused, with nothing above the gate");
+    }
+}
+
 void runLoudnessTests()
 {
+    testDelivery();
     // EBU Tech 3341, cases 1-5, at 48 kHz and again at 44.1 kHz (the K-weighting is derived per rate).
     for (auto rate : { 48000.0, 44100.0 })
     {

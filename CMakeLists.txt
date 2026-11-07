@@ -90,6 +90,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
+    Source/Delivery.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp
@@ -264,6 +265,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Spectrogram.cpp
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
+    Source/Delivery.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp
