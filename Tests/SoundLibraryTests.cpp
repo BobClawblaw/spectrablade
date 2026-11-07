@@ -431,6 +431,77 @@ namespace
         return true;
     }
 
+    // Folders from the index: the folders inside one that hold sounds (not a sibling whose name
+    // starts the same), how many sounds are in each, and a query or the view limited to one.
+    void testFolders (const juce::File& dir)
+    {
+        const auto library = dir.getChildFile ("Folder Library");
+        writeWav (library.getChildFile ("Loose One.wav"), 1000);
+        writeWav (library.getChildFile ("Loose Two.wav"), 1000);
+        writeWav (library.getChildFile ("Doors/Wood/Creak.wav"), 1000);
+        writeWav (library.getChildFile ("Doors/Wood/Deep/Slam.wav"), 1000);
+        writeWav (library.getChildFile ("Doors/Metal Latch.wav"), 1000);
+        writeWav (library.getChildFile ("Doors-Old/Hinge.wav"), 1000);
+        writeWav (library.getChildFile ("Doors0/Knock.wav"), 1000);
+        writeWav (library.getChildFile ("Rain/Light.wav"), 1000);
+        library.getChildFile ("Empty/Nothing Here").createDirectory();
+        library.getChildFile ("Doors/Notes.txt").replaceWithText ("not a sound");
+
+        SoundLibrary::Index index (dir.getChildFile ("folders/Index.sqlite"));
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        index.addFolder (library);
+        index.scan (formats);
+
+        const auto names = [] (const juce::Array<juce::File>& folders)
+        {
+            juce::StringArray n;
+
+            for (const auto& f : folders)
+                n.add (f.getFileName());
+
+            return n.joinIntoString ("|");
+        };
+        const auto top = names (index.subfoldersOf (library)), doors = names (index.subfoldersOf (library.getChildFile ("Doors")));
+        const auto deepest = index.subfoldersOf (library.getChildFile ("Doors/Wood/Deep")).isEmpty();
+        check (top == "Doors|Doors-Old|Doors0|Rain" && doors == "Wood" && deepest,
+               "sound library folders: the folders holding sounds, from the index, in order, without empty ones (" + top + "; in Doors: " + doors + ")");
+
+        const auto counted = index.countWithin (library) == 8 && index.countWithin (library.getChildFile ("Doors")) == 3
+                             && index.countWithin (library.getChildFile ("Doors/Wood")) == 2 && index.countWithin (library.getChildFile ("Empty")) == 0;
+        SoundLibrary::Query q;
+        q.within = library.getChildFile ("Doors");
+        const auto inDoors = index.find (q);
+        auto onlyDoors = inDoors.size() == 3;
+
+        for (const auto& sound : inDoors)
+            onlyDoors = onlyDoors && sound.file.isAChildOf (library.getChildFile ("Doors"));
+
+        q.text = "slam";
+        const auto searched = index.count (q) == 1;
+        check (counted && onlyDoors && searched,
+               "sound library folders: 8 sounds in the library, 3 in Doors and deeper (not Doors-Old's or Doors0's), 2 in Wood; "
+               "a query within Doors finds only its 3, and searched within it, 1");
+
+        SoundLibraryView view (dir.getChildFile ("folders-view/Index.sqlite"));
+        view.setSize (1000, 500);
+        view.addFolder (library);
+        TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+        const auto foldersFirst = view.getPane() == SoundLibraryView::Pane::folders && view.getNumRows() == 8;
+        view.showFolder (library.getChildFile ("Doors/Wood"));
+        const auto inWood = view.getNumRows() == 2 && view.getSummary().startsWith ("2 of 8 sounds match");
+        view.showPane (SoundLibraryView::Pane::categories);
+        const auto allAgain = view.getPane() == SoundLibraryView::Pane::categories && view.getNumRows() == 8;
+        view.showPane (SoundLibraryView::Pane::folders);
+        view.showFolder (library.getChildFile ("Rain"));
+        const auto rain = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::name) == "Light";
+        view.removeFolder (library);
+        const auto gone = view.getNumRows() == 0;
+        check (foldersFirst && inWood && allAgain && rain && gone,
+               "sound library window: By Folder comes first; choosing Doors/Wood lists its 2 sounds; By Category shows all 8 again; "
+               "Rain lists its one; removing the library empties the list");
+    }
+
     void testPlayer (const juce::File& dir)
     {
         const auto stereo = noise (2, 10000, 1), mono = noise (1, 7000, 2), surround = noise (6, 4000, 3);
@@ -1227,6 +1298,7 @@ void runSoundLibraryTests()
     testWords();
     testScan (dir);
     testView (dir);
+    testFolders (dir);
     testPlayer (dir);
     testPart (dir);
     testPreviewMouse (dir);

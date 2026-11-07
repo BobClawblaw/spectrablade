@@ -4,6 +4,13 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 295: Browsing the Sound Library by folder**
+- The Sound Library's left pane has By Folder and By Category; By Folder comes first. It lists the folders you added, each opening into the folders inside it that hold sounds (in them or deeper), in name order as the Finder lists them, with how many sounds are in each and below. Choosing one shows only those sounds (with the search and the other filters as before); right-clicking one shows it in the Finder. Changing to By Category shows every sound again, and back.
+- The tree is read from the index, not the disk, so a network volume that is away doesn't hold it up. It steps from one subfolder to the next with one look-up each (and one for each file loose in the folder), and a folder's count reads only its own range of the paths' index. On a made-up index of 660,600 paths (60 folders of 20 of 548, and 3,000 loose files), listing the top folder's 60 took 11 ms and counting all of it 17 ms (measured with the same queries from Python's SQLite).
+- Why: a category comes only from a UCS file name or iXML, which most libraries don't have (about 15,000 of the 658,000 sounds in the library this was tried on), so browsing by category left most sounds under No Category.
+- Measured by the tests: the folders holding sounds, in name order, not a sibling whose name starts the same (Doors-Old, Doors0) nor an empty folder; 8 sounds in the library, 3 in Doors and deeper, 2 in Wood; a query within Doors finds its 3, searched within it 1; in the window, By Folder first, a folder chosen, By Category showing all again, a removed folder's sounds gone. The whole suite passed (1358 checks); the app launched and quit cleanly.
+- Not tried by hand: the pane in the app, or on a real library.
+
 **Milestone 294: The Effects menu in groups**
 - The Effects menu was one list of 71 commands and the Fade Shape submenu. It is now twelve submenus by what the effects do: Level and Loudness, Fades (with Fade Shape), EQ, Dynamics (Noise Gate among them), Modulation and Delay, Reverb, Time and Pitch, Stereo and Channels, Silence, Generate, Noise Reduction and Repair, and Spectral. Apply Effects Rack and the command sequences stay at the bottom. The waveform's right-click menu shows the same groups.
 - Every command the menu had is still in it, none twice (checked by comparing the command lists before and after); shortcuts are unchanged.

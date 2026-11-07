@@ -64,7 +64,16 @@ namespace
         return text;
     }
 
-    /** The WHERE clause for a query's filters (category, rating, favourites, tag), with what it binds. */
+    /** The paths of the sounds inside a folder: from its path and a separator, up to (not including)
+        its path and the character after the separator. */
+    std::pair<juce::String, juce::String> pathRange (const juce::File& folder)
+    {
+        const auto base = folder.getFullPathName();
+        const auto separator = juce::File::getSeparatorChar();
+        return { base + juce::String::charToString (separator), base + juce::String::charToString ((juce::juce_wchar) (separator + 1)) };
+    }
+
+    /** The WHERE clause for a query's filters (category, rating, favourites, tag, folder), with what it binds. */
     std::pair<juce::String, juce::StringArray> categoryFilter (const Query& q)
     {
         juce::StringArray conditions, values;
@@ -99,6 +108,16 @@ namespace
         {
             conditions.add ("s.id IN (SELECT sound FROM tags WHERE tag = ?)");   // tag compares without case, as declared
             values.add (q.tag.trim());
+        }
+
+        if (q.within != juce::File())
+        {
+            // Every path that starts with the folder and a separator: the next character after the
+            // separator ends the range, which the paths' own index finds without reading the rest.
+            const auto [from, to] = pathRange (q.within);
+            conditions.add ("s.path >= ? AND s.path < ?");
+            values.add (from);
+            values.add (to);
         }
 
         return { conditions.joinIntoString (" AND "), values };
@@ -910,6 +929,61 @@ juce::int64 Index::count (const Query& q)
     for (const auto& v : values)
         st.bind (i++, v);
 
+    return st.step() ? st.integer (0) : 0;
+}
+
+juce::Array<juce::File> Index::subfoldersOf (const juce::File& folder)
+{
+    juce::Array<juce::File> found;
+    const auto [prefix, end] = pathRange (folder);
+    const auto separator = juce::File::getSeparatorString();
+    auto from = prefix;
+    auto past = true;   // the next path is past `from` (after a file), or at least it (after a folder)
+
+    // Steps from one subfolder to the next with one look-up each (and one for each file loose in
+    // the folder), rather than reading every path below.
+    for (;;)
+    {
+        Statement st (db, past ? "SELECT path FROM sounds WHERE path > ? AND path < ? ORDER BY path LIMIT 1"
+                               : "SELECT path FROM sounds WHERE path >= ? AND path < ? ORDER BY path LIMIT 1");
+        st.bind (1, from);
+        st.bind (2, end);
+
+        if (! st.step())
+            break;
+
+        const auto path = st.text (0);
+        const auto rest = path.substring (prefix.length());
+        const auto cut = rest.indexOf (separator);
+
+        if (cut < 0)
+        {
+            from = path;
+            past = true;
+            continue;
+        }
+
+        const auto child = folder.getChildFile (rest.substring (0, cut));
+        found.add (child);
+        from = pathRange (child).second;
+        past = false;
+    }
+
+    // By name as the Finder lists them, not by the bytes of the path ("Doors" before "Doors-Old").
+    std::sort (found.begin(), found.end(), [] (const juce::File& a, const juce::File& b)
+    {
+        return a.getFileName().compareNatural (b.getFileName()) < 0;
+    });
+
+    return found;
+}
+
+juce::int64 Index::countWithin (const juce::File& folder)
+{
+    const auto [from, to] = pathRange (folder);
+    Statement st (db, "SELECT COUNT(*) FROM sounds WHERE path >= ? AND path < ?");
+    st.bind (1, from);
+    st.bind (2, to);
     return st.step() ? st.integer (0) : 0;
 }
 

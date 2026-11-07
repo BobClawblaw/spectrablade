@@ -15,9 +15,13 @@
     Finder does: into the main window's multitrack view or editor, the Finder or another app.
     Double-clicking a row asks for the sound to be opened.
 
-    On the left, the UCS categories: all sounds, those with none, and each category (opening into
-    its subcategories), with how many of the sounds found are in each; choosing one shows only
-    those. Right-clicking rows sets their category by hand, or clears what was set by hand.
+    On the left, By Folder or By Category. By Folder (the first shown) lists the watched folders,
+    each opening into the folders inside it that hold sounds, with how many sounds are in each and
+    deeper; choosing one shows only those. The list comes from the index, so a volume that is away
+    doesn't hold it up. By Category lists the UCS categories: all sounds, those with none, and each
+    category (opening into its subcategories), with how many of the sounds found are in each;
+    choosing one shows only those. Changing between them shows every sound again. Right-clicking
+    rows sets their category by hand, or clears what was set by hand.
 
     Your own ratings, favourites and tags: clicking a row's stars rates it (its own rating again
     clears it) and its heart marks it a favourite; with the list in front, the keys 0 to 5 rate
@@ -53,6 +57,14 @@ public:
     /** Shows only the sounds of a category (its name), or of a subcategory (a CatID), or with no
         category, as choosing it on the left does; all empty and false: every sound. */
     void showCategory (const juce::String& category, const juce::String& catId = {}, bool withoutCategory = false);
+
+    /** Shows only the sounds in a folder or deeper, as choosing it By Folder does; none: all. */
+    void showFolder (const juce::File&);
+
+    /** The pane on the left: By Folder or By Category, as its buttons choose. */
+    enum class Pane { folders, categories };
+    void showPane (Pane);
+    Pane getPane() const;
 
     /** How many of the sounds found (by the search) have this CatID ("" for none), or are in this
         category, as the list on the left shows. */
@@ -144,6 +156,7 @@ public:
 private:
     class Scanner;
     class Categories;
+    class Folders;
     SoundLibrary::Query query (int offset = 0, int limit = 0) const;
     void showCategoryMenu();
     std::vector<juce::int64> selectedIds();
@@ -179,6 +192,7 @@ private:
     bool filterWithout = false, filterFavourites = false;
     int filterRating = 0;
     juce::String filterTag;
+    juce::File filterWithin;
     std::vector<std::pair<juce::String, juce::int64>> tagCounts;
     std::map<juce::String, juce::int64> counts;               // by CatID, of the sounds the search finds
     std::map<juce::String, juce::int64> categoryCounts;       // by category
@@ -197,6 +211,8 @@ private:
     juce::ComboBox ratingChoice, tagChoice;
     juce::TableListBox table { {}, this };
     std::unique_ptr<Categories> categories;
+    std::unique_ptr<Folders> folderTree;
+    juce::TextButton byFolderButton { "By Folder" }, byCategoryButton { "By Category" };
     juce::Label summary;
     SoundLibraryPreview preview;
     juce::AudioSourcePlayer previewPlayer;

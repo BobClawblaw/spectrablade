@@ -70,6 +70,9 @@ namespace SoundLibrary
         int minRating = 0;
         bool favouritesOnly = false;
         juce::String tag {};
+
+        /** Only the sounds in this folder or any folder inside it (none: anywhere). */
+        juce::File within {};
     };
 
     struct ScanResult
@@ -114,6 +117,13 @@ namespace SoundLibrary
 
         /** How many sounds match a query's words and category (its order and page don't matter). */
         juce::int64 count (const Query&);
+
+        /** The folders directly inside this one that hold sounds (in them or deeper), by name as
+            the Finder orders them. Read from the index, not the disk, so a volume that is away doesn't hold it up. */
+        juce::Array<juce::File> subfoldersOf (const juce::File&);
+
+        /** How many sounds are in this folder or deeper. */
+        juce::int64 countWithin (const juce::File&);
 
         /** How many sounds matching these words have each CatID ("" for those with none). */
         std::map<juce::String, juce::int64> countByCategory (const juce::String& text = {});

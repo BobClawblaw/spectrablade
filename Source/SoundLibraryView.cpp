@@ -92,6 +92,13 @@ public:
 
     ~Categories() override              { setRootItem (nullptr); }
 
+    /** Chooses "All Sounds", without telling the view (it has cleared the category itself). */
+    void chooseAll()
+    {
+        if (auto* all = root.getSubItem (0))
+            all->setSelected (true, true, juce::dontSendNotification);
+    }
+
 private:
     enum class Kind { all, none, category, subCategory };
 
@@ -149,6 +156,125 @@ private:
     Root root;
 };
 
+/** The folders the sounds are in, from the index: each watched folder, opening into the folders
+    inside it that hold sounds, with how many sounds are in each (and deeper). Choosing one shows
+    only its sounds; right-clicking one shows it in the Finder. */
+class SoundLibraryView::Folders final : public juce::TreeView
+{
+public:
+    explicit Folders (SoundLibraryView& v) : view (v)
+    {
+        setRootItemVisible (false);
+        setDefaultOpenness (false);
+        setIndentSize (14);
+        Theme::follow (*this, juce::TreeView::backgroundColourId, Theme::surface);
+        setRootItem (&root);
+        rebuild();
+    }
+
+    ~Folders() override                 { setRootItem (nullptr); }
+
+    /** Lists the watched folders again (after one is added or removed, or a scan), keeping what
+        was open and chosen where it is still there. */
+    void rebuild()
+    {
+        const auto state = getOpennessState (true);
+        const juce::ScopedValueSetter<bool> quiet (rebuilding, true);
+        root.clearSubItems();
+        root.addSubItem (new Item (*this, {}));
+
+        for (const auto& f : view.index.getFolders())
+            root.addSubItem (new Item (*this, f));
+
+        if (state != nullptr)
+            restoreOpennessState (*state, true);
+
+        if (getNumSelectedItems() == 0)
+            root.getSubItem (0)->setSelected (true, false, juce::dontSendNotification);
+    }
+
+    /** Chooses "All Folders", without telling the view (it has cleared the folder itself). */
+    void chooseAll()
+    {
+        if (auto* all = root.getSubItem (0))
+            all->setSelected (true, true, juce::dontSendNotification);
+    }
+
+private:
+    struct Item final : public juce::TreeViewItem
+    {
+        Item (Folders& o, juce::File f) : owner (o), folder (std::move (f)) {}
+
+        bool isAll() const                              { return folder == juce::File(); }
+        bool mightContainSubItems() override            { return ! isAll() && (! listed || getNumSubItems() > 0); }
+        int getItemHeight() const override              { return 22; }
+        juce::String getUniqueName() const override     { return isAll() ? juce::String ("*all") : folder.getFullPathName(); }
+
+        void itemOpennessChanged (bool open) override
+        {
+            if (open && ! listed)
+            {
+                listed = true;
+
+                for (const auto& f : owner.view.index.subfoldersOf (folder))
+                    addSubItem (new Item (owner, f));
+
+                treeHasChanged();
+            }
+        }
+
+        void itemSelectionChanged (bool selected) override
+        {
+            if (selected && ! owner.rebuilding)
+                owner.view.showFolder (folder);
+        }
+
+        void itemClicked (const juce::MouseEvent& e) override
+        {
+            if (! e.mods.isPopupMenu() || isAll())
+                return;
+
+            juce::PopupMenu menu;
+            menu.addItem ("Show in Finder", folder.exists(), false, [f = folder] { f.revealToUser(); });
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (owner).withMousePosition());
+        }
+
+        void paintItem (juce::Graphics& g, int width, int height) override
+        {
+            if (count < 0)
+                count = isAll() ? owner.view.total : owner.view.index.countWithin (folder);
+
+            const auto top = getParentItem() == &owner.root;
+            const auto label = isAll() ? juce::String ("All Folders") : top ? folder.getFullPathName() : folder.getFileName();
+
+            if (isSelected())
+                g.fillAll (Theme::selection);
+
+            g.setFont (13.0f);
+            g.setColour (count > 0 || isAll() ? Theme::text : Theme::dimText);
+            g.drawText (label, 4, 0, width - 64, height, top && ! isAll() ? juce::Justification::centredRight : juce::Justification::centredLeft, true);
+            g.setColour (Theme::dimText);
+            g.drawText (juce::String (count), width - 60, 0, 54, height, juce::Justification::centredRight);
+        }
+
+        juce::String getTooltip() override              { return folder.getFullPathName(); }
+
+        Folders& owner;
+        juce::File folder;   // none: all folders
+        bool listed = false;
+        juce::int64 count = -1;
+    };
+
+    struct Root final : public juce::TreeViewItem
+    {
+        bool mightContainSubItems() override            { return true; }
+    };
+
+    SoundLibraryView& view;
+    Root root;
+    bool rebuilding = false;
+};
+
 SoundLibraryView::SoundLibraryView (const juce::File& db)
     : index (db), database (db), scanner (std::make_unique<Scanner> (db)), preview (db.getSiblingFile ("Parts"))
 {
@@ -197,7 +323,22 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
     table.addMouseListener (this, true);
     addAndMakeVisible (table);
     categories = std::make_unique<Categories> (*this);
-    addAndMakeVisible (*categories);
+    addChildComponent (*categories);
+    folderTree = std::make_unique<Folders> (*this);
+    addAndMakeVisible (*folderTree);
+
+    for (auto* b : { &byFolderButton, &byCategoryButton })
+    {
+        b->setClickingTogglesState (true);
+        b->setRadioGroupId (1);
+        addAndMakeVisible (*b);
+    }
+
+    byFolderButton.setConnectedEdges (juce::Button::ConnectedOnRight);
+    byCategoryButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    byFolderButton.setToggleState (true, juce::dontSendNotification);
+    byFolderButton.onClick = [this] { if (byFolderButton.getToggleState()) showPane (Pane::folders); };
+    byCategoryButton.onClick = [this] { if (byCategoryButton.getToggleState()) showPane (Pane::categories); };
 
     Theme::follow (summary, juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (summary);
@@ -291,6 +432,7 @@ bool SoundLibraryView::addFolder (const juce::File& folder)
     }
 
     scanNote = {};
+    folderTree->rebuild();
     rescan();
     return true;
 }
@@ -298,6 +440,11 @@ bool SoundLibraryView::addFolder (const juce::File& folder)
 bool SoundLibraryView::removeFolder (const juce::File& folder)
 {
     const auto removed = index.removeFolder (folder);
+
+    if (removed && (filterWithin == folder || filterWithin.isAChildOf (folder)))
+        filterWithin = juce::File();
+
+    folderTree->rebuild();
     refresh();
     return removed;
 }
@@ -358,6 +505,9 @@ void SoundLibraryView::refresh (bool keepSelection)
     if (categories != nullptr)
         categories->repaint();
 
+    if (folderTree != nullptr)
+        folderTree->repaint();
+
     tagCounts = index.tagCounts();
     updateTagChoices();
     const juce::ScopedValueSetter<bool> quiet (refreshing, true);
@@ -388,7 +538,7 @@ void SoundLibraryView::updateSummary()
     if (folders == 0)
         line = "No folders yet: Add Folder... chooses the folders of sounds to scan. Nothing else is scanned.";
     else if (text.isEmpty() && filterCategory.isEmpty() && filterCatId.isEmpty() && ! filterWithout && ! filterFavourites
-             && filterRating == 0 && filterTag.isEmpty())
+             && filterRating == 0 && filterTag.isEmpty() && filterWithin == juce::File())
         line = number (total) + (total == 1 ? " sound in " : " sounds in ") + juce::String (folders) + (folders == 1 ? " folder" : " folders");
     else
         line = number (rows) + " of " + number (total) + " sounds match";
@@ -413,6 +563,7 @@ void SoundLibraryView::timerCallback()
                    + juce::String (result->removed) + " removed" + (result->unreadable > 0 ? ", " + juce::String (result->unreadable) + " unreadable" : juce::String())
                    + (result->stopped ? " (stopped)" : "");
         writtenNote = {};
+        folderTree->rebuild();
         refresh();
         return;
     }
@@ -578,7 +729,43 @@ SoundLibrary::Query SoundLibraryView::query (int offset, int limit) const
     q.favouritesOnly = filterFavourites;
     q.minRating = filterRating;
     q.tag = filterTag;
+    q.within = filterWithin;
     return q;
+}
+
+void SoundLibraryView::showFolder (const juce::File& folder)
+{
+    filterWithin = folder;
+    refresh();
+}
+
+void SoundLibraryView::showPane (Pane pane)
+{
+    // Each pane chooses on its own: changing over shows every sound again.
+    const auto folders = pane == Pane::folders;
+    byFolderButton.setToggleState (folders, juce::dontSendNotification);
+    byCategoryButton.setToggleState (! folders, juce::dontSendNotification);
+    folderTree->setVisible (folders);
+    categories->setVisible (! folders);
+
+    if (folders)
+    {
+        categories->chooseAll();
+        filterCategory = filterCatId = {};
+        filterWithout = false;
+    }
+    else
+    {
+        folderTree->chooseAll();
+        filterWithin = juce::File();
+    }
+
+    refresh();
+}
+
+SoundLibraryView::Pane SoundLibraryView::getPane() const
+{
+    return folderTree->isVisible() ? Pane::folders : Pane::categories;
 }
 
 void SoundLibraryView::showCategory (const juce::String& cat, const juce::String& catId, bool withoutCategory)
@@ -1036,7 +1223,12 @@ void SoundLibraryView::resized()
     tagChoice.setBounds (filters.removeFromLeft (220));
     summary.setBounds (r.removeFromBottom (24).reduced (4, 0));
     preview.setBounds (r.removeFromBottom (juce::jlimit (110, 220, r.getHeight() / 3)));
-    categories->setBounds (r.removeFromLeft (juce::jlimit (150, 240, r.getWidth() / 5)));
+    auto left = r.removeFromLeft (juce::jlimit (170, 280, r.getWidth() / 5));
+    auto tabs = left.removeFromTop (26).reduced (4, 2);
+    byFolderButton.setBounds (tabs.removeFromLeft (tabs.getWidth() / 2));
+    byCategoryButton.setBounds (tabs);
+    categories->setBounds (left);
+    folderTree->setBounds (left);
     table.setBounds (r);
 }
 
