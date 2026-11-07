@@ -396,8 +396,136 @@ namespace
     }
 }
 
+namespace
+{
+    void testSplitAndJoin()
+    {
+        const auto in = melodySnapshot();
+        const auto length = in->getNumFrames();
+        const auto track = PitchCorrection::analyse (*in, 0, length, rate);
+        const auto notes = PitchCorrection::findNotes (track);
+
+        if (notes.size() != 4)
+        {
+            check (false, "pitch editing, splitting and joining: the melody's four notes are found");
+            return;
+        }
+
+        // B3 (with vibrato) cut in the middle: two notes, each with its own frames' pitch and B3's shift.
+        auto shifted = notes;
+        shifted[1].shiftCents = 30.0;
+        const auto b3 = shifted[1];
+        const auto middle = (b3.first + b3.end) / 2;
+        const auto split = PitchCorrection::splitNote (track, shifted, 1, middle);
+        const auto halvesRight = split.size() == 5 && split[1].first == b3.first && split[1].end == middle && split[2].first == middle
+                                 && split[2].end == b3.end && juce::exactlyEqual (split[1].shiftCents, 30.0) && juce::exactlyEqual (split[2].shiftCents, 30.0)
+                                 && juce::exactlyEqual (split[1].pitch, PitchCorrection::pitchOf (track, b3.first, middle))
+                                 && std::abs (split[1].pitch - 59.0) < 0.3 && std::abs (split[2].pitch - 59.0) < 0.3;
+        const auto nearEnd = PitchCorrection::splitNote (track, shifted, 1, b3.first + 1).size() == 4
+                             && PitchCorrection::splitNote (track, shifted, 1, b3.end - 1).size() == 4
+                             && PitchCorrection::splitNote (track, shifted, 1, b3.first + PitchCorrection::shortestNote).size() == 5;
+
+        // Joined again: B3 as it was found, pitch and all, with the shift of the longer half.
+        auto unequal = split;
+        unequal[2].shiftCents = 80.0;
+        const auto rejoined = PitchCorrection::joinNotes (track, split, 1);
+        const auto longerWins = PitchCorrection::joinNotes (track, unequal, 1)[1].shiftCents;
+        const auto backAsFound = rejoined.size() == 4 && rejoined[1].first == b3.first && rejoined[1].end == b3.end
+                                 && juce::exactlyEqual (rejoined[1].pitch, notes[1].pitch) && juce::exactlyEqual (rejoined[1].shiftCents, 30.0);
+        const auto halfLength = [&] (const PitchCorrection::Note& n) { return n.end - n.first; };
+        const auto wantShift = halfLength (unequal[2]) > halfLength (unequal[1]) ? 80.0 : 30.0;
+
+        // Notes with a pause between them don't join.
+        auto apart = -1;
+
+        for (int k = 0; k + 1 < (int) notes.size(); ++k)
+            if (notes[(size_t) k].end < notes[(size_t) k + 1].first)
+                apart = k;
+
+        const auto refused = apart >= 0 && ! PitchCorrection::canJoin (notes, apart) && PitchCorrection::joinNotes (track, notes, apart).size() == 4
+                             && ! PitchCorrection::canJoin (notes, 3) && ! PitchCorrection::canJoin (notes, -1);
+
+        check (halvesRight && nearEnd && backAsFound && juce::exactlyEqual (longerWins, wantShift) && refused,
+               "pitch editing, splitting and joining: B3 (with vibrato) split in the middle is two notes, each with its own frames' pitch ("
+                   + juce::String (split.size() == 5 ? split[1].pitch : 0.0, 2) + " and " + juce::String (split.size() == 5 ? split[2].pitch : 0.0, 2)
+                   + ") and the note's shift; not within 10 ms of an end; joined again it is the note as found, with the longer half's shift; "
+                   "notes with a pause between them don't join");
+
+        // The second half moved up a semitone, the first left: only the second half sounds higher.
+        if (split.size() != 5)
+            return;
+
+        auto moved = split;
+
+        for (auto& n : moved)
+            n.shiftCents = 0.0;
+
+        moved[2].shiftCents = 100.0;
+        const auto out = PitchCorrection::moveNotes (*in, 0, length, rate, track, moved);
+        const auto secondsOf = [&] (int frame) { return (double) (track.first + (juce::int64) frame * track.hop) / rate; };
+        const auto pitchOver = [&] (const AudioSnapshot& a, double from, double to) { return medianPitch (a, (juce::int64) (from * rate), (juce::int64) (to * rate)); };
+
+        // Each half away from the 25 ms where the shift eases between them.
+        const auto firstFrom = secondsOf (b3.first) + 0.03, firstTo = secondsOf (middle) - 0.03;
+        const auto secondFrom = secondsOf (middle) + 0.03, secondTo = secondsOf (b3.end) - 0.03;
+        const auto kept = out != nullptr ? cents (pitchOver (*out, firstFrom, firstTo), pitchOver (*in, firstFrom, firstTo)) : 99.0;
+        const auto raised = out != nullptr ? cents (pitchOver (*out, secondFrom, secondTo), pitchOver (*in, secondFrom, secondTo)) - 100.0 : 99.0;
+
+        check (std::abs (kept) < 1.0 && std::abs (raised) < 1.0,
+               "pitch editing, splitting and joining: with B3's second half moved up a semitone and its first left, the first half "
+               "sounds as it was (" + juce::String (kept, 2) + " cents) and the second a semitone higher (" + juce::String (raised, 2) + " cents off)");
+    }
+
+    void testEditorSplitAndJoin()
+    {
+        const auto audio = melodySnapshot();
+        PitchEditor editor;
+        editor.setSize (900, 320);
+        editor.readSource = [&] { return std::optional<PitchEditor::Source> ({ audio, 0, audio->getNumFrames(), rate, 7 }); };
+        editor.analyse();
+
+        if (editor.getNotes().size() != 4)
+        {
+            check (false, "pitch editor, splitting and joining: the melody's four notes are shown");
+            return;
+        }
+
+        // Cmd-click in the middle of B3 splits it there.
+        const auto b3 = editor.getNotes()[1];
+        const auto at = editor.centreOf (1);
+        editor.mouseDown (mouseAt (editor, at, at, juce::ModifierKeys::commandModifier));
+        editor.mouseUp (mouseAt (editor, at, at, juce::ModifierKeys::commandModifier));
+        const auto afterSplit = editor.getNotes().size();
+        const auto halves = afterSplit == 5 ? editor.getNotes()[2].first - editor.getNotes()[1].first : 0;
+
+        // The right half's menu: Split Here (it's long enough), Join with Previous (the left half
+        // touches it); Join with Next only if the next note touches it. Its Join with Previous
+        // puts B3 back.
+        const auto menu = editor.menuAt (editor.centreOf (2));
+        std::map<juce::String, std::pair<bool, std::function<void()>>> items;
+
+        for (juce::PopupMenu::MenuItemIterator it (menu); it.next();)
+            items[it.getItem().text] = { it.getItem().isEnabled, it.getItem().action };
+
+        const auto offered = items.size() == 3 && items["Split Here"].first && items["Join with Previous Note"].first;
+
+        if (items["Join with Previous Note"].second != nullptr)
+            items["Join with Previous Note"].second();
+
+        const auto joined = editor.getNotes().size() == 4 && editor.getNotes()[1].first == b3.first && editor.getNotes()[1].end == b3.end
+                            && juce::exactlyEqual (editor.getNotes()[1].pitch, b3.pitch);
+        const auto offNotes = editor.menuAt ({ 5.0f, 5.0f }).getNumItems() == 0;
+
+        check (afterSplit == 5 && halves > 0 && offered && joined && offNotes && editor.getStatus().contains ("Cmd-click to split"),
+               "pitch editor, splitting and joining: Cmd-clicking a note splits it where it is clicked (4 notes become 5); right-clicking "
+               "a half offers Split Here and Join with Previous Note, which makes them one again; off the notes, no menu");
+    }
+}
+
 void runPitchCorrectionTests()
 {
+    testSplitAndJoin();
+    testEditorSplitAndJoin();
     testPitchEditor();
     testNotes();
     testDetect();

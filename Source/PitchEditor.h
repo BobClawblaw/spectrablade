@@ -8,7 +8,9 @@
 
     Analyse reads the selection's pitch and finds its notes. Dragging a note moves it to whole
     semitones (with Option held, freely in cents); double-clicking a note snaps it to the nearest
-    semitone, and Snap to Notes does that to them all. Reset puts every note back. Apply moves the
+    semitone, and Snap to Notes does that to them all. Cmd-clicking a note splits it where it is
+    clicked; right-clicking one offers Split Here, and Join with the note before or after where
+    they touch. Reset puts every note back (and leaves splits and joins as they are). Apply moves the
     notes in the file (by PSOLA, as Pitch Correction does), as one step to undo. */
 class PitchEditor final : public juce::Component
 {
@@ -41,6 +43,20 @@ public:
     /** Where a note is drawn: the middle of its box. */
     juce::Point<float> centreOf (int note) const;
 
+    /** The note under a point (-1: none). */
+    int noteAt (juce::Point<float>) const;
+
+    /** The menu a right-click at this point shows (empty off the notes): Split Here, Join with
+        Previous Note and Join with Next Note, each enabled where it would do something. */
+    juce::PopupMenu menuAt (juce::Point<float>);
+
+    /** Splits the note at this point where it is (as Cmd-click does); false when it can't (off
+        the notes, or too near an end). */
+    bool splitAt (juce::Point<float>);
+
+    /** Joins note `index` with the next where they touch; false when they don't. */
+    bool joinWithNext (int index);
+
     juce::String getStatus() const                                         { return status.getText(); }
 
     void paint (juce::Graphics&) override;
@@ -55,8 +71,8 @@ private:
     juce::Rectangle<int> rollArea() const;
     float xOf (double frame) const;
     float yOf (double note) const;
-    double noteAt (float y) const;
-    int noteUnder (juce::Point<float>) const;
+    double pitchAt (float y) const;
+    int frameAt (float x) const;
 
     juce::TextButton analyseButton { "Analyse" }, snapButton { "Snap to Notes" }, resetButton { "Reset" }, applyButton { "Apply" };
     juce::Label status;

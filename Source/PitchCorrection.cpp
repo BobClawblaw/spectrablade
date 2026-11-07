@@ -467,16 +467,64 @@ std::vector<Note> findNotes (const Track& track)
     }
 
     for (auto& n : notes)
-    {
-        std::vector<double> pitches;
+        n.pitch = pitchOf (track, n.first, n.end);
 
-        for (int g = n.first; g < n.end; ++g)
-            pitches.push_back (midiAt (g));
+    return notes;
+}
 
-        std::nth_element (pitches.begin(), pitches.begin() + (long) pitches.size() / 2, pitches.end());
-        n.pitch = pitches[pitches.size() / 2];
-    }
+double pitchOf (const Track& track, int first, int end)
+{
+    std::vector<double> pitches;
 
+    for (int g = juce::jmax (0, first); g < juce::jmin ((int) track.hz.size(), end); ++g)
+        if (track.hz[(size_t) g] > 0.0f)
+            pitches.push_back (69.0 + 12.0 * std::log2 ((double) track.hz[(size_t) g] / 440.0));
+
+    if (pitches.empty())
+        return 0.0;
+
+    std::nth_element (pitches.begin(), pitches.begin() + (long) pitches.size() / 2, pitches.end());
+    return pitches[pitches.size() / 2];
+}
+
+std::vector<Note> splitNote (const Track& track, std::vector<Note> notes, int index, int at)
+{
+    if (! juce::isPositiveAndBelow (index, (int) notes.size()))
+        return notes;
+
+    const auto whole = notes[(size_t) index];
+
+    if (at - whole.first < shortestNote || whole.end - at < shortestNote)
+        return notes;
+
+    Note left = whole, right = whole;
+    left.end = right.first = at;
+    left.pitch = pitchOf (track, left.first, left.end);
+    right.pitch = pitchOf (track, right.first, right.end);
+    notes[(size_t) index] = left;
+    notes.insert (notes.begin() + index + 1, right);
+    return notes;
+}
+
+bool canJoin (const std::vector<Note>& notes, int index)
+{
+    return index >= 0 && index + 1 < (int) notes.size() && notes[(size_t) index].end == notes[(size_t) index + 1].first;
+}
+
+std::vector<Note> joinNotes (const Track& track, std::vector<Note> notes, int index)
+{
+    if (! canJoin (notes, index))
+        return notes;
+
+    const auto& a = notes[(size_t) index];
+    const auto& b = notes[(size_t) index + 1];
+    Note joined;
+    joined.first = a.first;
+    joined.end = b.end;
+    joined.pitch = pitchOf (track, joined.first, joined.end);
+    joined.shiftCents = b.end - b.first > a.end - a.first ? b.shiftCents : a.shiftCents;
+    notes[(size_t) index] = joined;
+    notes.erase (notes.begin() + index + 1);
     return notes;
 }
 

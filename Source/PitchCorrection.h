@@ -70,6 +70,24 @@ namespace PitchCorrection
         and small slides stay in one note and a step to another note starts a new one. */
     std::vector<Note> findNotes (const Track&);
 
+    /** The pitch of a track's frames [first, end), as findNotes gives a note's: the median of
+        theirs that have one (in MIDI numbers, with fractions); 0 when none has. */
+    double pitchOf (const Track&, int first, int end);
+
+    /** The shortest note splitNote leaves, in frames (10 ms). */
+    constexpr int shortestNote = 2;
+
+    /** Note `index` cut in two at frame `at`: two notes either side, each with the pitch of its own
+        frames and the note's shift. Unchanged when `at` would leave either shorter than shortestNote. */
+    std::vector<Note> splitNote (const Track&, std::vector<Note>, int index, int at);
+
+    /** Whether note `index` ends where the next begins, so the two can be joined. */
+    bool canJoin (const std::vector<Note>&, int index);
+
+    /** Note `index` and the next made one, with the pitch of all their frames and the shift of the
+        longer (the first's when they are as long). Unchanged when they don't touch (canJoin). */
+    std::vector<Note> joinNotes (const Track&, std::vector<Note>, int index);
+
     /** Each note moved to the nearest semitone (A = 440 Hz). */
     std::vector<Note> snapped (std::vector<Note>);
 

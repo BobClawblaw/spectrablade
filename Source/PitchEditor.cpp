@@ -106,7 +106,8 @@ void PitchEditor::analyse()
     lowNote = std::floor (lowest) - 4.0;
     highNote = std::ceil (highest) + 4.0;
     status.setText (juce::String ((int) notes.size()) + (notes.size() == 1 ? " note" : " notes")
-                        + ". Drag a note to move it (Option: in cents); double-click to snap it.", juce::dontSendNotification);
+                        + ". Drag a note to move it (Option: in cents), double-click to snap it, Cmd-click to split it; right-click to join.",
+                    juce::dontSendNotification);
     refreshButtons();
     repaint();
 }
@@ -150,7 +151,7 @@ float PitchEditor::yOf (double note) const
     return (float) area.getBottom() - (float) ((note - lowNote) / (highNote - lowNote)) * (float) area.getHeight();
 }
 
-double PitchEditor::noteAt (float y) const
+double PitchEditor::pitchAt (float y) const
 {
     const auto area = rollArea();
     return lowNote + (double) ((float) area.getBottom() - y) / (double) area.getHeight() * (highNote - lowNote);
@@ -165,7 +166,7 @@ juce::Point<float> PitchEditor::centreOf (int note) const
     return { 0.5f * (xOf (n.first) + xOf (n.end)), yOf (n.pitch + n.shiftCents / 100.0) };
 }
 
-int PitchEditor::noteUnder (juce::Point<float> p) const
+int PitchEditor::noteAt (juce::Point<float> p) const
 {
     const auto half = 0.5f * (yOf (0.0) - yOf (1.0));
 
@@ -282,9 +283,74 @@ void PitchEditor::paint (juce::Graphics& g)
     g.restoreState();
 }
 
+int PitchEditor::frameAt (float x) const
+{
+    const auto area = rollArea();
+    const auto frames = juce::jmax (1.0, (double) track.hz.size());
+    return (int) std::lround ((double) (x - (float) area.getX()) / (double) juce::jmax (1, area.getWidth()) * frames);
+}
+
+bool PitchEditor::splitAt (juce::Point<float> p)
+{
+    const auto k = noteAt (p);
+
+    if (k < 0)
+        return false;
+
+    const auto before = notes.size();
+    notes = PitchCorrection::splitNote (track, std::move (notes), k, frameAt (p.x));
+    repaint();
+    return notes.size() > before;
+}
+
+bool PitchEditor::joinWithNext (int index)
+{
+    if (! PitchCorrection::canJoin (notes, index))
+        return false;
+
+    notes = PitchCorrection::joinNotes (track, std::move (notes), index);
+    repaint();
+    return true;
+}
+
+juce::PopupMenu PitchEditor::menuAt (juce::Point<float> p)
+{
+    juce::PopupMenu menu;
+    const auto k = noteAt (p);
+
+    if (k < 0)
+        return menu;
+
+    const auto at = frameAt (p.x);
+    const auto& n = notes[(size_t) k];
+    const auto splits = at - n.first >= PitchCorrection::shortestNote && n.end - at >= PitchCorrection::shortestNote;
+    menu.addItem ("Split Here", splits, false, [this, p] { splitAt (p); });
+    menu.addItem ("Join with Previous Note", PitchCorrection::canJoin (notes, k - 1), false, [this, k] { joinWithNext (k - 1); });
+    menu.addItem ("Join with Next Note", PitchCorrection::canJoin (notes, k), false, [this, k] { joinWithNext (k); });
+    return menu;
+}
+
 void PitchEditor::mouseDown (const juce::MouseEvent& e)
 {
-    dragging = noteUnder (e.position);
+    if (e.mods.isPopupMenu())
+    {
+        dragging = -1;
+        auto menu = menuAt (e.position);
+
+        if (menu.getNumItems() > 0)
+            menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (this).withMousePosition());
+
+        return;
+    }
+
+    if (e.mods.isCommandDown())
+    {
+        dragging = -1;
+        splitAt (e.position);
+        return;
+    }
+
+    dragging = noteAt (e.position);
 
     if (dragging >= 0)
         dragShift = notes[(size_t) dragging].shiftCents;
@@ -298,7 +364,7 @@ void PitchEditor::mouseDrag (const juce::MouseEvent& e)
         return;
 
     auto& n = notes[(size_t) dragging];
-    const auto moved = noteAt (e.position.y) - noteAt ((float) e.getMouseDownY());
+    const auto moved = pitchAt (e.position.y) - pitchAt ((float) e.getMouseDownY());
     auto shift = dragShift + moved * 100.0;
 
     // To whole semitones unless Option is held.
@@ -317,7 +383,7 @@ void PitchEditor::mouseUp (const juce::MouseEvent&)
 
 void PitchEditor::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    if (const auto k = noteUnder (e.position); k >= 0)
+    if (const auto k = noteAt (e.position); k >= 0)
     {
         auto& n = notes[(size_t) k];
         n.shiftCents = (std::round (n.pitch) - n.pitch) * 100.0;
