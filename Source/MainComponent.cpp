@@ -5213,6 +5213,11 @@ void MainComponent::runStepInBackground (const Sequences::Step& step, const juce
     backgroundJob->launchThread();
 }
 
+juce::StringArray MainComponent::stretchMethods()
+{
+    return { "Signalsmith Stretch", "SpectraBlade Stretch (sharper attacks)" };
+}
+
 void MainComponent::askToStretch()
 {
     const auto range = selectionOrAll();
@@ -5220,11 +5225,13 @@ void MainComponent::askToStretch()
 
     showEffectDialog ("Stretch", juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection") + " ("
                                      + juce::String (seconds, 2) + " s) longer or shorter, keeping its pitch. Markers in it keep their place in it.",
-                      { { "percent", "Length (% of now)", stretchPercent, 2, {}, TimeStretch::shortest * 100.0, TimeStretch::longest * 100.0, 1.0 } },
+                      { { "percent", "Length (% of now)", stretchPercent, 2, {}, TimeStretch::shortest * 100.0, TimeStretch::longest * 100.0, 1.0 },
+                        { "method", "Method", stretchMethod, 0, stretchMethods() } },
                       "spectrablade:stretch", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
                       [this] (const EffectValues& v)
                       {
                           stretchPercent = v.at ("percent");
+                          stretchMethod = v.at ("method");
 
                           if (std::abs (stretchPercent - 100.0) >= 0.005)
                               runStepInBackground ({ "stretch", v, nullptr }, "Stretching...");
@@ -5237,11 +5244,13 @@ void MainComponent::askToShiftPitch()
 {
     showEffectDialog ("Shift Pitch", juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection")
                                          + " higher or lower, keeping its length (12 semitones is an octave).",
-                      { { "semitones", "Semitones", pitchSemitones, 2, {}, -TimeStretch::widestShift, TimeStretch::widestShift, 1.0 } },
+                      { { "semitones", "Semitones", pitchSemitones, 2, {}, -TimeStretch::widestShift, TimeStretch::widestShift, 1.0 },
+                        { "method", "Method", stretchMethod, 0, stretchMethods() } },
                       "spectrablade:shift-pitch", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
                       [this] (const EffectValues& v)
                       {
                           pitchSemitones = v.at ("semitones");
+                          stretchMethod = v.at ("method");
 
                           if (std::abs (pitchSemitones) >= 0.005)
                               runStepInBackground ({ "pitch", v, nullptr }, "Shifting the pitch...");

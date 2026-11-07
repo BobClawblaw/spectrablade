@@ -2,6 +2,7 @@
 #include "../Source/AudioEdits.h"
 #include "../Source/Bounce.h"
 #include "../Source/OfflineRender.h"
+#include "../Source/PhaseVocoder.h"
 #include "../Source/Sequences.h"
 #include "../Source/TimeStretch.h"
 #include "../Source/TrackTemplate.h"
@@ -692,6 +693,207 @@ namespace
                    && juce::exactlyEqual (mix (alone, range).getMagnitude (0, 12000), 0.0f),
                "folder stems: sends to buses outside the folder are left out, and a muted track in it stays silent");
     }
+    /** Energy more than 6 Hz from the given partials, against all of it, in dB, over the middle of x. */
+    double offNotes (const float* x, int length, const std::vector<double>& partials)
+    {
+        const auto order = (int) std::floor (std::log2 ((double) length / 2.0));
+        const auto n = 1 << order;
+        juce::dsp::FFT fft (order);
+        std::vector<float> work ((size_t) (2 * n), 0.0f);
+        const auto start = (length - n) / 2;
+
+        for (int i = 0; i < n; ++i)
+            work[(size_t) i] = x[start + i] * (0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) i / (float) n));
+
+        fft.performFrequencyOnlyForwardTransform (work.data(), true);
+        auto all = 0.0, off = 0.0;
+
+        for (int k = 1; k < n / 2; ++k)
+        {
+            const auto f = k * rate / n, e = (double) work[(size_t) k] * work[(size_t) k];
+            all += e;
+
+            if (std::none_of (partials.begin(), partials.end(), [f] (double p) { return std::abs (f - p) <= 6.0; }))
+                off += e;
+        }
+
+        return 10.0 * std::log10 (off / all + 1.0e-30);
+    }
+
+    void testOwnStretch()
+    {
+        using TimeStretch::Method;
+        const auto own = Method::spectrablade;
+
+        // A tone: lengths, pitch, level, and the channels exactly opposite, as they went in.
+        const auto tone = whole (*toneFile (96000));
+        auto toneRight = true;
+        juce::String toneFound;
+
+        for (auto ratio : { 0.5, 0.75, 1.5, 2.0 })
+        {
+            const auto out = TimeStretch::stretch (tone, ratio, rate, {}, own);
+            const auto n = out.getNumSamples();
+            const auto f = frequencyOf (out.getReadPointer (0), n / 4, 3 * n / 4, rate);
+            const auto rms = out.getRMSLevel (0, n / 4, n / 2);
+            const auto first = out.getMagnitude (0, 0, 128), last = out.getMagnitude (0, n - 128, 128);
+            auto opposite = true;
+
+            for (int i = 0; i < n && opposite; ++i)
+                opposite = juce::exactlyEqual (out.getSample (1, i), -out.getSample (0, i));
+
+            toneRight = toneRight && n == (int) std::llround (96000 * ratio) && std::abs (f / 440.0 - 1.0) < 0.005
+                        && std::abs (juce::Decibels::gainToDecibels (rms / (0.5f / std::sqrt (2.0f)))) < 1.0f && opposite && first > 0.45f && last > 0.45f;
+            toneFound << juce::String (ratio, 2) << "x: " << juce::String (f, 2) << " Hz, " << juce::String (juce::Decibels::gainToDecibels (rms), 2)
+                      << " dBFS, ends " << juce::String (first, 3) << " / " << juce::String (last, 3) << "; ";
+        }
+
+        check (toneRight, "own stretch: a 440 Hz tone from 50% to 200% keeps its length, pitch (0.5%), level (1 dB) and edges (over 0.45 of 0.5), "
+                          "its channels exactly opposite (" + toneFound.trimEnd() + ")");
+
+        // Clicks: found where they are, and each one comes out once, in place, with nothing before it.
+        juce::AudioBuffer<float> clicks (2, 192000);
+        clicks.clear();
+        std::vector<int> at;
+
+        for (int t = 6000; t + 200 < clicks.getNumSamples(); t += 12000)
+        {
+            at.push_back (t);
+
+            for (int i = 0; i < 96; ++i)
+            {
+                const auto v = 0.8f * std::sin (juce::MathConstants<float>::twoPi * 3000.0f * (float) i / (float) rate) * std::exp (-(float) i / 24.0f);
+                clicks.setSample (0, i + t, v);
+                clicks.setSample (1, i + t, v);
+            }
+        }
+
+        const auto foundClicks = PhaseVocoder::onsets (clicks, 0, clicks.getNumSamples(), rate);
+        auto onsetsRight = foundClicks.size() == at.size();
+        auto worstOnset = 0;
+
+        for (size_t k = 0; k < foundClicks.size() && onsetsRight; ++k)
+            worstOnset = juce::jmax (worstOnset, std::abs (foundClicks[k] - at[k]));
+
+        onsetsRight = onsetsRight && worstOnset <= 48;
+
+        auto clicksKept = true;
+        auto worstBefore = -400.0, worstPeak = 0.0;
+
+        for (auto ratio : { 0.5, 0.75, 1.25, 1.5, 2.0 })
+        {
+            const auto out = TimeStretch::stretch (clicks, ratio, rate, {}, own);
+
+            for (auto t : at)
+            {
+                const auto placed = (int) std::lround (t * ratio);
+                const auto peakNear = out.getMagnitude (0, placed, 96);
+                const auto before = out.getRMSLevel (0, placed - 1200, 1056), after = out.getRMSLevel (0, placed, 96);
+                const auto beforeDb = juce::Decibels::gainToDecibels (before, -400.0f) - juce::Decibels::gainToDecibels (after);
+                worstBefore = juce::jmax (worstBefore, (double) beforeDb);
+                worstPeak = juce::jmax (worstPeak, (double) std::abs (peakNear - clicks.getMagnitude (0, t, 96)));
+                clicksKept = clicksKept && std::abs (peakNear - clicks.getMagnitude (0, t, 96)) < 0.01f && beforeDb < -100.0f;
+            }
+        }
+
+        check (onsetsRight && clicksKept,
+               "own stretch: 16 clicks found within 1 ms, and from 50% to 200% each comes out where the stretch puts it at its own peak (within 0.01), "
+               "the 25 ms before it silent (" + juce::String ((int) foundClicks.size()) + " found, at most " + juce::String (worstOnset) + " samples out; peaks within "
+                   + juce::String (worstPeak, 4) + "; at most " + juce::String (worstBefore, 1) + " dB before)");
+
+        // A steady chord: no attacks found, and little energy away from its notes.
+        const std::vector<double> notes { 220.0, 277.18, 329.63, 440.0 };
+        juce::AudioBuffer<float> chord (2, 192000);
+
+        for (int i = 0; i < chord.getNumSamples(); ++i)
+        {
+            auto v = 0.0;
+
+            for (auto f : notes)
+                v += 0.2 * std::sin (juce::MathConstants<double>::twoPi * f * i / rate);
+
+            chord.setSample (0, i, (float) v);
+            chord.setSample (1, i, (float) -v);
+        }
+
+        auto chordClean = PhaseVocoder::onsets (chord, 0, chord.getNumSamples(), rate).empty();
+        juce::String chordFound;
+
+        for (auto ratio : { 0.5, 0.75, 1.25, 1.5, 2.0 })
+        {
+            const auto out = TimeStretch::stretch (chord, ratio, rate, {}, own);
+            const auto off = offNotes (out.getReadPointer (0), out.getNumSamples(), notes);
+            chordClean = chordClean && off < -40.0;
+            chordFound << juce::String (ratio, 2) << "x: " << juce::String (off, 1) << " dB; ";
+        }
+
+        check (chordClean, "own stretch: a steady four-note chord has no attacks, and from 50% to 200% its energy more than 6 Hz from the notes stays under -40 dB ("
+                               + chordFound.trimEnd() + " the input " + juce::String (offNotes (chord.getReadPointer (0), chord.getNumSamples(), notes), 1) + " dB)");
+
+        // Progress, stopping, and the time it takes on 10 s of dense stereo.
+        std::vector<float> heard;
+        const auto all = TimeStretch::stretch (tone, 1.5, rate, [&heard] (float p) { heard.push_back (p); return true; }, own);
+        auto calls = 0;
+        const auto stopped = TimeStretch::stretch (tone, 1.5, rate, [&calls] (float) { return ++calls < 2; }, own);
+        juce::AudioBuffer<float> dense (2, 480000);
+        juce::Random random (5);
+
+        for (int i = 0; i < dense.getNumSamples(); ++i)
+        {
+            const auto v = 0.2f * std::sin (juce::MathConstants<float>::twoPi * 220.0f * (float) i / (float) rate) + 0.1f * (random.nextFloat() - 0.5f);
+            dense.setSample (0, i, v);
+            dense.setSample (1, i, 0.5f * v + 0.1f * (random.nextFloat() - 0.5f));
+        }
+
+        const auto started = juce::Time::getMillisecondCounterHiRes();
+        const auto denseOut = TimeStretch::stretch (dense, 1.5, rate, {}, own);
+        const auto ms = juce::Time::getMillisecondCounterHiRes() - started;
+        check (all.getNumSamples() == 144000 && heard.size() > 1 && std::is_sorted (heard.begin(), heard.end()) && heard.back() < 1.0f
+                   && stopped.getNumSamples() == 0 && calls == 2 && denseOut.getNumSamples() == 720000,
+               "own stretch: progress rises as it goes, stopping part way gives nothing, and 10 s of dense stereo stretches to 15 s in "
+                   + juce::String (ms, 0) + " ms");
+
+        // Shift Pitch with it: the same length, each pitch within 0.5%.
+        auto shiftsRight = true;
+        juce::String shifted;
+
+        for (auto semitones : { -12.0, -5.0, 7.0, 12.0 })
+        {
+            const auto out = TimeStretch::shiftPitch (tone, semitones, rate, {}, own);
+            const auto n = out.getNumSamples();
+            const auto f = frequencyOf (out.getReadPointer (0), n / 4, 3 * n / 4, rate), wanted = 440.0 * std::pow (2.0, semitones / 12.0);
+            const auto rms = out.getRMSLevel (0, n / 4, n / 2);
+            shiftsRight = shiftsRight && n == tone.getNumSamples() && std::abs (f / wanted - 1.0) < 0.005
+                          && std::abs (juce::Decibels::gainToDecibels (rms / (0.5f / std::sqrt (2.0f)))) < 1.0f;
+            shifted << juce::String (semitones, 0) << ": " << juce::String (f, 2) << " Hz (" << juce::String (wanted, 2) << "); ";
+        }
+
+        check (shiftsRight, "own stretch: Shift Pitch with it keeps the length, each pitch within 0.5% and the level within 1 dB (" + shifted.trimEnd() + ")");
+
+        // As a sequence step: method 1 runs it, the name says so, other methods are refused.
+        const auto file = toneFile (144000);
+        const Sequences::Step step { "stretch", { { "percent", 150.0 }, { "method", 1.0 } }, nullptr };
+        const auto r = Sequences::apply (step, file, 48000, 96000, rate, {}, nullptr);
+        const auto expected = TimeStretch::stretchRange (*file, 48000, 96000, 1.5, rate, {}, own);
+        const auto shiftStep = Sequences::Step { "pitch", { { "semitones", 3.0 }, { "method", 1.0 } }, nullptr };
+        auto same = r.snapshot != nullptr && expected != nullptr && r.snapshot->getNumFrames() == expected->getNumFrames();
+
+        if (same)
+        {
+            const auto a = whole (*r.snapshot), b = whole (*expected);
+
+            for (int ch = 0; ch < 2 && same; ++ch)
+                for (int i = 0; i < a.getNumSamples() && same; ++i)
+                    same = juce::exactlyEqual (a.getSample (ch, i), b.getSample (ch, i));
+        }
+
+        check (same && r.end == 120000 && step.name() == "Stretch to 150.0% (SpectraBlade Stretch)"
+                   && shiftStep.name() == "Shift Pitch +3.00 Semitones (SpectraBlade Stretch)"
+                   && Sequences::problem ({ "stretch", { { "percent", 150.0 }, { "method", 2.0 } }, nullptr }, rate).isNotEmpty()
+                   && Sequences::problem ({ "stretch", { { "percent", 150.0 } }, nullptr }, rate).isEmpty(),
+               "own stretch as a sequence step: method 1 gives just what the stretch gives, named for it; no method is Signalsmith Stretch, other methods are refused");
+    }
+
 }
 
 void runBounceTests()
@@ -699,6 +901,7 @@ void runBounceTests()
     testFolderStems();
     testTimeStretch();
     testStretchInFiles();
+    testOwnStretch();
     testFreeze();
     testClipGainEnvelope();
 

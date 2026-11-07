@@ -9,6 +9,10 @@
     doubled nor dropped. */
 namespace TimeStretch
 {
+    /** How to stretch: Signalsmith Stretch, or SpectraBlade's own phase vocoder (PhaseVocoder.h),
+        which keeps attacks as they were. */
+    enum class Method { signalsmith, spectrablade };
+
     /** Shortest and longest lengths, as a fraction of the original. */
     inline constexpr double shortest = 0.5, longest = 2.0;
 
@@ -17,15 +21,16 @@ namespace TimeStretch
         far it is (0 to 1) as it goes; when it returns false, stretching stops and an empty
         buffer comes back. */
     juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate,
-                                      const std::function<bool (float)>& progress = {});
+                                      const std::function<bool (float)>& progress = {}, Method = Method::signalsmith);
 
     /** Semitones a pitch shift can go up or down: as far as stretching can go. */
     inline constexpr double widestShift = 12.0;
 
     /** The input at a pitch `semitones` higher (or lower, when negative; within widestShift),
-        just as long. progress as for stretch. */
+        just as long. progress as for stretch. With SpectraBlade's method, stretched by the pitch
+        ratio, then resampled back to its length. */
     juce::AudioBuffer<float> shiftPitch (const juce::AudioBuffer<float>& input, double semitones, double sampleRate,
-                                         const std::function<bool (float)>& progress = {});
+                                         const std::function<bool (float)>& progress = {}, Method = Method::signalsmith);
 
     /** How long the joins are crossfaded where a processed range meets the audio around it. */
     inline constexpr double joinSeconds = 0.005;
@@ -34,10 +39,10 @@ namespace TimeStretch
         rest moving with it), its joins with the audio either side crossfaded over joinSeconds.
         Null for an empty range, or when progress stops it. */
     AudioDocument::Snapshot stretchRange (const AudioSnapshot&, juce::int64 start, juce::int64 end, double ratio, double sampleRate,
-                                          const std::function<bool (float)>& progress = {});
+                                          const std::function<bool (float)>& progress = {}, Method = Method::signalsmith);
 
     /** The audio with [start, end) `semitones` higher or lower and just as long, its joins
         crossfaded likewise. Null for an empty range, or when progress stops it. */
     AudioDocument::Snapshot shiftRange (const AudioSnapshot&, juce::int64 start, juce::int64 end, double semitones, double sampleRate,
-                                        const std::function<bool (float)>& progress = {});
+                                        const std::function<bool (float)>& progress = {}, Method = Method::signalsmith);
 }

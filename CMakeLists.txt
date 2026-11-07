@@ -123,6 +123,7 @@ target_sources(SpectraBlade PRIVATE
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
     Source/TimeStretch.cpp
+    Source/PhaseVocoder.cpp
     Source/TrackTemplate.cpp
     Source/UndoHistory.cpp
     Source/Spectrogram.cpp
@@ -310,6 +311,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
     Source/TimeStretch.cpp
+    Source/PhaseVocoder.cpp
     Source/TrackTemplate.cpp
     Source/UndoHistory.cpp
     Source/Spectrogram.cpp

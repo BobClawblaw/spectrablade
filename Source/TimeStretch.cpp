@@ -1,4 +1,6 @@
 #include "TimeStretch.h"
+#include "PhaseVocoder.h"
+#include "SampleRateConverter.h"
 #include <signalsmith-stretch.h>
 
 namespace TimeStretch
@@ -116,17 +118,44 @@ namespace
 }
 
 juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double ratio, double sampleRate,
-                                  const std::function<bool (float)>& progress)
+                                  const std::function<bool (float)>& progress, Method method)
 {
     ratio = juce::jlimit (shortest, longest, ratio);
+
+    if (method == Method::spectrablade)
+        return PhaseVocoder::stretch (input, ratio, sampleRate, progress);
+
     Stretcher stretcher;
     setUp (stretcher, juce::jmax (1, input.getNumChannels()), sampleRate);
     return run (stretcher, input, ratio, progress);
 }
 
 juce::AudioBuffer<float> shiftPitch (const juce::AudioBuffer<float>& input, double semitones, double sampleRate,
-                                     const std::function<bool (float)>& progress)
+                                     const std::function<bool (float)>& progress, Method method)
 {
+    if (method == Method::spectrablade)
+    {
+        // Longer by the pitch ratio, then played that much faster: higher by it, and as long as before.
+        const auto ratio = std::pow (2.0, juce::jlimit (-widestShift, widestShift, semitones) / 12.0);
+        const auto part = [&progress] (float from, float to)
+        {
+            return [&progress, from, to] (float p) { return progress == nullptr || progress (from + (to - from) * p); };
+        };
+
+        const auto stretched = PhaseVocoder::stretch (input, ratio, sampleRate, part (0.0f, 0.8f));
+        juce::AudioBuffer<float> out;
+
+        if (stretched.getNumSamples() == 0 && input.getNumSamples() > 0)
+            return {};
+
+        if (! SampleRateConverter::convert (stretched, sampleRate * ratio, sampleRate, out, part (0.8f, 1.0f)))
+            return {};
+
+        // The converter rounds its length up: exactly the input's length, as silence if short.
+        out.setSize (out.getNumChannels(), input.getNumSamples(), true, true);
+        return out;
+    }
+
     Stretcher stretcher;
     setUp (stretcher, juce::jmax (1, input.getNumChannels()), sampleRate);
     stretcher.setTransposeSemitones ((float) juce::jlimit (-widestShift, widestShift, semitones));
@@ -210,15 +239,15 @@ namespace
 }
 
 AudioDocument::Snapshot stretchRange (const AudioSnapshot& audio, juce::int64 start, juce::int64 end, double ratio, double rate,
-                                      const std::function<bool (float)>& progress)
+                                      const std::function<bool (float)>& progress, Method method)
 {
     ratio = juce::jlimit (shortest, longest, ratio);
-    return processRange (audio, start, end, ratio, rate, [&] (const juce::AudioBuffer<float>& in) { return stretch (in, ratio, rate, progress); });
+    return processRange (audio, start, end, ratio, rate, [&] (const juce::AudioBuffer<float>& in) { return stretch (in, ratio, rate, progress, method); });
 }
 
 AudioDocument::Snapshot shiftRange (const AudioSnapshot& audio, juce::int64 start, juce::int64 end, double semitones, double rate,
-                                    const std::function<bool (float)>& progress)
+                                    const std::function<bool (float)>& progress, Method method)
 {
-    return processRange (audio, start, end, 1.0, rate, [&] (const juce::AudioBuffer<float>& in) { return shiftPitch (in, semitones, rate, progress); });
+    return processRange (audio, start, end, 1.0, rate, [&] (const juce::AudioBuffer<float>& in) { return shiftPitch (in, semitones, rate, progress, method); });
 }
 }

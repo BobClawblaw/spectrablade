@@ -187,13 +187,16 @@ juce::String Step::name() const
     if (kind == "dereverb")
         return "Reduce Reverb " + juce::String (get (values, "reduction"), 1) + " dB";
 
+    // SpectraBlade's own stretch is named; Signalsmith Stretch, the default, is not.
+    const auto method = juce::String (get (values, "method") > 0.5 ? " (SpectraBlade Stretch)" : "");
+
     if (kind == "stretch")
-        return "Stretch to " + juce::String (get (values, "percent"), 1) + "%";
+        return "Stretch to " + juce::String (get (values, "percent"), 1) + "%" + method;
 
     if (kind == "pitch")
     {
         const auto semitones = get (values, "semitones");
-        return "Shift Pitch " + juce::String (semitones > 0.0 ? "+" : "") + juce::String (semitones, 2) + " Semitones";
+        return "Shift Pitch " + juce::String (semitones > 0.0 ? "+" : "") + juce::String (semitones, 2) + " Semitones" + method;
     }
 
     const auto* k = find (kind);
@@ -238,7 +241,8 @@ juce::String problem (const Step& step, double rate)
         return bad();
 
     if ((step.kind == "stretch" && (get (v, "percent") < TimeStretch::shortest * 100.0 || get (v, "percent") > TimeStretch::longest * 100.0))
-        || (step.kind == "pitch" && std::abs (get (v, "semitones")) > TimeStretch::widestShift))
+        || (step.kind == "pitch" && std::abs (get (v, "semitones")) > TimeStretch::widestShift)
+        || ((step.kind == "stretch" || step.kind == "pitch") && ! juce::exactlyEqual (get (v, "method"), 0.0) && ! juce::exactlyEqual (get (v, "method"), 1.0)))
         return bad();
 
     if (step.kind == "deliverySpec" && ! Delivery::isValid (get (v, "target"), get (v, "tolerance"), get (v, "ceiling")))
@@ -512,8 +516,10 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
 
         if (end > start && ! juce::exactlyEqual (amount, k == "stretch" ? 100.0 : 0.0))
         {
-            out.snapshot = k == "stretch" ? TimeStretch::stretchRange (s, start, end, amount / 100.0, rate, progress)
-                                          : TimeStretch::shiftRange (s, start, end, amount, rate, progress);
+            // An optional setting: 1 for SpectraBlade's own stretch, else Signalsmith Stretch.
+            const auto method = get (v, "method") > 0.5 ? TimeStretch::Method::spectrablade : TimeStretch::Method::signalsmith;
+            out.snapshot = k == "stretch" ? TimeStretch::stretchRange (s, start, end, amount / 100.0, rate, progress, method)
+                                          : TimeStretch::shiftRange (s, start, end, amount, rate, progress, method);
 
             if (out.snapshot == nullptr)
             {

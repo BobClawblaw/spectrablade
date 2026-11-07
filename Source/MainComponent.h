@@ -212,7 +212,8 @@ private:
     void askForVideoStart();
     void detachVideo();
     void saveMixIntoVideo();
-    double stretchPercent = 100.0, pitchSemitones = 0.0;   // as last asked
+    static juce::StringArray stretchMethods();   // the Method menu of Stretch and Shift Pitch
+    double stretchPercent = 100.0, pitchSemitones = 0.0, stretchMethod = 0.0;   // as last asked (method: 0 Signalsmith, 1 SpectraBlade)
     void recordStep (const Sequences::Step&);              // after the edit is applied
     void noticeUnrecordedEdits();
     void toggleSequenceRecording();

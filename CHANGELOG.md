@@ -4,6 +4,33 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 290: SpectraBlade Stretch, our own, with sharper attacks**
+- Stretch and Shift Pitch get a Method menu: Signalsmith Stretch, as before and still the default, or SpectraBlade Stretch, our own phase vocoder (Source/PhaseVocoder), written from the published methods. Sequence steps carry the method; steps saved before have none and keep Signalsmith Stretch. Stretching session clips stays with Signalsmith Stretch.
+- How it works:
+  - 85 ms frames, four to a frame's length. Each frequency's speed comes from two transforms a hop apart.
+  - All channels share one phase turn per frequency, so their phase relations are kept exactly.
+  - Each frequency follows the peak it sits under (Laroche and Dolson's phase locking), so a note's partials move together.
+  - Attacks are found first (rising spectral flux, then back to where the rise starts). Each stays where the stretch puts it, with half a frame either side played at its own speed and the input's own phases, so it comes out as it went in. The audio between attacks stretches to make up the length.
+  - Shift Pitch with it stretches by the pitch ratio and resamples back, so formants move with the pitch.
+- Measured on test signals, WSOLA (the stretch before Milestone 289), Signalsmith Stretch and ours, from 50% to 200%:
+  - A click every 250 ms: ours brings every click out once, where it belongs (within 0.1 ms), its shape as it was (correlation 1.00), with silence before it as in the input. Signalsmith Stretch smears each click forward, with energy 31 to 44 dB under the click in the 25 ms before it.
+  - Drums (a hit every 125 ms) over a quiet chord: the first 10 ms after each hit correlates 0.62 to 0.82 with the original's in ours, 0.20 to 0.40 in Signalsmith Stretch and 0.21 to 0.58 in WSOLA.
+  - A steady four-note chord: energy more than 6 Hz from the notes is -43 to -53 dB in ours, -30 to -52 dB in Signalsmith Stretch and -30 to -31 dB in WSOLA.
+- Measured on recordings at 75%, 150% and 200%, each judged at onsets found by a separate energy-rise detector rather than ours. The recordings are a drum loop, a funk guitar loop and an electric piano loop from the loops that come with macOS, and speech from its text-to-speech.
+  - Drum loop: ours correlates 0.52 to 0.65 with the original after each hit, Signalsmith Stretch 0.33 to 0.41, WSOLA 0.31 to 0.39. Ours finds 47 of the judge's 88 onsets.
+  - Guitar: ours 0.68 to 0.90, Signalsmith Stretch 0.50 to 0.55, WSOLA 0.53 to 0.63. Ours has less energy before each attack than Signalsmith Stretch at every ratio; at 75% WSOLA has the least.
+  - Speech: ours 0.63 to 0.78, Signalsmith Stretch 0.56 to 0.59, WSOLA 0.56 to 0.63.
+  - Electric piano (soft attacks): ours finds none, and all three come out alike (0.62 to 0.72).
+- Limits: where attacks come closer together than a frame, less of each plays at its own speed; quiet attacks under a loud sound are missed; transients the detector misses are smeared as in any phase vocoder.
+- Measured by the tests:
+  - A tone from 50% to 200% keeps its length, pitch (within 0.5%), level (within 1 dB) and edges, with its channels exactly opposite.
+  - 16 clicks are found within 1 sample. Each comes out in place at its own peak, with at least 155 dB of quiet before it.
+  - A steady chord has no attacks found, and its energy more than 6 Hz from the notes stays under -40 dB.
+  - Progress and stopping work. Shift Pitch keeps each pitch within 0.5%. The method works as a sequence step.
+  - 10 s of dense stereo stretches to 15 s in about 0.1 s.
+  - The whole suite passed (1347 checks).
+- Not tried by hand: the Method menu, and listening to either method on real material in the app.
+
 **Milestone 289: Stretching that doesn't stutter**
 - Stretch, Shift Pitch, stretching session clips (by menu or by Option-dragging) and the Stretch and Shift Pitch sequence steps now use Signalsmith Stretch 1.4.0 (MIT licence), a phase vocoder, instead of our WSOLA, which repeated or dropped 40 ms pieces of the audio. The library and the Signalsmith Linear 0.6.4 FFTs it uses are fetched at their release commits; their licences go into the disk image.
 - Measured on test signals, WSOLA against the new stretch:
