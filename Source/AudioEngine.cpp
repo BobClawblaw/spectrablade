@@ -123,6 +123,10 @@ void SessionSource::prepareToPlay (int blockSize, double)
     const auto frames = juce::jmax (8192, 4 * blockSize);
     buffers.reserve (frames);
     scrubBuffers.reserve (scrubChunk);
+    // Room for the scrubber's widest window (four times normal speed, the audio at up to four
+    // times the device's rate) twice over, so what is kept never has to be dropped mid-window.
+    scrubMix.setSize (2, juce::jmax (scrubChunk, 4 * (int) (Scrubber::fastest * 4.0 * blockSize + 8.0)));
+    scrubTo = -1;
     scrubBuffers.surroundChannel = -1;   // folded down
     scrubBuffers.interfaceChannel = -1;  // the mix alone
     liveBlock.setSize (2 * SessionMixer::Live::maxTracks, frames);
@@ -206,7 +210,7 @@ const SessionMixer::Live* SessionSource::takeLive (int numFrames, bool clips)
     return &live;
 }
 
-void SessionSource::scrub (Scrubber& scrubber, double deviceRate, juce::AudioBuffer<float>& buffer, int numFrames)
+void SessionSource::scrub (Scrubber& scrubber, double deviceRate, juce::AudioBuffer<float>& buffer, int numFrames, bool effects)
 {
     refreshState();
 
@@ -215,28 +219,99 @@ void SessionSource::scrub (Scrubber& scrubber, double deviceRate, juce::AudioBuf
 
     struct Mix final : Scrubber::Source
     {
-        Mix (const SessionState& s, SessionMixer::Buffers& b) : session (s), mixBuffers (b) {}
+        Mix (SessionSource& o, bool fx) : owner (o), session (*o.state), withEffects (fx) {}
 
         juce::int64 getNumFrames() const override   { return session.getLength(); }
         int getNumChannels() const override         { return 2; }
 
-        void read (juce::AudioBuffer<float>& into, juce::int64 first, int count) override
+        /** Frames [from, from + count) of the mix into dest from destStart, in pieces the mixer has
+            room for, so it doesn't allocate. */
+        void mix (juce::int64 from, juce::AudioBuffer<float>& dest, int destStart, int count)
         {
-            // In pieces the mixer has room for, so it doesn't allocate.
             for (int done = 0; done < count;)
             {
                 const auto n = juce::jmin (scrubChunk, count - done);
-                SessionMixer::render (session, first + done, into, done, n, mixBuffers, nullptr);
+                SessionMixer::render (session, from + done, dest, destStart + done, n, owner.scrubBuffers,
+                                      withEffects ? &owner.inserts : nullptr);
                 done += n;
             }
         }
 
+        void read (juce::AudioBuffer<float>& into, juce::int64 first, int count) override
+        {
+            if (! withEffects)
+            {
+                mix (first, into, 0, count);
+                return;
+            }
+
+            auto& kept = owner.scrubMix;
+            const auto capacity = kept.getNumSamples();
+            auto& from = owner.scrubFrom;
+            auto& to = owner.scrubTo;
+
+            if (count > capacity)   // wider than prepared for: as without effects
+            {
+                mix (first, into, 0, count);
+                to = -1;
+                return;
+            }
+
+            // Back before what is kept, or too far ahead of it: the effects primed and warmed up
+            // on the mix before the window, which is then rendered on from there.
+            if (to < from || first < from || first > to + scrubWarmUp)
+            {
+                SessionMixer::prime (session, first - scrubWarmUp, owner.scrubBuffers, owner.inserts);
+
+                for (int done = 0; done < scrubWarmUp;)
+                {
+                    const auto n = juce::jmin (capacity, scrubWarmUp - done);
+                    mix (first - scrubWarmUp + done, kept, 0, n);
+                    done += n;
+                }
+
+                from = to = first;
+            }
+
+            // Only as much kept as fits: the oldest frames go.
+            const auto end = first + count;
+
+            if (end - from > capacity)
+            {
+                const auto drop = (int) (end - from - capacity);
+
+                for (int ch = 0; ch < kept.getNumChannels(); ++ch)
+                    std::memmove (kept.getWritePointer (ch), kept.getReadPointer (ch) + drop, sizeof (float) * (size_t) (to - from - drop));
+
+                from += drop;
+            }
+
+            // Rendered on from where it was, through the effects unbroken.
+            if (end > to)
+            {
+                mix (to, kept, (int) (to - from), (int) (end - to));
+                to = end;
+            }
+
+            for (int ch = 0; ch < juce::jmin (2, into.getNumChannels()); ++ch)
+                into.copyFrom (ch, 0, kept, ch, (int) (first - from), count);
+        }
+
+        SessionSource& owner;
         const SessionState& session;
-        SessionMixer::Buffers& mixBuffers;
+        const bool withEffects;
     };
 
-    Mix mix (*state, scrubBuffers);
+    // An edit since, or playing (the effects run from elsewhere), and what is kept is stale.
+    if (std::exchange (scrubState, state.get()) != state.get())
+        scrubTo = -1;
+
+    Mix mix (*this, effects);
     scrubber.render (mix, state->sampleRate, deviceRate, buffer, 0, numFrames);
+
+    // The effects were left where the scrub was: playing after it primes them again.
+    if (effects)
+        nextFrame = -1;
 }
 
 void SessionSource::renderLive (const juce::AudioSourceChannelInfo& info)
@@ -252,6 +327,7 @@ void SessionSource::renderLive (const juce::AudioSourceChannelInfo& info)
 
     SessionMixer::render (*state, position.load(), *info.buffer, info.startSample, info.numSamples, buffers, &inserts, in);
     nextFrame = -1;     // playing from here starts in time, after a jump
+    scrubTo = -1;
 }
 
 void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
@@ -296,6 +372,8 @@ void SessionSource::renderRun (juce::int64 start, const juce::AudioSourceChannel
     // in time from the first block.
     if (start != nextFrame)
         SessionMixer::prime (*state, start, buffers, inserts);
+
+    scrubTo = -1;   // the effects play from here now, not from where a scrub left them
 
     SessionMixer::render (*state, start, *info.buffer, destStart, count, buffers, &inserts, takeLive (numFrames, true));
 
@@ -481,9 +559,10 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
         sessionSource.renderLive (info);
 
-    // Scrubbing a stopped session: its mix's sound.
+    // Scrubbing a stopped session: its mix's sound, through its effects unless they are playing
+    // the input monitored.
     if (mode == Mode::session && ! playing && scrubber.isSounding())
-        sessionSource.scrub (scrubber, deviceRate, buffer, numFrames);
+        sessionSource.scrub (scrubber, deviceRate, buffer, numFrames, ! monitoring);
 
     // Scrubbing a stopped document: its sound as the mix.
     if (mode == Mode::document && ! playing && scrubber.isSounding())

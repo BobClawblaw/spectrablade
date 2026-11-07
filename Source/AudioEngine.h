@@ -53,6 +53,7 @@ class SessionSource final : public juce::PositionableAudioSource
 {
 public:
     static constexpr int scrubChunk = 4096;   // frames of the mix rendered at a time for scrubbing
+    static constexpr int scrubWarmUp = 4096;  // frames run through the effects before a window scrubbed backwards or jumped to
 
     SessionSource (Session& s, SessionMixer::Inserts& i) : session (s), inserts (i) {}
 
@@ -72,10 +73,18 @@ public:
 
     /** Scrubbing the stopped session: adds the scrubber's sound of the mix to the first two channels
         of the buffer's first numFrames. The mix is the clips through their tracks' volume, pan,
-        polarity, mute and solo, buses and folders, without the track and bus effects (which can't
-        follow a head going backwards or jumping); a frozen track plays its frozen audio, effects
-        and all; a 5.1 master is folded down. Audio thread. */
-    void scrub (Scrubber&, double deviceRate, juce::AudioBuffer<float>&, int numFrames);
+        polarity, mute and solo, buses and folders, and with effects true their track and bus
+        effects; a frozen track plays its frozen audio, effects and all; a surround master is
+        folded down.
+
+        With effects, the mix is rendered on from where it was last rendered while the head moves
+        forward, so the effects run through it unbroken, as when playing from where the scrub
+        started. Where the head goes back, or jumps more than scrubWarmUp frames ahead, the effects
+        are reset and run over the scrubWarmUp frames before it first: effects whose memory is
+        shorter than that (filters, short look-ahead) sound as when played, longer ones (reverb
+        tails, slow release) only with what that much of the mix leaves in them. Playing after
+        scrubbing starts them afresh. Audio thread. */
+    void scrub (Scrubber&, double deviceRate, juce::AudioBuffer<float>&, int numFrames, bool effects = true);
 
     /** Meters the tracks and buses into these levels as it mixes. */
     void setLevels (SessionMixer::Levels* levels)             { buffers.levels = levels; }
@@ -106,6 +115,9 @@ private:
     Session::State state;                  // audio thread's own reference
     juce::uint32 stateVersion = 0;
     SessionMixer::Buffers buffers, scrubBuffers;
+    juce::AudioBuffer<float> scrubMix;          // the mix with effects rendered for scrubbing: frames [scrubFrom, scrubTo)
+    juce::int64 scrubFrom = 0, scrubTo = -1;    // scrubTo < scrubFrom: none, the effects to be primed
+    const SessionState* scrubState = nullptr;   // the state it was rendered from
     juce::int64 nextFrame = -1;            // where the last block ended; anything else is a jump
     std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
     std::atomic<int> surroundChannel { -1 };

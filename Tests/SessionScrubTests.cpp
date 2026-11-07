@@ -3,6 +3,7 @@
 
 #include <JuceHeader.h>
 #include "../Source/AudioEngine.h"
+#include "../Source/BuiltInEffects.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/Surround.h"
 #include "../Source/TrackEffects.h"
@@ -14,6 +15,7 @@ namespace
 {
     using TestUtils::check;
     using TestPlugins::GainPlugin;
+    using TestPlugins::DelayPlugin;
 
     constexpr double rate = 48000.0;
     constexpr int block = 256;
@@ -91,7 +93,7 @@ namespace
     }
 
     /** Scrubbing a session's mix the same way, as the player does it when stopped. */
-    juce::AudioBuffer<float> scrubSession (const SessionState& state, SessionMixer::Inserts& inserts)
+    juce::AudioBuffer<float> scrubSession (const SessionState& state, SessionMixer::Inserts& inserts, bool effects = true)
     {
         Session session;
         session.reset (state, {});
@@ -107,7 +109,7 @@ namespace
         {
             s.moveTo (targetAt (done));
             juce::AudioBuffer<float> view (out.getArrayOfWritePointers(), 2, done, juce::jmin (block, frames - done));
-            source.scrub (s, rate, view, view.getNumSamples());
+            source.scrub (s, rate, view, view.getNumSamples(), effects);
         }
 
         return out;
@@ -145,7 +147,7 @@ namespace
         // One clip alone: what scrubbing the file of it gives.
         const auto plain = scrubSession (s, none);
 
-        // Its effects (a gain that would halve it) are left out; its volume (-6 dB) and a muted
+        // Its effects (a gain that halves it) heard, or left out; its volume (-6 dB) and a muted
         // track beside it are heard as they are.
         TrackEffects effects;
         effects.prepare (rate);
@@ -161,13 +163,14 @@ namespace
         loud.length = loud.audio->getNumFrames();
         muted.clips.push_back (loud);
         const auto withEffects = scrubSession (quieter, effects);
+        const auto withoutEffects = scrubSession (quieter, effects, false);
         const auto g = juce::Decibels::decibelsToGain (-6.0f);
-        const auto off = worst (withEffects, file, g);
+        const auto off = juce::jmax (worst (withEffects, file, 0.5f * g), worst (withoutEffects, file, g));
 
         check (same (plain, file) && file.getMagnitude (0, 0, frames) > 0.4f && off < 1.0e-6f,
                "scrubbing a session: a track's clip scrubs bit for bit as the file of it would (forward, back and fast ahead, in "
-               "blocks of 256); with -6 dB of volume it is that much quieter (within " + juce::String (off, 9) + "), a muted track "
-               "beside it isn't heard, and its effects are left out");
+               "blocks of 256); with -6 dB of volume it is that much quieter and its effect (a gain of a half) is heard, or left out "
+               "when asked (within " + juce::String (off, 9) + "), and a muted track beside it isn't heard");
 
         // A frozen track scrubs its frozen audio; a 5.1 master is folded down.
         auto frozen = s;
@@ -333,8 +336,234 @@ namespace
     }
 }
 
+namespace
+{
+    std::unique_ptr<juce::AudioPluginInstance> builtIn (const char* id)
+    {
+        static juce::AudioPluginFormatManager formats;
+
+        if (formats.getNumFormats() == 0)
+            formats.addFormat (BuiltInEffects::createFormat());
+
+        for (auto& d : BuiltInEffects::getDescriptions())
+            if (d.fileOrIdentifier == id)
+            {
+                juce::String error;
+                return formats.createPluginInstance (d, rate, TrackEffects::maxBlock, error);
+            }
+
+        return {};
+    }
+
+    /** A parametric EQ (a 9 dB bell at 1 kHz) on the track: a filter, with memory. */
+    void addEq (TrackEffects& effects, juce::uint32 id)
+    {
+        effects.prepare (rate);
+        effects.add (id, builtIn (BuiltInEffects::parametricEqId));
+        BuiltInEffects::setExactly (dynamic_cast<BuiltInEffects::ParametricEqProcessor&> (*effects.getPlugin (id, 0)).gainParameter (2), 9.0f);
+    }
+
+    /** The session's mix played from frame `from` on (silence before), through fresh effects. */
+    juce::AudioBuffer<float> played (const SessionState& s, juce::int64 from, SessionMixer::Inserts& inserts)
+    {
+        juce::AudioBuffer<float> out (2, (int) s.getLength());
+        out.clear();
+        SessionMixer::Buffers buffers;
+        buffers.reserve (512);
+        buffers.surroundChannel = -1;
+        buffers.interfaceChannel = -1;
+        SessionMixer::prime (s, from, buffers, inserts);
+
+        for (auto p = from; p < out.getNumSamples(); p += 512)
+            SessionMixer::render (s, p, out, (int) p, (int) juce::jmin ((juce::int64) 512, out.getNumSamples() - p), buffers, &inserts);
+
+        return out;
+    }
+
+    void testEffects()
+    {
+        // Noise through an EQ: scrubbed, against scrubbing the file of the mix as played from where
+        // the scrub first primed its effects (the first window, 1028 frames before the head, less
+        // the warm-up).
+        juce::Random r (9);
+        juce::AudioBuffer<float> raw (2, (int) (6.0 * rate));
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < raw.getNumSamples(); ++i)
+                raw.setSample (ch, i, (r.nextFloat() - 0.5f) * 0.6f);
+
+        const auto s = oneClip (fromBuffer (raw));
+        const auto id = s.tracks[0].id;
+        TrackEffects eq, reference;
+        addEq (eq, id);
+        addEq (reference, id);
+        const auto primedAt = targetAt (0) - (juce::int64) (Scrubber::fastest * block + 4.0) - SessionSource::scrubWarmUp;
+        const auto file = scrubFile (*fromBuffer (played (s, primedAt, reference)));
+        const auto scrubbed = scrubSession (s, eq);
+        const auto dry = scrubFile (*fromBuffer (juce::AudioBuffer<float> (raw)));
+        const auto second = (int) rate;
+        float forward = 0.0f;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < second; ++i)
+                forward = juce::jmax (forward, std::abs (scrubbed.getSample (ch, i) - file.getSample (ch, i)));
+
+        const auto all = worst (scrubbed, file), effect = worst (dry, file);
+
+        check (forward < 1.0e-6f && all < 1.0e-3f && effect > 0.1f,
+               "scrubbing a session with effects: through an EQ, dragging forward sounds as the mix played from where the scrub "
+               "began (within " + juce::String (forward, 9) + "); back and fast ahead, with the EQ warmed up on the 4096 frames "
+               "before each window, within " + juce::String (all, 9) + " of it, where the EQ itself changes the sound by "
+               + juce::String (effect, 2));
+
+        // An effect with latency (a 240-frame delay, made up for) scrubs in time, bit for bit as without it.
+        TrackEffects delayed, none;
+        delayed.prepare (rate);
+        none.prepare (rate);
+        delayed.add (id, std::make_unique<DelayPlugin> (240, 1.0f));
+        check (same (scrubSession (s, delayed), scrubSession (s, none)),
+               "scrubbing a session with effects: an effect with 240 frames of latency scrubs in time, forward and back, bit for bit "
+               "as with no effect");
+
+        // An edit while scrubbing is heard from then on: what was kept is rendered again.
+        {
+            TrackEffects gain;
+            gain.prepare (rate);
+            gain.add (id, std::make_unique<GainPlugin>());
+            Session session;
+            session.reset (s, {});
+            SessionSource source (session, gain);
+            source.prepareToPlay (block, rate);
+            auto quieter = s;
+            quieter.tracks[0].gainDb = -6.0f;
+            const auto expected = scrubSession (quieter, gain);
+            Scrubber sc;
+            sc.prepare (block);
+            sc.start (targetAt (0));
+            juce::AudioBuffer<float> out (2, frames);
+            out.clear();
+            const auto changeAt = 40 * block;
+
+            for (int done = 0; done < frames; done += block)
+            {
+                if (done == changeAt)
+                    session.apply (quieter, "Volume");
+
+                sc.moveTo (targetAt (done));
+                juce::AudioBuffer<float> view (out.getArrayOfWritePointers(), 2, done, block);
+                source.scrub (sc, rate, view, block);
+            }
+
+            float after = 0.0f, before = 0.0f;
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < frames; ++i)
+                    (i < changeAt ? before : after) = juce::jmax (i < changeAt ? before : after, std::abs (out.getSample (ch, i) - expected.getSample (ch, i)));
+
+            check (after < 1.0e-6f && before > 0.01f,
+                   "scrubbing a session with effects: a volume change made while scrubbing forward is heard from the next block on "
+                   "(within " + juce::String (after, 9) + " of scrubbing it changed from the start), not only in what is rendered after");
+        }
+
+        // Playing after a scrub starts the effects afresh, as playing without one does.
+        {
+            TrackEffects scrubbedEq, freshEq;
+            addEq (scrubbedEq, id);
+            addEq (freshEq, id);
+            Session session;
+            session.reset (s, {});
+            SessionSource source (session, scrubbedEq), fresh (session, freshEq);
+            source.prepareToPlay (block, rate);
+            fresh.prepareToPlay (block, rate);
+            Scrubber sc;
+            sc.prepare (block);
+            sc.start (targetAt (0));
+            juce::AudioBuffer<float> buffer (2, block), a (2, 4 * block), b (2, 4 * block);
+
+            for (int done = 0; done < 20 * block; done += block)
+            {
+                sc.moveTo (targetAt (done));
+                buffer.clear();
+                source.scrub (sc, rate, buffer, block);
+            }
+
+            for (auto* src : { &source, &fresh })
+            {
+                auto& into = src == &source ? a : b;
+                src->setNextReadPosition (150000);
+
+                for (int done = 0; done < 4 * block; done += block)
+                {
+                    juce::AudioSourceChannelInfo info (&into, done, block);
+                    src->getNextAudioBlock (info);
+                }
+            }
+
+            check (same (a, b) && a.getMagnitude (0, 0, 4 * block) > 0.01f,
+                   "scrubbing a session with effects: playing after a scrub sounds bit for bit as playing without one, the effects "
+                   "started afresh");
+        }
+    }
+
+    void testEffectsCost()
+    {
+        // 16 tracks, each with an EQ and a compressor: a second of scrubbing at four times normal
+        // speed forward, then back (each block's window primed and warmed up again).
+        SessionState s;
+        s.sampleRate = rate;
+        TrackEffects effects;
+        effects.prepare (rate);
+
+        for (int t = 0; t < 16; ++t)
+        {
+            auto& track = s.addTrack();
+            track.gainDb = -12.0f;
+            SessionClip c;
+            c.id = s.nextId++;
+            c.audio = tone (2, 200.0 + 20.0 * t, 20.0);
+            c.length = c.audio->getNumFrames();
+            track.clips.push_back (c);
+            effects.add (track.id, builtIn (BuiltInEffects::parametricEqId));
+            effects.add (track.id, builtIn (BuiltInEffects::compressorId));
+        }
+
+        Session session;
+        session.reset (s, {});
+        SessionSource source (session, effects);
+        source.prepareToPlay (block, rate);
+        juce::AudioBuffer<float> out (2, block);
+        double seconds[2] {};
+
+        for (int way = 0; way < 2; ++way)
+        {
+            Scrubber scrubber;
+            scrubber.prepare (block);
+            juce::int64 target = way == 0 ? 0 : 8 * (juce::int64) rate;
+            scrubber.start (target);
+            const auto began = juce::Time::getMillisecondCounterHiRes();
+
+            for (int done = 0; done < (int) rate; done += block)
+            {
+                target += (way == 0 ? 4 : -4) * block;
+                scrubber.moveTo (target);
+                out.clear();
+                source.scrub (scrubber, rate, out, block);
+            }
+
+            seconds[way] = (juce::Time::getMillisecondCounterHiRes() - began) / 1000.0;
+        }
+
+        check (seconds[0] < 0.5 && seconds[1] < 1.0,
+               "scrubbing a session with effects: a second of scrubbing 16 tracks, each through an EQ and a compressor, at four "
+               "times normal speed takes " + juce::String (seconds[0] * 1000.0, 1) + " ms forward and "
+               + juce::String (seconds[1] * 1000.0, 1) + " ms back (the effects warmed up again for each block's window)");
+    }
+}
+
 void runSessionScrubTests (AudioEngine& engine)
 {
+    testEffects();
+    testEffectsCost();
     testCost();
     testMix();
     testPlayer();
