@@ -63,6 +63,9 @@ namespace Delivery
     /** Whether every line passes. */
     bool passes (const Spec&, const Loudness::Result&);
 
+    /** In a few words: "meets it at -23.0 LUFS, true peak -16.2 dBTP", or "does not meet it, at ...". */
+    juce::String summary (const Spec&, const Loudness::Result& after);
+
     /** Stems to a spec: one gain for them all, the one that brings their mix to the target, so
         they still add up to the mix as delivered. No limiter, as a limiter on each stem would not
         add up to one on the mix: where the gain takes the mix's true peak past the ceiling, the

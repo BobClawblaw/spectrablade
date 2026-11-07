@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 278: Batch delivery report as a file**
+- When Batch Process brings files to a delivery spec, it also writes "Delivery Report <date> <time>.txt" in the batch's folder (or beside the first file written), numbered " 2", " 3"... when that name is taken. The report gives how many files meet the spec, then each file's report as Meet Delivery Spec shows it (integrated loudness and true peak with PASS or FAIL, the range, the loudest momentary and short-term loudness and the sample peak, each beside what it was before) and the file it was written as, or why a file wasn't written. The batch's summary says where the report is.
+- With a spec as the level, Batch now calls the same step as Meet Delivery Spec directly, rather than through the sequence step, so it keeps the measurements; the audio and the notes are the same.
+- Measured by the tests: two files batched to the -14 LUFS spec and one that couldn't be read give "Delivery Report 2026-11-06 210509.txt" in the batch's folder ("... 210509 2.txt" the second time), starting "Delivery report: 2 of 3 files meet Online -14 LUFS.", with each file's PASS lines and the file it was written as, and "gone.wav: not written. It can't be read."; no report for another level, or when no file was written; the batched file still measures -14.0 LUFS, true peak -10.6 dBTP, with the same notes as before. The whole suite passed (1279 checks). Not tried: a batch to a spec in the running app, and the summary's line saying where the report is.
+
 **Milestone 277: Custom delivery specs**
 - Meet Delivery Spec offers a custom spec after the four fixed ones: a target from -70 to 0 LUFS, a tolerance from 0.1 to 10 LU and a true-peak ceiling from -30 to 0 dBTP, set in the same dialog. It is kept in the settings, and Mix Down, Export Stems and Batch Process offer it too, with its values shown. Until one is set it is -20 LUFS +/- 1 LU at -1 dBTP.
 - A recorded Meet Delivery Spec step, and Batch Process, refuse a spec out of those ranges, where a step used to take any tolerance from 0 to 10 LU.

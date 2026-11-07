@@ -234,6 +234,28 @@ void runBatchTests (AudioEngine& engine)
                "batch: to the -14 LUFS delivery spec it measures " + Loudness::format (deliveredLoud->integrated, "LUFS") + ", true peak "
                    + Loudness::format (deliveredLoud->truePeak, "dBTP") + ", and the report says it meets it: " + delivered.notes.joinIntoString ("; "));
 
+        // The delivery report: each file's lines against the spec, written as a text file in the folder.
+        const auto deliveredMono = run (mono, d, engine);
+        Batch::Outcome missing;
+        missing.source = dir.getChildFile ("gone.wav");
+        missing.error = "It can't be read.";
+        const std::vector<Batch::Outcome> outcomes { delivered, deliveredMono, missing };
+        const auto when = juce::Time (2026, 10, 6, 21, 5, 9);
+        const auto written = Batch::writeDeliveryReport (outcomes, d, when);
+        const auto again = Batch::writeDeliveryReport (outcomes, d, when);
+        const auto text = written.loadFileAsString();
+        auto plain = d;
+        plain.level = Batch::Level::loudness;
+        check (written.getParentDirectory() == out && written.getFileName() == "Delivery Report 2026-11-06 210509.txt"
+                   && again.getFileName() == "Delivery Report 2026-11-06 210509 2.txt" && delivered.meetsSpec && deliveredMono.meetsSpec
+                   && text.startsWith ("Delivery report: 2 of 3 files meet Online -14 LUFS.") && text.contains ("PASS  Integrated loudness")
+                   && text.contains ("Written as " + delivered.written.getFileName()) && text.contains ("gone.wav: not written. It can't be read.")
+                   && Batch::deliveryReport (outcomes, plain).isEmpty() && Batch::writeDeliveryReport ({ missing }, d, when) == juce::File(),
+               "batch: with a delivery spec, a report of every file against it is written in the folder (\"" + written.getFileName()
+                   + "\", numbered when taken): 2 of 3 meet it, one not written says why; none for other levels, or when nothing was written");
+        written.deleteFile();
+        again.deleteFile();
+
         Batch::Settings q = l;
         q.suffix = " quiet";
         q.limit = false;

@@ -50,6 +50,8 @@ namespace Batch
         juce::File source, written;    // written: none when it failed
         juce::String error;            // why it failed
         juce::StringArray notes;       // what was done that wasn't asked for, or couldn't be
+        juce::String delivery;         // with a delivery spec as the level: the file's report (Delivery::report)
+        bool meetsSpec = false;        // and whether it meets the spec
     };
 
     /** The types offered: WAV, AIFF, FLAC, MP3 and AAC, then ffmpeg's when it is installed. */
@@ -77,4 +79,13 @@ namespace Batch
 
     /** A report of the outcomes, one line each, after a summary line. */
     juce::String report (const std::vector<Outcome>&);
+
+    /** With a delivery spec as the level: how many files meet it, then each file's report (or
+        why it wasn't written). Empty for any other level. */
+    juce::String deliveryReport (const std::vector<Outcome>&, const Settings&);
+
+    /** Writes deliveryReport() as "Delivery Report <when>.txt" (numbered when that is taken) in
+        the batch's folder, or beside the first file written. Returns the file, or none when
+        there is no report, nothing was written, or it couldn't be saved. */
+    juce::File writeDeliveryReport (const std::vector<Outcome>&, const Settings&, juce::Time when);
 }

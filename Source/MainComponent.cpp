@@ -5011,12 +5011,17 @@ void MainComponent::runBatch (const juce::Array<juce::File>& files, const Batch:
 
             return true;
         },
-        [this, outcomes] { showBatchReport (*outcomes); });
+        [this, outcomes, settings]
+        {
+            // With a delivery spec, every file's report goes in a text file beside them.
+            const auto delivery = Batch::writeDeliveryReport (*outcomes, settings, juce::Time::getCurrentTime());
+            showBatchReport (*outcomes, delivery);
+        });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
 }
 
-void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes)
+void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes, const juce::File& deliveryReport)
 {
     juce::File firstWritten;
 
@@ -5029,7 +5034,10 @@ void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes
     text->setMultiLine (true);
     text->setReadOnly (true);
     text->setScrollbarsShown (true);
-    text->setText (Batch::report (outcomes));
+    text->setText (Batch::report (outcomes)
+                   + (deliveryReport != juce::File() ? "\n\nThe delivery report, with each file's measurements against the spec, is in "
+                                                           + deliveryReport.getFullPathName() + "."
+                                                     : juce::String()));
     text->setSize (560, 300);
     box->addCustomComponent (text);
     box->addButton ("OK", 0, juce::KeyPress (juce::KeyPress::returnKey));

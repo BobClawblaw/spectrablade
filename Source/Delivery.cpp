@@ -44,6 +44,12 @@ std::vector<Line> check (const Spec& spec, const Loudness::Result& r)
     return lines;
 }
 
+juce::String summary (const Spec& spec, const Loudness::Result& after)
+{
+    return juce::String (passes (spec, after) ? "meets it at " : "does not meet it, at ") + Loudness::format (after.integrated, "LUFS")
+           + ", true peak " + Loudness::format (after.truePeak, "dBTP");
+}
+
 bool passes (const Spec& spec, const Loudness::Result& r)
 {
     const auto lines = check (spec, r);

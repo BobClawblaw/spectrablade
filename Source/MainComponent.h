@@ -174,7 +174,7 @@ private:
     void batchProcess();
     void askForBatchSettings (const juce::Array<juce::File>&);
     void runBatch (const juce::Array<juce::File>&, const Batch::Settings&);
-    void showBatchReport (const std::vector<Batch::Outcome>&);
+    void showBatchReport (const std::vector<Batch::Outcome>&, const juce::File& deliveryReport = {});
 
     // Recorded command sequences
     Sequences::Result runStep (const Sequences::Step&);   // a command's edit, through the step that plays it back

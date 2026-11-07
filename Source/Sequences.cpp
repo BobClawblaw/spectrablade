@@ -469,8 +469,7 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
             if (d.limited)
                 out.notes.add ("limited, with " + juce::String (d.gainDb, 1) + " dB of gain into the true-peak limiter");
 
-            out.notes.add (juce::String (Delivery::passes (spec, d.after) ? "meets it at " : "does not meet it, at ")
-                           + Loudness::format (d.after.integrated, "LUFS") + ", true peak " + Loudness::format (d.after.truePeak, "dBTP"));
+            out.notes.add (Delivery::summary (spec, d.after));
         }
     }
     else if (k == "matchLoudness")

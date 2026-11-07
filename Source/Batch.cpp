@@ -190,14 +190,34 @@ Outcome process (const juce::File& source, const Settings& settings, juce::Audio
     // The level, last, so it is what the file ends up with.
     const auto frames = audio->getNumFrames();
 
+    // To a delivery spec, as Meet Delivery Spec does it (and its sequence step), keeping the report.
+    if (settings.level == Level::spec)
+    {
+        const auto spec = Delivery::specFor (settings.specLufs, settings.specToleranceLu, settings.specCeilingDbtp);
+        const auto prefix = "Meet " + spec.name + ": ";
+        auto d = Delivery::deliver (*audio, 0, frames, rate, spec);
+
+        if (d.error.isNotEmpty())
+        {
+            out.notes.add (prefix + "nothing above the -70 LUFS gate, so its loudness wasn't changed");
+        }
+        else if (d.snapshot != nullptr)
+        {
+            audio = std::move (d.snapshot);
+
+            if (d.limited)
+                out.notes.add (prefix + "limited, with " + juce::String (d.gainDb, 1) + " dB of gain into the true-peak limiter");
+
+            out.notes.add (prefix + Delivery::summary (spec, d.after));
+            out.delivery = Delivery::report (spec, d, source.getFileName());
+            out.meetsSpec = Delivery::passes (spec, d.after);
+        }
+    }
     // The level, as Normalize and Match Loudness do it.
-    if (settings.level != Level::none)
+    else if (settings.level != Level::none)
     {
         const auto step = settings.level == Level::peak
                               ? Sequences::Step { "normalize", { { "db", settings.peakDb }, { "apart", 0.0 } }, nullptr }
-                          : settings.level == Level::spec
-                              ? Sequences::Step { "deliverySpec", { { "target", settings.specLufs }, { "tolerance", settings.specToleranceLu },
-                                                                    { "ceiling", settings.specCeilingDbtp } }, nullptr }
                               : Sequences::Step { "matchLoudness", { { "target", settings.lufs }, { "ceiling", settings.ceilingDbtp },
                                                                      { "limit", settings.limit ? 1.0 : 0.0 } }, nullptr };
         auto levelled = Sequences::apply (step, audio, 0, frames, rate, markers, nullptr);
@@ -211,8 +231,7 @@ Outcome process (const juce::File& source, const Settings& settings, juce::Audio
         if (levelled.snapshot != nullptr)
             audio = std::move (levelled.snapshot);
 
-        for (auto& note : levelled.notes)
-            out.notes.add (settings.level == Level::spec ? step.name() + ": " + note : note);
+        out.notes.addArray (levelled.notes);
     }
 
     if (! keepGoing (0.8f))
@@ -358,5 +377,56 @@ juce::String report (const std::vector<Outcome>& outcomes)
     }
 
     return text;
+}
+
+juce::String deliveryReport (const std::vector<Outcome>& outcomes, const Settings& settings)
+{
+    if (settings.level != Level::spec)
+        return {};
+
+    const auto spec = Delivery::specFor (settings.specLufs, settings.specToleranceLu, settings.specCeilingDbtp);
+    int meeting = 0;
+
+    for (auto& o : outcomes)
+        meeting += o.written != juce::File() && o.meetsSpec ? 1 : 0;
+
+    juce::StringArray out;
+    out.add ("Delivery report: " + juce::String (meeting) + " of " + juce::String ((int) outcomes.size()) + " files meet " + spec.name + ".");
+
+    for (auto& o : outcomes)
+    {
+        out.add ({});
+        out.add ("----");
+
+        if (o.written == juce::File())
+            out.add (o.source.getFileName() + ": not written. " + o.error);
+        else if (o.delivery.isEmpty())
+            out.add (o.source.getFileName() + ": written as " + o.written.getFileName() + ", not brought to the spec ("
+                     + o.notes.joinIntoString ("; ") + ")");
+        else
+            out.add (o.delivery + "\nWritten as " + o.written.getFileName() + ".");
+    }
+
+    return out.joinIntoString ("\n") + "\n";
+}
+
+juce::File writeDeliveryReport (const std::vector<Outcome>& outcomes, const Settings& settings, juce::Time when)
+{
+    const auto text = deliveryReport (outcomes, settings);
+    const auto first = std::find_if (outcomes.begin(), outcomes.end(), [] (auto& o) { return o.written != juce::File(); });
+
+    if (text.isEmpty() || first == outcomes.end())
+        return {};
+
+    const auto folder = settings.folder != juce::File() ? settings.folder : first->written.getParentDirectory();
+
+    // Numbered " 2", " 3"... when taken, as the batch's files are.
+    const auto name = "Delivery Report " + when.formatted ("%Y-%m-%d %H%M%S");
+    auto file = folder.getChildFile (name + ".txt");
+
+    for (int n = 2; file.exists(); ++n)
+        file = folder.getChildFile (name + " " + juce::String (n) + ".txt");
+
+    return file.replaceWithText (text) ? file : juce::File();
 }
 }
