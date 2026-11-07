@@ -128,10 +128,21 @@ Bar::Bar (Store& s, juce::String effectKey, std::function<Values()> current, std
     list.setTextWhenNoChoicesAvailable ("No presets saved");
     list.onChange = [this]
     {
-        remove.setEnabled (list.getSelectedId() != 0);
+        const auto id = list.getSelectedId();
+        remove.setEnabled (id > userBase);
 
-        if (const auto v = store.load (key, list.getText()))
-            applyValues (*v);
+        if (id > userBase)
+        {
+            if (const auto v = store.load (key, list.getText()))
+                applyValues (*v);
+        }
+        else if (id > 0)
+        {
+            const auto& made = factory (key);
+
+            if (juce::isPositiveAndNotGreaterThan (id, (int) made.size()))
+                applyValues (made[(size_t) id - 1].values);
+        }
     };
     save.onClick = [this] { saveAs(); };
     remove.onClick = [this] { removeChosen(); };
@@ -146,17 +157,36 @@ Bar::~Bar() = default;
 
 void Bar::refresh()
 {
+    const auto chosenId = list.getSelectedId();
     const auto chosen = list.getText();
     list.clear (juce::dontSendNotification);
+    const auto& made = factory (key);
     const auto names = store.getNames (key);
 
-    for (int i = 0; i < names.size(); ++i)
-        list.addItem (names[i], i + 1);
+    if (! made.empty())
+    {
+        list.addSectionHeading ("Factory");
 
-    if (names.contains (chosen))
-        list.setText (chosen, juce::dontSendNotification);
+        for (size_t i = 0; i < made.size(); ++i)
+            list.addItem (made[i].name, (int) i + 1);
+    }
 
-    remove.setEnabled (names.contains (chosen));
+    if (! names.isEmpty())
+    {
+        if (! made.empty())
+            list.addSectionHeading ("Yours");
+
+        for (int i = 0; i < names.size(); ++i)
+            list.addItem (names[i], userBase + i + 1);
+    }
+
+    // The same one chosen again: a factory preset by its place, one of the user's by its name.
+    if (chosenId > 0 && chosenId <= userBase && chosenId <= (int) made.size())
+        list.setSelectedId (chosenId, juce::dontSendNotification);
+    else if (names.contains (chosen))
+        list.setSelectedId (userBase + names.indexOf (chosen) + 1, juce::dontSendNotification);
+
+    remove.setEnabled (list.getSelectedId() > userBase);
 }
 
 void Bar::saveAs()
@@ -179,8 +209,9 @@ void Bar::saveAs()
             return;
         }
 
+        safe->list.setSelectedId (0, juce::dontSendNotification);
         safe->refresh();
-        safe->list.setText (name, juce::dontSendNotification);
+        safe->list.setSelectedId (userBase + safe->store.getNames (safe->key).indexOf (name) + 1, juce::dontSendNotification);
         safe->remove.setEnabled (true);
     }), true);
 }
@@ -189,7 +220,7 @@ void Bar::removeChosen()
 {
     const auto name = list.getText();
 
-    if (! store.getNames (key).contains (name))
+    if (list.getSelectedId() <= userBase || ! store.getNames (key).contains (name))
         return;
 
     juce::AlertWindow::showOkCancelBox (juce::MessageBoxIconType::QuestionIcon, "Delete Preset", "Delete the preset " + name.quoted() + "?",
@@ -200,7 +231,7 @@ void Bar::removeChosen()
             return;
 
         safe->store.remove (safe->key, name);
-        safe->list.setText ({}, juce::dontSendNotification);
+        safe->list.setSelectedId (0, juce::dontSendNotification);
         safe->refresh();
     }));
 }

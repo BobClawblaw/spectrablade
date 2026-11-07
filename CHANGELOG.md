@@ -4,6 +4,23 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 288: The rest of the effect dialogs, and factory presets**
+- Every settings dialog in the Effects menu now uses the new effect dialog: Meet Delivery Spec, Generate DTMF Tones, Noise Gate, Shorten Pauses, Trim Silence, Insert Silence, Fade Selection Edges, Fade Each Region, Normalize Each Region, Crossfade Loop and Attenuate Frequencies. So do the silence finders (Find Next Silence, Add Markers at Silences, Add Regions over Sounds), and Clip Gain and Normalize Clip in the multitrack view.
+  - A new kind of field, a text field, takes DTMF digits and Insert Silence's length typed as 1:30. The silence finders now take their time in seconds, on a slider, instead of as typed text.
+- Previews for:
+  - Meet Delivery Spec, Normalize Each Region, the two fades, Crossfade Loop (the selection loops with its new seam) and Attenuate Frequencies (what is drawn in the spectrogram, or the selection's band). These process all of the selection, since they reach across it.
+  - Noise Gate, which processes the first 30 s.
+  - Shorten Pauses and Trim Silence cut the file and the generators insert audio, so they have no preview.
+- 201 factory presets across 42 effects, listed first in each presets menu under "Factory", with the user's own under "Yours". They can't be changed or deleted; saving under a factory preset's name saves a preset of your own.
+  - They are starting points for common jobs, for example: light, medium and strong dialogue noise reduction; vinyl crackle and mouth-click repair; 50 and 60 Hz hum; loudness targets for broadcast (EBU R128, ATSC A/85), podcasts, streaming and audiobooks; female and male vocal de-essing; master, vocal and drum compression; vocal and dialogue EQ curves; rooms and halls; PAL and film speed changes.
+  - They are settings to adjust by ear. They weren't tuned by listening.
+- Measured by the tests:
+  - Every factory preset is a setting its effect takes: 105 run as steps without a problem, and on 72 for live effects every parameter is set within its range, except the compressor's side-chain switch, which presets leave alone. No name repeats within an effect.
+  - The presets menu lists the factory presets first, applies the one chosen, and deletes only the user's.
+  - A text field takes only its characters and leaves Space and Return to the dialog.
+  - The whole suite passed (1340 checks).
+- Not tried by hand in the app: any of these dialogs, the previews by ear, and the presets by ear.
+
 **Milestone 287: Previewing every effect, and a better effect dialog**
 - Every built-in effect with settings now has a preview, not only the ones that run live. Noise Reduction, Click and Pop Repair, Reduce Reverb, Remove Hum, Repair Clipping, Stretch, Shift Pitch, Pitch Correction, Level Speech, Centre Channel, Automatic Phase Correction, Gain, Normalize, Match Loudness, Balance, Stereo Width, Gain Ramp, Pan Ramp, Echo, Tremolo and EQ Band process the selection (or the file) in the background with the dialog's settings, then loop the result in place of the audio, before the effects rack. They process its first 30 s, or all of it when the result depends on all of it: Normalize, Match Loudness, the ramps, Phase Correction, and Repair Clipping keeping the peak level. A change of settings is processed once the settings have stood still for a quarter of a second; the last result plays meanwhile, and the dialog says when it is processing.
 - One dialog for the built-in effects: a slider and its value for each number, a menu for each choice, presets for every one of them, Preview and Bypass (the audio as it is, to compare), and Apply and Cancel.

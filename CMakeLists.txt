@@ -107,6 +107,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Convolver.cpp
     Source/BuiltInEffects.cpp
     Source/EffectPresets.cpp
+    Source/FactoryPresets.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
@@ -292,6 +293,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Convolver.cpp
     Source/BuiltInEffects.cpp
     Source/EffectPresets.cpp
+    Source/FactoryPresets.cpp
     Source/ParametricEq.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp

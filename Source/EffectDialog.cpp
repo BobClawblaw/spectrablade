@@ -115,15 +115,57 @@ namespace
     };
 }
 
+namespace
+{
+    /** Text: leaves Space, Return and Escape to the dialog. */
+    class Text final : public juce::TextEditor
+    {
+    public:
+        explicit Text (const EffectDialog::Field& f)
+        {
+            setInputRestrictions (f.maxLength, f.allowed.removeCharacters (" "));
+            setText (f.text, false);
+        }
+
+        bool keyPressed (const juce::KeyPress& key) override
+        {
+            if (key == juce::KeyPress (juce::KeyPress::spaceKey) || key == juce::KeyPress (juce::KeyPress::returnKey)
+                || key == juce::KeyPress (juce::KeyPress::escapeKey))
+                return false;
+
+            return juce::TextEditor::keyPressed (key);
+        }
+    };
+}
+
 struct EffectDialog::Row
 {
     Field field;
     juce::Label label;
     std::unique_ptr<Number> number;
     std::unique_ptr<juce::ComboBox> menu;
+    std::unique_ptr<juce::TextEditor> text;
 
-    juce::Component& control() const   { return number != nullptr ? static_cast<juce::Component&> (*number) : *menu; }
+    juce::Component& control() const
+    {
+        if (number != nullptr)
+            return *number;
+
+        return menu != nullptr ? static_cast<juce::Component&> (*menu) : *text;
+    }
 };
+
+EffectDialog::Field EffectDialog::Field::textField (juce::String id, juce::String label, juce::String text, juce::String allowed, int maxLength)
+{
+    Field f;
+    f.id = std::move (id);
+    f.label = std::move (label);
+    f.isText = true;
+    f.text = std::move (text);
+    f.allowed = std::move (allowed);
+    f.maxLength = maxLength;
+    return f;
+}
 
 //==============================================================================
 double EffectDialog::nudged (const Field& f, double value, double notches, bool fine)
@@ -151,7 +193,12 @@ EffectDialog::EffectDialog (Options o) : options (std::move (o))
         row->label.setMinimumHorizontalScale (0.8f);
         addAndMakeVisible (row->label);
 
-        if (f.choices.isEmpty())
+        if (f.isText)
+        {
+            row->text = std::make_unique<Text> (f);
+            row->text->onTextChange = [this] { changed(); };
+        }
+        else if (f.choices.isEmpty())
         {
             row->number = std::make_unique<Number> (f);
             row->number->onValueChange = [this] { changed(); };
@@ -239,9 +286,40 @@ EffectDialog::Values EffectDialog::getValues() const
     Values v;
 
     for (auto& r : rows)
-        v[r->field.id] = r->number != nullptr ? r->number->getShownValue() : (double) r->menu->getSelectedItemIndex();
+    {
+        if (r->number != nullptr)
+            v[r->field.id] = r->number->getShownValue();
+        else if (r->menu != nullptr)
+            v[r->field.id] = (double) r->menu->getSelectedItemIndex();
+    }
 
     return v;
+}
+
+juce::String EffectDialog::getText (const juce::String& id) const
+{
+    auto* t = getTextField (id);
+    return t != nullptr ? t->getText().trim() : juce::String();
+}
+
+std::map<juce::String, juce::String> EffectDialog::getTexts() const
+{
+    std::map<juce::String, juce::String> texts;
+
+    for (auto& r : rows)
+        if (r->text != nullptr)
+            texts[r->field.id] = r->text->getText().trim();
+
+    return texts;
+}
+
+juce::TextEditor* EffectDialog::getTextField (const juce::String& id) const
+{
+    for (auto& r : rows)
+        if (r->field.id == id)
+            return r->text.get();
+
+    return nullptr;
 }
 
 void EffectDialog::setValues (const Values& values)
@@ -250,7 +328,7 @@ void EffectDialog::setValues (const Values& values)
     {
         const auto found = values.find (r->field.id);
 
-        if (found == values.end() || ! std::isfinite (found->second))
+        if (found == values.end() || ! std::isfinite (found->second) || r->text != nullptr)
             continue;
 
         if (r->number != nullptr)
@@ -396,7 +474,7 @@ void EffectDialog::resized()
         r.removeFromTop (4);
         row->label.setBounds (line.removeFromLeft (labelWidth - gap));
         line.removeFromLeft (gap);
-        row->control().setBounds (row->menu != nullptr ? line.withWidth (juce::jmin (line.getWidth(), 300)) : line);
+        row->control().setBounds (row->number == nullptr ? line.withWidth (juce::jmin (line.getWidth(), 300)) : line);
     }
 
     if (presets != nullptr)

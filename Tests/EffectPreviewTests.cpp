@@ -7,6 +7,7 @@
 #include "../Source/BuiltInEffects.h"
 #include "../Source/EffectDialog.h"
 #include "../Source/EffectPreview.h"
+#include "../Source/EffectPresets.h"
 #include "TestUtils.h"
 #include "EffectPreviewTests.h"
 
@@ -215,8 +216,156 @@ namespace
     }
 }
 
+namespace
+{
+    void testTextFields()
+    {
+        EffectDialog::Options o;
+        o.fields = { EffectDialog::Field::textField ("digits", "Digits", "555", "0123456789,", 8), { "level", "Level", -6.0, 1, {}, -96.0, 0.0, 0.5 } };
+        EffectDialog dialog (o);
+        auto* text = dialog.getTextField ("digits");
+        text->clear();
+        text->insertTextAtCaret ("12,34 5");
+        const auto passes = ! text->keyPressed (juce::KeyPress (juce::KeyPress::spaceKey)) && ! text->keyPressed (juce::KeyPress (juce::KeyPress::returnKey));
+        check (dialog.getText ("digits") == "12,345" && dialog.getTexts().at ("digits") == "12,345" && dialog.getValues().count ("digits") == 0
+                   && dialog.getValues().at ("level") == -6.0 && passes,
+               "a text field takes only its characters, stays out of the values, and leaves Space and Return to the dialog");
+    }
+
+    /** The step a dialog's preset runs as, for the effects that are steps (the phase dialog names its polarity otherwise). */
+    std::optional<Sequences::Step> stepOf (const juce::String& key, const EffectPresets::Values& v)
+    {
+        static const std::map<juce::String, juce::String> kinds {
+            { "spectrablade:gain", "gain" }, { "spectrablade:normalize", "normalize" }, { "spectrablade:match-loudness", "matchLoudness" },
+            { "spectrablade:level-speech", "levelSpeech" }, { "spectrablade:balance", "balance" }, { "spectrablade:stereo-width", "stereoWidth" },
+            { "spectrablade:centre-channel", "centre" }, { "spectrablade:reduce-reverb", "dereverb" }, { "spectrablade:stretch", "stretch" },
+            { "spectrablade:shift-pitch", "pitch" }, { "spectrablade:pitch-correction", "pitchCorrect" }, { "spectrablade:eq-band", "eqBand" },
+            { "spectrablade:compressor", "compressor" }, { "spectrablade:limiter", "limiter" }, { "spectrablade:de-esser", "deEsser" },
+            { "spectrablade:chorus", "chorus" }, { "spectrablade:flanger", "flanger" }, { "spectrablade:phaser", "phaser" },
+            { "spectrablade:reverb", "reverb" }, { "spectrablade:tremolo", "tremolo" }, { "spectrablade:echo", "echo" } };
+
+        if (key == "spectrablade:phase-correction")
+            return Sequences::Step { "phase", { { "most", v.at ("most") }, { "turnOver", v.at ("polarity") < 0.5 ? 1.0 : 0.0 } }, nullptr };
+
+        const auto found = kinds.find (key);
+        return found != kinds.end() ? std::optional<Sequences::Step> (Sequences::Step { found->second, v, nullptr }) : std::nullopt;
+    }
+
+    std::unique_ptr<BuiltInEffects::BuiltInEffect> liveEffectOf (const juce::String& key)
+    {
+        using namespace BuiltInEffects;
+
+        if (key == parametricEqId)  return std::make_unique<ParametricEqProcessor>();
+        if (key == compressorId)    return std::make_unique<CompressorProcessor>();
+        if (key == limiterId)       return std::make_unique<LimiterProcessor>();
+        if (key == chorusId)        return std::make_unique<SweptDelayProcessor> (SweptDelayProcessor::Kind::chorus);
+        if (key == flangerId)       return std::make_unique<SweptDelayProcessor> (SweptDelayProcessor::Kind::flanger);
+        if (key == phaserId)        return std::make_unique<PhaserProcessor>();
+        if (key == reverbId)        return std::make_unique<ReverbProcessor>();
+        if (key == convolutionId)   return std::make_unique<ConvolutionProcessor>();
+        if (key == graphicEq10Id)   return std::make_unique<GraphicEqProcessor> (10);
+        if (key == graphicEq31Id)   return std::make_unique<GraphicEqProcessor> (31);
+        if (key == multibandId)     return std::make_unique<MultibandProcessor>();
+        if (key == deEsserId)       return std::make_unique<DeEsserProcessor>();
+        return nullptr;
+    }
+
+    void testFactoryPresets()
+    {
+        auto presets = 0, steps = 0, live = 0;
+        juce::StringArray badSteps, badLive, repeated;
+
+        for (auto& key : EffectPresets::factoryKeys())
+        {
+            juce::StringArray names;
+
+            for (auto& p : EffectPresets::factory (key))
+            {
+                ++presets;
+
+                if (names.contains (p.name))
+                    repeated.add (key + " " + p.name);
+
+                names.add (p.name);
+
+                if (const auto step = stepOf (key, p.values))
+                {
+                    ++steps;
+
+                    if (const auto problem = Sequences::problem (*step, rate); problem.isNotEmpty())
+                        badSteps.add (key + " " + p.name + ": " + problem);
+                }
+
+                // A live effect's preset sets every one of its parameters, each within its range (but the
+                // compressor's side-chain switch, which is routing, left as it is).
+                if (auto effect = liveEffectOf (key))
+                {
+                    ++live;
+
+                    for (auto* param : effect->getParameters())
+                    {
+                        auto* withId = dynamic_cast<juce::AudioProcessorParameterWithID*> (param);
+
+                        if (withId != nullptr && withId->paramID == "sidechain")
+                            continue;
+                        const auto found = withId != nullptr ? p.values.find (withId->paramID) : p.values.end();
+                        auto ok = found != p.values.end();
+
+                        if (ok)
+                        {
+                            if (auto* f = dynamic_cast<juce::AudioParameterFloat*> (param))
+                                ok = f->range.getRange().contains ((float) found->second) || juce::exactlyEqual ((float) found->second, f->range.end);
+                            else if (auto* c = dynamic_cast<juce::AudioParameterChoice*> (param))
+                                ok = juce::isPositiveAndBelow ((int) found->second, c->choices.size());
+                            else
+                                ok = juce::exactlyEqual (found->second, 0.0) || juce::exactlyEqual (found->second, 1.0);
+                        }
+
+                        if (! ok)
+                            badLive.add (key + " " + p.name + ": " + (withId != nullptr ? withId->paramID : juce::String ("?")));
+                    }
+                }
+            }
+        }
+
+        std::cout << "  " << presets << " factory presets, " << steps << " checked as steps, " << live << " against live effects" << std::endl;
+
+        for (auto& b : badSteps)
+            std::cout << "  step refused: " << b << std::endl;
+
+        for (auto& b : badLive)
+            std::cout << "  live parameter missing or out of range: " << b << std::endl;
+
+        check (presets > 150 && steps > 80 && live > 50 && badSteps.isEmpty() && badLive.isEmpty() && repeated.isEmpty(),
+               "every factory preset is a setting its effect takes: as a step, and for a live effect every parameter but the side-chain switch set within its range; no name repeated");
+
+        // The presets bar: factory presets first, under their heading, chosen ones applied; only the user's can be deleted.
+        const auto folder = juce::File::createTempFile ("presets");
+        EffectPresets::Store store (folder);
+        store.save ("spectrablade:echo", "Mine", { { "delay", 333.0 }, { "feedback", 20.0 } });
+        EffectPresets::Values applied;
+        EffectPresets::Bar bar (store, "spectrablade:echo", [] { return EffectPresets::Values {}; }, [&] (const EffectPresets::Values& v) { applied = v; });
+        auto* list = dynamic_cast<juce::ComboBox*> (bar.getChildComponent (0));
+        auto* remove = dynamic_cast<juce::Button*> (bar.getChildComponent (2));
+        const auto& echo = EffectPresets::factory ("spectrablade:echo");
+        const auto factoryCount = (int) echo.size();
+
+        list->setSelectedId (1, juce::sendNotificationSync);
+        const auto firstApplied = applied == echo[0].values && ! remove->isEnabled();
+        list->setSelectedId (1001, juce::sendNotificationSync);
+        const auto mineApplied = applied.at ("delay") == 333.0 && remove->isEnabled();
+
+        check (list->getNumItems() == factoryCount + 1 && list->getItemText (0) == echo[0].name && list->getItemText (factoryCount) == "Mine"
+                   && firstApplied && mineApplied,
+               "the presets menu lists the factory presets first, then the user's; choosing one applies it, and only the user's can be deleted");
+        folder.deleteRecursively();
+    }
+}
+
 void runEffectPreviewTests (AudioEngine& engine)
 {
+    testTextFields();
+    testFactoryPresets();
     testRequests();
     testRendering();
     testStandIn();

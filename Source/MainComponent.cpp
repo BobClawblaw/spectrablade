@@ -2013,7 +2013,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdAbout: showAbout(); break;
         case cmdFadeRegions: showFadeEdges (true); break;
         case cmdNormalizeRegions:
-            askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, [this] (float db)
+            askForDecibels ("Normalize Each Region", "Peak level (dBFS)", -0.1f, -48.0, 0.0, "spectrablade:normalize-regions", [this] (float db)
             {
                 auto skipped = 0;
 
@@ -2023,6 +2023,16 @@ bool MainComponent::perform (const InvocationInfo& info)
                 if (skipped > 0)
                     showError ("Normalize Each Region", juce::String (skipped) + (skipped == 1 ? " region was" : " regions were")
                                                             + " left as they were: silent, or overlapping a region before.");
+            },
+            [markers = engine.document.getMarkers()] (float db)
+            {
+                // Every region of the file, heard over the selection (or the whole file).
+                return std::optional<EffectPreview::Request> ({ "normalizeRegions " + juce::String (db, 3),
+                    [markers, db] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double, const std::function<bool (float)>&)
+                    {
+                        auto skipped = 0;
+                        return EffectPreview::Rendered { AudioEdits::normalizeRegions (*audio, markers, juce::jmin (db, 0.0f), skipped), start, end, {} };
+                    }, true });
             });
             break;
         case cmdSilenceOutside: applySimpleEffect ("Silence Outside Selection", &AudioEdits::silenceOutside, true); break;
@@ -2079,13 +2089,24 @@ bool MainComponent::perform (const InvocationInfo& info)
             break;
         }
         case cmdRepair:    repairSelection(); break;
-        case cmdNoiseGate: askForSilence ("Noise Gate", [this] (juce::int64 frames) { noiseGate (frames); }); break;
+        case cmdNoiseGate:
+            askForSilence ("Noise Gate", [this] (juce::int64 frames) { noiseGate (frames); }, [] (float db, juce::int64 frames)
+            {
+                return std::optional<EffectPreview::Request> ({ "gate " + juce::String (db, 3) + " " + juce::String (frames),
+                    [db, frames] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>&)
+                    {
+                        return EffectPreview::Rendered { AudioEdits::gateQuiet (*audio, start, end, juce::Decibels::decibelsToGain (db, -200.0f), frames,
+                                                                                juce::roundToInt (sampleRate * gateFadeSeconds)),
+                                                         start, end, {} };
+                    } });
+            });
+            break;
         case cmdShortenPauses: askForSilence ("Shorten Pauses", [this] (juce::int64 frames) { shortenPauses (frames); }); break;
         case cmdMarkersAtSilences: askForSilence ("Add Markers at Silences", [this] (juce::int64 frames) { addMarkersAtSilences (frames); }); break;
         case cmdSetSelection: showSetSelection(); break;
         case cmdMixToMono:  convertChannels (1); break;
         case cmdMakeStereo: convertChannels (2); break;
-        case cmdTrimSilence: askForDecibels ("Trim Silence", "Threshold (dB)", silenceThresholdDb, [this] (float db) { trimSilence (db); }); break;
+        case cmdTrimSilence: askForDecibels ("Trim Silence", "Threshold (dB)", silenceThresholdDb, -120.0, 0.0, "spectrablade:trim-silence", [this] (float db) { trimSilence (db); }); break;
         case cmdApplyRack:  applyRackToSelection(); break;
         case cmdPlayPause:  togglePlay(); break;
         case cmdLoopPlayback:
@@ -2338,7 +2359,22 @@ bool MainComponent::perform (const InvocationInfo& info)
             commands.commandStatusChanged();
             break;
         case cmdSpectralAttenuate:
-            askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, [this] (float db) { applySpectral (db); });
+            askForDecibels ("Attenuate Frequencies", "Change (dB)", -12.0f, -60.0, 24.0, "spectrablade:attenuate-frequencies", [this] (float db) { applySpectral (db); },
+                            [sel = waveform.getSelection(), band = waveform.getSpectralBand(), shape = waveform.getSpectralShape()] (float db)
+                            {
+                                // What is drawn, or the selection's band, heard over the selection.
+                                return std::optional<EffectPreview::Request> ({ "attenuate " + juce::String (db, 3),
+                                    [sel, band, shape, db] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>&)
+                                    {
+                                        if (! shape.isEmpty())
+                                            return EffectPreview::Rendered { SpectralEdit::changeShape (*audio, shape, sampleRate, db), start, end, {} };
+
+                                        if (! sel.isEmpty() && ! band.isEmpty())
+                                            return EffectPreview::Rendered { SpectralEdit::changeBand (*audio, sel.getStart(), sel.getEnd(), band, sampleRate, db), start, end, {} };
+
+                                        return EffectPreview::Rendered { nullptr, start, end, "Nothing is drawn or selected in the spectrogram." };
+                                    }, true });
+                            });
             break;
         case cmdSpectralRemove: applySpectral (-std::numeric_limits<float>::infinity()); break;
         case cmdSpectralHeal: healSpectral(); break;
@@ -6595,25 +6631,20 @@ void MainComponent::showGoToTime()
 
 void MainComponent::showInsertSilence()
 {
-    auto* box = new juce::AlertWindow ("Insert Silence", "Length in seconds (2.5) or minutes and seconds (1:30).",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("length", "1.0");
-    box->addButton ("Insert", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    showEffectDialog ("Insert Silence", "Length in seconds (2.5) or minutes and seconds (1:30).",
+                      { EffectField::textField ("length", "Length", "1.0", "0123456789.:", 12) },
+                      {}, PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this] (const EffectValues&)
+                      {
+                          const auto typed = effectTexts["length"];
+                          const auto frames = TimeEntry::parse (typed, engine.document.getSampleRate(), nullptr);
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        if (result != 1)
-            return;
-
-        const auto typed = box->getTextEditorContents ("length");
-        const auto frames = TimeEntry::parse (typed, engine.document.getSampleRate(), nullptr);
-
-        if (! frames || *frames <= 0 || *frames >= std::numeric_limits<int>::max())
-            showError ("Insert Silence", "\"" + typed.trim() + "\" is not a length that can be inserted.");
-        else
-            insertSilence (*frames);
-    }), true);
+                          if (! frames || *frames <= 0 || *frames >= std::numeric_limits<int>::max())
+                              showError ("Insert Silence", "\"" + typed + "\" is not a length that can be inserted.");
+                          else
+                              insertSilence (*frames);
+                      },
+                      nullptr, "Insert");
 }
 
 void MainComponent::insertGenerated (const juce::AudioBuffer<float>& audio, const juce::String& name)
@@ -6675,54 +6706,47 @@ void MainComponent::showGenerateTone()
 void MainComponent::showGenerateTones()
 {
     auto* settings = appProperties.getUserSettings();
-    auto* box = new juce::AlertWindow ("Generate DTMF Tones",
-                                       "Puts a pair of tones for each digit in at the cursor, or the start of the selection, the same on every "
-                                       "channel, moving what follows on. DTMF (touch-tone) has 0-9, * and #, and A-D; MF (R1, between "
-                                       "exchanges) has 0-9, K for KP and S for ST. A comma is a pause as long as a tone. The level is the "
-                                       "pair's peak, each tone at half of it; each pair rises and falls over 2 ms.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addComboBox ("kind", { "DTMF", "MF (R1)" }, "Signalling");
-    box->getComboBoxComponent ("kind")->setSelectedItemIndex (settings->getIntValue ("tonesKind", 0) == 1 ? 1 : 0);
-    box->addTextEditor ("characters", settings->getValue ("tonesCharacters", "5551234"), "Digits");
-    box->getTextEditor ("characters")->setInputRestrictions (Generator::ToneSequence::maxCharacters, "0123456789*#ABCDabcdKSks,");
-    box->addTextEditor ("tone", juce::String (settings->getDoubleValue ("tonesToneMs", 100.0), 0), "Each tone (ms, 20 to 2000)");
-    box->addTextEditor ("gap", juce::String (settings->getDoubleValue ("tonesGapMs", 100.0), 0), "Between (ms, 0 to 2000)");
-    box->addTextEditor ("level", juce::String (settings->getDoubleValue ("tonesLevel", -6.0), 1), "Level (dBFS peak, -96 to 0)");
 
-    for (auto* name : { "tone", "gap" })
-        box->getTextEditor (name)->setInputRestrictions (7, ".0123456789");
+    showEffectDialog ("Generate DTMF Tones",
+                      "Puts a pair of tones for each digit in at the cursor, or the start of the selection, the same on every "
+                      "channel, moving what follows on. DTMF (touch-tone) has 0-9, * and #, and A-D; MF (R1, between "
+                      "exchanges) has 0-9, K for KP and S for ST. A comma is a pause as long as a tone. The level is the "
+                      "pair's peak, each tone at half of it; each pair rises and falls over 2 ms.",
+                      { { "kind", "Signalling", settings->getIntValue ("tonesKind", 0) == 1 ? 1.0 : 0.0, 0, { "DTMF", "MF (R1)" } },
+                        EffectField::textField ("characters", "Digits", settings->getValue ("tonesCharacters", "5551234"),
+                                                "0123456789*#ABCDabcdKSks,", Generator::ToneSequence::maxCharacters),
+                        { "tone", "Each tone (ms)", settings->getDoubleValue ("tonesToneMs", 100.0), 0, {}, 20.0, 2000.0, 10.0 },
+                        { "gap", "Between (ms)", settings->getDoubleValue ("tonesGapMs", 100.0), 0, {}, 0.0, 2000.0, 10.0 },
+                        { "level", "Level (dBFS peak)", settings->getDoubleValue ("tonesLevel", -6.0), 1, {}, -96.0, 0.0, 0.5 } },
+                      "spectrablade:dtmf-tones", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings] (const EffectValues& v)
+                      {
+                          if (! engine.document.hasAudio())
+                              return;
 
-    box->getTextEditor ("level")->setInputRestrictions (7, "-.0123456789");
-    box->addButton ("Generate", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
-    {
-        if (result != 1 || ! engine.document.hasAudio())
-            return;
+                          const auto rate = engine.document.getSampleRate();
+                          Generator::ToneSequence t;
+                          t.kind = v.at ("kind") > 0.5 ? Generator::Signalling::mf : Generator::Signalling::dtmf;
+                          t.characters = effectTexts["characters"].removeCharacters (" ");
+                          t.toneMs = v.at ("tone");
+                          t.gapMs = v.at ("gap");
+                          t.levelDb = v.at ("level");
 
-        const auto rate = engine.document.getSampleRate();
-        Generator::ToneSequence t;
-        t.kind = box->getComboBoxComponent ("kind")->getSelectedItemIndex() == 1 ? Generator::Signalling::mf : Generator::Signalling::dtmf;
-        t.characters = box->getTextEditorContents ("characters").removeCharacters (" ");
-        t.toneMs = box->getTextEditorContents ("tone").getDoubleValue();
-        t.gapMs = box->getTextEditorContents ("gap").getDoubleValue();
-        t.levelDb = box->getTextEditorContents ("level").getDoubleValue();
+                          if (! Generator::isValid (t, rate))
+                          {
+                              showError ("Generate DTMF Tones", juce::String (t.kind == Generator::Signalling::dtmf ? "DTMF takes 0-9, *, # and A-D" : "MF takes 0-9, K and S")
+                                                                    + " (and commas for pauses), at least one digit.");
+                              return;
+                          }
 
-        if (! Generator::isValid (t, rate))
-        {
-            showError ("Generate DTMF Tones", juce::String (t.kind == Generator::Signalling::dtmf ? "DTMF takes 0-9, *, # and A-D" : "MF takes 0-9, K and S")
-                                                  + " (and commas for pauses), at least one digit; each tone must be from 20 to 2000 ms, the "
-                                                    "time between from 0 to 2000 ms, and the level from -96 to 0 dBFS.");
-            return;
-        }
-
-        settings->setValue ("tonesKind", t.kind == Generator::Signalling::mf ? 1 : 0);
-        settings->setValue ("tonesCharacters", t.characters);
-        settings->setValue ("tonesToneMs", t.toneMs);
-        settings->setValue ("tonesGapMs", t.gapMs);
-        settings->setValue ("tonesLevel", t.levelDb);
-        insertGenerated (Generator::toneSequence (t, engine.document.getSnapshot()->getNumChannels(), rate), "Generate DTMF Tones");
-    }), true);
+                          settings->setValue ("tonesKind", t.kind == Generator::Signalling::mf ? 1 : 0);
+                          settings->setValue ("tonesCharacters", t.characters);
+                          settings->setValue ("tonesToneMs", t.toneMs);
+                          settings->setValue ("tonesGapMs", t.gapMs);
+                          settings->setValue ("tonesLevel", t.levelDb);
+                          insertGenerated (Generator::toneSequence (t, engine.document.getSnapshot()->getNumChannels(), rate), "Generate DTMF Tones");
+                      },
+                      nullptr, "Generate");
 }
 
 void MainComponent::showGenerateNoise()
@@ -6796,34 +6820,28 @@ void MainComponent::trimSilence (float thresholdDb)
                    MarkerEdits::afterCrop (doc.getMarkers(), audible->getStart(), audible->getEnd()));
 }
 
-void MainComponent::askForSilence (const juce::String& title, std::function<void (juce::int64)> found)
+void MainComponent::askForSilence (const juce::String& title, std::function<void (juce::int64)> found,
+                                   std::function<std::optional<EffectPreview::Request> (float, juce::int64)> rendered)
 {
-    auto* box = new juce::AlertWindow (title, "Silence is every channel at or below the level for at least the time.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("level", juce::String (silenceThresholdDb, 1), "Level (dB)");
-    box->getTextEditor ("level")->setInputRestrictions (8, "-.0123456789");
-    box->addTextEditor ("length", juce::String (silenceMinSeconds, 2), "At least (seconds)");
-    box->addButton ("Find", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, title, found] (int result)
+    const auto framesOf = [this] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
+        return (juce::int64) std::llround (v.at ("length") * engine.document.getSampleRate());
+    };
 
-        const auto rate = engine.document.getSampleRate();
-        const auto frames = TimeEntry::parse (box->getTextEditorContents ("length"), rate, nullptr);
-
-        if (! frames || *frames <= 0)
-        {
-            showError (title, "The time must be more than 0.");
-            return;
-        }
-
-        silenceThresholdDb = juce::jmin (box->getTextEditorContents ("level").getFloatValue(), 0.0f);
-        silenceMinSeconds = (double) *frames / rate;
-        found (*frames);
-    }), true);
+    showEffectDialog (title, "Silence is every channel at or below the level for at least the time.",
+                      { { "level", "Level (dB)", (double) silenceThresholdDb, 1, {}, -120.0, 0.0, 1.0 },
+                        { "length", "At least (seconds)", silenceMinSeconds, 3, {}, 0.001, 600.0, 0.05 } },
+                      "spectrablade:silence", PreviewOwner::none,
+                      [framesOf] (const EffectValues& v) { return framesOf (v) > 0; }, "The time must be at least one frame.", nullptr, nullptr,
+                      [this, found, framesOf] (const EffectValues& v)
+                      {
+                          silenceThresholdDb = (float) v.at ("level");
+                          silenceMinSeconds = v.at ("length");
+                          found (framesOf (v));
+                      },
+                      rendered == nullptr ? std::function<std::optional<EffectPreview::Request> (const EffectValues&)>()
+                                          : [rendered, framesOf] (const EffectValues& v) { return rendered ((float) v.at ("level"), framesOf (v)); },
+                      title == "Noise Gate" ? "Apply" : "Find");
 }
 
 void MainComponent::fitRegionsToSound()
@@ -7201,27 +7219,35 @@ void MainComponent::showRepeatSelection()
 
 void MainComponent::showCrossfadeLoop()
 {
-    auto* box = new juce::AlertWindow ("Crossfade Loop", "The end of the selection fades into the audio just before it, over this many "
-                                       "milliseconds, so the selection loops seamlessly. It needs that much audio before the selection.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("ms", "50", "Crossfade (ms)");
-    box->getTextEditor ("ms")->setInputRestrictions (8, ".0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    const auto rate = engine.document.getSampleRate();
+    const auto framesOf = [rate] (const EffectValues& v) { return (juce::int64) std::llround (v.at ("ms") / 1000.0 * rate); };
+    const auto invalid = juce::String ("The crossfade must be longer than 0, at most half the selection, and no longer than the audio before it.");
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
-    {
-        if (result != 1)
-            return;
+    // The preview loops the selection as it would be, seam and all.
+    showEffectDialog ("Crossfade Loop", "The end of the selection fades into the audio just before it, over this many "
+                                        "milliseconds, so the selection loops seamlessly. It needs that much audio before the selection.",
+                      { { "ms", "Crossfade (ms)", 50.0, 1, {}, 0.1, 10000.0, 5.0 } },
+                      "spectrablade:crossfade-loop", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, framesOf, invalid] (const EffectValues& v)
+                      {
+                          const auto sel = waveform.getSelection();
 
-        const auto sel = waveform.getSelection();
-        const auto fade = (juce::int64) std::llround (box->getTextEditorContents ("ms").getDoubleValue() / 1000.0 * engine.document.getSampleRate());
-
-        if (auto next = AudioEdits::crossfadeLoop (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), fade))
-            applyEdit (std::move (next), "Crossfade Loop", sel);
-        else
-            showError ("Crossfade Loop", "The crossfade must be longer than 0, at most half the selection, and no longer than the audio before it.");
-    }), true);
+                          if (auto next = AudioEdits::crossfadeLoop (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), framesOf (v)))
+                              applyEdit (std::move (next), "Crossfade Loop", sel);
+                          else
+                              showError ("Crossfade Loop", invalid);
+                      },
+                      [framesOf, invalid] (const EffectValues& v)
+                      {
+                          const auto fade = framesOf (v);
+                          return std::optional<EffectPreview::Request> ({ "crossfadeLoop " + juce::String (fade),
+                              [fade, invalid] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double, const std::function<bool (float)>&)
+                              {
+                                  auto next = AudioEdits::crossfadeLoop (*audio, start, end, fade);
+                                  return EffectPreview::Rendered { next, start, end, next == nullptr ? invalid : juce::String() };
+                              }, true });
+                      },
+                      "Crossfade");
 }
 
 void MainComponent::showMoveMarkers()
@@ -7819,10 +7845,11 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
     }
 
     dialog->onBypass = [this] (bool bypassed) { setPreviewBypassed (bypassed); };
-    dialog->onApply = [this, valid, invalidText, apply, title] (const EffectValues& values)
+    dialog->onApply = [this, valid, invalidText, apply, title, safe] (const EffectValues& values)
     {
         previewEnded = {};
         stopPreview();
+        effectTexts = safe != nullptr ? safe->getTexts() : std::map<juce::String, juce::String>();
 
         if (! valid (values))
         {
@@ -7830,7 +7857,10 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
             return;
         }
 
-        apply (values);
+        if (apply != nullptr)
+            apply (values);
+
+        effectTexts.clear();
     };
     dialog->onClose = [this]
     {
@@ -8162,51 +8192,59 @@ void MainComponent::showFadeEdges (bool eachRegion)
 {
     const auto title = juce::String (eachRegion ? "Fade Each Region" : "Fade Selection Edges");
     const auto what = juce::String (eachRegion ? "Every region" : "The selection");
-    auto* box = new juce::AlertWindow (title, what + " fades in over this many milliseconds at its start and out over as many at its end "
-                                              "(each at most half its length), with the fade shape chosen in Effects.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addTextEditor ("ms", juce::String (edgeFadeMs, 1), "Fade (ms)");
-    box->getTextEditor ("ms")->setInputRestrictions (8, ".0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+    const auto rate = engine.document.getSampleRate();
+    const auto framesOf = [rate] (const EffectValues& v) { return (juce::int64) std::llround (v.at ("ms") / 1000.0 * rate); };
 
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, title, eachRegion] (int result)
-    {
-        if (result != 1)
-            return;
+    showEffectDialog (title, what + " fades in over this many milliseconds at its start and out over as many at its end "
+                                    "(each at most half its length), with the fade shape chosen in Effects.",
+                      { { "ms", "Fade (ms)", edgeFadeMs, 1, {}, 0.1, 10000.0, 5.0 } },
+                      "spectrablade:fade-edges", PreviewOwner::none,
+                      [framesOf] (const EffectValues& v) { return framesOf (v) > 0; }, "The fade must be at least one frame.", nullptr, nullptr,
+                      [this, title, eachRegion, framesOf] (const EffectValues& v)
+                      {
+                          const auto sel = waveform.getSelection();
+                          const auto fade = framesOf (v);
 
-        const auto sel = waveform.getSelection();
-        const auto ms = box->getTextEditorContents ("ms").getDoubleValue();
-        const auto fade = (juce::int64) std::llround (ms / 1000.0 * engine.document.getSampleRate());
+                          if (eachRegion)
+                          {
+                              auto skipped = 0;
 
-        if (eachRegion)
-        {
-            auto skipped = 0;
+                              if (auto next = AudioEdits::fadeRegions (*engine.document.getSnapshot(), engine.document.getMarkers(), fade, fadeShape, skipped))
+                              {
+                                  edgeFadeMs = v.at ("ms");
+                                  applyEdit (std::move (next), title, sel);
+                              }
 
-            if (auto next = fade > 0 ? AudioEdits::fadeRegions (*engine.document.getSnapshot(), engine.document.getMarkers(), fade, fadeShape, skipped) : nullptr)
-            {
-                edgeFadeMs = ms;
-                applyEdit (std::move (next), title, sel);
-            }
+                              if (skipped > 0)
+                                  showError (title, juce::String (skipped) + (skipped == 1 ? " region was" : " regions were")
+                                                        + " left as they were: one frame long, or overlapping a region before.");
 
-            if (fade <= 0 || skipped > 0)
-                showError (title, fade <= 0 ? juce::String ("The fade must be at least one frame.")
-                                            : juce::String (skipped) + (skipped == 1 ? " region was" : " regions were")
-                                                  + " left as they were: one frame long, or overlapping a region before.");
+                              return;
+                          }
 
-            return;
-        }
-
-        if (auto next = AudioEdits::fadeEdges (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), fade, fadeShape))
-        {
-            edgeFadeMs = ms;
-            applyEdit (std::move (next), "Fade Selection Edges", sel);
-        }
-        else
-        {
-            showError ("Fade Selection Edges", "The fade must be at least one frame, and the selection at least two frames long.");
-        }
-    }), true);
+                          if (auto next = AudioEdits::fadeEdges (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd(), fade, fadeShape))
+                          {
+                              edgeFadeMs = v.at ("ms");
+                              applyEdit (std::move (next), "Fade Selection Edges", sel);
+                          }
+                          else
+                          {
+                              showError ("Fade Selection Edges", "The fade must be at least one frame, and the selection at least two frames long.");
+                          }
+                      },
+                      [eachRegion, framesOf, shape = fadeShape, markers = engine.document.getMarkers()] (const EffectValues& v)
+                      {
+                          // The fades reach from the range's ends (or every region's), so the preview processes all of it.
+                          const auto fade = framesOf (v);
+                          return std::optional<EffectPreview::Request> ({ "fade " + juce::String (fade),
+                              [eachRegion, fade, shape, markers] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double, const std::function<bool (float)>&)
+                              {
+                                  auto skipped = 0;
+                                  return EffectPreview::Rendered { eachRegion ? AudioEdits::fadeRegions (*audio, markers, fade, shape, skipped)
+                                                                              : AudioEdits::fadeEdges (*audio, start, end, fade, shape),
+                                                                   start, end, {} };
+                              }, true });
+                      });
 }
 
 void MainComponent::applyFade (bool out)
@@ -8504,19 +8542,15 @@ void MainComponent::cropToSelection()
 }
 
 //==============================================================================
-void MainComponent::askForDecibels (const juce::String& title, const juce::String& label, float initial,
-                                    std::function<void (float)> onOk)
+void MainComponent::askForDecibels (const juce::String& title, const juce::String& label, float initial, double min, double max,
+                                    const juce::String& presetKey, std::function<void (float)> onOk,
+                                    std::function<std::optional<EffectPreview::Request> (float)> rendered)
 {
-    auto* box = new juce::AlertWindow (title, {}, juce::MessageBoxIconType::NoIcon);
-    box->addTextEditor ("db", juce::String (initial, 2), label);
-    box->getTextEditor ("db")->setInputRestrictions (8, "-.0123456789");
-    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([box, onOk] (int result)
-    {
-        if (result == 1)
-            onOk (box->getTextEditorContents ("db").getFloatValue());
-    }), true);
+    showEffectDialog (title, {}, { { "db", label, juce::jlimit (min, max, (double) initial), 1, {}, min, max, 0.5 } },
+                      presetKey, PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [onOk] (const EffectValues& v) { onOk ((float) v.at ("db")); },
+                      rendered == nullptr ? std::function<std::optional<EffectPreview::Request> (const EffectValues&)>()
+                                          : [rendered] (const EffectValues& v) { return rendered ((float) v.at ("db")); });
 }
 
 void MainComponent::applyGain()
@@ -8530,8 +8564,8 @@ void MainComponent::applyGain()
             return;
 
         const auto clipId = multitrack.getSelectedClip();
-        askForDecibels ("Clip Gain", "Gain (dB, " + juce::String ((int) SessionClip::minGainDb) + " to +" + juce::String ((int) SessionClip::maxGainDb) + ")",
-                        state->tracks[(size_t) where->first].clips[(size_t) where->second].gainDb, [this, clipId] (float db)
+        askForDecibels ("Clip Gain", "Gain (dB)", state->tracks[(size_t) where->first].clips[(size_t) where->second].gainDb,
+                        SessionClip::minGainDb, SessionClip::maxGainDb, {}, [this, clipId] (float db)
         {
             auto next = *engine.session.getState();
 
@@ -8553,7 +8587,7 @@ void MainComponent::applyNormalize()
     if (multitrackMode)
     {
         const auto clipId = multitrack.getSelectedClip();
-        askForDecibels ("Normalize Clip", "Peak level (dBFS)", -0.1f, [this, clipId] (float db)
+        askForDecibels ("Normalize Clip", "Peak level (dBFS)", -0.1f, -48.0, 0.0, "spectrablade:normalize-regions", [this, clipId] (float db)
         {
             auto next = *engine.session.getState();
 
@@ -8712,53 +8746,53 @@ void MainComponent::askForDeliverySpec()
     for (auto& spec : specs)
         names.add (&spec == &own ? juce::String ("Custom spec, as set below") : describe (spec));
 
-    auto* box = new juce::AlertWindow ("Meet Delivery Spec",
-                                       "Brings the selection (or the whole file) to the spec's loudness in one step: gain, and a true-peak "
-                                       "limiter only where the gain alone would take the true peak past the ceiling. Then it is measured "
-                                       "again and checked against the spec.",
-                                       juce::MessageBoxIconType::NoIcon, this);
-    box->addComboBox ("spec", names, "Spec");
-    box->getComboBoxComponent ("spec")->setSelectedItemIndex (juce::jlimit (0, names.size() - 1, settings->getIntValue ("deliverySpec", 0)));
-
-    // The custom spec: used when chosen above, and kept for Mix Down, Export Stems and Batch Process.
-    box->addTextEditor ("target", juce::String (own.targetLufs, 1), "Custom: target (LUFS, -70 to 0)");
-    box->addTextEditor ("tolerance", juce::String (own.toleranceLu, 1), "Custom: tolerance (LU, 0.1 to 10)");
-    box->addTextEditor ("ceiling", juce::String (own.maxTruePeak, 1), "Custom: true peak at most (dBTP, -30 to 0)");
-
-    for (auto* name : { "target", "tolerance", "ceiling" })
-        box->getTextEditor (name)->setInputRestrictions (8, "-.0123456789");
-
-    box->addButton ("Meet", 1, juce::KeyPress (juce::KeyPress::returnKey));
-    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, settings] (int result)
+    // The spec chosen, the custom one with the values set below.
+    const auto specOf = [specs] (const EffectValues& v)
     {
-        if (result != 1)
-            return;
+        const auto index = juce::jlimit (0, (int) specs.size() - 1, (int) v.at ("spec"));
+        auto spec = specs[(size_t) index];
 
-        const auto target = box->getTextEditorContents ("target").getDoubleValue();
-        const auto tolerance = box->getTextEditorContents ("tolerance").getDoubleValue();
-        const auto ceiling = box->getTextEditorContents ("ceiling").getDoubleValue();
-        const auto count = (int) deliverySpecs().size();
-        const auto index = juce::jlimit (0, count - 1, box->getComboBoxComponent ("spec")->getSelectedItemIndex());
-        const auto valid = Delivery::isValid (target, tolerance, ceiling);
-
-        // Kept only when in range; refused only when it is the spec chosen.
-        if (valid)
+        if (index == (int) specs.size() - 1)
         {
-            settings->setValue ("deliveryOwnLufs", target);
-            settings->setValue ("deliveryOwnTolerance", tolerance);
-            settings->setValue ("deliveryOwnCeiling", ceiling);
-        }
-        else if (index == count - 1)
-        {
-            showError ("Meet Delivery Spec", "The custom spec needs a target from -70 to 0 LUFS, a tolerance from 0.1 to 10 LU and a "
-                                             "true-peak ceiling from -30 to 0 dBTP.");
-            return;
+            spec.targetLufs = v.at ("target");
+            spec.toleranceLu = v.at ("tolerance");
+            spec.maxTruePeak = v.at ("ceiling");
         }
 
-        settings->setValue ("deliverySpec", index);
-        meetDeliverySpec (deliverySpecs()[(size_t) index]);
-    }), true);
+        return spec;
+    };
+
+    // The loudness is measured across the whole selection, so the preview processes all of it.
+    showEffectDialog ("Meet Delivery Spec",
+                      "Brings the selection (or the whole file) to the spec's loudness in one step: gain, and a true-peak "
+                      "limiter only where the gain alone would take the true peak past the ceiling. Then it is measured "
+                      "again and checked against the spec. The custom spec is kept for Mix Down, Export Stems and Batch Process.",
+                      { { "spec", "Spec", (double) juce::jlimit (0, names.size() - 1, settings->getIntValue ("deliverySpec", 0)), 0, names },
+                        { "target", "Custom: target (LUFS)", own.targetLufs, 1, {}, -70.0, 0.0, 0.5 },
+                        { "tolerance", "Custom: tolerance (LU)", own.toleranceLu, 1, {}, 0.1, 10.0, 0.1 },
+                        { "ceiling", "Custom: true peak at most (dBTP)", own.maxTruePeak, 1, {}, -30.0, 0.0, 0.1 } },
+                      {}, PreviewOwner::none,
+                      [specOf] (const EffectValues& v) { const auto s = specOf (v); return Delivery::isValid (s.targetLufs, s.toleranceLu, s.maxTruePeak); },
+                      "The custom spec needs a target from -70 to 0 LUFS, a tolerance from 0.1 to 10 LU and a true-peak ceiling from -30 to 0 dBTP.",
+                      nullptr, nullptr,
+                      [this, settings, specOf] (const EffectValues& v)
+                      {
+                          if (Delivery::isValid (v.at ("target"), v.at ("tolerance"), v.at ("ceiling")))
+                          {
+                              settings->setValue ("deliveryOwnLufs", v.at ("target"));
+                              settings->setValue ("deliveryOwnTolerance", v.at ("tolerance"));
+                              settings->setValue ("deliveryOwnCeiling", v.at ("ceiling"));
+                          }
+
+                          settings->setValue ("deliverySpec", (int) v.at ("spec"));
+                          meetDeliverySpec (specOf (v));
+                      },
+                      [this, specOf] (const EffectValues& v)
+                      {
+                          const auto s = specOf (v);
+                          return previewOf ({ "deliverySpec", { { "target", s.targetLufs }, { "tolerance", s.toleranceLu }, { "ceiling", s.maxTruePeak } }, nullptr }, true);
+                      },
+                      "Meet");
 }
 
 void MainComponent::meetDeliverySpec (const Delivery::Spec& spec)

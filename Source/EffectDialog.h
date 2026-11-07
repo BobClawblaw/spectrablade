@@ -25,6 +25,13 @@ public:
         juce::StringArray choices {};        // a menu, its value the choice's index
         double min = 0.0, max = 0.0;         // a number's range
         double step = 0.0;                   // a wheel notch or arrow key; 0: one in the last decimal shown
+
+        // A text field instead (digits to dial, a time as 1:30): not among the values or presets.
+        bool isText = false;
+        juce::String text {}, allowed {};    // allowed: the characters it takes (Space never: it starts the preview)
+        int maxLength = 0;
+
+        static Field textField (juce::String id, juce::String label, juce::String text, juce::String allowed, int maxLength);
     };
 
     using Values = EffectPresets::Values;
@@ -41,8 +48,14 @@ public:
     explicit EffectDialog (Options);
     ~EffectDialog() override;
 
-    /** Each field's value: a number as shown (rounded to its decimals), a choice's index. */
+    /** Each field's value: a number as shown (rounded to its decimals), a choice's index (text fields aren't among them). */
     Values getValues() const;
+
+    /** A text field's text, trimmed. */
+    juce::String getText (const juce::String& id) const;
+
+    /** Every text field's text, trimmed, by its ID. */
+    std::map<juce::String, juce::String> getTexts() const;
 
     /** Sets the fields named (others are left), as a preset does, then calls onChange. */
     void setValues (const Values&);
@@ -68,9 +81,10 @@ public:
     /** Closes its window (as Cancel does, unless after Apply). */
     void close();
 
-    /** The slider or menu of a field, for tests. */
+    /** The slider, menu or text field of a field, for tests. */
     juce::Slider* getSlider (const juce::String& id) const;
     juce::ComboBox* getMenu (const juce::String& id) const;
+    juce::TextEditor* getTextField (const juce::String& id) const;
 
     void resized() override;
     void paint (juce::Graphics&) override;

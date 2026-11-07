@@ -40,9 +40,23 @@ namespace EffectPresets
     /** The user's presets, in the app's data folder (Application Support/SpectraBlade/Presets). */
     Store& userStore();
 
-    /** A row for a dialog or window: the effect's presets in a menu (choosing one loads it through
-        `apply`), Save... (asks for a name and saves `current()`) and Delete (asks, then removes the
-        one chosen). */
+    /** A preset that comes with SpectraBlade: a starting point for a common job. It can't be
+        changed or deleted; one of the user's own may have the same name. */
+    struct Factory
+    {
+        juce::String name;
+        Values values;
+    };
+
+    /** The effect's factory presets, in the order they are listed (none for an effect without any). */
+    const std::vector<Factory>& factory (const juce::String& effectKey);
+
+    /** Every effect key with factory presets. */
+    juce::StringArray factoryKeys();
+
+    /** A row for a dialog or window: the effect's presets in a menu, the factory ones first, then
+        the user's (choosing one loads it through `apply`), Save... (asks for a name and saves
+        `current()` as one of the user's) and Delete (asks, then removes the user's preset chosen). */
     class Bar final : public juce::Component
     {
     public:
@@ -57,6 +71,8 @@ namespace EffectPresets
     private:
         void saveAs();
         void removeChosen();
+
+        static constexpr int userBase = 1000;   // the user's presets' item IDs come after this; factory ones from 1
 
         Store& store;
         juce::String key;

@@ -146,7 +146,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 
 ## Effect dialogs
 
-The settings dialogs of Gain, Normalize, Match Loudness, Balance, Stereo Width, Gain Ramp, Pan Ramp, Echo, Tremolo, EQ Band, Compressor, Limiter, De-esser, Chorus, Flanger, Phaser, Reverb, Convolution Reverb, Stretch, Shift Pitch, Pitch Correction, Level Speech, Automatic Phase Correction, Centre Channel, Noise Reduction, Reduce Reverb, Click and Pop Repair, Remove Hum, Repair Clipping, Generate Tone and Generate Noise (the generators have no preview):
+Every settings dialog in the Effects menu, and Clip Gain and Normalize Clip in the multitrack view (the generators, Insert Silence, Trim Silence and the silence finders have no preview):
 
 | What | Keys and mouse |
 |---|---|

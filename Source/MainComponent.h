@@ -155,8 +155,10 @@ private:
     void trimSilence (float thresholdDb);
     void selectAudibleSpan();
     void findNextClipping();
-    /** Asks for a silence level and shortest time (kept for next time), then calls found with the time in frames. */
-    void askForSilence (const juce::String& title, std::function<void (juce::int64)> found);
+    /** Asks for a silence level and shortest time (kept for next time), then calls found with the time in frames.
+        With `rendered`, the dialog previews its request for the level (dB) and time (frames). */
+    void askForSilence (const juce::String& title, std::function<void (juce::int64)> found,
+                        std::function<std::optional<EffectPreview::Request> (float, juce::int64)> rendered = nullptr);
     void addMarkersAtSilences (juce::int64 minFrames);
     void shortenPauses (juce::int64 keepFrames);
     void noiseGate (juce::int64 minFrames);
@@ -302,8 +304,11 @@ private:
     void showBalance();
     void showSetSelection();
     void convertChannels (int numChannels);
-    void askForDecibels (const juce::String& title, const juce::String& label, float initial,
-                         std::function<void (float)> onOk);
+    /** One level in the effect dialog, from min to max dB, with the presets under presetKey (empty: none)
+        and, with `rendered`, a preview of its request for the level. */
+    void askForDecibels (const juce::String& title, const juce::String& label, float initial, double min, double max,
+                         const juce::String& presetKey, std::function<void (float)> onOk,
+                         std::function<std::optional<EffectPreview::Request> (float)> rendered = nullptr);
     void applyGain();
     void applyNormalize();
     void applySimpleEffect (const juce::String& name,
@@ -541,6 +546,7 @@ private:
         once they settle (none: no preview). Apply applies the effect when the values are valid
         (else shows invalidText); the preview ends whenever the dialog closes. */
     using EffectField = EffectDialog::Field;
+    std::map<juce::String, juce::String> effectTexts;   // the text fields of the effect dialog being applied, while apply runs
     using EffectValues = EffectPresets::Values;
     void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&,
                            const juce::String& presetKey, PreviewOwner,
