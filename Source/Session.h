@@ -808,4 +808,12 @@ namespace SessionFile
     /** Each audio file is read once, however many clips use it. Files at another sample rate
         are converted to the session's. */
     Loaded load (const juce::File&, juce::AudioFormatManager&);
+
+    /** A track's envelopes (volume, pan, surround pan, effect parameters; none that are empty) as
+        ENVELOPE children of into, as a session file holds them. */
+    void writeEnvelopes (const SessionTrack&, juce::XmlElement& into);
+
+    /** Sets the track's envelopes from from's ENVELOPE children, each point's frame times
+        frameScale (rounded; for envelopes made at another sample rate). */
+    void readEnvelopes (SessionState&, juce::uint32 trackId, const juce::XmlElement& from, double frameScale = 1.0);
 }

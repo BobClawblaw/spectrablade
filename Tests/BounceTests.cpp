@@ -683,6 +683,54 @@ void runBounceTests()
                "track templates: settings, note, input, sends by bus name and effects through a file, not clips, group or mute; a missing bus named");
     }
 
+    // Track templates keep the envelopes: at the same times, moved to another sample rate.
+    {
+        auto from = session (0.0f);
+        auto& g = from.tracks[0];
+        g.volumeEnvelope.points = { { 0, -4.0f }, { 6000, -12.0f }, { 9001, -2.0f } };
+        g.panEnvelope.points = { { 500, -0.5f }, { 7000, 0.75f } };
+        g.surroundEnvelopes[0].points = { { 1000, -1.0f }, { 3000, 1.0f } };
+        g.effectEnvelopes.push_back ({ 7, "gain", { { { 200, 0.25f }, { 4000, 0.8f } } } });
+        auto effects = std::make_unique<juce::XmlElement> ("EFFECTS");
+        effects->createNewChildElement ("SLOT")->setAttribute ("id", 7);
+        const auto xml = TrackTemplate::create (from, g.id, std::move (effects));
+        const auto file = juce::File::createTempFile (TrackTemplate::extension);
+        const auto written = xml != nullptr && xml->writeTo (file);
+        const auto read = juce::XmlDocument::parse (file);
+        file.deleteFile();
+
+        SessionState same;
+        same.sampleRate = from.sampleRate;
+        const auto added = read != nullptr ? TrackTemplate::add (same, *read) : TrackTemplate::Added {};
+        const auto* t = same.findTrack (added.trackId);
+        const auto kept = written && t != nullptr && t->volumeEnvelope == g.volumeEnvelope && t->panEnvelope == g.panEnvelope
+                          && t->surroundEnvelopes == g.surroundEnvelopes && t->effectEnvelopes == g.effectEnvelopes
+                          && added.effects != nullptr && added.effects->getChildByName ("SLOT")->getIntAttribute ("id") == (int) t->effectEnvelopes[0].slotId;
+
+        SessionState doubled;
+        doubled.sampleRate = 2.0 * from.sampleRate;
+        const auto* d = doubled.findTrack (read != nullptr ? TrackTemplate::add (doubled, *read).trackId : 0);
+        auto scaled = d != nullptr && d->volumeEnvelope.points.size() == 3 && d->effectEnvelopes.size() == 1;
+
+        for (size_t i = 0; scaled && i < 3; ++i)
+            scaled = d->volumeEnvelope.points[i].frame == 2 * g.volumeEnvelope.points[i].frame
+                     && juce::exactlyEqual (d->volumeEnvelope.points[i].value, g.volumeEnvelope.points[i].value);
+
+        scaled = scaled && d->effectEnvelopes[0].envelope.points[1].frame == 8000 && d->panEnvelope.points[1].frame == 14000;
+
+        SessionState cd;
+        cd.sampleRate = 44100.0;
+        const auto* c = cd.findTrack (read != nullptr ? TrackTemplate::add (cd, *read).trackId : 0);
+        const auto rounded = c != nullptr && c->volumeEnvelope.points[2].frame == std::llround (9001.0 * 44100.0 / from.sampleRate);
+
+        auto plain = session (0.0f);
+        const auto plainXml = TrackTemplate::create (plain, plain.tracks[0].id, nullptr);
+        check (kept && scaled && rounded && plainXml != nullptr && plainXml->getChildByName ("ENVELOPE") == nullptr && ! plainXml->hasAttribute ("sampleRate"),
+               "track templates: volume, pan, surround pan and effect envelopes come back through a file exactly (the effect's on its "
+               "slot as the template's effects load it); at twice the rate every point is at twice the frame, at 44.1 kHz rounded to "
+               "the nearest; a track with none writes none");
+    }
+
     {
         // Session-wide time edits: Guitar plays 1000 to 10000, Keys 0 to 12000.
         const auto original = session (0.0f);

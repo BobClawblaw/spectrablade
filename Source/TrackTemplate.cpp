@@ -54,6 +54,13 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
     if (effects != nullptr)
         xml->addChildElement (effects.release());
 
+    // Its envelopes, with the rate their frames are at.
+    if (t->isAutomated())
+    {
+        xml->setAttribute ("sampleRate", s.sampleRate);
+        SessionFile::writeEnvelopes (*t, *xml);
+    }
+
     return xml;
 }
 
@@ -111,6 +118,10 @@ Added add (SessionState& s, const juce::XmlElement& xml)
 
     if (const auto* effects = xml.getChildByName ("EFFECTS"))
         added.effects = std::make_shared<juce::XmlElement> (*effects);
+
+    // Envelopes at the same times here; effect envelopes follow the effects' slots, loaded with them.
+    const auto rate = xml.getDoubleAttribute ("sampleRate", s.sampleRate);
+    SessionFile::readEnvelopes (s, id, xml, rate > 0.0 && s.sampleRate > 0.0 ? s.sampleRate / rate : 1.0);
 
     added.trackId = id;
     return added;

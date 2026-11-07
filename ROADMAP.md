@@ -2,9 +2,8 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-1. **Automation in track templates:** templates keep the track's envelopes.
-2. **Effects while scrubbing a session:** the effects that can follow a head going backwards (no latency, no memory) heard while scrubbing.
-3. **Pitch and time editing of session clips:** the Pitch Editor and stretching on clips in place.
-4. **Loudness to a delivery spec:** one step to meet EBU R128 or a streaming target, with a report.
+1. **Effects while scrubbing a session:** the effects that can follow a head going backwards (no latency, no memory) heard while scrubbing.
+2. **Pitch and time editing of session clips:** the Pitch Editor and stretching on clips in place.
+3. **Loudness to a delivery spec:** one step to meet EBU R128 or a streaming target, with a report.
 
 Not code: Reduce Reverb and Level Speech are yet to be tried on real recordings and listened to, and a Developer ID (for notarizing) is the remaining step before installing opens without Privacy & Security.

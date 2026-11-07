@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 266: Automation in track templates**
+- Save Track as Template now keeps the track's envelopes too: volume, pan, surround pan and its effects' parameters. Added from the template, the new track has them at the same times; an effect's envelope keeps its slot, the one the template's effect loads into, as a session file's effects and envelopes do. In a session at another sample rate each point moves to the same time there (to the nearest frame). A track with no envelopes writes none, so its template is as before.
+- Session files write and read envelopes with the same code as before, moved where templates can share it; the file format is unchanged.
+- Measured by the tests: a track's volume, pan, surround pan and effect envelopes come back through a template file exactly, the effect's envelope on the slot id the template's effect has; added at twice the sample rate every point is at twice the frame with the same value, at 44.1 kHz rounded to the nearest frame; a track with no envelopes writes none and no rate. Session files, which now use the same envelope code, keep passing all their earlier checks. The whole suite passed (1247 checks). Not tried: adding a template with automation in the running app.
+
 **Milestone 265: 7.1 tracks**
 - A track's header menu has 7.1 Track beside 5.1 Track (one step to undo; not on buses, folders or frozen tracks). A 7.1 track plays its clips' eight channels, L R C LFE Lrs Rrs Lss Rss, through its effects, polarity, volume and ducking, without pan, straight to a 7.1 master's speakers. A 5.1 clip on it plays its surrounds from the side pair, as a 5.1 track does in a 7.1 master; a mono clip from C and a stereo one from L and R.
 - In a 5.1 master a 7.1 track's L, R, C and LFE play as they are and each side's rear and side surround go to Ls or Rs at -3 dB each; in a stereo master, into a bus, a send or an interface pair, it is folded down as a 7.1 file is.

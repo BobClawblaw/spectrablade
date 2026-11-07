@@ -2171,6 +2171,80 @@ void Session::releaseUnusedStates()
 //==============================================================================
 namespace SessionFile
 {
+void writeEnvelopes (const SessionTrack& t, juce::XmlElement& into)
+{
+    const auto writeEnvelope = [&into] (const Envelope& envelope) -> juce::XmlElement*
+    {
+        if (envelope.isEmpty())
+            return nullptr;
+
+        auto* envelopeXml = into.createNewChildElement ("ENVELOPE");
+
+        for (auto& point : envelope.points)
+        {
+            auto* pointXml = envelopeXml->createNewChildElement ("POINT");
+            pointXml->setAttribute ("frame", juce::String (point.frame));
+            pointXml->setAttribute ("value", point.value);
+        }
+
+        return envelopeXml;
+    };
+
+    if (auto* xml = writeEnvelope (t.volumeEnvelope))
+        xml->setAttribute ("parameter", "volume");
+
+    if (auto* xml = writeEnvelope (t.panEnvelope))
+        xml->setAttribute ("parameter", "pan");
+
+    for (size_t e = 0; e < t.surroundEnvelopes.size(); ++e)
+        if (auto* xml = writeEnvelope (t.surroundEnvelopes[e]))
+            xml->setAttribute ("parameter", juce::StringArray { "surroundX", "surroundY", "surroundWidth", "lfe" }[(int) e]);
+
+    for (auto& e : t.effectEnvelopes)
+    {
+        if (auto* xml = writeEnvelope (e.envelope))
+        {
+            xml->setAttribute ("parameter", "effect");
+            xml->setAttribute ("slot", (int) e.slotId);
+            xml->setAttribute ("id", e.parameterId);
+        }
+    }
+}
+
+void readEnvelopes (SessionState& state, juce::uint32 trackId, const juce::XmlElement& from, double frameScale)
+{
+    for (auto* envelopeXml : from.getChildWithTagNameIterator ("ENVELOPE"))
+    {
+        const auto name = envelopeXml->getStringAttribute ("parameter");
+        AutomationTarget target;
+
+        if (name == "volume")
+            target = AutomationParameter::volume;
+        else if (name == "pan")
+            target = AutomationParameter::pan;
+        else if (const auto e = juce::StringArray { "surroundX", "surroundY", "surroundWidth", "lfe" }.indexOf (name); e >= 0)
+            target = surroundParameters[(size_t) e];
+        else if (name == "effect")
+            target = AutomationTarget::effect ((juce::uint32) envelopeXml->getIntAttribute ("slot"), envelopeXml->getStringAttribute ("id"));
+        else
+            continue;
+
+        Envelope envelope;
+
+        for (auto* pointXml : envelopeXml->getChildWithTagNameIterator ("POINT"))
+        {
+            auto frame = pointXml->getStringAttribute ("frame").getLargeIntValue();
+
+            if (! juce::exactlyEqual (frameScale, 1.0))
+                frame = (juce::int64) std::llround ((double) frame * frameScale);
+
+            envelope.points.push_back ({ frame, (float) pointXml->getDoubleAttribute ("value") });
+        }
+
+        SessionEdits::setEnvelope (state, trackId, target, std::move (envelope));
+    }
+}
+
 juce::String save (const SessionState& state, const juce::File& target,
                    const std::function<std::unique_ptr<juce::XmlElement> (juce::uint32 trackId)>& trackEffects)
 {
@@ -2286,42 +2360,7 @@ juce::String save (const SessionState& state, const juce::File& target,
             track->setAttribute ("inputChannels", t.input.channels);
         }
 
-        const auto writeEnvelope = [track] (const Envelope& envelope) -> juce::XmlElement*
-        {
-            if (envelope.isEmpty())
-                return nullptr;
-
-            auto* envelopeXml = track->createNewChildElement ("ENVELOPE");
-
-            for (auto& point : envelope.points)
-            {
-                auto* pointXml = envelopeXml->createNewChildElement ("POINT");
-                pointXml->setAttribute ("frame", juce::String (point.frame));
-                pointXml->setAttribute ("value", point.value);
-            }
-
-            return envelopeXml;
-        };
-
-        if (auto* xml = writeEnvelope (t.volumeEnvelope))
-            xml->setAttribute ("parameter", "volume");
-
-        if (auto* xml = writeEnvelope (t.panEnvelope))
-            xml->setAttribute ("parameter", "pan");
-
-        for (size_t e = 0; e < t.surroundEnvelopes.size(); ++e)
-            if (auto* xml = writeEnvelope (t.surroundEnvelopes[e]))
-                xml->setAttribute ("parameter", juce::StringArray { "surroundX", "surroundY", "surroundWidth", "lfe" }[(int) e]);
-
-        for (auto& e : t.effectEnvelopes)
-        {
-            if (auto* xml = writeEnvelope (e.envelope))
-            {
-                xml->setAttribute ("parameter", "effect");
-                xml->setAttribute ("slot", (int) e.slotId);
-                xml->setAttribute ("id", e.parameterId);
-            }
-        }
+        SessionFile::writeEnvelopes (t, *track);
 
         if (trackEffects != nullptr)
             if (auto effects = trackEffects (t.id))
@@ -2542,30 +2581,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         if (const auto channels = trackXml->getIntAttribute ("inputChannels"); ! track.isBus && (channels == 1 || channels == 2))
             track.input = { juce::jmax (0, trackXml->getIntAttribute ("inputFirst")), channels };
 
-        for (auto* envelopeXml : trackXml->getChildWithTagNameIterator ("ENVELOPE"))
-        {
-            const auto name = envelopeXml->getStringAttribute ("parameter");
-            AutomationTarget target;
-
-            if (name == "volume")
-                target = AutomationParameter::volume;
-            else if (name == "pan")
-                target = AutomationParameter::pan;
-            else if (const auto e = juce::StringArray { "surroundX", "surroundY", "surroundWidth", "lfe" }.indexOf (name); e >= 0)
-                target = surroundParameters[(size_t) e];
-            else if (name == "effect")
-                target = AutomationTarget::effect ((juce::uint32) envelopeXml->getIntAttribute ("slot"), envelopeXml->getStringAttribute ("id"));
-            else
-                continue;
-
-            Envelope envelope;
-
-            for (auto* pointXml : envelopeXml->getChildWithTagNameIterator ("POINT"))
-                envelope.points.push_back ({ pointXml->getStringAttribute ("frame").getLargeIntValue(),
-                                             (float) pointXml->getDoubleAttribute ("value") });
-
-            SessionEdits::setEnvelope (state, track.id, target, std::move (envelope));
-        }
+        SessionFile::readEnvelopes (state, track.id, *trackXml);
 
         if (auto* effects = trackXml->getChildByName ("EFFECTS"))
             result.effects[track.id] = std::make_shared<juce::XmlElement> (*effects);

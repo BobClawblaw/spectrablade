@@ -1762,7 +1762,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (multitrackMode && multitrack.getSelectedClip() != 0 && backgroundJob == nullptr); break;
         case cmdSaveCopyWithAudio: info.setInfo ("Save a Copy with Audio...", "Save a copy of the session with every audio file it uses in a folder beside it", "File", 0);
                             info.setActive (multitrackMode); break;
-        case cmdSaveTrackTemplate: info.setInfo ("Save Track as Template...", "Save the selected track's settings, sends and effects to start new tracks from", "Multitrack", 0);
+        case cmdSaveTrackTemplate: info.setInfo ("Save Track as Template...", "Save the selected track's settings, sends, effects and automation to start new tracks from", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0
                                             && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].isFolder); break;
         case cmdAddFromTemplate: info.setInfo ("Add Track from Template...", "Add a track or bus made from a saved template", "Multitrack", 0);

@@ -37,7 +37,7 @@ What they check:
 - Time stretch: lengths, pitch and level kept on a tone, channels in step, progress and cancelling, and the clip edit; the level kept at the edges; Stretch and Shift Pitch on part of a file (the audio either side bit for bit, the pitch, the joins), markers, and as sequence steps.
 - Pitch shift: four shifts of a tone landing on their pitches at the same length and level, cancelling, and the clip edit.
 - The undo history: listing steps, going back and forward by clicking, and new steps.
-- Track templates: what they keep, sends by bus name, and a file round trip.
+- Track templates: what they keep, sends by bus name, and a file round trip; their envelopes exactly through a file, the effect's on its slot, and moved to another sample rate.
 - Saving a copy with audio: copies, numbering, missing files, and the moved copy opening.
 - The session overview: its span, clicking and dragging to scroll, and drawing.
 - Time edits: clearing, deleting and inserting time across every track, with envelopes, markers and locked clips.

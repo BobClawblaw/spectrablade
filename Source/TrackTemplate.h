@@ -4,8 +4,9 @@
 
 /** Track templates (.sbtrack): a track's or bus's settings to start new ones from in any
     session. A template holds its name, whether it is a bus, its volume, pan, surround pan, colour, input,
-    note, sends and output (by the bus's name, as ids mean nothing in another session) and its effects
-    chain; not its clips, envelopes, group, mute or solo. */
+    note, sends and output (by the bus's name, as ids mean nothing in another session), its effects
+    chain, and its envelopes (volume, pan, surround pan and effect parameters, at the same times in
+    the session it is added to, moved to its sample rate); not its clips, group, mute or solo. */
 namespace TrackTemplate
 {
     inline constexpr const char* extension = ".sbtrack";
