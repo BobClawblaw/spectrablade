@@ -91,6 +91,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
     Source/Delivery.cpp
+    Source/SoundLibrary.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp
@@ -177,6 +178,7 @@ target_link_libraries(SpectraBlade PRIVATE
     juce::juce_audio_processors
     juce::juce_dsp
     juce::juce_video
+    sqlite3
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
@@ -192,6 +194,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/ConverterTests.cpp
     Tests/SpectralTests.cpp
     Tests/LoudnessTests.cpp
+    Tests/SoundLibraryTests.cpp
     Tests/EqTests.cpp
     Tests/GraphicEqTests.cpp
     Tests/DynamicsTests.cpp
@@ -266,6 +269,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SpectralEdit.cpp
     Source/Loudness.cpp
     Source/Delivery.cpp
+    Source/SoundLibrary.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp
@@ -349,5 +353,6 @@ target_link_libraries(SpectraBladeTests PRIVATE
     juce::juce_audio_processors
     juce::juce_dsp
     juce::juce_video
+    sqlite3
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

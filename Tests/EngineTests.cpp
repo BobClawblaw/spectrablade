@@ -14,6 +14,7 @@
 #include "ConverterTests.h"
 #include "SpectralTests.h"
 #include "LoudnessTests.h"
+#include "SoundLibraryTests.h"
 #include "EqTests.h"
 #include "DynamicsTests.h"
 #include "ModulationTests.h"
@@ -539,6 +540,7 @@ int main (int argc, char* argv[])
         runConverterTests();
         runSpectralTests();
         runLoudnessTests();
+        runSoundLibraryTests();
         runEqTests();
         runGraphicEqTests();
         runMultibandTests();
