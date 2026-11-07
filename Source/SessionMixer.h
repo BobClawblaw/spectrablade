@@ -31,14 +31,16 @@
     have at least as much latency as the ducked track's; otherwise it comes late by the
     difference. A key that doesn't play (muted, or left out by a solo) ducks nothing.
 
-    In a 5.1 master (SessionState::surround) what goes to the mix is placed by each track's and
-    bus's surround pan (surroundGains) into six channels, L R C LFE Ls Rs; its stereo processing up
-    to there is as in a stereo master. What plays into a bus, or out of an interface pair, stays
-    stereo. The master then goes to dest as Buffers::surroundChannel says.
+    In a 5.1 or 7.1 master (SessionState::surround, sevenOne) what goes to the mix is placed by each
+    track's and bus's surround pan (surroundGains) into six channels, L R C LFE Ls Rs, or eight, L R
+    C LFE Lrs Rrs Lss Rss; its stereo processing up to there is as in a stereo master. What plays
+    into a bus, or out of an interface pair, stays stereo. The master then goes to dest as
+    Buffers::surroundChannel says.
 
     A 5.1 track (SessionTrack::fiveOne) plays its clips' six channels through its effects (as three
     pairs: L R, C LFE, Ls Rs), polarity, volume and ducking, without pan, straight into a 5.1
-    master's channels; everything else it
+    master's channels (in a 7.1 master, its Ls and Rs into the side surrounds Lss and Rss, as 5.1's
+    surrounds are usually placed in 7.1, the rear ones left silent); everything else it
     feeds (sends, a bus, an interface pair, keys, its meter, a stereo master) gets them folded
     down to stereo (Surround::foldDown), after its polarity and, past its pre-fader sends, its
     volume, as a stereo track's would.
@@ -58,16 +60,19 @@ namespace SessionMixer
     std::pair<float, float> panGains (float pan, int sourceChannels);
 
     /** The gains from a track's or bus's two channels (left, right) into a 5.1 master's six
-        (L R C LFE Ls Rs) for this surround pan. Each channel has a point: the pan's point, moved
-        left (or right) by width * tan 30 degrees and kept inside the room. Its direction from the
-        middle is panned between the two speakers either side of it (at -30, +30, 0, -110 and +110
-        degrees), with constant power; its distance d (up to 1) keeps d squared of that power there
-        and spreads the rest evenly over all five. A width under 1 brings the gains down to 0.7071
+        (L R C LFE Ls Rs), or with sevenOne a 7.1 master's eight (L R C LFE Lrs Rrs Lss Rss; a 5.1
+        master leaves the last two at 0), for this surround pan. Each channel has a point: the
+        pan's point, moved left (or right) by width * tan 30 degrees and kept inside the room. Its
+        direction from the middle is panned between the two speakers either side of it (5.1: at
+        -30, +30, 0, -110 and +110 degrees; 7.1: -30, +30, 0, -90 and +90 for the sides and -135
+        and +135 for the rears, as ITU-R BS.2051 places them), with constant power; its distance d
+        (up to 1) keeps d squared of that power there and spreads the rest evenly over all five (or
+        seven). A width under 1 brings the gains down to 0.7071
         at 0, so a mono source (the same in both channels) keeps its level when both meet. The LFE
         takes both channels at 0.7071 times the LFE share. The default pan gives exactly 1 from
         left to L and right to R, nothing else. */
-    using SurroundGains = std::array<std::array<float, 6>, 2>;
-    SurroundGains surroundGains (const SurroundPan&);
+    using SurroundGains = std::array<std::array<float, 8>, 2>;
+    SurroundGains surroundGains (const SurroundPan&, bool sevenOne = false);
 
     /** A key's output for a block, lined up with the audio going into the effect slot whose
         sidechain it feeds: two channels, frames from 0. */
@@ -122,14 +127,15 @@ namespace SessionMixer
         /** The left and right peaks since this reader's last take. */
         std::pair<float, float> take (int track, int reader = 0) noexcept;
 
-        /** A 5.1 master's six channels (L R C LFE Ls Rs) as mixed, before the effects rack and any
-            fold-down: raised by the audio thread, taken (and started again from 0) per reader. */
+        /** A 5.1 or 7.1 master's channels (L R C LFE Ls Rs, or L R C LFE Lrs Rrs Lss Rss) as mixed,
+            before the effects rack and any fold-down: raised by the audio thread, taken (and started
+            again from 0) per reader. */
         void raiseMaster (int channel, float peak) noexcept;
-        std::array<float, 6> takeMaster (int reader = 0) noexcept;
+        std::array<float, 8> takeMaster (int reader = 0) noexcept;
 
     private:
         std::array<std::atomic<float>, 2 * maxTracks * readers> peaks {};
-        std::array<std::atomic<float>, 6 * readers> masterPeaks {};
+        std::array<std::atomic<float>, 8 * readers> masterPeaks {};
 
         static void raiseTo (std::atomic<float>&, float) noexcept;
     };
@@ -154,9 +160,9 @@ namespace SessionMixer
                                                                           //  a key's, the track it ducks)
         Levels* levels = nullptr;          // metered when set
 
-        /** Where a 5.1 master goes in dest: L and R in channels 0 and 1, and C, LFE, Ls and Rs from
-            this channel on (dest must have them); or folded down into 0 and 1 (Surround::foldDown)
-            at -1. A mixdown sets 2, for the six in file order. */
+        /** Where a 5.1 or 7.1 master goes in dest: L and R in channels 0 and 1, and the rest (C, LFE,
+            Ls, Rs, or C to Rss) from this channel on (dest must have them); or folded down into 0
+            and 1 (Surround::foldDown) at -1. A mixdown sets 2, for them all in file order. */
         int surroundChannel = -1;
 
         /** The channel of dest that interface output 1 goes to, for tracks and buses playing out of

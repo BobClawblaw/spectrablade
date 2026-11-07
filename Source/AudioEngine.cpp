@@ -1027,7 +1027,7 @@ juce::BigInteger AudioEngine::deviceOutputsOf (const SessionState& state, int su
     juce::BigInteger used;
 
     if (state.surround && surroundFrom >= 0)
-        used.setRange (surroundFrom, 4, true);
+        used.setRange (surroundFrom, state.masterChannels() - 2, true);
 
     for (auto& t : state.tracks)
         if (t.deviceOutput >= 0 && t.outputBusId == 0 && ! t.isFolder)
@@ -1211,7 +1211,7 @@ int AudioEngine::extraChannels() const
         return 0;
 
     if (player->getMode() == DocumentPlayerProcessor::Mode::session)
-        return session.getState()->surround ? Surround::fiveOneChannels - 2 : 0;
+        return session.getState()->masterChannels() - 2;
 
     return juce::jlimit (0, 6, document.getNumChannels() - 2);
 }

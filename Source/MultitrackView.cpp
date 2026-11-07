@@ -1927,7 +1927,7 @@ void MultitrackView::drawEnvelope (juce::Graphics& g, int track, const Automatio
         const auto text = p.parameter == AutomationParameter::surroundWidth ? juce::String (juce::roundToInt (value * 100.0f)) + "%"
                         : p.parameter == AutomationParameter::lfe ? (value <= -60.0f ? juce::String ("off") : juce::String (value, 1) + " dB")
                         : juce::String (value, 2);
-        label = "Surround " + surroundEnvelopeName (p.parameter) + " " + text + (shown().surround ? "" : " (in a 5.1 master)");
+        label = "Surround " + surroundEnvelopeName (p.parameter) + " " + text + (shown().surround ? "" : " (in a 5.1 or 7.1 master)");
     }
 
     if (p.parameter == AutomationParameter::effect)

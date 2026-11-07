@@ -324,6 +324,13 @@ struct SessionState
         each track's and bus's surroundPan. */
     bool surround = false;
 
+    /** With surround, the master is 7.1 (L R C LFE Lrs Rrs Lss Rss, as Surround names them) rather
+        than 5.1. */
+    bool sevenOne = false;
+
+    /** The master's channels: 2, 6 for 5.1 or 8 for 7.1. */
+    int masterChannels() const noexcept    { return ! surround ? 2 : sevenOne ? 8 : 6; }
+
     /** The end of the last clip. */
     juce::int64 getLength() const;
 
@@ -640,6 +647,9 @@ namespace SessionEdits
 
     /** Makes the master 5.1 or stereo. False when it is already so. */
     bool setSurround (SessionState&, bool fiveOne);
+
+    /** Makes the master stereo (2), 5.1 (6) or 7.1 (8). False for another count, or when it is already so. */
+    bool setMasterChannels (SessionState&, int channels);
 
     /** Places a track or bus in a 5.1 master; x, y are kept to [-1, 1], width to [0, 1] and the LFE to
         [-60 dB, maxLfeDb] or off (anything below -60). False for a folder, a track that is gone,

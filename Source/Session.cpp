@@ -1606,6 +1606,7 @@ SessionState frozenSource (const SessionState& s, juce::uint32 trackId)
     // The track's own sound: stereo, which its surround pan places afterwards, or a 5.1 track's six channels.
     const auto* found = s.findTrack (trackId);
     alone.surround = found != nullptr && found->fiveOne;
+    alone.sevenOne = false;
 
     if (const auto* track = s.findTrack (trackId))
     {
@@ -1732,10 +1733,16 @@ bool setTrackFiveOne (SessionState& s, juce::uint32 trackId, bool fiveOne)
 
 bool setSurround (SessionState& s, bool fiveOne)
 {
-    if (s.surround == fiveOne)
+    return setMasterChannels (s, fiveOne ? 6 : 2);
+}
+
+bool setMasterChannels (SessionState& s, int channels)
+{
+    if ((channels != 2 && channels != 6 && channels != 8) || s.masterChannels() == channels)
         return false;
 
-    s.surround = fiveOne;
+    s.surround = channels > 2;
+    s.sevenOne = channels == 8;
     return true;
 }
 
@@ -2165,6 +2172,9 @@ juce::String save (const SessionState& state, const juce::File& target,
     if (state.surround)
         root.setAttribute ("surround", true);
 
+    if (state.surround && state.sevenOne)
+        root.setAttribute ("sevenOne", true);
+
     // Sends name their bus by its place in the file, since ids are given out afresh on loading.
     std::map<juce::uint32, int> indexOf;
 
@@ -2430,6 +2440,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     state.tempo = juce::jlimit (20.0, 400.0, root->getDoubleAttribute ("tempo", 120.0));
     state.beatsPerBar = juce::jlimit (1, 16, root->getIntAttribute ("beatsPerBar", 4));
     state.surround = root->getBoolAttribute ("surround");
+    state.sevenOne = state.surround && root->getBoolAttribute ("sevenOne");
     std::map<juce::String, AudioDocument::Snapshot> audio;   // by full path: each file read once
     std::map<int, juce::uint32> groups;                      // a clip group's saved id, and its id now
 

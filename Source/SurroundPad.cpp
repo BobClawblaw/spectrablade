@@ -16,8 +16,14 @@ namespace
 
 SurroundPad::SurroundPad()
 {
-    setTooltip ("Where it plays in the 5.1 master: drag the point, double-click to put it back in front");
+    setTooltip ("Where it plays in the surround master: drag the point, double-click to put it back in front");
     setRepaintsOnMouseActivity (false);
+}
+
+void SurroundPad::setSevenOne (bool seven)
+{
+    if (std::exchange (sevenOne, seven) != seven)
+        repaint();
 }
 
 void SurroundPad::setPan (const SurroundPan& p)
@@ -57,11 +63,13 @@ void SurroundPad::paint (juce::Graphics& g)
     g.setColour (isEnabled() ? Theme::lineStrong : Theme::line);
     g.drawRect (square, 1.0f);
 
-    // The listener, and the speakers on the edge: L R C in front, Ls Rs behind.
+    // The listener, and the speakers on the edge: L R C in front, Ls Rs behind (in 7.1, Lss Rss at
+    // the sides and Lrs Rrs behind).
     g.setColour (Theme::faintText);
     g.fillEllipse (juce::Rectangle<float> (4.0f, 4.0f).withCentre (square.getCentre()));
+    static const std::vector<double> fiveOne { -30.0, 30.0, 0.0, -110.0, 110.0 }, sevenOneSpeakers { -30.0, 30.0, 0.0, -90.0, 90.0, -135.0, 135.0 };
 
-    for (const auto degrees : { -30.0, 30.0, 0.0, -110.0, 110.0 })
+    for (const auto degrees : sevenOne ? sevenOneSpeakers : fiveOne)
     {
         const auto e = onEdge (degrees);
         g.setColour (Theme::dimText);

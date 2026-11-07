@@ -1006,8 +1006,163 @@ namespace
     }
 }
 
+namespace
+{
+    void testSevenOneMaster (AudioEngine& engine)
+    {
+        using SessionMixer::surroundGains;
+        const auto stereo = mixed();
+        auto seven = stereo;
+        SessionEdits::setMasterChannels (seven, 8);
+        const auto two = render (stereo, 2, -1);
+        const auto eight = render (seven, 8, 2, -1);
+        auto restSilent = true;
+
+        for (int ch = 2; ch < 8; ++ch)
+            restSilent = restSilent && silent (eight, ch);
+
+        check (seven.surround && seven.sevenOne && seven.masterChannels() == 8 && same (eight, 0, two, 0) && same (eight, 1, two, 1) && restSilent,
+               "7.1 master: with every pan as it starts, L and R are the stereo mix bit for bit and the other six silent");
+
+        // The pan over seven speakers: power kept, the middle spread evenly, the sides and the back.
+        juce::Random r (7);
+        auto power = true;
+
+        for (int n = 0; n < 200; ++n)
+        {
+            SurroundPan p;
+            p.x = r.nextFloat() * 2.0f - 1.0f;
+            p.y = r.nextFloat() * 2.0f - 1.0f;
+            p.width = r.nextFloat();
+            const auto g = surroundGains (p, true);
+            const auto scale = std::cos ((1.0 - p.width) * juce::MathConstants<double>::pi / 4.0);
+
+            for (int side = 0; side < 2; ++side)
+            {
+                double sum = 0.0;
+
+                for (const auto ch : { 0, 1, 2, 4, 5, 6, 7 })
+                    sum += (double) g[(size_t) side][(size_t) ch] * g[(size_t) side][(size_t) ch];
+
+                power = power && std::abs (sum - scale * scale) < 1.0e-5 && g[(size_t) side][3] == 0.0f;
+            }
+        }
+
+        SurroundPan middle;
+        middle.y = 0.0f;
+        middle.width = 0.0f;
+        const auto m = surroundGains (middle, true);
+        auto even = true;
+
+        for (const auto ch : { 0, 1, 2, 4, 5, 6, 7 })
+            even = even && std::abs (m[0][(size_t) ch] - 0.70710678f * std::sqrt (1.0f / 7.0f)) < 1.0e-6f;
+
+        SurroundPan leftSide;
+        leftSide.x = -1.0f;
+        leftSide.y = 0.0f;
+        leftSide.width = 0.0f;
+        const auto l = surroundGains (leftSide, true);
+        SurroundPan behind;
+        behind.y = -1.0f;
+        behind.width = 0.0f;
+        const auto b = surroundGains (behind, true);
+        auto sideAlone = std::abs (l[0][6] - 0.70710678f) < 1.0e-6f, backPair = std::abs (b[0][4] - b[0][5]) < 1.0e-6f && b[0][4] > 0.4f;
+
+        for (const auto ch : { 0, 1, 2, 4, 5, 7 })
+            sideAlone = sideAlone && l[0][(size_t) ch] == 0.0f;
+
+        for (const auto ch : { 0, 1, 2, 6, 7 })
+            backPair = backPair && b[0][(size_t) ch] == 0.0f;
+
+        check (power && even && sideAlone && backPair && surroundGains ({}, true) == surroundGains ({}),
+               "7.1 master pan: the power is kept wherever the point is (200 random points), the middle spreads evenly over all seven "
+               "speakers, the left side plays from Lss alone and straight behind from Lrs and Rrs equally; as it starts, left to L and "
+               "right to R as in 5.1");
+
+        // Placed: folded down as a 7.1 file is, and to separate outputs, L and R to the mix and the rest after the pair.
+        auto placed = seven;
+        SessionEdits::setSurroundPan (placed, placed.tracks[0].id, { 0.3f, -0.6f, 0.7f, -6.0f });
+        SessionEdits::setSurroundPan (placed, placed.tracks[1].id, { -1.0f, 0.0f, 0.0f, SurroundPan::lfeOff });
+        SessionEdits::setSurroundPan (placed, placed.tracks[2].id, { 0.6f, -1.0f, 1.0f, SurroundPan::lfeOff });
+        const auto master = render (placed, 8, 2, -1);
+        juce::AudioBuffer<float> folded (2, frames);
+        Surround::foldDown (master.getArrayOfReadPointers(), 8, folded.getWritePointer (0), folded.getWritePointer (1), frames);
+        const auto played = render (placed, 2, -1);
+        const auto wide = render (placed, 2 + SessionTrack::maxDeviceOutputs, 4);
+        auto routed = same (wide, 0, master, 0) && same (wide, 1, master, 1);
+        auto allSounding = true;
+
+        for (int ch = 2; ch < 8; ++ch)
+        {
+            routed = routed && same (wide, 2 + ch, master, ch);
+            allSounding = allSounding && ! silent (master, ch);
+        }
+
+        juce::AudioBuffer<float> offline;
+        OfflineRender::mixSession (placed, { 0, frames }, offline, nullptr, nullptr);
+        auto offlineSame = offline.getNumChannels() == 8;
+
+        for (int ch = 0; offlineSame && ch < 8; ++ch)
+            offlineSame = same (offline, ch, master, ch);
+
+        const auto outputs = AudioEngine::deviceOutputsOf (placed, 4);
+
+        check (same (played, 0, folded, 0) && same (played, 1, folded, 1) && routed && allSounding && offlineSame
+                   && outputs.countNumberOfSetBits() == 6 && outputs[4] && outputs[9] && same (render (placed, 8, 2, -1, 97), 6, master, 6),
+               "7.1 master: placed tracks and a bus sound in all eight channels; played folded down it is the eight folded as a 7.1 file "
+               "is, to separate outputs L and R go to the mix and C to Rss to the six outputs after the pair, a mixdown is the eight "
+               "channels in file order, all bit for bit, the same in blocks of 97");
+
+        // A 5.1 track in a 7.1 master: L R C LFE as in a 5.1 master, its Ls and Rs to the side surrounds, the rears silent.
+        SessionState wideTrack;
+        wideTrack.sampleRate = rate;
+        wideTrack.surround = true;
+        addFiveOneTrack (wideTrack, 6, 300, 71);
+        const auto inFive = render (wideTrack, 6, 2, -1);
+        auto inSevenState = wideTrack;
+        inSevenState.sevenOne = true;
+        const auto inSeven = render (inSevenState, 8, 2, -1);
+        check (same (inSeven, 0, inFive, 0) && same (inSeven, 1, inFive, 1) && same (inSeven, 2, inFive, 2) && same (inSeven, 3, inFive, 3)
+                   && same (inSeven, 6, inFive, 4) && same (inSeven, 7, inFive, 5) && silent (inSeven, 4) && silent (inSeven, 5),
+               "7.1 master: a 5.1 track plays L, R, C and LFE to the same channels and its Ls and Rs to the side surrounds Lss and Rss, "
+               "bit for bit, the rear surrounds silent");
+
+        // Freezing it renders 5.1 still.
+        const auto frozen = SessionEdits::frozenSource (inSevenState, inSevenState.tracks[0].id);
+
+        // Edits, the session file, the meter.
+        auto edits = mixed();
+        const auto turned = SessionEdits::setMasterChannels (edits, 8) && ! SessionEdits::setMasterChannels (edits, 8)
+                            && ! SessionEdits::setMasterChannels (edits, 4) && SessionEdits::setMasterChannels (edits, 6) && ! edits.sevenOne
+                            && SessionEdits::setMasterChannels (edits, 2) && ! edits.surround;
+        const juce::TemporaryFile temp (".sbsession");
+        SessionFile::save (placed, temp.getFile(), nullptr);
+        const auto text = temp.getFile().loadFileAsString();
+        const auto loaded = SessionFile::load (temp.getFile(), engine.formatManager);
+        auto fiveOnly = placed;
+        fiveOnly.sevenOne = false;
+        SessionFile::save (fiveOnly, temp.getFile(), nullptr);
+        const auto fiveText = temp.getFile().loadFileAsString();
+
+        engine.session.reset (placed, {});
+        MixerView view (engine);
+        view.setSize (900, 400);
+        const auto eightBars = view.getMasterMeterChannels() == 8;
+        engine.getPlayer().getLevels().raiseMaster (6, 0.5f);
+        TestUtils::runUntil ([&] { return view.getShownLevel (0, 6) > 0.4f; }, 2000);
+        const auto shownLss = view.getShownLevel (0, 6);
+        engine.session.reset (SessionState(), {});
+
+        check (frozen.surround && ! frozen.sevenOne && turned && loaded.state.sevenOne && loaded.state.masterChannels() == 8 && text.contains ("sevenOne=\"1\"")
+                   && ! fiveText.contains ("sevenOne") && eightBars && shownLss > 0.4f,
+               "7.1 master: a 5.1 track in it freezes as 5.1; made 7.1, 5.1 and stereo as edits (other counts refused); the session file "
+               "keeps it (a 5.1 one says nothing of it); the mixer's master meter has eight bars and shows Lss (" + juce::String (shownLss, 2) + ")");
+    }
+}
+
 void runSurroundSessionTests (AudioEngine& engine)
 {
+    testSevenOneMaster (engine);
     testFiveOneTracks (engine);
     testFiveOneControls (engine);
     testSurroundAutomation (engine);

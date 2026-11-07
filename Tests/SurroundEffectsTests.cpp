@@ -748,9 +748,41 @@ void runMasterRackDeviceTests (AudioEngine& engine)
     TestUtils::runUntil ([&] { return engine.getNumRackCopies() == 0; }, 2000);
     const auto stereoMaster = engine.getNumRackCopies();
     engine.clearRack();
+
+    // A 7.1 master: its six channels past L and R through an EQ's three copies and a compressor
+    // that takes them all itself.
+    auto seven = s;
+    seven.sevenOne = true;
+    engine.session.reset (seven, {});
+    engine.useDeviceOutputs();
+    auto sevenAdded = 0;
+
+    for (auto* d : { &eq, &compressor })
+    {
+        auto done = false;
+        engine.addPlugin (*d, [&done, &sevenAdded] (const juce::String& error) { done = true; sevenAdded += error.isEmpty() ? 1 : 0; });
+        TestUtils::runUntil ([&] { return done; }, 5000);
+    }
+
+    const auto sevenRouted = [&]
+    {
+        auto all = true;
+
+        for (int ch = from; ch < from + 6; ++ch)
+            all = all && engine.playsThroughRack (ch) && ! engine.playsOutOf (ch);
+
+        return all;
+    };
+    TestUtils::runUntil (sevenRouted, 5000);
+    const auto sevenOk = sevenAdded == 2 && engine.getNumRackCopies() == 3 && engine.getNumRackSlotsLinking() == 1 && sevenRouted();
+    engine.clearRack();
     engine.setSurroundOutputs (wasSeparate);
     engine.session.reset (SessionState(), {});
     player.setMode (mode);
+
+    check (sevenOk,
+           "master rack, 7.1: played to separate outputs, a 7.1 master's six channels past L and R reach outputs " + juce::String (from + 1)
+           + " to " + juce::String (from + 6) + " through an EQ's three copies and a compressor that takes them all itself");
 
     check (added && second && separate == 2 && throughCopies && two == 4 && afterRemove == 2 && straight && folded == 0 && stereoMaster == 0,
            "master rack copies: played to separate outputs, a 5.1 master's other two pairs get a copy of each rack slot (an EQ: 2 for "

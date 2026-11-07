@@ -86,7 +86,7 @@ private:
     std::vector<std::unique_ptr<Strip>> strips;
     std::unique_ptr<Strip> master;
     std::vector<std::pair<juce::uint32, bool>> shownTracks;   // id and bus-ness of each strip, to see when to rebuild
-    bool shownSurround = false;                               // the strips laid out for a 5.1 master
+    int shownChannels = 2;                                    // the master's channels the strips are laid out for (wider past 2)
     MultitrackView* writer = nullptr;
     bool shownWriting = false;                                // the controls set up for writing automation
 

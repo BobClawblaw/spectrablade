@@ -1,6 +1,7 @@
 #include "MixerView.h"
 #include "MultitrackView.h"
 #include "SurroundPad.h"
+#include "Surround.h"
 #include "Theme.h"
 #include "TrackColours.h"
 
@@ -32,7 +33,7 @@ public:
         push (both, 2);
     }
 
-    /** Takes in the newest peaks of its channels (2, or a 5.1 master's 6, L R C LFE Ls Rs). */
+    /** Takes in the newest peaks of its channels (2, a 5.1 master's 6 or a 7.1 master's 8). */
     void push (const float* peaks, int count)
     {
         // Falls by about 4 dB a tick at 30 a second: from full scale to silence in half a second.
@@ -47,10 +48,10 @@ public:
         repaint();
     }
 
-    /** Two bars, or six named ones for a 5.1 master. */
+    /** Two bars, or six or eight named ones (Surround::channelName) for a 5.1 or 7.1 master. */
     void setChannels (int count)
     {
-        count = count == 6 ? 6 : 2;
+        count = count == 6 || count == 8 ? count : 2;
 
         if (count == channels)
             return;
@@ -66,7 +67,7 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (Theme::inset);
-        const auto named = channels == 6;
+        const auto named = channels > 2;
         const auto labels = named ? 12 : 0;
         const auto height = getHeight() - labels;
         const auto barWidth = (getWidth() - 1 - channels) / channels;
@@ -83,7 +84,7 @@ public:
             {
                 g.setColour (Theme::dimText);
                 g.setFont (9.0f);
-                g.drawText (juce::StringArray { "L", "R", "C", "LFE", "Ls", "Rs" }[ch],
+                g.drawText (Surround::channelName (channels, ch),
                             juce::Rectangle<float> (x - 2.0f, (float) height, (float) barWidth + 4.0f, (float) labels), juce::Justification::centred, false);
             }
         }
@@ -101,7 +102,7 @@ public:
     }
 
 private:
-    float shown[6] {};
+    float shown[8] {};
     int channels = 2;
     bool clipped = false;
 };
@@ -179,7 +180,7 @@ public:
         };
         pan.updateText();   // the text box was made before textFromValueFunction: show "C", not "0"
 
-        // A 5.1 master's controls: the point, the width and the LFE's share.
+        // A 5.1 or 7.1 master's controls: the point, the width and the LFE's share.
         surroundPad.onChange = [this] (const SurroundPan& p, bool dragging)
         {
             if (! record ({ AutomationParameter::surroundX, AutomationParameter::surroundY }, { p.x, p.y }))
@@ -320,13 +321,15 @@ public:
         surroundPad.setEnabled (! pointAutomated || writing);
         width.setEnabled (! widthAutomated || writing);
         lfe.setEnabled (! lfeAutomated || writing);
-        surroundPad.setTooltip ((pointAutomated && ! writing ? "Where it plays in the 5.1 master follows its envelopes"
-                                                             : "Where it plays in the 5.1 master: drag the point, double-click to put it back in front")
+        surroundPad.setTooltip ((pointAutomated && ! writing ? "Where it plays in the surround master follows its envelopes"
+                                                             : "Where it plays in the surround master: drag the point, double-click to put it back in front")
                                 + writeTip);
         width.setTooltip ((widthAutomated && ! writing ? "Surround width follows its envelope"
                                                        : "Surround width: how far apart its left and right channels play (0: together, as mono)")
                           + writeTip);
         lfe.setTooltip ((lfeAutomated && ! writing ? "The LFE's share follows its envelope" : "How much also goes to the LFE (far left: none)") + writeTip);
+
+        surroundPad.setSevenOne (view.engine.session.getState()->sevenOne);
 
         if (! surroundPad.isMouseButtonDown())
             surroundPad.setPan (now);
@@ -424,7 +427,7 @@ public:
         solo.setBounds (buttons);
         r.removeFromTop (6);
 
-        // A 5.1 master's (wider) strip: the fader, meter and readout on the right, and on the left
+        // A 5.1 or 7.1 master's (wider) strip: the fader, meter and readout on the right, and on the left
         // the surround pad, as large a square as fits over the width and LFE sliders.
         if (surround)
         {
@@ -569,12 +572,13 @@ void MixerView::rebuild()
     for (size_t i = 0; i < strips.size(); ++i)
         strips[i]->update (state->tracks[i], (int) i, frame);
 
-    // A 5.1 master's strips are wider, and its meter has six channels.
-    if (std::exchange (shownSurround, state->surround) != state->surround)
+    // A 5.1 or 7.1 master's strips are wider, and its meter has six or eight channels.
+    if (std::exchange (shownChannels, state->masterChannels()) != state->masterChannels())
     {
-        master->meter.setChannels (state->surround ? 6 : 2);
-        master->meter.setTooltip (state->surround ? "The 5.1 master's six channels, L R C LFE Ls Rs, as mixed: before the effects rack and any fold-down"
-                                                  : "What goes to the outputs, after the effects rack");
+        master->meter.setChannels (state->masterChannels());
+        master->meter.setTooltip (state->sevenOne ? "The 7.1 master's eight channels, L R C LFE Lrs Rrs Lss Rss, as mixed: before the effects rack and any fold-down"
+                                  : state->surround ? "The 5.1 master's six channels, L R C LFE Ls Rs, as mixed: before the effects rack and any fold-down"
+                                                    : "What goes to the outputs, after the effects rack");
         resized();
         master->resized();
     }
@@ -665,12 +669,12 @@ void MixerView::updateMeters()
         rebuild();
     }
 
-    // A 5.1 master: its six channels as mixed; otherwise what went to the outputs.
+    // A 5.1 or 7.1 master: its channels as mixed; otherwise what went to the outputs.
     const auto [left, right] = engine.takeMasterPeaks();
-    const auto six = levels.takeMaster();
+    const auto wide = levels.takeMaster();
 
-    if (master->meter.getChannels() == 6)
-        master->meter.push (six.data(), 6);
+    if (master->meter.getChannels() > 2)
+        master->meter.push (wide.data(), master->meter.getChannels());
     else
         master->meter.push (left, right);
 
@@ -700,9 +704,9 @@ void MixerView::paint (juce::Graphics& g)
 void MixerView::resized()
 {
     auto r = getLocalBounds();
-    master->setBounds (r.removeFromRight ((shownSurround ? surroundStripWidth : stripWidth) + 12));
+    master->setBounds (r.removeFromRight ((shownChannels > 2 ? surroundStripWidth : stripWidth) + 12));
     viewport.setBounds (r);
-    const auto each = shownSurround ? surroundStripWidth : stripWidth;
+    const auto each = shownChannels > 2 ? surroundStripWidth : stripWidth;
     content.setSize (juce::jmax (r.getWidth(), (int) strips.size() * each), juce::jmax (0, r.getHeight() - viewport.getScrollBarThickness()));
 
     for (size_t i = 0; i < strips.size(); ++i)
