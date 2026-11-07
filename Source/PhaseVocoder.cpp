@@ -9,7 +9,13 @@ namespace
     constexpr double frameSeconds = 0.085;
     constexpr int overlap = 4;
     constexpr double spanFrames = 0.5;     // played at its own speed either side of an attack, in frames
-    constexpr double minFlux = 2.0;        // mean rise per bin (dB) for an attack
+    constexpr double minFlux = 0.8;        // mean rise per bin (dB) for an attack
+    constexpr double referenceSeconds = 0.015;  // an attack rises over the loudest 1 ms this long before
+    constexpr double localSeconds = 0.05;  // an attack's flux is over 1.5 times the median this far either side
+    constexpr double gapSeconds = 0.03;    // attacks at least this far apart
+    constexpr double cutBefore = 0.001;    // outside the spans, frames hold only their own side of an attack
+    constexpr double cutAfter = 0.003;
+    constexpr double fadeSeconds = 0.002;  // spans copied in from the input, crossfaded over this
     constexpr double fluxFloorDb = -50.0;  // bins lower than this under the frame's loudest count as this low
 
     double principal (double phase)
@@ -95,6 +101,84 @@ namespace
 
     /** A stretch of the input played at its own speed round an attack at `at`. */
     struct Span { double from, to, at; };
+
+    /** Where an attack found in the frame centred on `centre` (n long) starts, on one envelope:
+        the level summed over the channels, or (highs) the size of each sample's step from the last,
+        which a kick's thump hardly moves. Of the 1 ms rises that reach a new high (over the loudest
+        1 ms in the referenceSeconds before the frame, and anything earlier in it), the steepest,
+        walked back to the first sample a tenth of the way up from the lowest in the 2 ms before it
+        to the loudest in the 2 ms after; -1 when nothing in the frame rises to a new high. */
+    int riseStart (const juce::AudioBuffer<float>& input, int from, int to, int centre, int n, double sampleRate, bool highs)
+    {
+        const auto lo = juce::jmax (from, centre - n / 2), hi = juce::jmin (to - 1, centre + n / 2);
+        const auto smooth = juce::jmax (1, (int) std::lround (0.001 * sampleRate));
+        const auto first = juce::jmax (from, lo - (int) std::lround (referenceSeconds * sampleRate));
+
+        if (hi < lo)
+            return -1;
+
+        std::vector<double> envelope ((size_t) (hi - first + 1), 0.0), smoothed (envelope.size());
+
+        for (int ch = 0; ch < input.getNumChannels(); ++ch)
+        {
+            const auto* x = input.getReadPointer (ch);
+
+            for (int i = first; i <= hi; ++i)
+                envelope[(size_t) (i - first)] += std::abs (highs ? x[i] - (i > 0 ? x[i - 1] : 0.0f) : x[i]);
+        }
+
+        auto running = 0.0;
+
+        for (size_t i = 0; i < envelope.size(); ++i)
+        {
+            running += envelope[i];
+
+            if (i >= (size_t) smooth)
+                running -= envelope[i - (size_t) smooth];
+
+            smoothed[i] = running / smooth;
+        }
+
+        const auto start = lo - first;
+        const auto size = (int) smoothed.size();
+        auto high = 0.0, steepest = 0.0;
+        auto steep = -1;
+
+        for (int i = juce::jmin (smooth - 1, start); i < size; ++i)
+        {
+            if (i >= start + smooth && i >= smooth && smoothed[(size_t) i] > high)
+            {
+                const auto rise = smoothed[(size_t) i] - smoothed[(size_t) (i - smooth)];
+
+                if (rise > steepest)
+                {
+                    steepest = rise;
+                    steep = i - smooth;
+                }
+            }
+
+            high = juce::jmax (high, smoothed[(size_t) i]);
+        }
+
+        if (steep < 0)
+            return -1;
+
+        auto lowest = std::numeric_limits<double>::max(), loudest = 0.0;
+
+        for (int i = juce::jmax (0, steep - 2 * smooth); i <= steep; ++i)
+            lowest = juce::jmin (lowest, smoothed[(size_t) i]);
+
+        for (int i = steep; i <= juce::jmin (size - 1, steep + 2 * smooth); ++i)
+            loudest = juce::jmax (loudest, envelope[(size_t) i]);
+
+        const auto threshold = lowest + 0.1 * (loudest - lowest);
+
+        for (int i = juce::jmax (0, steep - 2 * smooth); i <= juce::jmin (size - 1, steep + 2 * smooth); ++i)
+            if (envelope[(size_t) i] > threshold)
+                return first + i;
+
+        return first + steep;
+    }
 }
 
 std::vector<int> onsets (const juce::AudioBuffer<float>& input, int from, int to, double sampleRate)
@@ -144,89 +228,48 @@ std::vector<int> onsets (const juce::AudioBuffer<float>& input, int from, int to
         previous = std::move (level);
     }
 
-    // Peaks of the flux, over 1.5 times its mean for 100 ms either side and over minFlux; each
-    // placed at the steepest rise of a 1 ms envelope near its frame, at least 50 ms after the last.
+    // Peaks of the flux, over 1.5 times its median for localSeconds either side and over minFlux;
+    // each placed where its rise starts (riseStart), at least gapSeconds from the last (of two
+    // nearer, the earlier is kept).
     std::vector<int> found;
-    const auto around = (int) std::lround (0.1 * sampleRate / hop);
-    const auto smooth = juce::jmax (1, (int) std::lround (0.001 * sampleRate));
+    const auto around = (int) std::lround (localSeconds * sampleRate / hop);
+    const auto gap = gapSeconds * sampleRate;
+    std::vector<double> local;
     const auto count = (int) flux.size();
 
     for (int j = 1; j + 1 < count; ++j)
     {
-        auto mean = 0.0;
-        auto counted = 0;
-
-        for (int q = juce::jmax (0, j - around); q <= juce::jmin (count - 1, j + around); ++q, ++counted)
-            mean += flux[(size_t) q];
-
-        mean /= counted;
         auto isPeak = true;
 
         for (int q = juce::jmax (0, j - 3); q <= juce::jmin (count - 1, j + 3) && isPeak; ++q)
             isPeak = flux[(size_t) q] <= flux[(size_t) j];
 
-        if (! isPeak || flux[(size_t) j] < 1.5 * mean || flux[(size_t) j] < minFlux)
+        if (! isPeak || flux[(size_t) j] < minFlux)
             continue;
 
-        const auto lo = juce::jmax (from, centres[(size_t) j] - n / 2), hi = juce::jmin (to - 1, centres[(size_t) j] + n / 2);
-        std::vector<double> envelope ((size_t) (hi - lo + 1), 0.0);
+        local.assign (flux.begin() + juce::jmax (0, j - around), flux.begin() + juce::jmin (count - 1, j + around) + 1);
+        const auto middle = local.begin() + (std::ptrdiff_t) (local.size() / 2);
+        std::nth_element (local.begin(), middle, local.end());
 
-        for (int i = lo; i <= hi; ++i)
-            for (int ch = 0; ch < input.getNumChannels(); ++ch)
-                envelope[(size_t) (i - lo)] += std::abs (input.getSample (ch, i));
+        if (flux[(size_t) j] < 1.5 * *middle)
+            continue;
 
-        std::vector<double> smoothed (envelope.size());
-        auto running = 0.0;
+        // Placed on the level, or failing that on the highs (a quiet hit over a dying thump).
+        auto at = riseStart (input, from, to, centres[(size_t) j], n, sampleRate, false);
 
-        for (size_t i = 0; i < envelope.size(); ++i)
-        {
-            running += envelope[i];
+        if (at < 0)
+            at = riseStart (input, from, to, centres[(size_t) j], n, sampleRate, true);
 
-            if (i >= (size_t) smooth)
-                running -= envelope[i - (size_t) smooth];
+        if (at < 0)
+            at = centres[(size_t) j];
 
-            smoothed[i] = running / smooth;
-        }
-
-        auto steepest = -1.0;
-        auto at = centres[(size_t) j];
-
-        for (size_t i = (size_t) smooth; i < smoothed.size(); ++i)
-        {
-            const auto rise = smoothed[i] - smoothed[i - (size_t) smooth];
-
-            if (rise > steepest)
-            {
-                steepest = rise;
-                at = lo + (int) i - smooth;
-            }
-        }
-
-        // Back to where the rise starts: the first sample, from 2 ms before the steepest point, whose
-        // level is a tenth of the way from the lowest there (smoothed) to the loudest in the 2 ms after.
-        const auto steep = at - lo;
-        auto lowest = std::numeric_limits<double>::max(), loudest = 0.0;
-
-        for (int i = juce::jmax (0, steep - 2 * smooth); i <= steep; ++i)
-            lowest = juce::jmin (lowest, smoothed[(size_t) i]);
-
-        for (int i = steep; i <= juce::jmin ((int) envelope.size() - 1, steep + 2 * smooth); ++i)
-            loudest = juce::jmax (loudest, envelope[(size_t) i]);
-
-        const auto threshold = lowest + 0.1 * (loudest - lowest);
-
-        for (int i = juce::jmax (0, steep - 2 * smooth); i <= juce::jmin ((int) envelope.size() - 1, steep + 2 * smooth); ++i)
-        {
-            if (envelope[(size_t) i] > threshold)
-            {
-                at = lo + i;
-                break;
-            }
-        }
-
-        if (found.empty() || at - found.back() > (int) (0.05 * sampleRate))
+        if (found.empty() || at - found.back() > gap)
             found.push_back (at);
+        else if (at < found.back() && (found.size() < 2 || at - found[found.size() - 2] > gap))
+            found.back() = at;
     }
+
+    std::sort (found.begin(), found.end());
 
     return found;
 }
@@ -252,41 +295,38 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
     const auto total = x.getNumSamples();
 
     // The time map. Each attack T stays where the stretch puts it, and up to half a frame either
-    // side of it plays 1:1, no nearer the last span than leaves the audio between them a ratio
-    // from 1/4 to 4; between spans the audio stretches to fit. The padding plays 1:1.
+    // side of it plays 1:1; between attacks the audio stretches to make up the length. Where two
+    // attacks (or an attack and an end) are too near for both their halves, they share what leaves
+    // the audio between them a ratio from 1/4 to 4, half each. The padding plays 1:1.
     const auto place = [&] (double t) { return pad + (t - pad) * ratio; };
     const auto reach = spanFrames * n;
+    const auto attacks = onsets (x, pad, pad + length, sampleRate);
+    const auto count = attacks.size();
+    std::vector<double> lead (count), trail (count);
+
+    for (size_t i = 0; i <= count; ++i)
+    {
+        const auto inA = i == 0 ? (double) pad : (double) attacks[i - 1];
+        const auto inB = i == count ? (double) (pad + length) : (double) attacks[i];
+        const auto gapIn = inB - inA, gapOut = place (inB) - place (inA);
+        // The most of the gap that can play 1:1: L with (gapOut - L) within (gapIn - L) / 4 .. 4 (gapIn - L).
+        auto most = juce::jmin (gapIn, gapOut);
+        most = ratio < 1.0 ? juce::jmin (most, (gapOut - 0.25 * gapIn) / 0.75) : juce::jmin (most, (4.0 * gapIn - gapOut) / 3.0);
+        most = juce::jmax (0.0, most);
+        const auto want = (i == 0 ? 0.0 : reach) + (i == count ? 0.0 : reach);
+        const auto share = want > most ? most / want : 1.0;
+
+        if (i < count)
+            lead[i] = want > most && i > 0 ? juce::jmin (reach, 0.5 * most) : reach * share;
+
+        if (i > 0)
+            trail[i - 1] = juce::jmin (reach, want > most && i < count ? juce::jmax (0.0, most - lead[i]) : reach * share);
+    }
+
     std::vector<Span> spans;
 
-    for (auto t : onsets (x, pad, pad + length, sampleRate))
-    {
-        const auto inFrom = spans.empty() ? (double) pad : spans.back().to;
-        const auto outFrom = spans.empty() ? (double) pad : place (spans.back().at) + (spans.back().to - spans.back().at);
-        const auto gapIn = t - inFrom, gapOut = place (t) - outFrom;
-        const auto fits = [&] (double before) { return gapOut - before <= 4.0 * (gapIn - before) && gapOut - before >= 0.25 * (gapIn - before); };
-        auto before = juce::jmin (reach, juce::jmax (0.0, juce::jmin (gapIn, gapOut)));
-
-        while (before > 0.0 && ! fits (before))
-            before -= 16.0;
-
-        before = juce::jmax (0.0, before);
-
-        if (! fits (before))
-            continue;
-
-        const auto after = juce::jmin (reach, (double) (pad + length - t), pad + length * ratio - place (t));
-        spans.push_back ({ t - before, t + juce::jmax (0.0, after), (double) t });
-    }
-
-    // A span reaching past where the next one starts (in the input or the output) ends there.
-    for (size_t i = 0; i + 1 < spans.size(); ++i)
-    {
-        auto& s = spans[i];
-        const auto& next = spans[i + 1];
-        const auto nextOut = place (next.at) - (next.at - next.from);
-        s.to = juce::jmin (s.to, next.from, s.at + (nextOut - place (s.at)));
-        s.to = juce::jmax (s.to, s.at);
-    }
+    for (size_t i = 0; i < count; ++i)
+        spans.push_back ({ attacks[i] - lead[i], attacks[i] + trail[i], (double) attacks[i] });
 
     TimeMap map;
     map.points = { { 0.0, 0.0 }, { (double) pad, (double) pad } };
@@ -301,10 +341,10 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
     map.points.push_back ({ (double) total, pad + length * ratio + pad });
     const auto outTotal = (int) std::ceil (pad + length * ratio + pad);
 
-    const auto spanOf = [&spans] (double at)
+    const auto spanOf = [&spans] (double where)
     {
         for (size_t i = 0; i < spans.size(); ++i)
-            if (at >= spans[i].from && at < spans[i].to)
+            if (where >= spans[i].from && where < spans[i].to)
                 return (int) i;
 
         return -1;
@@ -321,6 +361,8 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
     y.clear();
     std::vector<double> weight ((size_t) outTotal, 0.0);
     auto lastSpan = -1, previousStart = 0;
+    size_t nextAttack = 0;
+    std::vector<float> cut ((size_t) n);
     const auto frames = (outTotal + n) / hop + 1;
 
     for (int k = 0;; ++k)
@@ -336,11 +378,37 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
         const auto inStart = (int) std::lround (map.inputAt (outStart + n / 2.0) - n / 2.0);
         const auto inHop = k == 0 ? hop : inStart - previousStart;
 
+        const auto span = spanOf (inStart + n / 2.0);
+
+        // Outside the spans a frame holds only its own side of any attack in reach: none of it
+        // from cutBefore ahead of an attack past its centre, none until cutAfter after one before it.
+        cut = window;
+
+        if (span < 0)
+        {
+            for (const auto& s : spans)
+            {
+                if (s.at <= inStart - hop || s.at >= inStart + n)
+                    continue;
+
+                if (s.at >= inStart + n / 2.0)
+                {
+                    for (auto i = juce::jmax (0, (int) std::floor (s.at - cutBefore * sampleRate) - inStart); i < n; ++i)
+                        cut[(size_t) i] = 0.0f;
+                }
+                else
+                {
+                    for (auto i = 0; i < juce::jmin (n, (int) std::ceil (s.at + cutAfter * sampleRate) - inStart); ++i)
+                        cut[(size_t) i] = 0.0f;
+                }
+            }
+        }
+
         // Each bin's speed, from the turn of every channel's phase over one hop (weighted by level).
         for (int ch = 0; ch < channels; ++ch)
         {
-            transform (fft, x.getReadPointer (ch), total, inStart, window, work, now[(size_t) ch]);
-            transform (fft, x.getReadPointer (ch), total, inStart - hop, window, work, before[(size_t) ch]);
+            transform (fft, x.getReadPointer (ch), total, inStart, cut, work, now[(size_t) ch]);
+            transform (fft, x.getReadPointer (ch), total, inStart - hop, cut, work, before[(size_t) ch]);
         }
 
         for (int b = 0; b < bins; ++b)
@@ -360,11 +428,15 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
             speed[(size_t) b] = nominal + principal (std::arg (across) - nominal * hop) / hop;
         }
 
-        const auto span = spanOf (inStart + n / 2.0);
+        // Into an attack's span, or past an attack whose span is too short to hold a frame's centre:
+        // the input's own phases, so it comes out as it went in.
+        auto passed = false;
 
-        if (span >= 0 && span != lastSpan)
+        for (; nextAttack < spans.size() && spans[nextAttack].at <= inStart + n / 2.0; ++nextAttack)
+            passed = true;
+
+        if ((span >= 0 && span != lastSpan) || (passed && span < 0))
         {
-            // Into an attack's span: the input's own phases, so it comes out as it went in.
             std::fill (turn.begin(), turn.end(), 0.0);
         }
         else if (k > 0)
@@ -438,7 +510,7 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
                 out[t] += work[(size_t) i] * window[(size_t) i];
 
                 if (ch == 0)
-                    weight[(size_t) t] += (double) window[(size_t) i] * window[(size_t) i];
+                    weight[(size_t) t] += (double) cut[(size_t) i] * window[(size_t) i];
             }
         }
     }
@@ -451,7 +523,37 @@ juce::AudioBuffer<float> stretch (const juce::AudioBuffer<float>& input, double 
         for (int i = 0; i < outLength; ++i)
         {
             const auto w = weight[(size_t) (pad + i)];
-            to[i] = w > 1.0e-6 ? (float) (from[pad + i] / w) : 0.0f;
+            to[i] = w > 1.0e-3 ? (float) (from[pad + i] / w) : 0.0f;
+        }
+    }
+
+    // Each span (and at least cutBefore before its attack to cutAfter after) copied from the input
+    // where its attack goes, crossfaded over fadeSeconds at its edges.
+    const auto fade = juce::jmax (1, (int) std::lround (fadeSeconds * sampleRate));
+
+    for (const auto& s : spans)
+    {
+        const auto shift = place (s.at) - s.at;
+        const auto outFrom = (int) std::floor (juce::jmin (s.from, s.at - cutBefore * sampleRate) + shift) - fade;
+        const auto outTo = (int) std::ceil (juce::jmax (s.to, s.at + cutAfter * sampleRate) + shift) + fade;
+
+        for (auto t = outFrom; t < outTo; ++t)
+        {
+            const auto i = t - pad;
+            const auto j = (int) std::lround (t - shift);
+
+            if (i < 0 || i >= outLength || j < 0 || j >= total)
+                continue;
+
+            auto g = 1.0;
+
+            if (t < outFrom + fade)
+                g = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * (t - outFrom + 0.5) / fade);
+            else if (t >= outTo - fade)
+                g = 0.5 - 0.5 * std::cos (juce::MathConstants<double>::pi * (outTo - t - 0.5) / fade);
+
+            for (int ch = 0; ch < channels; ++ch)
+                result.setSample (ch, i, (float) (result.getSample (ch, i) * (1.0 - g) + x.getSample (ch, j) * g));
         }
     }
 

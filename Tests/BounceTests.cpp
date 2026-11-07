@@ -801,6 +801,97 @@ namespace
                "the 25 ms before it silent (" + juce::String ((int) foundClicks.size()) + " found, at most " + juce::String (worstOnset) + " samples out; peaks within "
                    + juce::String (worstPeak, 4) + "; at most " + juce::String (worstBefore, 1) + " dB before)");
 
+        // A busy kit: every 160 ms a kick (a 3 kHz click on a 60 Hz thump dying away over 80 ms) and
+        // two ghost hits 15 dB quieter, 60 and 110 ms after it, while the thump still sounds. Each hit
+        // is found, and comes out where the stretch puts it as it went in, the 10 ms before it unchanged.
+        juce::AudioBuffer<float> kit (2, 192000);
+        kit.clear();
+        std::vector<int> hits;
+        const auto addClick = [&kit] (int t, float gain)
+        {
+            for (int i = 0; i < 96; ++i)
+            {
+                const auto v = gain * std::sin (juce::MathConstants<float>::twoPi * 3000.0f * (float) i / (float) rate) * std::exp (-(float) i / 24.0f);
+                kit.addSample (0, t + i, v);
+                kit.addSample (1, t + i, v);
+            }
+        };
+
+        for (int t = 4800; t + 14400 < kit.getNumSamples(); t += 7680)
+        {
+            for (int i = 0; i < 14400; ++i)
+            {
+                const auto v = 0.4f * std::sin (juce::MathConstants<float>::twoPi * 60.0f * (float) i / (float) rate) * std::exp (-(float) i / 3840.0f);
+                kit.addSample (0, t + i, v);
+                kit.addSample (1, t + i, v);
+            }
+
+            addClick (t, 0.5f);
+            addClick (t + 2880, 0.09f);
+            addClick (t + 5280, 0.09f);
+            hits.insert (hits.end(), { t, t + 2880, t + 5280 });
+        }
+
+        const auto foundHits = PhaseVocoder::onsets (kit, 0, kit.getNumSamples(), rate);
+        auto hitsFound = 0, worstHit = 0;
+
+        for (auto t : hits)
+        {
+            auto nearest = std::numeric_limits<int>::max();
+
+            for (auto f : foundHits)
+                nearest = juce::jmin (nearest, std::abs (f - t));
+
+            if (nearest <= 48)
+                ++hitsFound;
+
+            worstHit = juce::jmax (worstHit, juce::jmin (nearest, 100000));
+        }
+
+        auto worstStray = 0.0;
+
+        for (auto ratio : { 0.5, 0.75, 1.5, 2.0 })
+        {
+            const auto out = TimeStretch::stretch (kit, ratio, rate, {}, own);
+
+            for (auto t : hits)
+            {
+                // Within a sample of where the stretch puts it (an attack found a sample late lands half one out).
+                auto stray = std::numeric_limits<double>::max();
+
+                for (int lag = -1; lag <= 1; ++lag)
+                {
+                    const auto placed = (int) std::lround (t * ratio) + lag;
+                    auto most = 0.0;
+
+                    for (int i = -48; i < 96; ++i)
+                        for (int ch = 0; ch < 2; ++ch)
+                            most = juce::jmax (most, (double) std::abs (out.getSample (ch, placed + i) - kit.getSample (ch, t + i)));
+
+                    stray = juce::jmin (stray, most);
+                }
+
+                worstStray = juce::jmax (worstStray, stray);
+            }
+        }
+
+        check (hitsFound == (int) hits.size() && (int) foundHits.size() == (int) hits.size() && worstStray < 0.01,
+               "own stretch: a busy kit's " + juce::String ((int) hits.size()) + " hits (ghost hits 15 dB down under a dying kick, 50 and 60 ms apart) are all found "
+               "within 1 ms, nothing else, and from 50% to 200% each comes out within a sample of where the stretch puts it as it went in, from 1 ms before (within 0.01) ("
+                   + juce::String ((int) foundHits.size()) + " found, " + juce::String (hitsFound) + " within 1 ms, worst " + juce::String (worstHit) + " samples; worst difference "
+                   + juce::String (worstStray, 4) + ")");
+
+        // Steady noise: no attacks.
+        juce::AudioBuffer<float> noise (2, 192000);
+        juce::Random noiseRandom (7);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < noise.getNumSamples(); ++i)
+                noise.setSample (ch, i, 0.2f * (noiseRandom.nextFloat() - 0.5f));
+
+        const auto noiseOnsets = PhaseVocoder::onsets (noise, 0, noise.getNumSamples(), rate);
+        check (noiseOnsets.empty(), "own stretch: no attacks found in 4 s of steady white noise (" + juce::String ((int) noiseOnsets.size()) + " found)");
+
         // A steady chord: no attacks found, and little energy away from its notes.
         const std::vector<double> notes { 220.0, 277.18, 329.63, 440.0 };
         juce::AudioBuffer<float> chord (2, 192000);

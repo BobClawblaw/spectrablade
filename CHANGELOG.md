@@ -4,6 +4,27 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 291: SpectraBlade Stretch catches more hits in busy drums**
+- Finding attacks:
+  - A hit counts when its spectral flux is over 1.5 times the median within 50 ms either side (it was the mean within 100 ms, which a loud neighbour pushed up) and over 0.8 dB (it was 2 dB). Hits may be 30 ms apart (it was 50 ms); of two closer than that, the earlier is kept.
+  - Each hit is placed on the steepest 1 ms rise that reaches a new high, over the loudest 1 ms in the 15 ms before. It is taken from the level, or, when the level only falls (a quiet hit over a kick's dying thump), from the size of each sample's step, which follows the hit's highs. Before, the thump's own swings could win, and a ghost hit's nearest attack could be 37 ms away.
+- Stretching round them:
+  - Attacks too close for half a frame either side now share the room between them, half each. Before, an attack whose span did not fit was dropped and stretched like everything else.
+  - The phases are set back at every attack, even one whose span is too short to hold a frame's centre.
+  - Each attack's span (at least 1 ms before to 3 ms after) is copied in from the input, crossfaded over 2 ms. Frames outside the spans leave out the far side of a nearby attack: from 1 ms before one ahead of them, and up to 3 ms after one behind.
+- Measured on the scratch prototype the code was ported from, against Milestone 290, with a stricter separate judge than Milestone 290's: an energy rise of 9 dB in the whole sound, under 200 Hz or over 4 kHz, that stays up.
+  - Synthetic busy kits at 100 and 140 BPM (86 hits): 86 found, with 3 extra (before: 85, 2 extra). Synthetic drums (29 hits): 29, none extra, as before. Steady chord, white and pink noise, a sweep with tremolo: no attacks, as before.
+  - Drum loop: 63 attacks found, matching 61 of the judge's 96 hits (before: 47 found, matching 48). Guitar: 13 of 15 (before 10). Speech: 51 of 74 (before 32). Electric piano: 1 attack found (before none).
+  - Synthetic drums from 50% to 200%: each hit's correlation with the original is 0.97 (0.92 at 200%); before, 0.62 to 0.82. Energy before each hit is -10.2 to -10.5 dB against the hit (before -6.3 to -10.4).
+  - Drum loop at 75%, 150% and 200%: 0.77, 0.64 and 0.54 (before 0.65, 0.62 and 0.61). It is worse at 200%, and changing how the hits are placed is what costs it: placed on the level alone, it was 0.61 at 200% but 0.71 at 75%.
+  - Speech: 0.80, 0.76, 0.70 (before 0.75, 0.75, 0.69). Guitar: 0.77, 0.69, 0.63 (before 0.79, 0.68, 0.67). Electric piano: 0.72, 0.64, 0.65 (before 0.73, 0.70, 0.69), worse at 150% and 200%, where it now finds one attack.
+  - Clicks every 80 ms: each comes out at its own peak at every ratio from 50% to 200%. Without the copies from the input, a peak was off by up to 0.29.
+- Measured by the tests:
+  - A busy kit's 69 hits (ghost hits 15 dB down under a dying kick, 50 and 60 ms apart): all found within 1 sample and nothing else. From 50% to 200%, each comes out within a sample of where the stretch puts it, matching the input from 1 ms before to 2 ms after (within 0.01; the largest difference measured was 0.0000). With the new detector but the old placement, 23 of the 69 were placed within 1 ms.
+  - Steady white noise: no attacks.
+  - The earlier checks still hold: the click train, chord, tone and speed. The whole suite passed (1349 checks).
+- Not tried by hand: listening to either the drum loop or the kits in the app.
+
 **Milestone 290: SpectraBlade Stretch, our own, with sharper attacks**
 - Stretch and Shift Pitch get a Method menu: Signalsmith Stretch, as before and still the default, or SpectraBlade Stretch, our own phase vocoder (Source/PhaseVocoder), written from the published methods. Sequence steps carry the method; steps saved before have none and keep Signalsmith Stretch. Stretching session clips stays with Signalsmith Stretch.
 - How it works:

@@ -11,9 +11,12 @@
       the frames are taken. All channels share one phase turn per frequency, so they keep their
       phase relations exactly; each frequency follows the turn of the peak it sits under (Laroche
       and Dolson's phase locking, 1999), so a note's partials move together.
-    - Attacks are found first (rising spectral flux). Each stays where the stretch puts it, half a
-      frame either side of it plays at its own speed with the phases set back to the input's, so
-      the attack comes out as it went in; the audio between stretches to make up the length. */
+    - Attacks are found first (rising spectral flux, against the median round it, so quiet hits
+      between loud ones count), each placed where its rise starts. Each stays where the stretch
+      puts it: up to half a frame either side of it plays at its own speed with the phases set back
+      to the input's (attacks too close for that share the room between them), and is copied in
+      from the input, so the attack comes out as it went in. Frames outside those stretches hold
+      none of an attack's other side. The audio between stretches to make up the length. */
 namespace PhaseVocoder
 {
     /** Where attacks start in the input (frames in [from, to)), in order. */
