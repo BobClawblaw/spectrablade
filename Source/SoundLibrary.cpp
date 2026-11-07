@@ -41,7 +41,7 @@ namespace
         JUCE_DECLARE_NON_COPYABLE (Statement)
     };
 
-    constexpr int schemaVersion = 3;   // 2 added the categories, 3 ratings, favourites and tags
+    constexpr int schemaVersion = 4;   // 2 added the categories, 3 ratings, favourites and tags, 4 names matching CatIDs only in their case
 
     /** What FTS5 is asked: each word searched for, as the start of a word, all of them. */
     juce::String matchFor (const juce::String& text)
@@ -274,7 +274,43 @@ Index::Index (const juce::File& database)
                                                        "COMMIT;"))
         return;
 
-    if (stored.isNotEmpty() && stored != "1" && stored != "2" && stored.getIntValue() != schemaVersion)
+    // Version 4: a name gives a category only when it starts with the CatID in its own case
+    // ("Wind_Chimes" and "beep_glitch" are not UCS names). Sounds whose names gave one that way
+    // lose it (unless it was set by hand) and are read again on the next scan, for their iXML.
+    if (stored == "1" || stored == "2" || stored == "3")
+    {
+        if (! exec ("BEGIN"))
+            return;
+
+        std::vector<juce::int64> loose;
+        {
+            Statement named (db, "SELECT id, name FROM sounds WHERE fileCatFrom = 1");
+
+            while (named.step())
+                if (Ucs::fromName (named.text (1)) == nullptr)
+                    loose.push_back (named.integer (0));
+
+            named.reset();
+        }
+
+        Statement forget (db, "UPDATE sounds SET fileCatId = NULL, fileCatFrom = 0, size = -1,"
+                              " catId = CASE WHEN catFrom = 3 THEN catId ELSE NULL END,"
+                              " catFrom = CASE WHEN catFrom = 3 THEN 3 ELSE 0 END WHERE id = ?");
+
+        for (const auto id : loose)
+        {
+            forget.bind (1, id);
+            forget.run();
+            forget.reset();
+            indexWords (id);
+        }
+
+        if (! upgrade ("UPDATE meta SET value = '4' WHERE key = 'schema';"
+                       "COMMIT;"))
+            return;
+    }
+
+    if (stored.isNotEmpty() && stored != "1" && stored != "2" && stored != "3" && stored.getIntValue() != schemaVersion)
     {
         error = "The Sound Library's index is from another version of SpectraBlade.";
         sqlite3_close (db);

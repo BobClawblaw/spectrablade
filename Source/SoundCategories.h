@@ -34,7 +34,8 @@ namespace Ucs
     /** The entry with this category and subcategory (ignoring case); null for none. */
     const Entry* byNames (const juce::String& category, const juce::String& subCategory);
 
-    /** The CatID that starts a UCS file name (before its first underscore); null for none. */
+    /** The CatID that starts a UCS file name (before its first underscore), in its own case
+        ("Wind_Chimes" and "beep_glitch" are ordinary names, not WIND and BEEP); null for none. */
     const Entry* fromName (const juce::String& nameWithoutExtension);
 
     /** The category an iXML chunk gives: USER CATID, else the ASWG catId, else USER CATEGORY and

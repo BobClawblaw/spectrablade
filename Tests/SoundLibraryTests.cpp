@@ -632,13 +632,13 @@ namespace
                "ucs: the bundled list holds UCS v8.2.1's 753 subcategories in 82 categories, with synonyms; DOORWood is DOORS / WOOD, found "
                "ignoring case and by its names; the 8.2.1 fix is in (WOODHndl, no WOODHandl)");
 
-        check (fromName ("DOORWood_Creak Old Barn_JD_SFX") == wood && fromName ("doorwood_Creak") == wood && fromName ("Door Creak") == nullptr
+        check (fromName ("DOORWood_Creak Old Barn_JD_SFX") == wood && fromName ("doorwood_Creak") == nullptr && fromName ("Wind_Chimes") == nullptr && fromName ("WIND_Gust") == byCatId ("WIND") && fromName ("Door Creak") == nullptr
                    && fromName ("_DOORWood") == nullptr && fromName ("NOPEcat_Thing") == nullptr
                    && fromIXml ("<BWFXML><USER><CATID>AIRBlow</CATID></USER></BWFXML>") == byCatId ("AIRBlow")
                    && fromIXml ("<BWFXML><ASWG><catId>AIRHiss</catId></ASWG></BWFXML>") == byCatId ("AIRHiss")
                    && fromIXml ("<BWFXML><USER><CATEGORY>AIR</CATEGORY><SUBCATEGORY>BURST</SUBCATEGORY></USER></BWFXML>") == byCatId ("AIRBrst")
                    && fromIXml ("<BWFXML><USER><CATID>NOPEcat</CATID></USER></BWFXML>") == nullptr && fromIXml ("not xml") == nullptr,
-               "ucs: a UCS name gives its CatID (before the first underscore, any case); iXML gives USER CATID, the ASWG catId, or USER "
+               "ucs: a UCS name gives its CatID (before the first underscore, in its own case: Wind_Chimes is no UCS name); iXML gives USER CATID, the ASWG catId, or USER "
                "CATEGORY and SUBCATEGORY; an unknown CatID or a plain name gives none");
     }
 
@@ -648,7 +648,7 @@ namespace
         formats.registerBasicFormats();
         const auto library = dir.getChildFile ("Categorised");
         writeWav (library.getChildFile ("DOORWood_Creak Old Barn_JD_SFX.wav"), 1000);
-        writeWav (library.getChildFile ("doorwood_Squeak_JD_SFX.wav"), 1100);
+        writeWav (library.getChildFile ("DOORWood_Squeak_JD_SFX.wav"), 1100);
         writeWithIXml (library.getChildFile ("Big Gust 01.wav"), 1200, "<BWFXML><USER><CATID>AIRBlow</CATID></USER></BWFXML>");
         writeWithIXml (library.getChildFile ("Valve Release.wav"), 1300,
                        "<BWFXML><USER><CATEGORY>AIR</CATEGORY><SUBCATEGORY>BURST</SUBCATEGORY></USER></BWFXML>");
@@ -681,7 +681,7 @@ namespace
                    && gust.catId == "AIRBlow" && gust.categoryFrom == From::metadata && valve.catId == "AIRBrst"
                    && leak.catId == "AIRHiss" && leak.categoryFrom == From::metadata && slam.catId == "DOORMetl" && slam.categoryFrom == From::name
                    && plain.catId.isEmpty() && plain.categoryFrom == From::none,
-               "sound library categories: a scan takes each sound's category from its UCS name (any case), else from its iXML (USER "
+               "sound library categories: a scan takes each sound's category from its UCS name, else from its iXML (USER "
                "CATID, USER CATEGORY and SUBCATEGORY, or the ASWG catId JUCE writes); the name wins over the iXML; a plain name and no "
                "iXML gives none");
 
@@ -864,6 +864,40 @@ namespace
         check (opened && upgraded && kept.size() == 1 && kept[0].rating == 3 && kept[0].favourite && kept[0].catId == "DOORWood",
                "sound library tags: an index from before ratings (version 2) opens with its sounds and categories, and takes ratings, "
                "favourites and tags");
+
+        // An index from M283 (version 3): names that matched a CatID only ignoring case lose that category.
+        const auto names = dir.getChildFile ("Case");
+        writeWav (names.getChildFile ("Wind_Chimes.wav"), 700);
+        writeWav (names.getChildFile ("beep_glitch.wav"), 800);
+        writeWav (names.getChildFile ("DOORWood_Creak.wav"), 900);
+        const auto three = dir.getChildFile ("tags/Version3.sqlite");
+        {
+            SoundLibrary::Index made (three);
+            made.addFolder (names);
+            made.scan (formats);
+        }
+        {
+            sqlite3* raw = nullptr;
+            sqlite3_open (three.getFullPathName().toRawUTF8(), &raw);
+            sqlite3_exec (raw, "UPDATE sounds SET catId = 'WIND', catFrom = 1, fileCatId = 'WIND', fileCatFrom = 1 WHERE name = 'Wind_Chimes';"
+                               "UPDATE sounds SET catId = 'DOORMetl', catFrom = 3, fileCatId = 'BEEP', fileCatFrom = 1 WHERE name = 'beep_glitch';"
+                               "UPDATE words SET text = text || ' WIND GENERAL' WHERE rowid = (SELECT id FROM sounds WHERE name = 'Wind_Chimes');"
+                               "UPDATE meta SET value = '3' WHERE key = 'schema';",
+                          nullptr, nullptr, nullptr);
+            sqlite3_close (raw);
+        }
+        SoundLibrary::Index four (three);
+        const auto named = [&four] (const char* word) { const auto f = four.find ({ word }); return f.size() == 1 ? f[0] : SoundLibrary::Sound(); };
+        const auto chimes = named ("chimes"), glitch = named ("glitch"), creak = named ("creak");
+        const auto generalGone = four.count ("general") == 0;
+        const auto rescanned = four.scan (formats);
+        const auto glitchAfter = named ("glitch");
+        check (four.isOpen() && chimes.catId.isEmpty() && chimes.categoryFrom == SoundLibrary::CategoryFrom::none && generalGone
+                   && glitch.catId == "DOORMetl" && glitch.categoryFrom == SoundLibrary::CategoryFrom::hand && creak.catId == "DOORWood"
+                   && rescanned.updated == 2 && named ("chimes").catId.isEmpty() && glitchAfter.catId == "DOORMetl",
+               "sound library categories: an index from before names matched CatIDs in their own case (version 3) opens with "
+               "Wind_Chimes no longer WIND (nor searched by it), beep_glitch keeping the category set by hand, DOORWood_Creak keeping "
+               "its own; the next scan reads the two again");
     }
 
     void testTagsView (const juce::File& dir)

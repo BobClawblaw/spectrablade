@@ -97,7 +97,7 @@ namespace Ucs
     const Entry* fromName (const juce::String& name)
     {
         const auto underscore = name.indexOfChar ('_');
-        return underscore > 0 ? byCatId (name.substring (0, underscore)) : nullptr;
+        return underscore > 0 ? at (table().exact, name.substring (0, underscore)) : nullptr;
     }
 
     const Entry* fromIXml (const juce::String& xml)
