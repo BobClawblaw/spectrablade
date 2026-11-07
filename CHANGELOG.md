@@ -4,6 +4,12 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 294: The Effects menu in groups**
+- The Effects menu was one list of 71 commands and the Fade Shape submenu. It is now twelve submenus by what the effects do: Level and Loudness, Fades (with Fade Shape), EQ, Dynamics (Noise Gate among them), Modulation and Delay, Reverb, Time and Pitch, Stereo and Channels, Silence, Generate, Noise Reduction and Repair, and Spectral. Apply Effects Rack and the command sequences stay at the bottom. The waveform's right-click menu shows the same groups.
+- Every command the menu had is still in it, none twice (checked by comparing the command lists before and after); shortcuts are unchanged.
+- Not tested by the suite (the menus are built in MainComponent, which is not in the test build). The whole suite passed (1353 checks); the app launched and quit cleanly.
+- Not tried by hand: opening the menus in the app.
+
 **Milestone 293: Previews for the generators**
 - Generate Tone, Generate DTMF Tones and Generate Noise get the Preview button (and Space) the other effect dialogs have. The preview plays the sound as it would go in: put in at the cursor (or the start of the selection) with what follows moved on, so you hear it against what is around it. It follows the settings as they change; Bypass plays what is there now. Of a sound longer than 30 s, the first 30 s play, and the dialog says so.
 - Generate Noise keeps one seed while its dialog is open, so the noise put in starts as the noise previewed did.

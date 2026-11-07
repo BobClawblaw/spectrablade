@@ -2510,15 +2510,45 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
-            add ({ cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, cmdLoudnessStats, 0, cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, cmdTremolo, cmdEcho, cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31, cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, 0, cmdChorus, cmdFlanger, cmdPhaser, cmdReverb, cmdConvolutionReverb });
+            // Grouped by what they do, so the menu stays short.
+            const auto group = [this, &menu] (const juce::String& name, std::initializer_list<int> ids, const juce::PopupMenu* extra = nullptr)
+            {
+                juce::PopupMenu sub;
+
+                for (auto id : ids)
+                {
+                    if (id == 0)
+                        sub.addSeparator();
+                    else
+                        sub.addCommandItem (&commands, id);
+                }
+
+                if (extra != nullptr)
+                    sub.addSubMenu ("Fade Shape", *extra, ! multitrackMode);
+
+                menu.addSubMenu (name, sub);
+            };
+
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
-            menu.addSubMenu ("Fade Shape", shapes, ! multitrackMode);
-            add ({ 0, cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise, cmdTrimSilence, cmdShortenPauses, cmdNoiseGate, cmdRepair, cmdInvert, cmdInvertLeft, cmdInvertRight, cmdReverse, cmdReverseRegions, cmdStretch, cmdPitch, cmdPitchCorrection, cmdRemoveDc, cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft, cmdMixToMono, cmdMakeStereo, cmdCrossfadeLoop, 0,
-                       cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal, 0, cmdCaptureNoisePrint, cmdNoiseReduction, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
+            group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats });
+            group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
+            group ("EQ", { cmdEqBand, cmdParametricEq, cmdGraphicEq10, cmdGraphicEq31 });
+            group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, cmdNoiseGate });
+            group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
+            group ("Reverb", { cmdReverb, cmdConvolutionReverb });
+            group ("Time and Pitch", { cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
+            group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
+                                            cmdMixToMono, cmdMakeStereo, 0, cmdInvert, cmdInvertLeft, cmdInvertRight });
+            group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
+            group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
+            menu.addSeparator();
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, 0, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
+            add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
         case 3:
