@@ -121,6 +121,17 @@ public:
     /** Called with a sound's file when its row is double-clicked. */
     std::function<void (const juce::File&)> onOpen;
 
+    /** Called with the files to insert at the cursor (Return, or Insert at Cursor in the menu);
+        true when they went in. */
+    std::function<bool (const juce::StringArray&)> onInsert;
+
+    /** What Return inserts: the selected sounds' files, or, with one sound selected and part of
+        its waveform selected in the preview, a file of that part (as dragging it out writes). */
+    juce::StringArray getFilesToInsert();
+
+    /** Inserts them through onInsert; false when there is nothing to insert or it didn't go in. */
+    bool insertSelection();
+
     SoundLibraryPreview& getPreview() noexcept          { return preview; }
 
     /** Plays the preview through this device (alongside whatever else plays through it); null to stop. */

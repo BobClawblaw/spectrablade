@@ -241,6 +241,9 @@ bool SoundLibraryView::keyPressed (const juce::KeyPress& key)
     if (search.hasKeyboardFocus (false))
         return false;
 
+    if (key == juce::KeyPress::returnKey)
+        return insertSelection() || true;
+
     if (key == juce::KeyPress::spaceKey)
     {
         preview.togglePlay();
@@ -744,6 +747,29 @@ void SoundLibraryView::updateTagChoices()
     tagChoice.setSelectedId (chosen, juce::dontSendNotification);
 }
 
+juce::StringArray SoundLibraryView::getFilesToInsert()
+{
+    auto files = getSelectedFiles();
+    const auto part = preview.getSelection();
+
+    if (files.size() == 1 && ! part.isEmpty() && juce::File (files[0]) == preview.getPlayer().getFile())
+    {
+        const auto written = SoundLibraryPreview::writePart (preview.getPlayer().getFile(), part, preview.getPartsFolder());
+        return written != juce::File() ? juce::StringArray { written.getFullPathName() } : juce::StringArray();
+    }
+
+    return files;
+}
+
+bool SoundLibraryView::insertSelection()
+{
+    if (onInsert == nullptr)
+        return false;
+
+    const auto files = getFilesToInsert();
+    return ! files.isEmpty() && onInsert (files);
+}
+
 juce::String SoundLibraryView::Written::describe() const
 {
     auto line = "Wrote " + juce::String (written) + (written == 1 ? " file" : " files");
@@ -908,6 +934,8 @@ void SoundLibraryView::showCategoryMenu()
     menu.addSubMenu ("Set Category", set);
     menu.addItem (1, "Clear Category Set by Hand");
     menu.addSeparator();
+    menu.addItem (60, "Insert at Cursor", onInsert != nullptr);
+    menu.addSeparator();
     menu.addItem (50, "Write Category and Tags into Files...", ! writing);
     menu.showMenuAsync (juce::PopupMenu::Options(), [this, selectedTags] (int result)
     {
@@ -919,6 +947,8 @@ void SoundLibraryView::showCategoryMenu()
             askForTag();
         else if (result == 50)
             askToWriteIntoFiles();
+        else if (result == 60)
+            insertSelection();
         else if (juce::isPositiveAndBelow (result - 40, selectedTags.size()))
             removeTagFromSelection (selectedTags[result - 40]);
         else if (result == 1)

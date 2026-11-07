@@ -4050,11 +4050,12 @@ void MainComponent::chooseFilesForSession()
                           preview);
 }
 
-void MainComponent::addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame)
+juce::int64 MainComponent::addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame)
 {
     auto next = *engine.session.getState();
     juce::StringArray errors;
     int added = 0;
+    juce::int64 firstEnd = -1;
 
     for (auto& path : files)
     {
@@ -4074,6 +4075,9 @@ void MainComponent::addFilesToSession (const juce::StringArray& files, int track
             loaded.snapshot = SampleRateConverter::convert (*loaded.snapshot, loaded.sampleRate, next.sampleRate);
 
         // The first file goes on the track it was dropped on; the rest on new tracks.
+        if (added == 0)
+            firstEnd = frame + loaded.snapshot->getNumFrames();
+
         SessionEdits::addClip (next, added == 0 ? track : -1, file, loaded.snapshot, frame);
         ++added;
     }
@@ -4087,6 +4091,8 @@ void MainComponent::addFilesToSession (const juce::StringArray& files, int track
 
     if (! errors.isEmpty())
         showError ("Import Audio", errors.joinIntoString ("\n"));
+
+    return firstEnd;
 }
 
 void MainComponent::openDocument (const juce::File& file)
@@ -5032,6 +5038,15 @@ void MainComponent::showSoundLibrary()
         soundLibrary = std::make_unique<SoundLibraryWindow> (juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                                                                  .getChildFile ("SpectraBlade").getChildFile ("Sound Library").getChildFile ("Index.sqlite"));
         soundLibrary->getView().onOpen = [this] (const juce::File& file) { openFile (file); };
+        soundLibrary->getView().onInsert = [this] (const juce::StringArray& files)
+        {
+            const auto end = addFilesToSession (files, multitrack.getSelectedTrack(), multitrack.getCursor());
+
+            if (end >= 0)
+                multitrack.setCursor (end);
+
+            return end >= 0;
+        };
         soundLibrary->getView().setAudioDevice (&engine.deviceManager);
         rememberPlace (*soundLibrary, "Sound Library");
     }

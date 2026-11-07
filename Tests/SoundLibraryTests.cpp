@@ -1124,6 +1124,68 @@ namespace
     }
 }
 
+namespace
+{
+    void testInsert (const juce::File& dir)
+    {
+        SoundLibraryView view (dir.getChildFile ("insert/Index.sqlite"));
+        view.setSize (1300, 700);
+        const auto folder = dir.getChildFile ("Sounds to Insert");
+        writeWav (folder.getChildFile ("Bell.wav"), 4800, 48000.0, 2, 24);
+        writeWav (folder.getChildFile ("Chime.wav"), 2400, 48000.0, 1, 16);
+        view.addFolder (folder);
+        TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+        view.setSort (SoundLibraryView::name, true);
+
+        const auto nothing = ! view.insertSelection();
+        std::vector<juce::StringArray> inserted;
+        auto accept = true;
+        view.onInsert = [&] (const juce::StringArray& files) { inserted.push_back (files); return accept; };
+        const auto noneSelected = ! view.insertSelection() && inserted.empty();
+
+        juce::SparseSet<int> bell;
+        bell.addRange ({ 0, 1 });
+        view.selectRows (bell);
+        const auto byReturn = view.keyPressed (juce::KeyPress (juce::KeyPress::returnKey));
+        const auto whole = inserted.size() == 1 && inserted[0] == juce::StringArray { folder.getChildFile ("Bell.wav").getFullPathName() };
+        accept = false;
+        const auto refused = ! view.insertSelection() && inserted.size() == 2;
+        accept = true;
+        check (nothing && noneSelected && byReturn && whole && refused,
+               "sound library insert: Return inserts the selected sound's file through the main window's hook; nothing selected (or no "
+               "hook) inserts nothing, and a refused insert says so");
+
+        // Part of the waveform selected: that part, written as a drag writes it.
+        TestUtils::runUntil ([&view] { return view.getPreview().getPlayer().getLength() > 0; }, 5000);
+        view.getPreview().setSelection ({ 1200, 3600 });
+        inserted.clear();
+        view.insertSelection();
+        std::unique_ptr<juce::AudioFormatReader> part;
+
+        if (inserted.size() == 1 && inserted[0].size() == 1)
+        {
+            juce::WavAudioFormat wav;
+            part.reset (wav.createReaderFor (juce::File (inserted[0][0]).createInputStream().release(), true));
+        }
+
+        check (part != nullptr && part->lengthInSamples == 2400 && part->numChannels == 2 && part->bitsPerSample == 24
+                   && juce::File (inserted[0][0]).getFileName().startsWith ("Bell ") && ! juce::File (inserted[0][0]).isAChildOf (folder),
+               "sound library insert: with part of the waveform selected, Return inserts that part (2,400 of 4,800 frames, its "
+               "channels and bits kept), written outside the library");
+
+        // Several sounds: all of them whole, whatever the preview's selection.
+        juce::SparseSet<int> both;
+        both.addRange ({ 0, 2 });
+        view.selectRows (both);
+        view.getPreview().setSelection ({ 1200, 3600 });
+        inserted.clear();
+        view.insertSelection();
+        check (inserted.size() == 1 && inserted[0] == juce::StringArray { folder.getChildFile ("Bell.wav").getFullPathName(),
+                                                                          folder.getChildFile ("Chime.wav").getFullPathName() },
+               "sound library insert: with several sounds selected, Return inserts them all whole, in the list's order");
+    }
+}
+
 void runSoundLibraryTests()
 {
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("SoundLibraryTests", {}, false);
@@ -1140,6 +1202,7 @@ void runSoundLibraryTests()
     testTags (dir);
     testTagsView (dir);
     testMetadata (dir);
+    testInsert (dir);
     testLarge (dir);
     dir.deleteRecursively();
 }

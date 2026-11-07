@@ -115,6 +115,9 @@ public:
     juce::int64 frameAt (float x) const;
     float xOf (juce::int64 frame) const;
 
+    /** The folder the parts dragged or inserted are written into. */
+    const juce::File& getPartsFolder() const noexcept   { return partsFolder; }
+
     /** Called with the file of the part being dragged out. */
     std::function<void (const juce::StringArray&)> onDragOut;
 
