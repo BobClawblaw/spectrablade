@@ -892,6 +892,84 @@ namespace
         const auto noiseOnsets = PhaseVocoder::onsets (noise, 0, noise.getNumSamples(), rate);
         check (noiseOnsets.empty(), "own stretch: no attacks found in 4 s of steady white noise (" + juce::String ((int) noiseOnsets.size()) + " found)");
 
+        // Hats over a bass line: every 125 ms a burst of bright noise dying away over 20 ms, about
+        // 20 dB under a steady 70 Hz bass. The bass's swings don't move where each hat is placed, so
+        // each comes out where the stretch puts it as it went in.
+        juce::AudioBuffer<float> hats (2, 192000);
+        std::vector<int> hatTimes;
+        juce::Random hatRandom (3);
+
+        for (int i = 0; i < hats.getNumSamples(); ++i)
+            for (int ch = 0; ch < 2; ++ch)
+                hats.setSample (ch, i, 0.25f * std::sin (juce::MathConstants<float>::twoPi * 70.0f * (float) i / (float) rate));
+
+        for (int t = 4800; t + 4800 < hats.getNumSamples(); t += 6000)
+        {
+            auto bright = 0.0f, last = 0.0f;
+
+            for (int i = 0; i < 4800; ++i)
+            {
+                const auto white = hatRandom.nextFloat() - 0.5f;
+                bright = 0.9f * (bright + white - last);
+                last = white;
+
+                for (int ch = 0; ch < 2; ++ch)
+                    hats.addSample (ch, t + i, 0.06f * bright * std::exp (-(float) i / 960.0f));
+            }
+
+            hatTimes.push_back (t);
+        }
+
+        const auto foundHats = PhaseVocoder::onsets (hats, 0, hats.getNumSamples(), rate);
+        auto hatsFound = 0, worstHat = 0;
+
+        for (auto t : hatTimes)
+        {
+            auto nearest = std::numeric_limits<int>::max();
+
+            for (auto f : foundHats)
+                nearest = juce::jmin (nearest, std::abs (f - t));
+
+            if (nearest <= 48)
+                ++hatsFound;
+
+            worstHat = juce::jmax (worstHat, juce::jmin (nearest, 100000));
+        }
+
+        auto worstHatStray = 0.0;
+
+        for (auto ratio : { 0.5, 0.75, 1.5, 2.0 })
+        {
+            const auto out = TimeStretch::stretch (hats, ratio, rate, {}, own);
+
+            for (auto t : hatTimes)
+            {
+                // Within 4 samples of where the stretch puts it (a hat found a few samples off its
+                // first sample lands that much times the stretch less one away).
+                auto stray = std::numeric_limits<double>::max();
+
+                for (int lag = -4; lag <= 4; ++lag)
+                {
+                    const auto placed = (int) std::lround (t * ratio) + lag;
+                    auto most = 0.0;
+
+                    for (int i = -48; i < 96; ++i)
+                        for (int ch = 0; ch < 2; ++ch)
+                            most = juce::jmax (most, (double) std::abs (out.getSample (ch, placed + i) - hats.getSample (ch, t + i)));
+
+                    stray = juce::jmin (stray, most);
+                }
+
+                worstHatStray = juce::jmax (worstHatStray, stray);
+            }
+        }
+
+        check (hatsFound == (int) hatTimes.size() && (int) foundHats.size() == (int) hatTimes.size() && worstHatStray < 0.01,
+               "own stretch: " + juce::String ((int) hatTimes.size()) + " hats about 20 dB under a 70 Hz bass are all found within 1 ms, nothing else, and from 50% to 200% "
+               "each comes out within 4 samples of where the stretch puts it as it went in, from 1 ms before (within 0.01) ("
+                   + juce::String ((int) foundHats.size()) + " found, " + juce::String (hatsFound) + " within 1 ms, worst " + juce::String (worstHat) + " samples; worst difference "
+                   + juce::String (worstHatStray, 4) + ")");
+
         // A steady chord: no attacks found, and little energy away from its notes.
         const std::vector<double> notes { 220.0, 277.18, 329.63, 440.0 };
         juce::AudioBuffer<float> chord (2, 192000);

@@ -4,6 +4,22 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 292: SpectraBlade Stretch places hits on their highs**
+- Each hit is now placed where its highs (the size of each sample's step) start to rise, and on the level only when the highs don't rise to a new high. Before, the level came first, and a bass line or a kick's body under a hit could move it: a hat over a bass note could be placed up to 8 ms away from where it starts, and a kick's click on the louder body that follows it.
+- The drop at 200% reported for Milestone 291 on the drum loop (0.61 to 0.54) was the judge's, not the stretch's. The judge marked each hit where the 2 ms window whose level jumped begins, which is 2 ms before the hit (2.0 ms early on 19 of 23 synthetic hits with known times). At 200% that puts a well-placed hit right at the edge of the ±2 ms the likeness search allows. Measured from where the hit really starts, Milestone 291 scores 0.80, 0.60 and 0.61 on the drum loop at 75%, 150% and 200%, and level-only placement 0.73, 0.63 and 0.63. The figures below use the corrected judge.
+- Measured on the scratch prototype the code was ported from, against Milestone 291:
+  - Synthetic drums over a bass line, six takes with known hit times (43 kicks with a click, 40 snares, 40 hats, 37 hats 15 dB quieter): placed within 2 ms: 38 kicks (before 25), all 40 snares (before 33), all 40 hats (before 25) and 32 quiet hats (before 15). Each hit's first 10 ms correlates 0.925 to 0.938 with the original from 50% to 200% (before 0.849 at 50%, 0.901 at 75%, 0.847 at 150% and 0.784 at 200%).
+  - 21 kicks with no click (a 2 ms fade-in) were not found at all, before or now.
+  - Synthetic drums (a hit every 125 ms over a quiet chord): 1.00 from 50% to 150% and 0.98 at 200% (before 0.97 and 0.92).
+  - Drum loop, at the 47 hits the judge finds over 4 kHz, where a hit's start is sharp: 0.984, 0.996 and 0.913 at 75%, 150% and 200% (before 0.985, 0.977 and 0.849). Allowing 10 ms either side, each of the 47 matches the original (1.00), before and now: what is left is hits placed 2 to 2.4 ms off, and one faint hat 17 ms before a louder hit, which the 30 ms gap folds into it.
+  - Drum loop at all 96 judged hits, which include rises under 200 Hz: 0.80, 0.61, 0.62 (before 0.80, 0.60, 0.61).
+  - Speech: 0.86, 0.88, 0.71 (before 0.85, 0.86, 0.70); over 4 kHz alone 0.900, 0.858, 0.655 (before 0.890, 0.791, 0.672). Guitar: 0.88, 0.67, 0.54 (before 0.82, 0.71, 0.56); over 4 kHz alone 0.989, 0.742, 0.544 (before 0.989, 0.701, 0.537). Electric piano: 0.73, 0.65, 0.68, as before.
+  - The busy kits' 69 hits (the test below) are placed as before: all within 1 ms.
+- Measured by the tests:
+  - 31 hats (bright noise dying away over 20 ms, about 20 dB under a 70 Hz bass): all found within 1 ms (the worst 4 samples) and nothing else. From 50% to 200% each comes out within 4 samples of where the stretch puts it, matching the input from 1 ms before to 2 ms after (within 0.01; the largest difference measured was 0.0000). On the prototype with the old order, 12 of the 31 were placed within 1 ms and the largest difference was 0.42.
+  - The earlier checks still hold, the busy kit among them. The whole suite passed (1350 checks).
+- Not tried by hand: listening in the app.
+
 **Milestone 291: SpectraBlade Stretch catches more hits in busy drums**
 - Finding attacks:
   - A hit counts when its spectral flux is over 1.5 times the median within 50 ms either side (it was the mean within 100 ms, which a loud neighbour pushed up) and over 0.8 dB (it was 2 dB). Hits may be 30 ms apart (it was 50 ms); of two closer than that, the earlier is kept.

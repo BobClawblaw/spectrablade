@@ -12,7 +12,7 @@
       phase relations exactly; each frequency follows the turn of the peak it sits under (Laroche
       and Dolson's phase locking, 1999), so a note's partials move together.
     - Attacks are found first (rising spectral flux, against the median round it, so quiet hits
-      between loud ones count), each placed where its rise starts. Each stays where the stretch
+      between loud ones count), each placed where its rise starts in the highs. Each stays where the stretch
       puts it: up to half a frame either side of it plays at its own speed with the phases set back
       to the input's (attacks too close for that share the room between them), and is copied in
       from the input, so the attack comes out as it went in. Frames outside those stretches hold

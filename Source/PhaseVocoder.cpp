@@ -254,11 +254,12 @@ std::vector<int> onsets (const juce::AudioBuffer<float>& input, int from, int to
         if (flux[(size_t) j] < 1.5 * *middle)
             continue;
 
-        // Placed on the level, or failing that on the highs (a quiet hit over a dying thump).
-        auto at = riseStart (input, from, to, centres[(size_t) j], n, sampleRate, false);
+        // Placed on the highs, where a hit's front is sharpest and a bass line or a kick's thump
+        // under it hardly moves them, or failing that on the level.
+        auto at = riseStart (input, from, to, centres[(size_t) j], n, sampleRate, true);
 
         if (at < 0)
-            at = riseStart (input, from, to, centres[(size_t) j], n, sampleRate, true);
+            at = riseStart (input, from, to, centres[(size_t) j], n, sampleRate, false);
 
         if (at < 0)
             at = centres[(size_t) j];
