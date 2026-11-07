@@ -533,8 +533,9 @@ namespace SessionEdits
 
     /** Makes a clip play processed audio of the part it played (from stretchedAudio() or
         pitchedAudio(), saved as file), all of it, from where it starts; its fades scale with
-        its length, and its takes go. False for a locked clip. */
-    bool stretchClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot stretched);
+        its length, and its takes go; with keepEnd it ends where it did (moved to start earlier
+        or later), not starting where it did. False for a locked clip. */
+    bool stretchClip (SessionState&, juce::uint32 clipId, const juce::File&, AudioDocument::Snapshot stretched, bool keepEnd = false);
 
     /** Clears [start, end) on a track: clips inside it go, clips across its edges are cut back
         (or split in two) and lose their fade on the cut side. False when nothing was there. */

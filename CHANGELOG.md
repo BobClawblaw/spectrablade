@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 269: Stretching session clips by dragging**
+- Option-dragging a clip's end (or start) in the multitrack view stretches it instead of trimming it: while dragging, an outline shows where it would play with its new length as a percentage; let go, and Stretch Clip runs on it (the same time stretch, in the background, its own file), as one step to undo. Dragged by the end it keeps its start; by the start, its end. It snaps as trimming does, and goes from half to twice its length, as Stretch Clip does.
+- A drag that ends at the length it began with does nothing, and without Option an edge still trims.
+- Measured by the tests: Option-dragging a 2 s clip's end to 4 s shows it ending at 3.998 s (to the pixel) without changing the session, and letting go asks for a stretch of 1.4988 keeping its start; from its start back to 0 s, 1.4988 keeping its end; past twice its length, exactly 2; a drag out and back to where it began asks nothing; without Option the edge trims. A clip stretched by 1.25 from its start ends where it did, 2.500 s long, and one that would start before 0 is refused. The whole suite passed (1257 checks). Not tried: snapping while stretching, the half-length limit, and the drag and the stretch it starts in the running app.
+
 **Milestone 268: The Pitch Editor on session clips**
 - In a session, Analyse in the Pitch Editor reads the selected clip (unlocked): all of it that plays, or the part under the time selection when there is one across it (up to 30 s, as for files). Its notes move, split, join and move in time as in a file.
 - Apply moves them in the part of the clip's audio that plays, writes that to a file of its own (beside recordings, as Shift Clip Pitch does) and has the clip play it from then on, in the same place, as long, with its fades and gain envelope, as one step to undo. Like Shift Clip Pitch, the clip's other takes go. If the clip's audio, offset or length changes before Apply, or while it works, nothing is applied and it asks for a new analysis.

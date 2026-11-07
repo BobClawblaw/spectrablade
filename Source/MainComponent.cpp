@@ -818,6 +818,18 @@ MainComponent::MainComponent()
     multitrack.onOpenInEditor = [this] (const juce::File& f) { openFile (f); };
     multitrack.onFilesDropped = [this] (const juce::StringArray& files, int track, juce::int64 frame) { addFilesToSession (files, track, frame); };
     multitrack.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
+
+    // Option-dragging a clip's edge: the clip (selected by the drag) stretched to where it was let go.
+    multitrack.onStretchClip = [this] (juce::uint32 clipId, double ratio, bool keepEnd)
+    {
+        if (multitrack.getSelectedClip() != clipId)
+            return;
+
+        processSelectedClip ("Stretch Clip", "Stretched", [ratio, rate = engine.session.getSampleRate()] (const SessionClip& c, const auto& progress)
+        {
+            return SessionEdits::stretchedAudio (c, ratio, rate, progress);
+        }, keepEnd);
+    };
     multitrack.onEditPlugin = [this] (juce::AudioPluginInstance& p) { showEditor (p); };
 
     waveform.getRecentFiles = [this]
@@ -3557,7 +3569,8 @@ void MainComponent::askToShiftSelectedClip()
 }
 
 void MainComponent::processSelectedClip (const juce::String& action, const juce::String& suffix,
-                                         std::function<AudioDocument::Snapshot (const SessionClip&, const std::function<bool (float)>&)> process)
+                                         std::function<AudioDocument::Snapshot (const SessionClip&, const std::function<bool (float)>&)> process,
+                                         bool keepEnd)
 {
     const auto state = engine.session.getState();
     const auto clipId = multitrack.getSelectedClip();
@@ -3594,7 +3607,7 @@ void MainComponent::processSelectedClip (const juce::String& action, const juce:
                                                 : AudioFileIO::save (**stretched, rate, file, 32, engine.formatManager);
             return true;
         },
-        [this, clipId, file, stretched, error, action]
+        [this, clipId, file, stretched, error, action, keepEnd]
         {
             if (error->isNotEmpty())
             {
@@ -3604,7 +3617,7 @@ void MainComponent::processSelectedClip (const juce::String& action, const juce:
 
             auto next = *engine.session.getState();
 
-            if (SessionEdits::stretchClip (next, clipId, file, *stretched))
+            if (SessionEdits::stretchClip (next, clipId, file, *stretched, keepEnd))
                 engine.session.apply (std::move (next), action);
         });
     backgroundJob->launchThread();

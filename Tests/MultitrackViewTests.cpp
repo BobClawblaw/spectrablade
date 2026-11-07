@@ -2285,6 +2285,82 @@ void runMultitrackViewTests (AudioEngine& engine)
                    + " to " + juce::String (frozen.getBlue()) + ")");
     }
 
+    {
+        // Option-dragging a clip's edge stretches it: one clip from 1 s to 3 s in a 10 s view.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        SessionEdits::addClip (s, 0, juce::File ("/tmp/a.wav"), silence (96000), 48000);
+        SessionEdits::addClip (s, 0, juce::File ("/tmp/b.wav"), silence (48000), 432000);
+        const auto id = s.tracks[0].clips[0].id;
+        engine.session.reset (s, {});
+        view.zoomToFit();
+        Mouse::settle();
+        const auto shown = view.getVisibleFrames();
+        const auto perPixel = shown.getLength() / timelineWidth;
+        const auto at = [&] (juce::int64 frame) { return (float) MultitrackView::headerWidth + (float) (((double) frame - shown.getStart()) / perPixel); };
+        juce::uint32 askedClip = 0;
+        double askedRatio = 0.0;
+        bool askedKeepEnd = false;
+        int asked = 0;
+        view.onStretchClip = [&] (juce::uint32 clipId, double ratio, bool keepEnd) { askedClip = clipId; askedRatio = ratio; askedKeepEnd = keepEnd; ++asked; };
+        const auto wasSnapping = view.isSnapping();
+        view.setSnapping (false);
+        const auto option = juce::ModifierKeys (juce::ModifierKeys::altModifier);
+
+        // While dragging the end to 4 s: an outline there, nothing changed yet.
+        const auto from = juce::Point<float> (at (144000) - 2.0f, bodyY), to = juce::Point<float> (at (192000) - 2.0f, bodyY);
+        const auto held = option.withFlags (juce::ModifierKeys::leftButtonModifier);
+        const auto steps = engine.session.getUndoDescription();
+        view.mouseDown (mouse.event (from, from, held, false));
+        view.mouseDrag (mouse.event (to, from, held, true));
+        const auto during = view.getStretchPreview();
+        const auto unchanged = engine.session.getState()->tracks[0].clips[0].length == 96000;
+        view.mouseUp (mouse.event (to, from, option, true));
+        Mouse::settle();
+        const auto endAsked = asked == 1 && askedClip == id && ! askedKeepEnd && std::abs (askedRatio - 1.5) < 2.0 * perPixel / 96000.0;
+
+        check (std::abs (during.getEnd() - 192000) <= (juce::int64) perPixel && during.getStart() == 48000 && unchanged && endAsked
+                   && view.getStretchPreview().isEmpty() && engine.session.getUndoDescription() == steps,
+               "stretch by dragging: Option-dragging a clip's end shows where it would end (" + juce::String ((double) during.getEnd() / rate, 3)
+                   + " s) without changing it, and letting go asks to stretch it by " + juce::String (askedRatio, 4) + ", keeping its start");
+
+        // From the start, back to 0 s (half as long again); past the most it can stretch (twice).
+        mouse.drag ({ at (48000) + 2.0f, bodyY }, { at (0) + 2.0f, bodyY }, option);
+        const auto startRatio = askedRatio;
+        const auto startAsked = asked == 2 && askedKeepEnd && std::abs (startRatio - 1.5) < 2.0 * perPixel / 96000.0;
+        mouse.drag ({ at (144000) - 2.0f, bodyY }, { at (480000), bodyY }, option);
+        const auto capped = asked == 3 && juce::exactlyEqual (askedRatio, 2.0);
+        view.mouseDown (mouse.event (from, from, held, false));
+        view.mouseDrag (mouse.event (to, from, held, true));
+        view.mouseDrag (mouse.event (from, from, held, true));
+        view.mouseUp (mouse.event (from, from, option, true));
+        Mouse::settle();
+        const auto sameLengthIgnored = asked == 3;
+        mouse.drag ({ at (144000) - 2.0f, bodyY }, { at (160000), bodyY });
+        const auto plainTrims = asked == 3 && engine.session.getUndoDescription() == "Trim Clip";
+
+        check (startAsked && capped && sameLengthIgnored && plainTrims,
+               "stretch by dragging: from the start it keeps the end (to 0 s, by " + juce::String (startRatio, 4) + "), it goes no further "
+               "than twice as long, a drag that ends where it began asks nothing, and without Option an edge still trims");
+
+        // Applied from the start: stretched audio, the clip ending where it did.
+        auto next = *engine.session.getState();
+        const auto before = next.tracks[0].clips[0];
+        const auto end = before.getEnd();
+        const auto stretched = SessionEdits::stretchedAudio (before, 1.25, rate);
+        const auto kept = SessionEdits::stretchClip (next, id, juce::File ("/tmp/a Stretched.wav"), stretched, true);
+        const auto& after = next.tracks[0].clips[0];
+        auto tooLong = next;
+        const auto refused = ! SessionEdits::stretchClip (tooLong, id, juce::File(), silence (after.getEnd() + 1), true);
+        check (kept && after.getEnd() == end && after.length == stretched->getNumFrames() && after.length == (juce::int64) std::llround (1.25 * (double) before.length)
+                   && after.position == end - after.length && refused,
+               "stretch by dragging: stretched from the start, the clip ends where it did, " + juce::String ((double) after.length / rate, 3)
+                   + " s long; one that would start before 0 is refused");
+        view.onStretchClip = nullptr;
+        view.setSnapping (wasSnapping);
+    }
+
     engine.session.reset ({}, {});
     Mouse::settle();
 }

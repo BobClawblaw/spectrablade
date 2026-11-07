@@ -38,6 +38,14 @@ public:
     std::function<void (const juce::StringArray& files, int track, juce::int64 frame)> onFilesDropped;
     std::function<void()> onSelectionChanged;
 
+    /** Option-dragging a clip's end (or start) and letting go: stretch the clip to this length, by
+        this ratio of its own (within TimeStretch::shortest to longest), keeping its start (or end)
+        where it is. */
+    std::function<void (juce::uint32 clipId, double ratio, bool keepEnd)> onStretchClip;
+
+    /** Where the clip being stretched would play now (empty when none is). */
+    juce::Range<juce::int64> getStretchPreview() const noexcept   { return stretchTo; }
+
     /** Asks for a track effect's editor window. */
     std::function<void (juce::AudioPluginInstance&)> onEditPlugin;
 
@@ -443,7 +451,9 @@ private:
     class TrackHeader;
     class SendsPanel;
 
-    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain, clipGainPoint, scrub };
+    enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain, clipGainPoint, scrub,
+                      stretchStart, stretchEnd };
+    juce::Range<juce::int64> stretchTo;   // while Option-dragging a clip's edge: where it would play, stretched
 
     /** A point of a clip's gain line, or a place on it. */
     struct ClipGainHit

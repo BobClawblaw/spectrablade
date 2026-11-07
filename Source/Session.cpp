@@ -966,12 +966,15 @@ AudioDocument::Snapshot playedPart (const SessionClip& c, const AudioDocument::S
     return AudioEdits::fromBuffer (std::move (part));
 }
 
-bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched)
+bool stretchClip (SessionState& s, juce::uint32 clipId, const juce::File& file, AudioDocument::Snapshot stretched, bool keepEnd)
 {
     auto* c = findUnlocked (s, clipId);
 
-    if (c == nullptr || stretched == nullptr || c->length <= 0)
+    if (c == nullptr || stretched == nullptr || c->length <= 0 || (keepEnd && stretched->getNumFrames() > c->getEnd()))
         return false;
+
+    if (keepEnd)
+        c->position = c->getEnd() - stretched->getNumFrames();
 
     const auto scale = (double) stretched->getNumFrames() / (double) c->length;
     auto line = lineAcross (c->gainEnvelope, c->offset, c->offset + c->length);

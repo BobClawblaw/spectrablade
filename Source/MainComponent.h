@@ -360,7 +360,8 @@ private:
     void askToStretchSelectedClip();
     void askToShiftSelectedClip();
     void processSelectedClip (const juce::String& action, const juce::String& suffix,
-                              std::function<AudioDocument::Snapshot (const SessionClip&, const std::function<bool (float)>&)> process);
+                              std::function<AudioDocument::Snapshot (const SessionClip&, const std::function<bool (float)>&)> process,
+                              bool keepEnd = false);
     void chooseStemsFolder (bool folders);
     void exportStems (const juce::File& folder, juce::Range<juce::int64>, bool folders);
 

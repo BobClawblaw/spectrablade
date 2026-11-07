@@ -1,6 +1,7 @@
 #include "MultitrackView.h"
 #include "Theme.h"
 #include "Surround.h"
+#include "TimeStretch.h"
 #include "PluginMenu.h"
 #include "Metronome.h"
 #include "TrackColours.h"
@@ -2477,6 +2478,20 @@ void MultitrackView::paint (juce::Graphics& g)
         if (x1 > x0)
             g.fillRect (juce::Rectangle<float> (x0, (float) timeRulerHeight - 5.0f, x1 - x0, 5.0f));
     }
+    // A clip being stretched: where it would play, outlined, with the ratio.
+    if (! stretchTo.isEmpty() && dragTrack >= 0 && dragTrack < (int) s.tracks.size())
+    {
+        auto stretched = dragClip;
+        stretched.position = stretchTo.getStart();
+        stretched.length = stretchTo.getLength();
+        const auto r = clipBounds (dragTrack, stretched).toFloat();
+        g.setColour (cursorColour);
+        g.drawRect (r, 2.0f);
+        g.setFont (11.0f);
+        g.drawText (juce::String (100.0 * (double) stretchTo.getLength() / (double) juce::jmax ((juce::int64) 1, dragClip.length), 1) + "%",
+                    r.reduced (6.0f, 2.0f), juce::Justification::topRight, false);
+    }
+
     g.setColour (Theme::surface);
     g.fillRect (0, 0, headerWidth, rulerHeight);
     g.setColour (Theme::text);
@@ -4175,12 +4190,19 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
                  : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimEnd
                  : Drag::move;
 
+        // With Option an edge stretches the clip instead of trimming it.
+        if (e.mods.isAltDown() && (drag == Drag::trimStart || drag == Drag::trimEnd))
+            drag = drag == Drag::trimStart ? Drag::stretchStart : Drag::stretchEnd;
+
+        stretchTo = {};
+
         // A locked clip is only selected; so is a group being moved with one in it.
         if (clip.locked || (drag == Drag::move && std::any_of (dragGroup.begin(), dragGroup.end(), [] (auto& c) { return c.locked; })))
             drag = Drag::none;
 
         dragDescription = drag == Drag::move ? "Move Clip" : drag == Drag::clipGain ? "Clip Gain" : drag == Drag::fadeIn ? "Clip Fade In"
-                        : drag == Drag::fadeOut ? "Clip Fade Out" : "Trim Clip";
+                        : drag == Drag::fadeOut ? "Clip Fade Out" : drag == Drag::stretchStart || drag == Drag::stretchEnd ? "Stretch Clip"
+                        : "Trim Clip";
         selectTrack (hit->first);
         return;
     }
@@ -4219,8 +4241,25 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
     if (drag == Drag::none || e.mouseWasDraggedSinceMouseDown() == false)
         return;
 
-    auto next = *engine.session.getState();
     const auto delta = frameForX ((float) p.x) - dragFrame;
+
+    // Stretching: only where it would play is shown; the audio is stretched once let go.
+    if (drag == Drag::stretchStart || drag == Drag::stretchEnd)
+    {
+        const auto end = dragClip.getEnd(), start = dragClip.position;
+        const auto shortest = (juce::int64) std::ceil ((double) dragClip.length * TimeStretch::shortest);
+        const auto longest = (juce::int64) std::floor ((double) dragClip.length * TimeStretch::longest);
+
+        if (drag == Drag::stretchEnd)
+            stretchTo = { start, start + juce::jlimit (shortest, longest, snapped (end + delta, dragClip.id) - start) };
+        else
+            stretchTo = { end - juce::jlimit (juce::jmin (shortest, end), juce::jmin (longest, end), end - snapped (start + delta, dragClip.id)), end };
+
+        repaint();
+        return;
+    }
+
+    auto next = *engine.session.getState();
 
     switch (drag)
     {
@@ -4314,6 +4353,8 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         case Drag::none:
         case Drag::range:
         case Drag::scrub:
+        case Drag::stretchStart:
+        case Drag::stretchEnd:
             break;
     }
 
@@ -4335,6 +4376,16 @@ void MultitrackView::mouseUp (const juce::MouseEvent&)
 {
     if (drag == Drag::scrub)
         engine.getPlayer().getScrubber().stop();
+
+    if ((drag == Drag::stretchStart || drag == Drag::stretchEnd) && ! stretchTo.isEmpty())
+    {
+        const auto to = std::exchange (stretchTo, {});
+
+        if (to.getLength() != dragClip.length && onStretchClip != nullptr)
+            onStretchClip (dragClip.id, (double) to.getLength() / (double) dragClip.length, drag == Drag::stretchStart);
+
+        repaint();
+    }
 
     if (preview.has_value())
     {
