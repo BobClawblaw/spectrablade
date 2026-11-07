@@ -3,7 +3,9 @@
 #include "../Source/SoundLibraryView.h"
 #include "../Source/Surround.h"
 #include "../Source/SoundCategories.h"
+#include "../Source/SoundMetadata.h"
 #include <sqlite3.h>
+#include <filesystem>
 #include "TestUtils.h"
 #include "SoundLibraryTests.h"
 
@@ -917,6 +919,211 @@ namespace
     }
 }
 
+namespace
+{
+    /** Appends a chunk to a WAV file and corrects its RIFF size. */
+    void appendChunk (const juce::File& file, const char* id, const juce::MemoryBlock& contents)
+    {
+        juce::MemoryBlock data;
+        file.loadFileAsData (data);
+        juce::MemoryOutputStream out (data, true);
+        out.writeInt ((int) juce::ByteOrder::littleEndianInt (id));
+        out.writeInt ((int) contents.getSize());
+        out.write (contents.getData(), contents.getSize());
+
+        if ((contents.getSize() & 1) != 0)
+            out.writeByte (0);
+
+        out.flush();
+        *reinterpret_cast<juce::uint32*> (static_cast<char*> (data.getData()) + 4) = juce::ByteOrder::swapIfBigEndian ((juce::uint32) (data.getSize() - 8));
+        file.replaceWithData (data.getData(), data.getSize());
+    }
+
+    juce::MemoryBlock bytesOf (const juce::File& f)
+    {
+        juce::MemoryBlock b;
+        f.loadFileAsData (b);
+        return b;
+    }
+
+    juce::MemoryBlock chunkBytes (const juce::File& f, const SoundMetadata::Chunk& c)
+    {
+        const auto all = bytesOf (f);
+        return { static_cast<const char*> (all.getData()) + c.start, (size_t) c.size };
+    }
+
+    juce::String ixmlOf (const juce::File& f)
+    {
+        for (const auto& c : SoundMetadata::chunksOf (f))
+            if (c.id == "iXML")
+                return chunkBytes (f, c).toString();
+
+        return {};
+    }
+
+    /** Every chunk but the iXML the same in both files, in the same order (the iXML where it was, or last). */
+    bool keptButIXml (const juce::File& before, const juce::File& after)
+    {
+        auto a = SoundMetadata::chunksOf (before), b = SoundMetadata::chunksOf (after);
+        const auto drop = [] (std::vector<SoundMetadata::Chunk>& v) { v.erase (std::remove_if (v.begin(), v.end(), [] (auto& c) { return c.id == "iXML"; }), v.end()); };
+        drop (a);
+        drop (b);
+
+        if (a.empty() || a.size() != b.size())
+            return false;
+
+        for (size_t i = 0; i < a.size(); ++i)
+            if (a[i].id != b[i].id || chunkBytes (before, a[i]) != chunkBytes (after, b[i]))
+                return false;
+
+        return true;
+    }
+
+    bool noTemporaryFiles (const juce::File& folder)
+    {
+        return folder.findChildFiles (juce::File::findFiles, false, "*.spectrablade-partial", juce::File::FollowSymlinks::no).isEmpty();
+    }
+
+    void testMetadata (const juce::File& dir)
+    {
+        const auto folder = dir.getChildFile ("Write");
+        const auto full = folder.getChildFile ("Creaky Old Door.wav");
+        writeWav (full, 3001, 48000.0, 2, 24, "An old barn door");
+        appendChunk (full, "smed", juce::MemoryBlock ("odd size", 7));
+        const juce::String oldXml ("<?xml version=\"1.0\"?><BWFXML><IXML_VERSION>1.61</IXML_VERSION><PROJECT>Film</PROJECT>"
+                                   "<USER><NOTE>keep this</NOTE><CATID>AIRBlow</CATID></USER></BWFXML>");
+        appendChunk (full, "iXML", juce::MemoryBlock (oldXml.toRawUTF8(), oldXml.getNumBytesAsUTF8()));
+        appendChunk (full, "LIST", juce::MemoryBlock ("INFOICMT\x04\0\0\0abc", 16));
+        const auto original = folder.getChildFile ("original.copy");
+        full.copyFileTo (original);
+        std::filesystem::permissions (full.getFullPathName().toStdString(), std::filesystem::perms (0640));
+
+        const auto written = SoundMetadata::write (full, { "DOORWood", { "Night", "Exterior" } });
+        const auto doc = juce::parseXML (ixmlOf (full));
+        const auto* user = doc != nullptr ? doc->getChildByName ("USER") : nullptr;
+        const auto* aswg = doc != nullptr ? doc->getChildByName ("ASWG") : nullptr;
+        const auto text = [] (const juce::XmlElement* e, const char* tag) { return e != nullptr && e->getChildByName (tag) != nullptr ? e->getChildByName (tag)->getAllSubText() : juce::String(); };
+        juce::StringArray ids;
+
+        for (const auto& c : SoundMetadata::chunksOf (full))
+            ids.add (c.id);
+
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (full));
+        const auto riffSize = (juce::int64) juce::ByteOrder::littleEndianInt (static_cast<const char*> (bytesOf (full).getData()) + 4);
+        check (written.isEmpty() && keptButIXml (original, full) && ids.indexOf ("iXML") == ids.indexOf ("smed") + 1 && ids[ids.size() - 1] == "LIST" && ids.contains ("data")
+                   && text (user, "CATID") == "DOORWood" && text (user, "CATEGORY") == "DOORS" && text (user, "SUBCATEGORY") == "WOOD"
+                   && text (user, "CATEGORYFULL") == "DOORS-WOOD" && text (user, "KEYWORDS") == "Night, Exterior" && text (user, "NOTE") == "keep this"
+                   && text (doc.get(), "PROJECT") == "Film" && text (aswg, "catId") == "DOORWood" && text (aswg, "subCategory") == "WOOD"
+                   && Ucs::fromIXml (ixmlOf (full)) == Ucs::byCatId ("DOORWood") && reader != nullptr && reader->lengthInSamples == 3001
+                   && riffSize == full.getSize() - 8 && noTemporaryFiles (folder)
+                   && std::filesystem::status (full.getFullPathName().toStdString()).permissions() == std::filesystem::perms (0640),
+               "sound library writing: a category and tags go into a WAV file's iXML (USER CATID, CATEGORY, SUBCATEGORY, CATEGORYFULL, "
+               "KEYWORDS; ASWG catId, category, subCategory), replacing the CatID there and keeping the rest of the iXML; every other "
+               "chunk (fmt, data, bext, an odd-sized chunk, LIST) is kept byte for byte and in its place, the RIFF size is right, the "
+               "file keeps its permissions and no temporary file is left");
+
+        // A file without iXML gets one at its end; tags alone leave the category alone.
+        const auto plain = folder.getChildFile ("Plain.wav");
+        writeWav (plain, 1001, 44100.0, 1, 16);
+        const auto plainBefore = folder.getChildFile ("plain.copy");
+        plain.copyFileTo (plainBefore);
+        const auto plainWritten = SoundMetadata::write (plain, { {}, { "Room" } });
+        const auto plainChunks = SoundMetadata::chunksOf (plain);
+        const auto plainDoc = juce::parseXML (ixmlOf (plain));
+        check (plainWritten.isEmpty() && keptButIXml (plainBefore, plain) && ! plainChunks.empty() && plainChunks.back().id == "iXML"
+                   && plainDoc != nullptr && plainDoc->getChildByName ("USER") != nullptr
+                   && text (plainDoc->getChildByName ("USER"), "KEYWORDS") == "Room" && text (plainDoc->getChildByName ("USER"), "CATID").isEmpty()
+                   && plainDoc->getChildByName ("ASWG") == nullptr,
+               "sound library writing: a WAV file without iXML gets one at its end, the rest kept byte for byte; tags alone write only "
+               "KEYWORDS");
+
+        // Refusals leave the file as it was.
+        const auto unchanged = [] (const juce::File& f, const juce::MemoryBlock& before) { return bytesOf (f) == before; };
+        const auto aiff = folder.getChildFile ("Sound.aiff");
+        {
+            juce::AiffAudioFormat format;
+            std::unique_ptr<juce::OutputStream> out (aiff.createOutputStream());
+            auto writer = format.createWriterFor (out, juce::AudioFormatWriterOptions().withSampleRate (48000.0).withNumChannels (1).withBitsPerSample (16));
+            juce::AudioBuffer<float> b (1, 100);
+            b.clear();
+            writer->writeFromAudioSampleBuffer (b, 0, 100);
+        }
+        const auto rf64 = folder.getChildFile ("Big.wav");
+        writeWav (rf64, 500);
+        {
+            auto b = bytesOf (rf64);
+            std::memcpy (b.getData(), "RF64", 4);
+            rf64.replaceWithData (b.getData(), b.getSize());
+        }
+        const auto badXml = folder.getChildFile ("Bad iXML.wav");
+        writeWav (badXml, 500);
+        appendChunk (badXml, "iXML", juce::MemoryBlock ("<BWFXML><USER>", 14));
+        const auto nul = folder.getChildFile ("NUL iXML.wav");
+        writeWav (nul, 500);
+        appendChunk (nul, "iXML", juce::MemoryBlock ("<BWFXML><BWF_VERSION>\x01\0</BWF_VERSION><NOTE>after</NOTE></BWFXML>", 64));
+        const auto cut = folder.getChildFile ("Cut.wav");
+        writeWav (cut, 5000);
+        {
+            auto b = bytesOf (cut);
+            cut.replaceWithData (b.getData(), b.getSize() - 100);
+        }
+        const auto locked = folder.getChildFile ("Locked.wav");
+        writeWav (locked, 500);
+        locked.setReadOnly (true);
+        const auto aiffBytes = bytesOf (aiff), rf64Bytes = bytesOf (rf64), badBytes = bytesOf (badXml), cutBytes = bytesOf (cut), lockedBytes = bytesOf (locked), nulBytes = bytesOf (nul);
+        const auto whyNul = SoundMetadata::write (nul, { "DOORWood", {} });
+        const auto whyAiff = SoundMetadata::write (aiff, { "DOORWood", {} });
+        const auto whyRf64 = SoundMetadata::write (rf64, { "DOORWood", {} });
+        const auto whyBad = SoundMetadata::write (badXml, { "DOORWood", {} });
+        const auto whyCut = SoundMetadata::write (cut, { "DOORWood", {} });
+        const auto whyLocked = SoundMetadata::write (locked, { "DOORWood", {} });
+        const auto whyNothing = SoundMetadata::write (plain, { "NOPEcat", {} });
+        locked.setReadOnly (false);
+        check (whyAiff.contains ("isn't a WAV") && whyRf64.contains ("RF64") && whyBad.contains ("iXML") && whyCut.contains ("past the end")
+                   && whyLocked.contains ("can't be written") && whyNothing.contains ("no category or tag") && whyNul.contains ("aren't text")
+                   && unchanged (nul, nulBytes)
+                   && unchanged (aiff, aiffBytes) && unchanged (rf64, rf64Bytes) && unchanged (badXml, badBytes) && unchanged (cut, cutBytes)
+                   && unchanged (locked, lockedBytes) && noTemporaryFiles (folder),
+               "sound library writing: refused, saying why and leaving the file as it was: an AIFF file (\"" + whyAiff + "\"), an RF64 "
+               "file, an iXML that isn't XML, an iXML with a NUL and a control byte inside (as some recorders write), chunks running past the end, a read-only file, and nothing (or an unknown CatID) to write");
+
+        // What was written is what the next scan reads; the window writes the selection.
+        original.deleteFile();
+        plainBefore.deleteFile();
+        SoundLibraryView view (dir.getChildFile ("write view/Index.sqlite"));
+        view.setSize (1300, 700);
+        const auto viewFolder = dir.getChildFile ("Write View");
+        writeWav (viewFolder.getChildFile ("Gate Clang.wav"), 800);
+        writeWav (viewFolder.getChildFile ("Gate Squeak.wav"), 900);
+        writeWav (viewFolder.getChildFile ("Untouched.wav"), 1000);
+        view.addFolder (viewFolder);
+        TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+        view.setSort (SoundLibraryView::name, true);
+        juce::SparseSet<int> gates;
+        gates.addRange ({ 0, 2 });
+        view.selectRows (gates);
+        view.setCategoryOfSelection ("DOORMetl");
+        view.selectRows (gates);
+        view.addTagToSelection ("Gate");
+        juce::SparseSet<int> all;
+        all.addRange ({ 0, 3 });
+        view.selectRows (all);
+        const auto before = bytesOf (viewFolder.getChildFile ("Untouched.wav"));
+        view.writeSelectionIntoFiles();
+        const auto finished = TestUtils::runUntil ([&view] { return ! view.isWriting() && ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+        const auto clang = Ucs::fromIXml (ixmlOf (viewFolder.getChildFile ("Gate Clang.wav")));
+        const auto summary = view.getSummary();
+        SoundLibrary::Index check2 (dir.getChildFile ("write view/Index.sqlite"));
+        const auto squeak = check2.find ({ "squeak" });
+        check (finished && clang == Ucs::byCatId ("DOORMetl") && unchanged (viewFolder.getChildFile ("Untouched.wav"), before)
+                   && summary.contains ("Wrote 2 files, skipped 1 with no category or tag. Last scan") && squeak.size() == 1 && squeak[0].catId == "DOORMetl" && squeak[0].tags == juce::StringArray { "Gate" } && noTemporaryFiles (viewFolder),
+               "sound library writing: the window writes the selected sounds' categories and tags on its own thread, skips one with "
+               "neither (left byte for byte), rescans, and keeps the category and tags (\"" + summary.fromFirstOccurrenceOf ("Wrote", true, false).upToFirstOccurrenceOf (". Last", false, false) + "\")");
+    }
+}
+
 void runSoundLibraryTests()
 {
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("SoundLibraryTests", {}, false);
@@ -932,6 +1139,7 @@ void runSoundLibraryTests()
     testCategoriesView (dir);
     testTags (dir);
     testTagsView (dir);
+    testMetadata (dir);
     testLarge (dir);
     dir.deleteRecursively();
 }
@@ -1038,3 +1246,65 @@ void runSoundLibraryOn (const juce::File& folder)
     dir.deleteRecursively();
 }
 
+void runWriteCheckOn (const juce::File& folder)
+{
+    const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("WriteCheck", {}, false);
+    dir.createDirectory();
+    int copied = 0, written = 0, kept = 0, read = 0, refused = 0;
+    juce::StringArray refusals;
+    juce::int64 chunks = 0;
+
+    for (const auto& top : folder.findChildFiles (juce::File::findDirectories, false, "*", juce::File::FollowSymlinks::no))
+    {
+        int taken = 0;
+
+        for (const auto& entry : juce::RangedDirectoryIterator (top, true, "*.wav", juce::File::findFiles))
+        {
+            if (taken == 2)
+                break;
+
+            const auto copy = dir.getChildFile (juce::String (copied) + " " + entry.getFile().getFileName());
+
+            if (! entry.getFile().copyFileTo (copy))
+                continue;
+
+            ++taken;
+            ++copied;
+            const auto before = dir.getChildFile (juce::String (copied) + ".original");
+            copy.copyFileTo (before);
+            const auto why = SoundMetadata::write (copy, { "DOORWood", { "Write Check", "Second Tag" } });
+
+            if (why.isNotEmpty())
+            {
+                ++refused;
+                refusals.addIfNotAlreadyThere (why);
+                const auto untouched = bytesOf (copy) == bytesOf (before);
+                kept += untouched ? 1 : 0;
+            }
+            else
+            {
+                ++written;
+                const auto same = keptButIXml (before, copy);
+                const auto doc = juce::parseXML (ixmlOf (copy));
+                const auto* user = doc != nullptr ? doc->getChildByName ("USER") : nullptr;
+                const auto* keywords = user != nullptr ? user->getChildByName ("KEYWORDS") : nullptr;
+                kept += same && Ucs::fromIXml (ixmlOf (copy)) == Ucs::byCatId ("DOORWood") && keywords != nullptr
+                        && keywords->getAllSubText() == "Write Check, Second Tag" ? 1 : 0;
+                chunks += (juce::int64) SoundMetadata::chunksOf (copy).size();
+                juce::WavAudioFormat wav;
+                std::unique_ptr<juce::AudioFormatReader> r (wav.createReaderFor (copy.createInputStream().release(), true));
+                read += r != nullptr && r->lengthInSamples > 0 ? 1 : 0;
+            }
+
+            before.deleteFile();
+            copy.deleteFile();
+        }
+    }
+
+    check (copied > 0 && kept == copied && read == written,
+           "writing into real files from " + folder.getFileName() + ": " + juce::String (copied) + " copies, " + juce::String (written)
+               + " written (" + juce::String (chunks) + " chunks in all, every one but the iXML kept byte for byte, the category and tags "
+               "read back, the audio readable), " + juce::String (refused) + " refused and left as they were"
+               + (refusals.isEmpty() ? juce::String() : " (" + refusals.joinIntoString ("; ") + ")"));
+    dir.deleteRecursively();
+}

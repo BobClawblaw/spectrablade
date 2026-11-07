@@ -25,6 +25,9 @@
     above the list shows only favourites, only sounds rated at least so many stars, or only those
     with a tag.
 
+    The right-click menu also writes the selected sounds' categories and tags into their WAV files
+    (see SoundMetadata.h), after asking, on a thread of its own; the folders are rescanned after.
+
     Below the table, the preview shows the sound last selected (see SoundLibraryPreview); the space
     bar plays and stops it, unless the search box is typed in. Parts dragged out of the preview are
     written beside the index, in its Parts folder. */
@@ -75,6 +78,23 @@ public:
     /** What the tag filter offers: "Any Tag", then each tag with its count. */
     juce::StringArray getTagChoices() const;
 
+    /** What writing categories and tags into files did. */
+    struct Written
+    {
+        int written = 0, skipped = 0, failed = 0;
+        juce::String firstFailure;      // "name: why"
+        juce::String describe() const;
+    };
+
+    /** Writes each sound's category and tags into its file (those with neither are skipped),
+        asking before each file whether to go on. */
+    static Written writeIntoFiles (const std::vector<SoundLibrary::Sound>&, const std::function<bool()>& keepGoing = {});
+
+    /** Writes the selected sounds' categories and tags into their files, on a thread of its own,
+        as the menu does once it is answered; the line below the list says what it did. */
+    void writeSelectionIntoFiles();
+    bool isWriting() const                              { return writing.load(); }
+
     /** Clicking a cell, as the mouse does (the x is from the cell's left edge). */
     void clickCell (int row, Column, int x);
 
@@ -119,6 +139,10 @@ private:
     void updateTagChoices();
     void askForTag();
     static constexpr int starWidth = 14;
+    void askToWriteIntoFiles();
+    std::atomic<bool> writing { false };
+    juce::String writtenNote;   // what writing into files did, said with the scan after it
+    std::unique_ptr<juce::Thread> writer;
 
     void paintRowBackground (juce::Graphics&, int row, int width, int height, bool selected) override;
     void paintCell (juce::Graphics&, int row, int column, int width, int height, bool selected) override;

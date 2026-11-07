@@ -1,6 +1,7 @@
 #include "SoundLibraryView.h"
 #include "Theme.h"
 #include "SoundCategories.h"
+#include "SoundMetadata.h"
 
 namespace
 {
@@ -216,6 +217,9 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
 
 SoundLibraryView::~SoundLibraryView()
 {
+    if (writer != nullptr)
+        writer->stopThread (-1);
+
     setAudioDevice (nullptr);
     previewPlayer.setSource (nullptr);
     table.removeMouseListener (this);
@@ -402,9 +406,10 @@ void SoundLibraryView::timerCallback()
 
     if (auto result = scanner->takeResult())
     {
-        scanNote = "Last scan: " + juce::String (result->added) + " added, " + juce::String (result->updated) + " updated, "
+        scanNote = (writtenNote.isNotEmpty() ? writtenNote + ". " : juce::String()) + "Last scan: " + juce::String (result->added) + " added, " + juce::String (result->updated) + " updated, "
                    + juce::String (result->removed) + " removed" + (result->unreadable > 0 ? ", " + juce::String (result->unreadable) + " unreadable" : juce::String())
                    + (result->stopped ? " (stopped)" : "");
+        writtenNote = {};
         refresh();
         return;
     }
@@ -739,6 +744,103 @@ void SoundLibraryView::updateTagChoices()
     tagChoice.setSelectedId (chosen, juce::dontSendNotification);
 }
 
+juce::String SoundLibraryView::Written::describe() const
+{
+    auto line = "Wrote " + juce::String (written) + (written == 1 ? " file" : " files");
+
+    if (skipped > 0)
+        line << ", skipped " << skipped << " with no category or tag";
+
+    if (failed > 0)
+        line << ", " << failed << " not written (" << firstFailure << (failed > 1 ? ", and others" : "") << ")";
+
+    return line;
+}
+
+SoundLibraryView::Written SoundLibraryView::writeIntoFiles (const std::vector<SoundLibrary::Sound>& sounds, const std::function<bool()>& keepGoing)
+{
+    Written w;
+
+    for (const auto& s : sounds)
+    {
+        if (keepGoing != nullptr && ! keepGoing())
+            break;
+
+        if (s.catId.isEmpty() && s.tags.isEmpty())
+        {
+            ++w.skipped;
+            continue;
+        }
+
+        if (const auto why = SoundMetadata::write (s.file, { s.catId, s.tags }); why.isEmpty())
+            ++w.written;
+        else if (++w.failed == 1)
+            w.firstFailure = s.file.getFileName() + ": " + why;
+    }
+
+    return w;
+}
+
+void SoundLibraryView::writeSelectionIntoFiles()
+{
+    if (writing.exchange (true))
+        return;
+
+    std::vector<SoundLibrary::Sound> sounds;
+    const auto selected = table.getSelectedRows();
+
+    for (int i = 0; i < selected.size(); ++i)
+        if (const auto* s = soundAt (selected[i]))
+            sounds.push_back (*s);
+
+    struct Job final : public juce::Thread
+    {
+        Job (SoundLibraryView& v, std::vector<SoundLibrary::Sound> s) : juce::Thread ("Sound Library writing"), view (&v), sounds (std::move (s)) {}
+
+        void run() override
+        {
+            const auto result = writeIntoFiles (sounds, [this] { return ! threadShouldExit(); });
+            juce::MessageManager::callAsync ([v = view, result]
+            {
+                if (v == nullptr)
+                    return;
+
+                v->scanNote = result.describe();
+                v->writtenNote = v->scanNote;
+                v->writing = false;
+                v->rescan();
+            });
+        }
+
+        juce::Component::SafePointer<SoundLibraryView> view;
+        std::vector<SoundLibrary::Sound> sounds;
+    };
+
+    if (writer != nullptr)
+        writer->stopThread (-1);
+
+    scanNote = "Writing into " + juce::String ((int) sounds.size()) + " files...";
+    updateSummary();
+    writer = std::make_unique<Job> (*this, std::move (sounds));
+    writer->startThread();
+}
+
+void SoundLibraryView::askToWriteIntoFiles()
+{
+    const auto many = table.getNumSelectedRows();
+    juce::AlertWindow::showAsync (juce::MessageBoxOptions().withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                      .withTitle ("Write into Files")
+                                      .withMessage ("Write the categories and tags of " + juce::String (many) + (many == 1 ? " sound" : " sounds")
+                                                    + " into their files?\n\nOnly WAV files are written, in their iXML. Each is rewritten through a "
+                                                      "checked copy that replaces it only when whole; its audio and other chunks are kept byte for byte.")
+                                      .withButton ("Write").withButton ("Cancel").withAssociatedComponent (this),
+                                  [safe = juce::Component::SafePointer<SoundLibraryView> (this)] (int result)
+                                  {
+                                      if (safe != nullptr && result == 1)
+                                          safe->writeSelectionIntoFiles();
+                                  });
+}
+
 void SoundLibraryView::askForTag()
 {
     auto* window = new juce::AlertWindow ("Add Tag", "A tag for the selected sounds:", juce::MessageBoxIconType::NoIcon, this);
@@ -805,6 +907,8 @@ void SoundLibraryView::showCategoryMenu()
     menu.addSeparator();
     menu.addSubMenu ("Set Category", set);
     menu.addItem (1, "Clear Category Set by Hand");
+    menu.addSeparator();
+    menu.addItem (50, "Write Category and Tags into Files...", ! writing);
     menu.showMenuAsync (juce::PopupMenu::Options(), [this, selectedTags] (int result)
     {
         if (result >= 10 && result <= 15)
@@ -813,6 +917,8 @@ void SoundLibraryView::showCategoryMenu()
             setFavouriteOfSelection (result == 20);
         else if (result == 30)
             askForTag();
+        else if (result == 50)
+            askToWriteIntoFiles();
         else if (juce::isPositiveAndBelow (result - 40, selectedTags.size()))
             removeTagFromSelection (selectedTags[result - 40]);
         else if (result == 1)

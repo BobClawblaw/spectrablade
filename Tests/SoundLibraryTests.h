@@ -10,3 +10,8 @@ void runSoundLibraryTests();
     scans it again with nothing changed, and times searches, printing as it goes. Only reads the
     library's files. */
 void runSoundLibraryOn (const juce::File& folder);
+
+/** Real files: copies the first two WAV files in each folder at the top of this one into a
+    temporary folder (deleted after), writes a category and tags into each copy, and checks every
+    other chunk is kept byte for byte. The library's own files are only read. */
+void runWriteCheckOn (const juce::File& folder);

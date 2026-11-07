@@ -510,6 +510,7 @@ int main (int argc, char* argv[])
     //   --app <executable>      use this copy of the app as the scan worker
     //   --plugin-sweep <report> only scan every plug-in on this machine and write what works
     //   --library <folder>      only scan this folder of sounds into a new Sound Library index, and time it
+    //   --write-check <folder>  only write categories and tags into copies of WAV files from this folder, and check them
     juce::StringArray args;
 
     for (int i = 1; i < argc; ++i)
@@ -529,6 +530,13 @@ int main (int argc, char* argv[])
         AudioEngine engine;
         runPluginSweep (engine, juce::File::getCurrentWorkingDirectory().getChildFile (report));
         return 0;
+    }
+
+    if (const auto folder = valueOf ("--write-check"); folder.isNotEmpty())
+    {
+        runWriteCheckOn (juce::File::getCurrentWorkingDirectory().getChildFile (folder));
+        std::cout << (TestUtils::failures == 0 ? "ALL PASSED" : juce::String (TestUtils::failures) + " FAILED") << std::endl;
+        return TestUtils::failures == 0 ? 0 : 1;
     }
 
     if (const auto folder = valueOf ("--library"); folder.isNotEmpty())
