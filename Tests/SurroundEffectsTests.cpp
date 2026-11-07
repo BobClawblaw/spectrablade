@@ -5,6 +5,7 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/AudioFileIO.h"
 #include "../Source/BuiltInEffects.h"
+#include "../Source/Dynamics.h"
 #include "../Source/OfflineRender.h"
 #include "../Source/RackCopy.h"
 #include "../Source/SessionMixer.h"
@@ -127,6 +128,12 @@ namespace
         BuiltInEffects::setExactly (*l.gain, 9.0f);
     }
 
+    /** A parametric EQ (a 9 dB bell at 1 kHz) and a phaser: built-in effects that don't link channels. */
+    void setUpPairs (juce::AudioPluginInstance& eq)
+    {
+        BuiltInEffects::setExactly (dynamic_cast<BuiltInEffects::ParametricEqProcessor&> (eq).gainParameter (2), 9.0f);
+    }
+
     void testBuiltIns (AudioEngine& engine)
     {
         juce::AudioPluginFormatManager formats;
@@ -135,8 +142,8 @@ namespace
         const auto s = session (audio);
         const auto id = s.tracks[0].id;
 
-        // The compressor is on the track before it is a 5.1 track, the limiter added after; the
-        // compressor's threshold is changed once its copies are there.
+        // The EQ is on the track before it is a 5.1 track, the phaser added after; the EQ's gain is
+        // changed once its copies are there.
         TrackEffects effects;
         effects.prepare (rate);
         effects.makeCopy = [&formats] (const juce::PluginDescription& d)
@@ -144,10 +151,10 @@ namespace
             juce::String error;
             return formats.createPluginInstance (d, rate, TrackEffects::maxBlock, error);
         };
-        effects.add (id, make (formats, BuiltInEffects::compressorId));
+        effects.add (id, make (formats, BuiltInEffects::parametricEqId));
         const auto failed = effects.setWideTracks ({ id });
-        effects.add (id, make (formats, BuiltInEffects::limiterId));
-        setUp (*effects.getPlugin (id, 0), *effects.getPlugin (id, 1), -24.0f);
+        effects.add (id, make (formats, BuiltInEffects::phaserId));
+        setUpPairs (*effects.getPlugin (id, 0));
         const auto copies = effects.getNumCopies (id, 0) == 2 && effects.getNumCopies (id, 1) == 2 && failed.isEmpty();
         const auto out = render (s, 97, &effects);
 
@@ -160,21 +167,91 @@ namespace
             const auto stereo = session (channelsOf (*audio, 2 * pair, 2));
             TrackEffects alone;
             alone.prepare (rate);
-            alone.add (stereo.tracks[0].id, make (formats, BuiltInEffects::compressorId));
-            alone.add (stereo.tracks[0].id, make (formats, BuiltInEffects::limiterId));
-            setUp (*alone.getPlugin (stereo.tracks[0].id, 0), *alone.getPlugin (stereo.tracks[0].id, 1), -24.0f);
+            alone.add (stereo.tracks[0].id, make (formats, BuiltInEffects::parametricEqId));
+            alone.add (stereo.tracks[0].id, make (formats, BuiltInEffects::phaserId));
+            setUpPairs (*alone.getPlugin (stereo.tracks[0].id, 0));
             const auto want = render (stereo, 97, &alone);
             pairsSame = pairsSame && same (out, 2 * pair, want, 0) && same (out, 2 * pair + 1, want, 1) && ! silent (want, 0);
         }
 
-        for (int ch = 0; ch < 6; ++ch)
-            loudest = juce::jmax (loudest, out.getMagnitude (ch, 0, frames));
+        auto changed = false;
 
-        check (copies && pairsSame && effects.getChainLatency (id) == 240 && loudest <= juce::Decibels::decibelsToGain (-1.0f) + 1.0e-6f,
-               "5.1 track effects: a compressor and a limiter (240 frames of look-ahead) on a 5.1 track run on L R, C LFE and Ls Rs as "
-               "three stereo copies, each pair bit for bit what the same effects make of it on a stereo track, in time (blocks of 97); "
-               "copies are made when the track becomes 5.1 and for effects added after, and follow settings changed later "
-               "(loudest " + juce::String (juce::Decibels::gainToDecibels (loudest), 2) + " dBFS under a -1 dB ceiling)");
+        for (int ch = 0; ch < 6; ++ch)
+            changed = changed || ! same (out, ch, render (s, 97, nullptr), ch);
+
+        check (copies && pairsSame && changed,
+               "5.1 track effects: a parametric EQ and a phaser on a 5.1 track run on L R, C LFE and Ls Rs as three stereo copies, "
+               "each pair bit for bit what the same effects make of it on a stereo track (blocks of 97); copies are made when the "
+               "track becomes 5.1 and for effects added after, and follow settings changed later");
+
+        // The compressor and the limiter link the six: they hear them as one and turn them all down
+        // together, as compressing and then limiting the six as one file does.
+        {
+            TrackEffects dynamics;
+            dynamics.prepare (rate);
+            dynamics.makeCopy = effects.makeCopy;
+            dynamics.setWideTracks ({ id });
+            dynamics.add (id, make (formats, BuiltInEffects::compressorId));
+            dynamics.add (id, make (formats, BuiltInEffects::limiterId));
+            setUp (*dynamics.getPlugin (id, 0), *dynamics.getPlugin (id, 1), -24.0f);
+            const auto linked = render (s, 97, &dynamics);
+            const auto dry = render (s, 97, nullptr);
+            const auto& compressor = dynamic_cast<BuiltInEffects::CompressorProcessor&> (*dynamics.getPlugin (id, 0));
+            const auto& limiter = dynamic_cast<BuiltInEffects::LimiterProcessor&> (*dynamics.getPlugin (id, 1));
+            const auto drySnap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (dry));
+            const auto compressed = Dynamics::compress (*drySnap, 0, frames, rate, compressor.getSettings());
+            const auto limited = Dynamics::limit (*compressed, 0, frames, rate, limiter.getSettings());
+            juce::AudioBuffer<float> want (6, frames);
+            limited->read (want, 0, 0, frames);
+            float worstOff = 0.0f;
+            double spread = 0.0;
+
+            for (int i = 0; i < frames; ++i)
+            {
+                // One gain on every channel: each one's output over its input is the same.
+                double low = 1.0e9, high = -1.0e9;
+
+                for (int ch = 0; ch < 6; ++ch)
+                {
+                    worstOff = juce::jmax (worstOff, std::abs (linked.getSample (ch, i) - want.getSample (ch, i)));
+
+                    if (std::abs (dry.getSample (ch, i)) > 1.0e-3f)
+                    {
+                        const auto g = (double) linked.getSample (ch, i) / dry.getSample (ch, i);
+                        low = juce::jmin (low, g);
+                        high = juce::jmax (high, g);
+                    }
+                }
+
+                if (high >= low)
+                    spread = juce::jmax (spread, high - low);
+            }
+
+            for (int ch = 0; ch < 6; ++ch)
+                loudest = juce::jmax (loudest, linked.getMagnitude (ch, 0, frames));
+
+            check (worstOff == 0.0f && spread < 1.0e-5 && loudest <= juce::Decibels::decibelsToGain (-1.0f) + 1.0e-6f && dynamics.getChainLatency (id) == 240,
+                   "5.1 track effects: a compressor and a limiter (240 frames of look-ahead) on a 5.1 track link the six channels, "
+                   "bit for bit what compressing and then limiting the six as one file gives, in time (blocks of 97): every channel "
+                   "gets the same gain each frame (within " + juce::String (spread, 7) + "), the loudest at "
+                   + juce::String (juce::Decibels::gainToDecibels (loudest), 2) + " dBFS under a -1 dB ceiling");
+
+            // With Sidechain on, the compressor is left to the pairs: each hears the key, not the six.
+            auto keyed = make (formats, BuiltInEffects::compressorId);
+            auto& c = dynamic_cast<BuiltInEffects::CompressorProcessor&> (*keyed);
+            c.prepareToPlay (rate, 97);
+            juce::AudioBuffer<float> six (6, 97);
+            six.clear();
+            const auto linksPlain = c.processLinked (six);
+            *c.sidechain = true;
+            const auto linksKeyed = c.processLinked (six);
+            auto eq = make (formats, BuiltInEffects::parametricEqId);
+            const auto linksEq = dynamic_cast<BuiltInEffects::BuiltInEffect&> (*eq).processLinked (six);
+
+            check (linksPlain && ! linksKeyed && ! linksEq,
+                   "5.1 track effects: a compressor with Sidechain on, and effects other than the compressor and limiter (a parametric "
+                   "EQ), don't link the six; they run on the three pairs");
+        }
 
         // A mixdown makes its own copies from the saved chain and gives the same six channels.
         std::map<juce::uint32, std::unique_ptr<juce::XmlElement>> chains;

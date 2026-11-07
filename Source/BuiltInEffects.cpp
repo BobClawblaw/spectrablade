@@ -688,7 +688,7 @@ void CompressorProcessor::prepareToPlay (double sampleRate, int)
     core.reset();
 }
 
-void CompressorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void CompressorProcessor::refreshSettings()
 {
     const auto now = getSettings();
 
@@ -699,28 +699,38 @@ void CompressorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         applied = now;
         core.set (applied, rate);
     }
+}
 
+void CompressorProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    refreshSettings();
     const auto channels = juce::jmin (buffer.getNumChannels(), getChannelCountOfBus (true, 0));
 
     // The level comes from the sidechain input when it is switched on (silence when nothing feeds it).
     const auto keyed = sidechain->get() && getBusCount (true) > 1 && getChannelCountOfBus (true, 1) > 0;
     const auto firstKey = keyed ? getChannelIndexInProcessBlockBuffer (true, 1, 0) : 0;
     const auto keyChannels = keyed ? juce::jmin (getChannelCountOfBus (true, 1), buffer.getNumChannels() - firstKey) : channels;
+    compress (buffer, channels, firstKey, keyChannels);
+}
 
+bool CompressorProcessor::processLinked (juce::AudioBuffer<float>& audio)
+{
+    if (sidechain->get() || audio.getNumChannels() > mostLinkedChannels)
+        return false;
+
+    refreshSettings();
+    compress (audio, audio.getNumChannels(), 0, audio.getNumChannels());
+    return true;
+}
+
+void CompressorProcessor::compress (juce::AudioBuffer<float>& buffer, int channels, int firstKey, int keyChannels)
+{
     for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
         double level = 0.0;
 
-        if (keyed)
-        {
-            for (int ch = firstKey; ch < firstKey + keyChannels; ++ch)
-                level = juce::jmax (level, (double) std::abs (buffer.getSample (ch, i)));
-        }
-        else
-        {
-            for (int ch = 0; ch < channels; ++ch)
-                level = juce::jmax (level, (double) std::abs (buffer.getSample (ch, i)));
-        }
+        for (int ch = firstKey; ch < firstKey + keyChannels; ++ch)
+            level = juce::jmax (level, (double) std::abs (buffer.getSample (ch, i)));
 
         const auto factor = core.next (level);
 
@@ -757,7 +767,7 @@ void LimiterProcessor::prepareToPlay (double sampleRate, int)
     rate = sampleRate;
     const auto ahead = Dynamics::lookaheadFrames (getSettings(), rate);
     setLatencySamples (ahead);
-    delay.setSize (juce::jmax (1, getTotalNumInputChannels()), ahead);
+    delay.setSize (juce::jmax (mostLinkedChannels, getTotalNumInputChannels()), ahead);
     reset();
 }
 
@@ -771,11 +781,24 @@ void LimiterProcessor::reset()
 
 void LimiterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
+    limit (buffer, juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels()));
+}
+
+bool LimiterProcessor::processLinked (juce::AudioBuffer<float>& audio)
+{
+    if (audio.getNumChannels() > delay.getNumChannels())
+        return false;
+
+    limit (audio, audio.getNumChannels());
+    return true;
+}
+
+void LimiterProcessor::limit (juce::AudioBuffer<float>& buffer, int channels)
+{
     const auto settings = getSettings();
     const auto input = std::pow (10.0, settings.inputGainDb / 20.0);
     const auto top = Dynamics::ceilingGain (settings.ceilingDb);
     const auto unity = juce::exactlyEqual (settings.inputGainDb, 0.0);
-    const auto channels = juce::jmin (buffer.getNumChannels(), delay.getNumChannels());
     core.setRelease (Dynamics::smoothingCoefficient (settings.releaseMs, rate));
 
     for (int i = 0; i < buffer.getNumSamples(); ++i)

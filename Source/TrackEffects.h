@@ -25,7 +25,9 @@
     plug-in on the first pair, and two more of the same plug-in (made by makeCopy, given its state)
     on the others. The copies follow its parameters (set to the same values before each step) and
     are given its whole state again when refreshCopies is called for it, after its window closes;
-    their latency is taken to be its. A pair whose copy couldn't be made plays silence.
+    their latency is taken to be its. A pair whose copy couldn't be made plays silence. A built-in
+    effect that can link channels (BuiltInEffect::processLinked: the compressor and the limiter)
+    runs once on all six instead, its gain from the loudest of them.
 
     Changes are made on the message thread; the mixer calls the SessionMixer::Inserts methods on
     the audio thread. A track whose chain is being changed plays silence for that block. */

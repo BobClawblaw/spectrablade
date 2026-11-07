@@ -1,4 +1,5 @@
 #include "TrackEffects.h"
+#include "BuiltInEffects.h"
 
 namespace
 {
@@ -649,6 +650,16 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
                             }
 
             delayed += juce::jmax (0, s->plugin->getLatencySamples());
+
+            // A built-in effect that can link the six (the compressor and the limiter) hears them as one.
+            if (pairs == 3)
+                if (auto* builtIn = dynamic_cast<BuiltInEffects::BuiltInEffect*> (s->plugin.get()))
+                {
+                    juce::AudioBuffer<float> six (buffer.getArrayOfWritePointers(), 6, done, n);
+
+                    if (builtIn->processLinked (six))
+                        continue;
+                }
 
             for (int pair = 0; pair < pairs; ++pair)
             {

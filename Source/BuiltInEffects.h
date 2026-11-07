@@ -75,6 +75,14 @@ namespace BuiltInEffects
             value); ones it doesn't name, and names that aren't parameters, are left alone. */
         void setPresetValues (const EffectPresets::Values&);
 
+        /** Most channels processLinked takes. */
+        static constexpr int mostLinkedChannels = 8;
+
+        /** Processes every channel of the audio in place as one, where the effect can link them
+            (its gain from the loudest of them all, the same gain on each): a 5.1 track's six. False,
+            with nothing done, where it can't. Same thread as processBlock. */
+        virtual bool processLinked (juce::AudioBuffer<float>&)        { return false; }
+
     protected:
         /** With sidechain, a second input bus (off until the host turns it on) for a key. */
         BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag, bool sidechain = false);
@@ -210,6 +218,10 @@ namespace BuiltInEffects
         void reset() override                                         { core.reset(); }
         void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
+        /** Linked, from the loudest of all the channels; not with Sidechain on (every pair then
+            hears the same key, so they move together anyway). */
+        bool processLinked (juce::AudioBuffer<float>&) override;
+
         juce::AudioParameterFloat* threshold = nullptr;
         juce::AudioParameterFloat* ratio = nullptr;
         juce::AudioParameterFloat* knee = nullptr;
@@ -222,6 +234,9 @@ namespace BuiltInEffects
         Dynamics::CompressorCore core;
         Dynamics::Compressor applied;
         double rate = 48000.0;
+
+        void refreshSettings();
+        void compress (juce::AudioBuffer<float>&, int channels, int firstKey, int keyChannels);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (CompressorProcessor)
     };
@@ -248,6 +263,9 @@ namespace BuiltInEffects
         void reset() override;
         void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
+        /** Linked, from the peak of all the channels, so none goes above the ceiling. */
+        bool processLinked (juce::AudioBuffer<float>&) override;
+
         juce::AudioParameterFloat* gain = nullptr;
         juce::AudioParameterFloat* ceiling = nullptr;
         juce::AudioParameterFloat* release = nullptr;
@@ -258,6 +276,8 @@ namespace BuiltInEffects
         double rate = 48000.0;
         juce::AudioBuffer<float> delay;   // the last look-ahead's frames, a ring
         int delayPosition = 0;
+
+        void limit (juce::AudioBuffer<float>&, int channels);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LimiterProcessor)
     };
