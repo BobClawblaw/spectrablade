@@ -2,6 +2,8 @@
 #include "../Source/SoundLibrary.h"
 #include "../Source/SoundLibraryView.h"
 #include "../Source/Surround.h"
+#include "../Source/SoundCategories.h"
+#include <sqlite3.h>
 #include "TestUtils.h"
 #include "SoundLibraryTests.h"
 
@@ -564,6 +566,189 @@ namespace
     }
 }
 
+namespace
+{
+    /** A WAV with an iXML chunk of our own, appended after what JUCE writes. */
+    void writeWithIXml (const juce::File& file, int frames, const juce::String& xml)
+    {
+        writeWav (file, frames, 48000.0, 1, 16);
+        juce::MemoryBlock data;
+        file.loadFileAsData (data);
+        juce::MemoryOutputStream out (data, true);
+        const auto text = xml.toUTF8();
+        const auto size = (int) std::strlen (text);
+        out.writeInt ((int) juce::ByteOrder::littleEndianInt ("iXML"));
+        out.writeInt (size);
+        out.write (text, (size_t) size);
+
+        if ((size & 1) != 0)
+            out.writeByte (0);
+
+        out.flush();
+        *reinterpret_cast<juce::uint32*> (static_cast<char*> (data.getData()) + 4) = juce::ByteOrder::swapIfBigEndian ((juce::uint32) (data.getSize() - 8));
+        file.replaceWithData (data.getData(), data.getSize());
+    }
+
+    void testUcsList()
+    {
+        using namespace Ucs;
+        const auto* wood = byCatId ("DOORWood");
+        const auto* lower = byCatId ("doorwood");
+        check (list().size() == 753 && categories().size() == 82 && wood != nullptr && wood->describe() == "DOORS / WOOD" && lower == wood
+                   && byNames ("doors", "wood") == wood && byCatId ("WOODHndl") != nullptr && byCatId ("WOODHandl") == nullptr
+                   && subCategoriesOf ("AIR").size() == 5 && wood->synonyms.size() > 3 && byCatId ("") == nullptr,
+               "ucs: the bundled list holds UCS v8.2.1's 753 subcategories in 82 categories, with synonyms; DOORWood is DOORS / WOOD, found "
+               "ignoring case and by its names; the 8.2.1 fix is in (WOODHndl, no WOODHandl)");
+
+        check (fromName ("DOORWood_Creak Old Barn_JD_SFX") == wood && fromName ("doorwood_Creak") == wood && fromName ("Door Creak") == nullptr
+                   && fromName ("_DOORWood") == nullptr && fromName ("NOPEcat_Thing") == nullptr
+                   && fromIXml ("<BWFXML><USER><CATID>AIRBlow</CATID></USER></BWFXML>") == byCatId ("AIRBlow")
+                   && fromIXml ("<BWFXML><ASWG><catId>AIRHiss</catId></ASWG></BWFXML>") == byCatId ("AIRHiss")
+                   && fromIXml ("<BWFXML><USER><CATEGORY>AIR</CATEGORY><SUBCATEGORY>BURST</SUBCATEGORY></USER></BWFXML>") == byCatId ("AIRBrst")
+                   && fromIXml ("<BWFXML><USER><CATID>NOPEcat</CATID></USER></BWFXML>") == nullptr && fromIXml ("not xml") == nullptr,
+               "ucs: a UCS name gives its CatID (before the first underscore, any case); iXML gives USER CATID, the ASWG catId, or USER "
+               "CATEGORY and SUBCATEGORY; an unknown CatID or a plain name gives none");
+    }
+
+    void testCategories (const juce::File& dir)
+    {
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        const auto library = dir.getChildFile ("Categorised");
+        writeWav (library.getChildFile ("DOORWood_Creak Old Barn_JD_SFX.wav"), 1000);
+        writeWav (library.getChildFile ("doorwood_Squeak_JD_SFX.wav"), 1100);
+        writeWithIXml (library.getChildFile ("Big Gust 01.wav"), 1200, "<BWFXML><USER><CATID>AIRBlow</CATID></USER></BWFXML>");
+        writeWithIXml (library.getChildFile ("Valve Release.wav"), 1300,
+                       "<BWFXML><USER><CATEGORY>AIR</CATEGORY><SUBCATEGORY>BURST</SUBCATEGORY></USER></BWFXML>");
+        writeWithIXml (library.getChildFile ("DOORMetl_Slam_JD_SFX.wav"), 1400, "<BWFXML><USER><CATID>AIRBlow</CATID></USER></BWFXML>");
+        {
+            std::unordered_map<juce::String, juce::String> aswg { { juce::WavAudioFormat::aswgCatId, "AIRHiss" } };
+            juce::WavAudioFormat wav;
+            std::unique_ptr<juce::OutputStream> out (library.getChildFile ("Tyre Leak.wav").createOutputStream());
+            auto writer = wav.createWriterFor (out, juce::AudioFormatWriterOptions().withSampleRate (48000.0).withNumChannels (1)
+                                                        .withBitsPerSample (16).withMetadataValues (aswg));
+            juce::AudioBuffer<float> b (1, 1500);
+            b.clear();
+            writer->writeFromAudioSampleBuffer (b, 0, 1500);
+        }
+        writeWav (library.getChildFile ("Plain Thing.wav"), 1600);
+
+        const auto database = dir.getChildFile ("categories/Index.sqlite");
+        SoundLibrary::Index index (database);
+        index.addFolder (library);
+        const auto first = index.scan (formats);
+        const auto one = [&index] (const juce::String& words)
+        {
+            const auto found = index.find ({ words });
+            return found.size() == 1 ? found[0] : SoundLibrary::Sound();
+        };
+        using From = SoundLibrary::CategoryFrom;
+        const auto creak = one ("creak"), squeak = one ("squeak"), gust = one ("gust"), valve = one ("valve"), slam = one ("slam"),
+                   leak = one ("leak"), plain = one ("plain");
+        check (first.added == 7 && creak.catId == "DOORWood" && creak.categoryFrom == From::name && squeak.catId == "DOORWood"
+                   && gust.catId == "AIRBlow" && gust.categoryFrom == From::metadata && valve.catId == "AIRBrst"
+                   && leak.catId == "AIRHiss" && leak.categoryFrom == From::metadata && slam.catId == "DOORMetl" && slam.categoryFrom == From::name
+                   && plain.catId.isEmpty() && plain.categoryFrom == From::none,
+               "sound library categories: a scan takes each sound's category from its UCS name (any case), else from its iXML (USER "
+               "CATID, USER CATEGORY and SUBCATEGORY, or the ASWG catId JUCE writes); the name wins over the iXML; a plain name and no "
+               "iXML gives none");
+
+        SoundLibrary::Query air;
+        air.category = "AIR";
+        SoundLibrary::Query blow;
+        blow.catId = "AIRBlow";
+        SoundLibrary::Query none;
+        none.withoutCategory = true;
+        SoundLibrary::Query airWithText = air;
+        airWithText.text = "gust";
+        const auto byCategory = index.countByCategory();
+        auto sorted = index.find ({ {}, SoundLibrary::Column::category, true, 0, 10 });
+        check (index.count (air) == 3 && index.count (blow) == 1 && index.count (none) == 1 && index.count (airWithText) == 1
+                   && index.find (air).size() == 3 && byCategory.at ("DOORWood") == 2 && byCategory.at ("") == 1 && byCategory.size() == 6
+                   && index.count ("doors") == 3 && index.count ("burst") == 1 && sorted.size() == 7 && sorted.front().catId == "AIRBlow"
+                   && sorted.back().catId.isEmpty(),
+               "sound library categories: a query shows one category (AIR: 3), one subcategory, or the sounds with none, with or without "
+               "words; counts by CatID; searching finds the category's names (\"doors\" 3, \"burst\" 1); sorted by category, those with "
+               "none come last");
+
+        // By hand: kept through a rescan of a changed file, until cleared.
+        const auto setPlain = index.setCategory ({ plain.id }, "AIRBlow");
+        const auto setCreak = index.setCategory ({ creak.id }, "airhiss");
+        const auto refused = ! index.setCategory ({ creak.id }, "NOPEcat");
+        writeWav (library.getChildFile ("Plain Thing.wav"), 2600);
+        writeWav (library.getChildFile ("DOORWood_Creak Old Barn_JD_SFX.wav"), 2000);
+        const auto again = index.scan (formats);
+        const auto plainKept = one ("plain"), creakKept = one ("creak");
+        const auto byHandFound = index.count ("blow") == 2 && index.count ("hiss") == 2;
+        index.setCategory ({ plain.id, creak.id }, {});
+        const auto plainCleared = one ("plain"), creakCleared = one ("creak");
+        check (setPlain && setCreak && refused && again.updated == 2 && plainKept.catId == "AIRBlow" && plainKept.categoryFrom == From::hand
+                   && plainKept.frames == 2600 && creakKept.catId == "AIRHiss" && creakKept.categoryFrom == From::hand && byHandFound
+                   && plainCleared.catId.isEmpty() && plainCleared.categoryFrom == From::none && creakCleared.catId == "DOORWood"
+                   && creakCleared.categoryFrom == From::name && index.count ("hiss") == 1,
+               "sound library categories: a category set by hand (any case; an unknown CatID refused) stays when a changed file is read "
+               "again, and is searched by; cleared, each sound has its name's or iXML's again (or none)");
+
+        // An index made before categories is brought up to date and its files read again.
+        const auto old = dir.getChildFile ("categories/Old.sqlite");
+        {
+            sqlite3* raw = nullptr;
+            sqlite3_open (old.getFullPathName().toRawUTF8(), &raw);
+            const auto creakFile = library.getChildFile ("DOORWood_Creak Old Barn_JD_SFX.wav");
+            const auto sql = juce::String ("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);"
+                                           "CREATE TABLE folders (path TEXT PRIMARY KEY);"
+                                           "CREATE TABLE sounds (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, folder TEXT NOT NULL,"
+                                           " name TEXT NOT NULL, size INTEGER, modified INTEGER, frames INTEGER, rate REAL, channels INTEGER, bits INTEGER,"
+                                           " format TEXT, description TEXT, seen INTEGER DEFAULT 0);"
+                                           "CREATE VIRTUAL TABLE words USING fts5 (text, tokenize='unicode61');"
+                                           "INSERT INTO meta VALUES ('schema', '1');")
+                             + "INSERT INTO folders VALUES ('" + library.getFullPathName().replace ("'", "''") + "');"
+                             + "INSERT INTO sounds (path, folder, name, size, modified, frames, rate, channels, bits, format, description) VALUES ('"
+                             + creakFile.getFullPathName().replace ("'", "''") + "', '" + library.getFullPathName().replace ("'", "''")
+                             + "', 'DOORWood_Creak Old Barn_JD_SFX', " + juce::String (creakFile.getSize()) + ", "
+                             + juce::String (creakFile.getLastModificationTime().toMilliseconds()) + ", 2000, 48000, 2, 24, 'WAV file', '');"
+                             + "INSERT INTO words (rowid, text) VALUES (1, 'DOOR Wood Creak Old Barn JD SFX');";
+            sqlite3_exec (raw, sql.toRawUTF8(), nullptr, nullptr, nullptr);
+            sqlite3_close (raw);
+        }
+        SoundLibrary::Index upgraded (old);
+        const auto before = upgraded.isOpen() && upgraded.count() == 1 && upgraded.find ({}).front().catId.isEmpty();
+        const auto rescan = upgraded.scan (formats);
+        check (before && rescan.updated == 1 && rescan.added == 6 && upgraded.find ({ "creak" }).front().catId == "DOORWood",
+               "sound library categories: an index made before categories opens with its sounds, gains the columns, and its next scan "
+               "reads the files again, giving them their categories");
+    }
+
+    void testCategoriesView (const juce::File& dir)
+    {
+        SoundLibraryView view (dir.getChildFile ("categories view/Index.sqlite"));
+        view.setSize (1100, 600);
+        view.addFolder (dir.getChildFile ("Categorised"));
+        const auto scanned = TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+        const auto counted = view.found() == 7 && view.countInCategory ("AIR") == 3 && view.countWithCatId ("DOORWood") == 2
+                             && view.countWithCatId ({}) == 1;
+        view.showCategory ("AIR");
+        const auto airRows = view.getNumRows() == 3 && view.getSummary().startsWith ("3 of 7 sounds match");
+        view.showCategory ("DOORS", "DOORWood");
+        const auto woodRows = view.getNumRows() == 2 && view.getText (0, SoundLibraryView::category) == "DOORS / WOOD";
+        view.setSearch ("squeak");
+        const auto narrowed = view.getNumRows() == 1 && view.countWithCatId ("DOORWood") == 1 && view.found() == 1;
+        view.setSearch ({});
+        view.showCategory ({}, {}, true);
+        const auto noneRows = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::category).isEmpty();
+        juce::SparseSet<int> first;
+        first.addRange ({ 0, 1 });
+        view.selectRows (first);
+        const auto set = view.setCategoryOfSelection ("AIRMisc");
+        const auto moved = view.getNumRows() == 0 && view.countInCategory ("AIR") == 4;
+        view.showCategory ({});
+        check (scanned && counted && airRows && woodRows && narrowed && noneRows && set && moved && view.getNumRows() == 7,
+               "sound library window: the category list counts the sounds found in each category and subcategory (and with none), "
+               "following the search; choosing one shows only those; the Category column names it; setting a selected sound's category "
+               "moves it (AIR then holds 4)");
+    }
+}
+
 void runSoundLibraryTests()
 {
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("SoundLibraryTests", {}, false);
@@ -574,6 +759,9 @@ void runSoundLibraryTests()
     testPlayer (dir);
     testPart (dir);
     testPreviewMouse (dir);
+    testUcsList();
+    testCategories (dir);
+    testCategoriesView (dir);
     testLarge (dir);
     dir.deleteRecursively();
 }
@@ -638,6 +826,45 @@ void runSoundLibraryOn (const juce::File& folder)
     const auto middle = index.find ({ {}, SoundLibrary::Column::name, true, (int) (indexed / 2), 100 });
     timings << "a page halfway down by name " << juce::String ((now() - t0) * 1000.0, 1) << " ms";
     check (! middle.empty(), "sound library on " + folder.getFileName() + ", searches: " + timings);
+
+    // Categories: where they came from, and how fast the list's counts and a category are.
+    std::map<int, juce::int64> from;
+    {
+        sqlite3* raw = nullptr;
+        sqlite3_open_v2 (database.getFullPathName().toRawUTF8(), &raw, SQLITE_OPEN_READONLY, nullptr);
+        sqlite3_stmt* st = nullptr;
+        sqlite3_prepare_v2 (raw, "SELECT catFrom, COUNT(*) FROM sounds GROUP BY catFrom", -1, &st, nullptr);
+
+        while (sqlite3_step (st) == SQLITE_ROW)
+            from[sqlite3_column_int (st, 0)] = sqlite3_column_int64 (st, 1);
+
+        sqlite3_finalize (st);
+        sqlite3_close (raw);
+    }
+
+    const auto c0 = now();
+    const auto byCategory = index.countByCategory();
+    const auto c1 = now();
+    const auto byCategoryDoor = index.countByCategory ("door");
+    const auto c2 = now();
+    SoundLibrary::Query doors;
+    doors.category = "DOORS";
+    const auto inDoors = index.count (doors);
+    const auto c3 = now();
+    const auto doorsPage = index.find (doors);
+    const auto c4 = now();
+    juce::int64 counted = 0;
+
+    for (const auto& [id, n] : byCategory)
+        counted += n;
+
+    juce::ignoreUnused (byCategoryDoor);
+    check (from[0] + from[1] + from[2] == indexed && counted == indexed,
+           "sound library on " + folder.getFileName() + ", categories: " + juce::String (from[1]) + " from UCS names, " + juce::String (from[2])
+               + " from iXML, " + juce::String (from[0]) + " none; counting by category " + juce::String ((c1 - c0) * 1000.0, 1) + " ms (for \"door\" "
+               + juce::String ((c2 - c1) * 1000.0, 1) + " ms); DOORS holds " + juce::String (inDoors) + " (counted in "
+               + juce::String ((c3 - c2) * 1000.0, 1) + " ms, first page " + juce::String ((c4 - c3) * 1000.0, 1) + " ms, "
+               + juce::String ((int) doorsPage.size()) + " rows)");
     dir.deleteRecursively();
 }
 

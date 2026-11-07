@@ -94,6 +94,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SoundLibrary.cpp
     Source/SoundLibraryView.cpp
     Source/SoundLibraryPreview.cpp
+    Source/SoundCategories.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp
@@ -171,7 +172,7 @@ target_compile_definitions(SpectraBlade PRIVATE
     JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:SpectraBlade,JUCE_VERSION>")
 
 # The logo on the loading screen.
-juce_add_binary_data(SpectraBladeArt SOURCES Art/spectrablade-banner.png)
+juce_add_binary_data(SpectraBladeArt SOURCES Art/spectrablade-banner.png ThirdParty/UCS/ucs_v8_2_1.tsv)
 
 target_link_libraries(SpectraBlade PRIVATE
     SpectraBladeArt
@@ -274,6 +275,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SoundLibrary.cpp
     Source/SoundLibraryView.cpp
     Source/SoundLibraryPreview.cpp
+    Source/SoundCategories.cpp
     Source/Equalizer.cpp
     Source/GraphicEq.cpp
     Source/Dynamics.cpp

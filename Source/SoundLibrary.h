@@ -8,17 +8,23 @@ struct sqlite3;
     it has none until one is added, and never scans anywhere else), kept in an SQLite
     database so a library of a million files and more can be searched and listed a page at a time.
 
-    A scan reads only each file's header (its format, length, rate, channels, bit depth and BWF
-    description) and only for files that are new or whose size or modification time changed;
+    A scan reads only each file's header (its format, length, rate, channels, bit depth, BWF
+    description and, in a WAV file, its iXML) and only for files that are new or whose size or modification time changed;
     files gone from a watched folder leave the index. Searching matches the start of words in a
     sound's name (split at case changes and digits too, so "wood" finds "DOORWood_Creak") and its
-    description; every word searched for must be found.
+    description, and its UCS category's names; every word searched for must be found.
+
+    Each sound has a UCS category (see SoundCategories.h) when its name or iXML gives one, or one
+    is set by hand; one set by hand stays through rescans until it is cleared.
 
     One Index is one connection to the database, to be used on one thread at a time: a scan runs
     on an Index of its own on the same file while another lists and searches (the database is in
     WAL mode, so they don't block each other). */
 namespace SoundLibrary
 {
+    /** Where a sound's category came from. */
+    enum class CategoryFrom { none = 0, name = 1, metadata = 2, hand = 3 };
+
     struct Sound
     {
         juce::int64 id = 0;
@@ -33,11 +39,13 @@ namespace SoundLibrary
         int bitDepth = 0;
         juce::String format;            // the reader's format name, e.g. "WAV file"
         juce::String description;       // the BWF description, where there is one
+        juce::String catId;             // its UCS CatID (e.g. DOORWood); empty for none
+        CategoryFrom categoryFrom = CategoryFrom::none;
 
         double seconds() const noexcept  { return sampleRate > 0.0 ? (double) frames / sampleRate : 0.0; }
     };
 
-    enum class Column { name, folder, length, sampleRate, channels, format, modified };
+    enum class Column { name, folder, length, sampleRate, channels, format, modified, category };
 
     struct Query
     {
@@ -45,6 +53,11 @@ namespace SoundLibrary
         Column sortBy = Column::name;
         bool ascending = true;
         int offset = 0, limit = 100;
+
+        /** Only the sounds of one subcategory (a CatID), or of a whole category (its name), or
+            only those with no category. */
+        juce::String catId {}, category {};
+        bool withoutCategory = false;
     };
 
     struct ScanResult
@@ -87,7 +100,19 @@ namespace SoundLibrary
         /** How many sounds match these words (all of them for none). */
         juce::int64 count (const juce::String& text = {});
 
-        /** Puts a sound in the index, or replaces the one at its file (what a scan does for each file). */
+        /** How many sounds match a query's words and category (its order and page don't matter). */
+        juce::int64 count (const Query&);
+
+        /** How many sounds matching these words have each CatID ("" for those with none). */
+        std::map<juce::String, juce::int64> countByCategory (const juce::String& text = {});
+
+        /** Sets these sounds' category by hand (a CatID of the UCS list), or with an empty one
+            clears what was set by hand, giving them back the category of their name or iXML.
+            False for a CatID not in the list. */
+        bool setCategory (const std::vector<juce::int64>& ids, const juce::String& catId);
+
+        /** Puts a sound in the index, or replaces the one at its file (what a scan does for each
+            file). Its category is taken as the file's own: one set by hand on that file stays. */
         bool put (Sound&);
 
         /** Puts many, in one transaction. */
@@ -99,6 +124,9 @@ namespace SoundLibrary
 
         bool exec (const char* sql);
         bool remove (juce::int64 id);
+
+        /** Rewrites the words a sound is searched by. */
+        bool indexWords (juce::int64 id, const juce::String& name, const juce::String& description, const juce::String& catId);
 
         JUCE_DECLARE_NON_COPYABLE (Index)
     };

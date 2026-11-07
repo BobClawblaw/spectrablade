@@ -1,4 +1,5 @@
 #include "SoundLibrary.h"
+#include "SoundCategories.h"
 #include <sqlite3.h>
 #include <thread>
 
@@ -22,6 +23,7 @@ namespace
         void bind (int i, juce::int64 v)                { sqlite3_bind_int64 (stmt, i, v); }
         void bind (int i, double v)                     { sqlite3_bind_double (stmt, i, v); }
         void bind (int i, const juce::String& v)        { sqlite3_bind_text (stmt, i, v.toRawUTF8(), -1, SQLITE_TRANSIENT); }
+        void bindNull (int i)                           { sqlite3_bind_null (stmt, i); }
         bool step()                                     { return sqlite3_step (stmt) == SQLITE_ROW; }
         bool run()                                      { const auto r = sqlite3_step (stmt); sqlite3_reset (stmt); return r == SQLITE_DONE; }
         void reset()                                    { sqlite3_reset (stmt); sqlite3_clear_bindings (stmt); }
@@ -39,7 +41,7 @@ namespace
         JUCE_DECLARE_NON_COPYABLE (Statement)
     };
 
-    constexpr int schemaVersion = 1;
+    constexpr int schemaVersion = 2;   // 2 added the categories
 
     /** What FTS5 is asked: each word searched for, as the start of a word, all of them. */
     juce::String matchFor (const juce::String& text)
@@ -52,9 +54,39 @@ namespace
         return terms.joinIntoString (" ");
     }
 
-    juce::String searchable (const juce::String& name, const juce::String& description)
+    juce::String searchable (const juce::String& name, const juce::String& description, const juce::String& catId)
     {
-        return wordsOf (name).joinIntoString (" ") + " " + description;
+        auto text = wordsOf (name).joinIntoString (" ") + " " + description;
+
+        if (const auto* e = Ucs::byCatId (catId))
+            text << " " << e->category << " " << e->subCategory;
+
+        return text;
+    }
+
+    /** The WHERE clause for a query's category, with what it binds. */
+    std::pair<juce::String, juce::StringArray> categoryFilter (const Query& q)
+    {
+        if (q.withoutCategory)
+            return { "s.catId IS NULL", {} };
+
+        if (q.catId.isNotEmpty())
+            return { "s.catId = ?", { q.catId } };
+
+        if (q.category.isNotEmpty())
+        {
+            juce::StringArray ids, marks;
+
+            for (const auto* e : Ucs::subCategoriesOf (q.category))
+            {
+                ids.add (e->catId);
+                marks.add ("?");
+            }
+
+            return { ids.isEmpty() ? juce::String ("0") : "s.catId IN (" + marks.joinIntoString (", ") + ")", ids };
+        }
+
+        return {};
     }
 
     const char* orderOf (Column c)
@@ -67,6 +99,7 @@ namespace
             case Column::channels:   return "s.channels";
             case Column::format:     return "s.format";
             case Column::modified:   return "s.modified";
+            case Column::category:   return "(s.catId IS NULL), s.catId COLLATE NOCASE";
             case Column::name:       break;
         }
 
@@ -88,10 +121,13 @@ namespace
         s.bitDepth = (int) st.integer (9);
         s.format = st.text (10);
         s.description = st.text (11);
+        s.catId = st.text (12);
+        s.categoryFrom = (CategoryFrom) juce::jlimit (0, 3, (int) st.integer (13));
         return s;
     }
 
-    constexpr const char* soundColumns = "s.id, s.path, s.folder, s.name, s.size, s.modified, s.frames, s.rate, s.channels, s.bits, s.format, s.description";
+    constexpr const char* soundColumns = "s.id, s.path, s.folder, s.name, s.size, s.modified, s.frames, s.rate, s.channels, s.bits, s.format, "
+                                         "s.description, s.catId, s.catFrom";
 }
 
 juce::StringArray wordsOf (const juce::String& name)
@@ -164,7 +200,8 @@ Index::Index (const juce::File& database)
                             "CREATE TABLE IF NOT EXISTS folders (path TEXT PRIMARY KEY);"
                             "CREATE TABLE IF NOT EXISTS sounds (id INTEGER PRIMARY KEY, path TEXT UNIQUE NOT NULL, folder TEXT NOT NULL,"
                             " name TEXT NOT NULL, size INTEGER, modified INTEGER, frames INTEGER, rate REAL, channels INTEGER, bits INTEGER,"
-                            " format TEXT, description TEXT, seen INTEGER DEFAULT 0);"
+                            " format TEXT, description TEXT, seen INTEGER DEFAULT 0,"
+                            " catId TEXT, catFrom INTEGER DEFAULT 0, fileCatId TEXT, fileCatFrom INTEGER DEFAULT 0);"
                             "CREATE INDEX IF NOT EXISTS soundsByFolder ON sounds (folder);"
                             "CREATE INDEX IF NOT EXISTS soundsByName ON sounds (name COLLATE NOCASE);"
                             "CREATE VIRTUAL TABLE IF NOT EXISTS words USING fts5 (text, tokenize='unicode61');");
@@ -177,7 +214,28 @@ Index::Index (const juce::File& database)
     const auto stored = version.step() ? version.text (0) : juce::String();
     version.reset();
 
-    if (stored.isNotEmpty() && stored.getIntValue() != schemaVersion)
+    // An index from before the categories gets their columns, and its files are read again on
+    // the next scan (their size forgotten), so their names and iXML give their categories.
+    if (stored == "1")
+    {
+        const auto upgraded = exec ("BEGIN;"
+                                    "ALTER TABLE sounds ADD COLUMN catId TEXT;"
+                                    "ALTER TABLE sounds ADD COLUMN catFrom INTEGER DEFAULT 0;"
+                                    "ALTER TABLE sounds ADD COLUMN fileCatId TEXT;"
+                                    "ALTER TABLE sounds ADD COLUMN fileCatFrom INTEGER DEFAULT 0;"
+                                    "UPDATE sounds SET size = -1;"
+                                    "UPDATE meta SET value = '2' WHERE key = 'schema';"
+                                    "COMMIT;");
+
+        if (! upgraded)
+        {
+            error = "The Sound Library's index couldn't be brought up to date.";
+            sqlite3_close (db);
+            db = nullptr;
+            return;
+        }
+    }
+    else if (stored.isNotEmpty() && stored.getIntValue() != schemaVersion)
     {
         error = "The Sound Library's index is from another version of SpectraBlade.";
         sqlite3_close (db);
@@ -188,6 +246,7 @@ Index::Index (const juce::File& database)
     Statement set (db, "INSERT OR IGNORE INTO meta (key, value) VALUES ('schema', ?)");
     set.bind (1, juce::String (schemaVersion));
     set.run();
+    exec ("CREATE INDEX IF NOT EXISTS soundsByCategory ON sounds (catId)");
 }
 
 Index::~Index()
@@ -275,12 +334,17 @@ bool Index::remove (juce::int64 id)
 
 bool Index::put (Sound& s)
 {
-    Statement st (db, "INSERT INTO sounds (path, folder, name, size, modified, frames, rate, channels, bits, format, description)"
-                      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    // The category given is the file's own; one set by hand (catFrom 3) stays.
+    Statement st (db, "INSERT INTO sounds (path, folder, name, size, modified, frames, rate, channels, bits, format, description,"
+                      " catId, catFrom, fileCatId, fileCatFrom)"
+                      " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?12, ?13, ?12, ?13)"
                       " ON CONFLICT (path) DO UPDATE SET folder = excluded.folder, name = excluded.name, size = excluded.size,"
                       " modified = excluded.modified, frames = excluded.frames, rate = excluded.rate, channels = excluded.channels,"
-                      " bits = excluded.bits, format = excluded.format, description = excluded.description"
-                      " RETURNING id");
+                      " bits = excluded.bits, format = excluded.format, description = excluded.description,"
+                      " fileCatId = excluded.fileCatId, fileCatFrom = excluded.fileCatFrom,"
+                      " catId = CASE WHEN sounds.catFrom = 3 THEN sounds.catId ELSE excluded.fileCatId END,"
+                      " catFrom = CASE WHEN sounds.catFrom = 3 THEN 3 ELSE excluded.fileCatFrom END"
+                      " RETURNING id, catId");
     st.bind (1, s.file.getFullPathName());
     st.bind (2, s.folder.getFullPathName());
     st.bind (3, s.name);
@@ -292,17 +356,74 @@ bool Index::put (Sound& s)
     st.bind (9, (juce::int64) s.bitDepth);
     st.bind (10, s.format);
     st.bind (11, s.description);
+    const auto* entry = s.categoryFrom == CategoryFrom::hand ? nullptr : Ucs::byCatId (s.catId);
+
+    if (entry != nullptr)
+    {
+        st.bind (12, entry->catId);
+        st.bind (13, (juce::int64) s.categoryFrom);
+    }
+    else
+    {
+        st.bindNull (12);
+        st.bind (13, (juce::int64) 0);
+    }
 
     if (! st.step())
         return false;
 
     s.id = st.integer (0);
+    const auto catId = st.text (1);
+    st.reset();
+    return indexWords (s.id, s.name, s.description, catId);
+}
+
+bool Index::indexWords (juce::int64 id, const juce::String& name, const juce::String& description, const juce::String& catId)
+{
     Statement clear (db, "DELETE FROM words WHERE rowid = ?");
-    clear.bind (1, s.id);
+    clear.bind (1, id);
     Statement words (db, "INSERT INTO words (rowid, text) VALUES (?, ?)");
-    words.bind (1, s.id);
-    words.bind (2, searchable (s.name, s.description));
+    words.bind (1, id);
+    words.bind (2, searchable (name, description, catId));
     return clear.run() && words.run();
+}
+
+bool Index::setCategory (const std::vector<juce::int64>& ids, const juce::String& catId)
+{
+    const auto* entry = catId.isEmpty() ? nullptr : Ucs::byCatId (catId);
+
+    if (catId.isNotEmpty() && entry == nullptr)
+        return false;
+
+    if (! exec ("BEGIN"))
+        return false;
+
+    Statement set (db, entry != nullptr ? "UPDATE sounds SET catId = ?, catFrom = 3 WHERE id = ?2"
+                                        : "UPDATE sounds SET catId = fileCatId, catFrom = fileCatFrom WHERE id = ?2");
+    Statement read (db, "SELECT name, description, catId FROM sounds WHERE id = ?");
+    auto all = true;
+
+    for (auto id : ids)
+    {
+        set.reset();
+
+        if (entry != nullptr)
+            set.bind (1, entry->catId);
+
+        set.bind (2, id);
+        read.reset();
+        read.bind (1, id);
+        all = set.run() && all;
+
+        if (read.step())
+        {
+            const auto name = read.text (0), description = read.text (1), now = read.text (2);
+            read.reset();
+            all = indexWords (id, name, description, now) && all;
+        }
+    }
+
+    return exec ("COMMIT") && all;
 }
 
 bool Index::putAll (std::vector<Sound>& sounds)
@@ -322,7 +443,44 @@ namespace
 {
     /** A sound's header, read through a buffer: the readers ask for a few bytes at a time, and
         unbuffered each ask is a trip to the disk. */
-    std::unique_ptr<juce::AudioFormatReader> readHeader (juce::AudioFormatManager& formats, const juce::File& file)
+    /** A WAV file's iXML chunk, read from the stream (left anywhere); empty when there is none. */
+    juce::String readIXml (juce::InputStream& in)
+    {
+        if (in.readInt() != (int) juce::ByteOrder::littleEndianInt ("RIFF"))
+            return {};
+
+        in.readInt();
+
+        if (in.readInt() != (int) juce::ByteOrder::littleEndianInt ("WAVE"))
+            return {};
+
+        while (! in.isExhausted())
+        {
+            const auto id = in.readInt();
+            const auto size = (juce::int64) (juce::uint32) in.readInt();
+            const auto start = in.getPosition();
+
+            if (id == (int) juce::ByteOrder::littleEndianInt ("iXML"))
+            {
+                juce::MemoryBlock block;
+                in.readIntoMemoryBlock (block, (ssize_t) juce::jmin (size, (juce::int64) 1 << 20));
+                return block.toString();
+            }
+
+            if (size == 0xffffffff || ! in.setPosition (start + size + (size & 1)))
+                break;   // an RF64 file's sizes are elsewhere: no iXML is looked for past its audio
+        }
+
+        return {};
+    }
+
+    struct Header
+    {
+        std::unique_ptr<juce::AudioFormatReader> reader;
+        juce::String ixml;
+    };
+
+    Header readHeader (juce::AudioFormatManager& formats, const juce::File& file)
     {
         for (int i = 0; i < formats.getNumKnownFormats(); ++i)
         {
@@ -336,8 +494,20 @@ namespace
             if (in == nullptr)
                 return {};
 
-            if (auto* reader = format->createReaderFor (new juce::BufferedInputStream (in.release(), 16384, true), true))
-                return std::unique_ptr<juce::AudioFormatReader> (reader);
+            auto buffered = std::make_unique<juce::BufferedInputStream> (in.release(), 16384, true);
+            Header h;
+
+            if (dynamic_cast<juce::WavAudioFormat*> (format) != nullptr)
+            {
+                h.ixml = readIXml (*buffered);
+                buffered->setPosition (0);
+            }
+
+            if (auto* reader = format->createReaderFor (buffered.release(), true))
+            {
+                h.reader.reset (reader);
+                return h;
+            }
         }
 
         return {};
@@ -364,7 +534,8 @@ namespace
             for (auto i = next++; i < files.size(); i = next++)
             {
                 auto& f = files[i];
-                const auto reader = readHeader (formats, f.file);
+                const auto header = readHeader (formats, f.file);
+                const auto& reader = header.reader;
 
                 if (reader == nullptr)
                     continue;
@@ -381,6 +552,19 @@ namespace
                 s.bitDepth = (int) reader->bitsPerSample;
                 s.format = reader->getFormatName();
                 s.description = reader->metadataValues[juce::WavAudioFormat::bwavDescription];
+
+                // The category: from a UCS name, else from the iXML.
+                if (const auto* e = Ucs::fromName (s.name))
+                {
+                    s.catId = e->catId;
+                    s.categoryFrom = CategoryFrom::name;
+                }
+                else if (const auto* m = header.ixml.isNotEmpty() ? Ucs::fromIXml (header.ixml) : nullptr)
+                {
+                    s.catId = m->catId;
+                    s.categoryFrom = CategoryFrom::metadata;
+                }
+
                 f.sound = std::move (s);
             }
         };
@@ -526,16 +710,25 @@ std::vector<Sound> Index::find (const Query& q)
 {
     std::vector<Sound> sounds;
     const auto match = matchFor (q.text);
-    const auto order = juce::String (orderOf (q.sortBy)) + (q.ascending ? " ASC" : " DESC") + ", s.id";
-    const auto sql = match.isEmpty()
-                         ? "SELECT " + juce::String (soundColumns) + " FROM sounds s ORDER BY " + order + " LIMIT ? OFFSET ?"
-                         : "SELECT " + juce::String (soundColumns) + " FROM words w JOIN sounds s ON s.id = w.rowid WHERE words MATCH ? ORDER BY "
-                               + order + " LIMIT ? OFFSET ?";
+    const auto direction = q.ascending ? " ASC" : " DESC";
+    auto order = juce::String (orderOf (q.sortBy)).replace (", ", juce::String (direction) + ", ") + direction + ", s.id";
+    const auto [filter, values] = categoryFilter (q);
+    auto conditions = filter;
+
+    if (match.isNotEmpty())
+        conditions = "words MATCH ?" + (filter.isEmpty() ? juce::String() : " AND " + filter);
+
+    const auto sql = "SELECT " + juce::String (soundColumns)
+                     + (match.isEmpty() ? " FROM sounds s" : " FROM words w JOIN sounds s ON s.id = w.rowid")
+                     + (conditions.isEmpty() ? juce::String() : " WHERE " + conditions) + " ORDER BY " + order + " LIMIT ? OFFSET ?";
     Statement st (db, sql.toRawUTF8());
     int i = 1;
 
     if (match.isNotEmpty())
         st.bind (i++, match);
+
+    for (const auto& v : values)
+        st.bind (i++, v);
 
     st.bind (i++, (juce::int64) juce::jmax (0, q.limit));
     st.bind (i, (juce::int64) juce::jmax (0, q.offset));
@@ -544,6 +737,44 @@ std::vector<Sound> Index::find (const Query& q)
         sounds.push_back (soundFrom (st));
 
     return sounds;
+}
+
+juce::int64 Index::count (const Query& q)
+{
+    const auto [filter, values] = categoryFilter (q);
+
+    if (filter.isEmpty())
+        return count (q.text);
+
+    const auto match = matchFor (q.text);
+    const auto sql = match.isEmpty() ? "SELECT COUNT(*) FROM sounds s WHERE " + filter
+                                     : "SELECT COUNT(*) FROM words w JOIN sounds s ON s.id = w.rowid WHERE words MATCH ? AND " + filter;
+    Statement st (db, sql.toRawUTF8());
+    int i = 1;
+
+    if (match.isNotEmpty())
+        st.bind (i++, match);
+
+    for (const auto& v : values)
+        st.bind (i++, v);
+
+    return st.step() ? st.integer (0) : 0;
+}
+
+std::map<juce::String, juce::int64> Index::countByCategory (const juce::String& text)
+{
+    std::map<juce::String, juce::int64> counts;
+    const auto match = matchFor (text);
+    Statement st (db, match.isEmpty() ? "SELECT catId, COUNT(*) FROM sounds GROUP BY catId"
+                                      : "SELECT s.catId, COUNT(*) FROM words w JOIN sounds s ON s.id = w.rowid WHERE words MATCH ? GROUP BY s.catId");
+
+    if (match.isNotEmpty())
+        st.bind (1, match);
+
+    while (st.step())
+        counts[st.text (0)] = st.integer (1);
+
+    return counts;
 }
 
 juce::int64 Index::count (const juce::String& text)

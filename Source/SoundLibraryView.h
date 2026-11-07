@@ -15,6 +15,10 @@
     Finder does: into the main window's multitrack view or editor, the Finder or another app.
     Double-clicking a row asks for the sound to be opened.
 
+    On the left, the UCS categories: all sounds, those with none, and each category (opening into
+    its subcategories), with how many of the sounds found are in each; choosing one shows only
+    those. Right-clicking rows sets their category by hand, or clears what was set by hand.
+
     Below the table, the preview shows the sound last selected (see SoundLibraryPreview); the space
     bar plays and stops it, unless the search box is typed in. Parts dragged out of the preview are
     written beside the index, in its Parts folder. */
@@ -26,7 +30,7 @@ public:
     explicit SoundLibraryView (const juce::File& database);
     ~SoundLibraryView() override;
 
-    enum Column { name = 1, length, rate, channels, bits, format, location, description };
+    enum Column { name = 1, length, rate, channels, bits, format, location, description, category };
 
     /** Adds a folder and scans it: false, with the reason in the summary, when the index refuses it. */
     bool addFolder (const juce::File&);
@@ -36,6 +40,20 @@ public:
     /** Brings every folder up to date, on the scanning thread (after any scan running now). */
     void rescan();
     bool isScanning() const;
+
+    /** Shows only the sounds of a category (its name), or of a subcategory (a CatID), or with no
+        category, as choosing it on the left does; all empty and false: every sound. */
+    void showCategory (const juce::String& category, const juce::String& catId = {}, bool withoutCategory = false);
+
+    /** How many of the sounds found (by the search) have this CatID ("" for none), or are in this
+        category, as the list on the left shows. */
+    juce::int64 countWithCatId (const juce::String& catId) const;
+    juce::int64 countInCategory (const juce::String& category) const;
+    juce::int64 found() const;          // the sounds the search finds, in any category or none
+
+    /** Sets the selected sounds' category by hand (a CatID), or clears it with an empty one, as
+        the rows' right-click menu does. */
+    bool setCategoryOfSelection (const juce::String& catId);
 
     /** Types into the search box, as the keyboard does. */
     void setSearch (const juce::String&);
@@ -71,10 +89,14 @@ public:
 
 private:
     class Scanner;
+    class Categories;
+    SoundLibrary::Query query (int offset = 0, int limit = 0) const;
+    void showCategoryMenu();
 
     void paintRowBackground (juce::Graphics&, int row, int width, int height, bool selected) override;
     void paintCell (juce::Graphics&, int row, int column, int width, int height, bool selected) override;
     void cellDoubleClicked (int row, int column, const juce::MouseEvent&) override;
+    void cellClicked (int row, int column, const juce::MouseEvent&) override;
     void selectedRowsChanged (int lastRowSelected) override;
     void sortOrderChanged (int column, bool forwards) override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -91,7 +113,10 @@ private:
     std::unique_ptr<Scanner> scanner;
     std::unique_ptr<juce::FileChooser> chooser;
 
-    juce::String text;
+    juce::String text, filterCategory, filterCatId;
+    bool filterWithout = false;
+    std::map<juce::String, juce::int64> counts;               // by CatID, of the sounds the search finds
+    std::map<juce::String, juce::int64> categoryCounts;       // by category
     SoundLibrary::Column sortBy = SoundLibrary::Column::name;
     bool forwards = true;
     juce::int64 rows = 0, total = 0;
@@ -104,6 +129,7 @@ private:
     juce::TextEditor search;
     juce::TextButton addButton { "Add Folder..." }, foldersButton { "Folders" };
     juce::TableListBox table { {}, this };
+    std::unique_ptr<Categories> categories;
     juce::Label summary;
     SoundLibraryPreview preview;
     juce::AudioSourcePlayer previewPlayer;
