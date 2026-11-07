@@ -1185,6 +1185,138 @@ namespace
         return t;
     }
 
+    /** What track `index` adds to the mix: the mix less the mix without its clips. */
+    juce::AudioBuffer<float> trackOut (const SessionState& s, size_t index, int channels)
+    {
+        auto without = s;
+        without.tracks[index].clips.clear();
+        auto out = channels == 2 ? render (s, 2, -1) : render (s, channels, 2, -1);
+        const auto rest = channels == 2 ? render (without, 2, -1) : render (without, channels, 2, -1);
+
+        for (int ch = 0; ch < channels; ++ch)
+            out.addFrom (ch, 0, rest, ch, 0, frames, -1.0f);
+
+        return out;
+    }
+
+    SessionTrack& addSteadyTrack (SessionState& s, float value)
+    {
+        auto& t = s.addTrack();
+        juce::AudioBuffer<float> b (2, frames);
+
+        for (int ch = 0; ch < 2; ++ch)
+            juce::FloatVectorOperations::fill (b.getWritePointer (ch), value, frames);
+
+        SessionClip c;
+        c.id = s.nextId++;
+        c.audio = AudioEdits::fromBuffer (std::move (b));
+        c.length = frames;
+        t.clips.push_back (c);
+        return t;
+    }
+
+    void testWideDucking()
+    {
+        // A 7.1 track (and a 5.1 one) ducking under a stereo voice from frame 1500, in a 7.1 master.
+        const Ducking under { 0, -12.0f, -40.0f, 1.0f, 10.0f };
+        const auto ducked = [&under] (int channels)
+        {
+            SessionState s;
+            s.sampleRate = rate;
+            SessionEdits::setMasterChannels (s, 8);
+            const auto wide = (channels == 8 ? addSevenOneTrack (s, 8, 300, 91) : addFiveOneTrack (s, 6, 300, 92)).id;
+            auto& voice = addClipTrack (s, 2, 1500, 93);
+            const auto voiceId = voice.id;
+            auto d = under;
+            d.keyTrackId = voiceId;
+            SessionEdits::setDucking (s, wide, d);
+            return s;
+        };
+
+        // The gains it should come down by: a steady 0.25 ducked the same way, in a stereo master.
+        SessionState steady;
+        steady.sampleRate = rate;
+        const auto music = addSteadyTrack (steady, 0.25f).id;
+        auto steadyDucking = under;
+        steadyDucking.keyTrackId = addClipTrack (steady, 2, 1500, 93).id;
+        SessionEdits::setDucking (steady, music, steadyDucking);
+
+        const auto gains = trackOut (steady, 0, 2);
+        juce::String said;
+        auto allRight = true;
+
+        for (int channels : { 8, 6 })
+        {
+            const auto s = ducked (channels);
+            const auto out = trackOut (s, 0, 8);
+            const auto expected = placedEight (s.tracks[0].clips[0], 1.0f);
+            auto err = 0.0f, before = 0.0f, deepest = 1.0f;
+
+            for (int i = 0; i < frames; ++i)
+            {
+                const auto g = gains.getSample (0, i) / 0.25f;
+                deepest = juce::jmin (deepest, g);
+
+                for (int ch = 0; ch < 8; ++ch)
+                {
+                    const auto e = std::abs (out.getSample (ch, i) - g * expected.getSample (ch, i));
+                    err = juce::jmax (err, e);
+
+                    if (i < 1500)
+                        before = juce::jmax (before, e);
+                }
+            }
+
+            allRight = allRight && err < 1.0e-6f && juce::exactlyEqual (before, 0.0f) && juce::Decibels::gainToDecibels (deepest) < -11.0f;
+            said << (channels == 8 ? "7.1" : "5.1") << ": within " << juce::String (err, 9) << ", deepest "
+                 << juce::String (juce::Decibels::gainToDecibels (deepest), 2) << " dB; ";
+        }
+
+        check (allRight, "surround ducking: a 7.1 track, and a 5.1 one, ducked under a voice come down on every channel by the gains a stereo "
+                         "track does, untouched before the voice (" + said.trimEnd() + ")");
+
+        // A 7.1 track as the key: heard as its stereo fold-down.
+        const auto keyed = [&under] (AudioDocument::Snapshot keyAudio, bool wideKey)
+        {
+            SessionState s;
+            s.sampleRate = rate;
+            SessionEdits::setMasterChannels (s, 8);
+            const auto keyedMusic = addSteadyTrack (s, 0.25f).id;
+            auto& key = wideKey ? addSevenOneTrack (s, 8, 1500, 94) : addFiveOneTrack (s, 2, 1500, 94);
+
+            if (! wideKey)
+            {
+                key.fiveOne = false;
+                key.clips[0].audio = std::move (keyAudio);
+                key.clips[0].length = key.clips[0].audio->getNumFrames();
+            }
+
+            auto d = under;
+            d.keyTrackId = key.id;
+            SessionEdits::setDucking (s, keyedMusic, d);
+            return s;
+        };
+
+        const auto wideKey = keyed (nullptr, true);
+        const auto& kc = wideKey.tracks[1].clips[0];
+        juce::AudioBuffer<float> raw (8, (int) kc.length), folded (2, (int) kc.length);
+        kc.audio->read (raw, 0, 0, raw.getNumSamples());
+        Surround::foldDown (raw.getArrayOfReadPointers(), 8, folded.getWritePointer (0), folded.getWritePointer (1), raw.getNumSamples());
+        const auto stereoKey = keyed (AudioEdits::fromBuffer (std::move (folded)), false);
+        const auto a = trackOut (wideKey, 0, 8), b = trackOut (stereoKey, 0, 8);
+        auto keyErr = 0.0f, keyDeepest = 1.0f;
+
+        for (int ch = 0; ch < 8; ++ch)
+            keyErr = juce::jmax (keyErr, worst (a, ch, b, ch));
+
+        for (int i = 0; i < frames; ++i)
+            keyDeepest = juce::jmin (keyDeepest, a.getSample (0, i) / 0.25f);
+
+        check (keyErr < 1.0e-6f && juce::Decibels::gainToDecibels (keyDeepest) < -11.0f,
+               "surround ducking: a 7.1 track as the key ducks a stereo track as a stereo key of its fold-down does (within "
+                   + juce::String (keyErr, 9) + ", deepest " + juce::String (juce::Decibels::gainToDecibels (keyDeepest), 2) + " dB)");
+    }
+
     void testSevenOneTracks (AudioEngine& engine)
     {
         SessionState s;
@@ -1319,6 +1451,7 @@ namespace
 void runSurroundSessionTests (AudioEngine& engine)
 {
     testSevenOneTracks (engine);
+    testWideDucking();
     testSevenOneMaster (engine);
     testFiveOneTracks (engine);
     testFiveOneControls (engine);

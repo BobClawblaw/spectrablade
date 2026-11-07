@@ -4,6 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 274: Ducking on 7.1 tracks, tested**
+- No change to how it works: ducking on 5.1 and 7.1 tracks, and with them as the key, was there since those tracks were, but untested. Now it is tested.
+- Measured by the tests: in a 7.1 master, a 7.1 track ducked under a stereo voice comes down on all eight channels by the gains a steady stereo track ducked the same way does (within 0.000000030), and a 5.1 track on all six (within 0.000000028), both to -12.00 dB, and untouched bit for bit before the voice; a 7.1 track as the key ducks a stereo track as a stereo key playing its fold-down does (within 0.000000030, to -12.00 dB). The whole suite passed (1269 checks). Not tried: ducking on surround tracks in the running app.
+
 **Milestone 273: Keeping takes when a clip is processed**
 - Stretch Clip, Shift Clip Pitch and stretching by Option-drag now keep a clip's takes. Each take is processed the same way from the part of it the clip plays (silence where a take is shorter than the clip), written to a file of its own beside the active one's, and kept lined up, so choosing another take afterwards plays it in the same place and at the same length. Before, the other takes were dropped.
 - The Pitch Editor keeps them too: the notes moved belong to the take playing, so only that take gets the new audio, and the others play just what they did, from their own files.
