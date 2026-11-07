@@ -2988,6 +2988,10 @@ void MainComponent::askForMixDownFormat (const juce::File& file)
     const std::array<double, 5> tails { 0.0, 1.0, 2.0, 5.0, 10.0 };
     box->addComboBox ("tail", { "None", "1 s", "2 s", "5 s", "10 s" }, "Tail after the end");
     box->getComboBoxComponent ("tail")->setSelectedItemIndex (0);
+
+    // Loudness: as mixed, or brought to a delivery spec (as Meet Delivery Spec does), with its report.
+    box->addComboBox ("loudness", loudnessChoices(), "Loudness");
+    box->getComboBoxComponent ("loudness")->setSelectedItemIndex (0);
     box->addButton ("Mix Down", 1, juce::KeyPress (juce::KeyPress::returnKey));
     box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
 
@@ -2999,7 +3003,7 @@ void MainComponent::askForMixDownFormat (const juce::File& file)
 
             const auto depth = depths[box->getComboBoxComponent ("depth")->getSelectedItemIndex()];
             const auto tail = (juce::int64) std::llround (tails[(size_t) box->getComboBoxComponent ("tail")->getSelectedItemIndex()] * rate);
-            mixDown (file, depth, range.withEnd (range.getEnd() + tail));
+            mixDown (file, depth, range.withEnd (range.getEnd() + tail), loudnessChoice (box->getComboBoxComponent ("loudness")->getSelectedItemIndex()));
         }), true);
 }
 
@@ -3279,7 +3283,25 @@ void MainComponent::showTempoDialog (bool atCursor)
         }), true);
 }
 
-void MainComponent::mixDown (const juce::File& file, int bitDepth, juce::Range<juce::int64> range)
+juce::StringArray MainComponent::loudnessChoices()
+{
+    juce::StringArray names { "As mixed" };
+
+    for (auto& spec : Delivery::specs())
+        names.add (spec.name + " (" + Loudness::format (spec.targetLufs, "LUFS") + ", " + Loudness::format (spec.maxTruePeak, "dBTP") + ")");
+
+    return names;
+}
+
+std::optional<Delivery::Spec> MainComponent::loudnessChoice (int index)
+{
+    if (! juce::isPositiveAndBelow (index - 1, (int) Delivery::specs().size()))
+        return std::nullopt;
+
+    return Delivery::specs()[(size_t) index - 1];
+}
+
+void MainComponent::mixDown (const juce::File& file, int bitDepth, juce::Range<juce::int64> range, std::optional<Delivery::Spec> spec)
 {
     const auto state = engine.session.getState();
     const auto rate = engine.session.getSampleRate();
@@ -3294,27 +3316,52 @@ void MainComponent::mixDown (const juce::File& file, int bitDepth, juce::Range<j
     auto inserts = std::make_shared<TrackEffects>();
     auto error = std::make_shared<juce::String>();
     auto warnings = std::make_shared<juce::String>();
+    auto report = std::make_shared<juce::String>();
 
     backgroundJob = std::make_unique<BackgroundJob> (*this, "Mixing down...",
-        [this, state, rate, effects, inserts, error, warnings, file, bitDepth, range] (const std::function<bool (float)>& progress)
+        [this, state, rate, effects, inserts, error, warnings, report, file, bitDepth, range, spec] (const std::function<bool (float)>& progress)
         {
             *warnings = OfflineRender::loadTrackEffects (*effects, engine.pluginFormatManager, rate, *inserts);
             juce::AudioBuffer<float> mix;
+            const auto share = spec.has_value() ? 0.5f : 1.0f;
 
-            if (! OfflineRender::mixSession (*state, range, mix, inserts.get(), progress))
+            if (! OfflineRender::mixSession (*state, range, mix, inserts.get(), [&progress, share] (float p) { return progress (share * p); }))
                 return false;
 
+            auto audio = AudioEdits::fromBuffer (std::move (mix));
+
+            // To the spec, as Meet Delivery Spec brings a file to it.
+            if (spec.has_value())
+            {
+                const auto d = Delivery::deliver (*audio, 0, audio->getNumFrames(), rate, *spec, [&progress] (float p) { return progress (0.5f + 0.5f * p); });
+
+                if (d.snapshot == nullptr && d.error.isEmpty())
+                    return false;
+
+                if (d.snapshot == nullptr)
+                {
+                    *error = d.error;
+                    return true;
+                }
+
+                audio = d.snapshot;
+                *report = Delivery::report (*spec, d, file.getFileName());
+            }
+
             // The session's markers go with it, where the format holds them.
-            *error = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (mix)), rate, file, bitDepth, engine.formatManager,
+            *error = AudioFileIO::save (*audio, rate, file, bitDepth, engine.formatManager,
                                         MarkerEdits::afterCrop (state->markers, range.getStart(), range.getEnd()));
             return true;
         },
-        [error, warnings, file]
+        [this, error, warnings, report, file]
         {
             if (error->isNotEmpty())
                 showError ("Mix Down", *error);
             else if (warnings->isNotEmpty())
                 showError ("Mix Down", file.getFileName() + " was written without these effects, which could not be loaded:\n" + *warnings);
+
+            if (error->isEmpty() && report->isNotEmpty())
+                showDeliveryReport (*report, file);
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
@@ -3643,9 +3690,24 @@ void MainComponent::chooseStemsFolder (bool folders)
 
                               // The time range if there is one, otherwise the whole session from its start.
                               const auto timeRange = multitrack.getTimeSelection();
-                              exportStems (folder, ! timeRange.isEmpty() ? timeRange
-                                                                         : juce::Range<juce::int64> (0, engine.session.getState()->getLength()),
-                                           folders);
+                              const auto range = ! timeRange.isEmpty() ? timeRange
+                                                                       : juce::Range<juce::int64> (0, engine.session.getState()->getLength());
+
+                              // Loudness: as mixed, or each stem given the one gain that brings the whole mix to a spec.
+                              auto* box = new juce::AlertWindow (folders ? "Export Folder Stems" : "Export Stems",
+                                                                 "To a delivery spec, every stem gets the same gain: the one that brings the "
+                                                                 "whole mix to the spec's loudness, so the stems still add up to that mix. "
+                                                                 "No limiter is used, and the report says when the mix would need one.",
+                                                                 juce::MessageBoxIconType::NoIcon, this);
+                              box->addComboBox ("loudness", loudnessChoices(), "Loudness");
+                              box->getComboBoxComponent ("loudness")->setSelectedItemIndex (0);
+                              box->addButton ("Export", 1, juce::KeyPress (juce::KeyPress::returnKey));
+                              box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+                              box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, folder, range, folders] (int result)
+                              {
+                                  if (result == 1)
+                                      exportStems (folder, range, folders, loudnessChoice (box->getComboBoxComponent ("loudness")->getSelectedItemIndex()));
+                              }), true);
                           });
 }
 
@@ -3720,7 +3782,7 @@ void MainComponent::exportRegions (const juce::File& folder)
     commands.commandStatusChanged();
 }
 
-void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int64> range, bool folders)
+void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int64> range, bool folders, std::optional<Delivery::Spec> spec)
 {
     const auto state = engine.session.getState();
     const auto rate = engine.session.getSampleRate();
@@ -3750,15 +3812,50 @@ void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int
         stems->push_back (std::move (stem));
     }
 
+    // To a delivery spec: the whole mix too, measured for the one gain they all get.
+    std::map<juce::uint32, std::unique_ptr<juce::XmlElement>> mixEffects;
+
+    if (spec.has_value())
+        for (auto& t : state->tracks)
+            if (auto xml = engine.getTrackEffects().createXml (t.id))
+                mixEffects[t.id] = std::move (xml);
+
+    auto mixChains = std::make_shared<decltype (mixEffects)> (std::move (mixEffects));
+
     // Fresh plug-ins for each stem, kept until the job is deleted on the message thread.
     auto inserts = std::make_shared<std::vector<std::unique_ptr<TrackEffects>>>();
     auto errors = std::make_shared<juce::StringArray>();
     auto warnings = std::make_shared<juce::String>();
+    auto report = std::make_shared<juce::String>();
 
     backgroundJob = std::make_unique<BackgroundJob> (*this, "Exporting stems...",
-        [this, stems, inserts, errors, warnings, rate, range] (const std::function<bool (float)>& progress)
+        [this, state, stems, inserts, errors, warnings, report, mixChains, rate, range, spec, sessionName] (const std::function<bool (float)>& progress)
         {
-            const auto count = (float) stems->size();
+            const auto count = (float) stems->size() + (spec.has_value() ? 1.0f : 0.0f);
+            auto gainDb = 0.0;
+
+            if (spec.has_value())
+            {
+                inserts->push_back (std::make_unique<TrackEffects>());
+                *warnings += OfflineRender::loadTrackEffects (*mixChains, engine.pluginFormatManager, rate, *inserts->back());
+                juce::AudioBuffer<float> mix;
+
+                if (! OfflineRender::mixSession (*state, range, mix, inserts->back().get(), [&progress, count] (float p) { return progress (p / count); }))
+                    return false;
+
+                const auto plan = Delivery::planStems (*spec, mix, rate, (int) stems->size(), sessionName + " stems");
+
+                if (plan.error.isNotEmpty())
+                {
+                    errors->add (plan.error + " The stems were not written.");
+                    return true;
+                }
+
+                gainDb = plan.gainDb;
+                *report = plan.report;
+            }
+
+            const auto first = spec.has_value() ? 1.0f : 0.0f;
 
             for (size_t i = 0; i < stems->size(); ++i)
             {
@@ -3766,10 +3863,13 @@ void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int
                 inserts->push_back (std::make_unique<TrackEffects>());
                 *warnings += OfflineRender::loadTrackEffects (stem.effects, engine.pluginFormatManager, rate, *inserts->back());
                 juce::AudioBuffer<float> mix;
-                const auto part = [&progress, i, count] (float p) { return progress (((float) i + p) / count); };
+                const auto part = [&progress, i, count, first] (float p) { return progress ((first + (float) i + p) / count); };
 
                 if (! OfflineRender::mixSession (*stem.alone, range, mix, inserts->back().get(), part))
                     return false;
+
+                if (spec.has_value())
+                    mix.applyGain ((float) juce::Decibels::decibelsToGain (gainDb, -1000.0));
 
                 if (const auto error = AudioFileIO::save (*AudioEdits::fromBuffer (std::move (mix)), rate, stem.file, 32, engine.formatManager);
                     error.isNotEmpty())
@@ -3778,13 +3878,16 @@ void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int
 
             return true;
         },
-        [errors, warnings, folder]
+        [this, errors, warnings, report, folder, sessionName]
         {
             if (! errors->isEmpty())
                 showError ("Export Stems", errors->joinIntoString ("\n"));
             else if (warnings->isNotEmpty())
                 showError ("Export Stems", "The stems were written to " + folder.getFullPathName()
                                                + " without these effects, which could not be loaded:\n" + *warnings);
+
+            if (errors->isEmpty() && report->isNotEmpty())
+                showDeliveryReport (*report, folder.getChildFile (sessionName + ".wav"));
         });
     backgroundJob->launchThread();
     commands.commandStatusChanged();
@@ -8645,18 +8748,18 @@ void MainComponent::meetDeliverySpec (const Delivery::Spec& spec)
     backgroundJob->launchThread();
 }
 
-void MainComponent::showDeliveryReport (const juce::String& report)
+void MainComponent::showDeliveryReport (const juce::String& report, const juce::File& suggested)
 {
     auto* box = new juce::AlertWindow ("Delivery Report", {}, juce::MessageBoxIconType::NoIcon, this);
     box->addTextBlock (report);
     box->addButton ("Save Report...", 1);
     box->addButton ("OK", 0, juce::KeyPress (juce::KeyPress::returnKey));
-    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, report] (int result)
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, report, suggested] (int result)
     {
         if (result != 1)
             return;
 
-        const auto from = engine.document.getFile();
+        const auto from = suggested != juce::File() ? suggested : engine.document.getFile();
         const auto start = from != juce::File() ? from.getSiblingFile (from.getFileNameWithoutExtension() + " Delivery Report.txt")
                                                 : juce::File::getSpecialLocation (juce::File::userMusicDirectory).getChildFile ("Delivery Report.txt");
         chooser = std::make_unique<juce::FileChooser> ("Save the delivery report", start, "*.txt");

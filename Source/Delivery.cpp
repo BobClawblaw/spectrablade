@@ -91,6 +91,31 @@ Delivered deliver (const AudioSnapshot& audio, juce::int64 start, juce::int64 en
     return d;
 }
 
+Stems planStems (const Spec& spec, const juce::AudioBuffer<float>& mix, double sampleRate, int stems, const juce::String& title)
+{
+    Stems plan;
+    Delivered d;
+    d.before = Loudness::measure (mix, sampleRate);
+
+    if (! std::isfinite (d.before.integrated))
+    {
+        plan.error = "The mix has nothing above the -70 LUFS gate to measure.";
+        return plan;
+    }
+
+    d.gainDb = plan.gainDb = spec.targetLufs - d.before.integrated;
+    juce::AudioBuffer<float> gained (mix);
+    gained.applyGain ((float) juce::Decibels::decibelsToGain (plan.gainDb, -1000.0));
+    d.after = Loudness::measure (gained, sampleRate);
+
+    plan.report = report (spec, d, title).replace ("Gain: ", juce::String (stems) + " stems, each with the same gain: ", false);
+
+    if (d.after.truePeak > spec.maxTruePeak)
+        plan.report << "\nThe mix's true peak passes the ceiling: it would need limiting, which the stems can't carry and still add up to the mix.";
+
+    return plan;
+}
+
 juce::String report (const Spec& spec, const Delivered& d, const juce::String& title)
 {
     juce::StringArray out;

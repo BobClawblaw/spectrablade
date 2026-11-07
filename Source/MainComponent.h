@@ -313,7 +313,7 @@ private:
         one step to undo, then its report, which can be saved as a text file. */
     void askForDeliverySpec();
     void meetDeliverySpec (const Delivery::Spec&);
-    void showDeliveryReport (const juce::String& report);
+    void showDeliveryReport (const juce::String& report, const juce::File& suggested = {});
     void matchLoudness (double target, double ceiling, bool limitToTarget);
 
     // Noise reduction
@@ -357,7 +357,7 @@ private:
     void addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame);
     void chooseMixDownFile();
     void askForMixDownFormat (const juce::File&);
-    void mixDown (const juce::File&, int bitDepth, juce::Range<juce::int64>);
+    void mixDown (const juce::File&, int bitDepth, juce::Range<juce::int64>, std::optional<Delivery::Spec> spec = std::nullopt);
     void bounceTrack();
     void freezeOrUnfreezeTrack();
     void duplicateTrack();
@@ -370,7 +370,11 @@ private:
                               std::function<AudioDocument::Snapshot (const SessionClip&, const std::function<bool (float)>&)> process,
                               bool keepEnd = false);
     void chooseStemsFolder (bool folders);
-    void exportStems (const juce::File& folder, juce::Range<juce::int64>, bool folders);
+    void exportStems (const juce::File& folder, juce::Range<juce::int64>, bool folders, std::optional<Delivery::Spec> spec = std::nullopt);
+
+    /** "As mixed", then each delivery spec's name: the choices for a mixdown's or stems' loudness. */
+    static juce::StringArray loudnessChoices();
+    static std::optional<Delivery::Spec> loudnessChoice (int index);
 
     // Transport and windows
     void togglePlay();

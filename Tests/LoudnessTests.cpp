@@ -162,11 +162,62 @@ namespace
         check (outsideSame && Delivery::passes (r128, part.after) && none.snapshot == nullptr && none.error.contains ("-70 LUFS"),
                "delivery: on a selection only it changes, the rest bit for bit as it was; silence is refused, with nothing above the gate");
     }
+
+    void testDeliveryStems()
+    {
+        constexpr double rate = 48000.0;
+        const auto& r128 = Delivery::specs()[0];
+        const auto& online14 = Delivery::specs()[3];
+
+        // Two stems, noise and a tone, and their mix.
+        std::vector<juce::AudioBuffer<float>> stems { programme (rate, 0.05, false), tone ({ { 10, -40 } }, rate, 2, 440.0) };
+        juce::AudioBuffer<float> mix (stems[0]);
+        mix.addFrom (0, 0, stems[1], 0, 0, mix.getNumSamples());
+        mix.addFrom (1, 0, stems[1], 1, 0, mix.getNumSamples());
+
+        const auto plan = Delivery::planStems (r128, mix, rate, 2, "song stems");
+        const auto gain = (float) juce::Decibels::decibelsToGain (plan.gainDb, -1000.0);
+        juce::AudioBuffer<float> sum (2, mix.getNumSamples());
+        sum.clear();
+        auto worst = 0.0f;
+
+        for (auto& stem : stems)
+        {
+            stem.applyGain (gain);
+
+            for (int ch = 0; ch < 2; ++ch)
+                sum.addFrom (ch, 0, stem, ch, 0, sum.getNumSamples());
+        }
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < sum.getNumSamples(); ++i)
+                worst = juce::jmax (worst, std::abs (sum.getSample (ch, i) - gain * mix.getSample (ch, i)));
+
+        const auto delivered = Loudness::measure (sum, rate);
+        check (plan.error.isEmpty() && std::abs (delivered.integrated + 23.0) < 0.01 && worst < 1.0e-6f
+                   && plan.report.contains ("2 stems, each with the same gain: +") && plan.report.contains ("PASS  True peak")
+                   && plan.report.contains ("Meets EBU R128.") && ! plan.report.contains ("would need limiting"),
+               "delivery: two stems to EBU R128 each get " + juce::String (plan.gainDb, 2) + " dB, the one gain that brings their mix from "
+                   + Loudness::format (Loudness::measure (mix, rate).integrated, "LUFS") + " to " + Loudness::format (delivered.integrated, "LUFS")
+                   + "; summed, they differ from the gained mix by at most " + juce::String (worst, 9) + ", and the report says it meets the spec");
+
+        // Clicks to full scale: to -14 LUFS the mix's true peak would pass the ceiling, and no stem is limited.
+        const auto peaky = programme (rate, 0.12, true);
+        const auto loud = Delivery::planStems (online14, peaky, rate, 3, "loud stems");
+        juce::AudioBuffer<float> zeros (2, (int) rate);
+        zeros.clear();
+        const auto silent = Delivery::planStems (r128, zeros, rate, 1, "silent stems");
+        check (loud.error.isEmpty() && loud.report.contains ("FAIL  True peak") && loud.report.contains ("would need limiting")
+                   && loud.report.contains ("Does not meet Online -14 LUFS.") && silent.error.contains ("-70 LUFS") && silent.report.isEmpty(),
+               "delivery: stems whose mix would pass -1 dBTP at -14 LUFS (" + juce::String (loud.gainDb, 2) + " dB) are reported as failing "
+                   + "the true peak and needing limiting, not limited; a silent mix is refused");
+    }
 }
 
 void runLoudnessTests()
 {
     testDelivery();
+    testDeliveryStems();
     // EBU Tech 3341, cases 1-5, at 48 kHz and again at 44.1 kHz (the K-weighting is derived per rate).
     for (auto rate : { 48000.0, 44100.0 })
     {

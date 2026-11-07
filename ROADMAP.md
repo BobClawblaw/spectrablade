@@ -2,6 +2,8 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-Nothing is planned at the moment: every milestone so far is done and in the changelog.
+1. **Meet Delivery Spec in sequences and Batch Process:** recorded as a step, so it can be played on many files.
+2. **Keeping takes when a clip is processed:** the Pitch Editor, Stretch Clip and Shift Clip Pitch keep the clip's other takes.
+3. **Ducking on 7.1 tracks, tested:** a 7.1 track ducked under a voice, and keying another.
 
 Not code: Reduce Reverb and Level Speech are yet to be tried on real recordings and listened to, and a Developer ID (for notarizing) is the remaining step before installing opens without Privacy & Security.

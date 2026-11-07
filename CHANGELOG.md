@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 271: Delivery specs on mixdowns and stems**
+- Mix Down has a Loudness choice: as mixed, or one of the delivery specs. With a spec, the mix is brought to it as Meet Delivery Spec brings a file (gain, and the true-peak limiter only where gain alone would pass the ceiling) before it is written, and the report follows, with Save Report... suggesting a name beside the mixdown.
+- Export Stems and Export Folder Stems ask the same before they start. Stems can't each be limited and still add up to the mix, so every stem gets one gain: the one that brings the whole mix to the spec's loudness. The mix is rendered once more to measure it, and the report gives the mix's lines with that gain; where its true peak would pass the ceiling, the report fails that line and says the mix would need limiting. Stems are written as 32-bit float, so the gain does not clip them.
+- Measured by the tests: two stems to EBU R128 each get 9.38 dB, the one gain that brings their mix from -32.4 LUFS to -23.0 LUFS, and summed they differ from the gained mix by at most 0.000000016, with a report that meets the spec; stems whose mix would pass -1 dBTP at -14 LUFS are reported as failing the true peak and needing limiting, and are not limited; a silent mix is refused. The mixdown uses the same step as Meet Delivery Spec, tested in Milestone 270. The whole suite passed (1263 checks). Not tried: the Mix Down and Export Stems dialogs in the running app, the files they write with a spec, and Save Report from them.
+
 **Milestone 270: Loudness to a delivery spec**
 - Effects > Meet Delivery Spec... brings the selection (or the whole file) to a loudness spec in one step, as one step to undo: EBU R128 (-23 LUFS +/- 0.5 LU, true peak at most -1 dBTP), ATSC A/85 (-24 LKFS +/- 2 dB, at most -2 dBTP), or an online target of -16 or -14 LUFS (+/- 1 LU, at most -1 dBTP). The online targets are common published ones, not any one service's current rules.
 - It uses gain alone where that keeps the true peak under the ceiling, and otherwise gain into the true-peak limiter Match Loudness uses, set 0.1 dB under the ceiling so the result measures within it.

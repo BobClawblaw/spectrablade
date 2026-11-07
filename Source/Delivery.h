@@ -54,4 +54,18 @@ namespace Delivery
 
     /** Whether every line passes. */
     bool passes (const Spec&, const Loudness::Result&);
+
+    /** Stems to a spec: one gain for them all, the one that brings their mix to the target, so
+        they still add up to the mix as delivered. No limiter, as a limiter on each stem would not
+        add up to one on the mix: where the gain takes the mix's true peak past the ceiling, the
+        report says the mix would need limiting. */
+    struct Stems
+    {
+        double gainDb = 0.0;
+        juce::String report, error;     // error: nothing above the gate to measure
+    };
+
+    /** Measures the mix, finds the stems' gain and writes the report (the mix's lines after the
+        gain, measured on the mix with it). The mix is left as it was. */
+    Stems planStems (const Spec&, const juce::AudioBuffer<float>& mix, double sampleRate, int stems, const juce::String& title);
 }
