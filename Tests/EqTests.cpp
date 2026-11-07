@@ -200,6 +200,54 @@ void runEqTests()
                "a pass moves in frequency only, a press away from the points or on a band switched off moves nothing, the wheel raises and lowers the Q by a tenth");
     }
 
+    {
+        // Double-clicking: a handle switches its band off, its ring on again, empty space places the
+        // first band switched off there; pressing a handle picks its band out; the spectrum falls back.
+        ParametricEq eq (ParametricEq::defaultSettings(), rate);
+        eq.setSize (640, 360);
+        const auto event = [&eq] (juce::Point<float> at)
+        {
+            const auto now = juce::Time::getCurrentTime();
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, juce::ModifierKeys::leftButtonModifier,
+                                     juce::MouseInputSource::defaultPressure, juce::MouseInputSource::defaultOrientation,
+                                     juce::MouseInputSource::defaultRotation, juce::MouseInputSource::defaultTiltX,
+                                     juce::MouseInputSource::defaultTiltY, &eq, &eq, now, at, now, 2, false);
+        };
+        const auto& s = eq.getSettings();
+        const auto unpicked = eq.getSelectedBand() == -1;
+        eq.mouseDown (event (eq.pointFor (1)));
+        eq.mouseUp (event (eq.pointFor (1)));
+        const auto picked = eq.getSelectedBand() == 1;
+
+        eq.mouseDoubleClick (event (eq.pointFor (3)));
+        const auto ring = juce::Point<float> (eq.xForFrequency (s[3].band.frequency), eq.yForDb (0.0));
+        const auto off = ! s[3].on && eq.offBandAt (ring) == 3 && eq.bandAt (ring) != 3;
+        eq.mouseDoubleClick (event (ring));
+        const auto onAgain = s[3].on && eq.offBandAt (ring) == -1 && eq.getSelectedBand() == 3;
+
+        eq.getRow (1).on.setToggleState (false, juce::sendNotificationSync);
+        const juce::Point<float> spot (eq.xForFrequency (700.0), eq.yForDb (5.0));
+        eq.mouseDoubleClick (event (spot));
+        const auto placed = s[1].on && std::abs (s[1].band.frequency - 700.0) < 1.0 && std::abs (eq.responseDb (s[1].band.frequency) - 5.0) < 0.1;
+        eq.mouseDoubleClick (event (juce::Point<float> (eq.xForFrequency (40.0), eq.yForDb (-20.0))));
+        const auto noneLeft = s[0].on && s[1].on && s[2].on && s[3].on && s[4].on && std::abs (s[1].band.frequency - 700.0) < 1.0;
+
+        std::vector<float> loud (Analysis::fftSize / 2 + 1, -20.0f), quiet (Analysis::fftSize / 2 + 1, -100.0f);
+        eq.takeSpectrum (loud, rate);
+        eq.takeSpectrum (quiet, rate);
+        const auto falls = std::abs (eq.getSpectrum()[100] - (-20.6f)) < 1.0e-4f;
+        auto distinct = true;
+
+        for (int a = 0; a < ParametricEq::numBands; ++a)
+            for (int b = a + 1; b < ParametricEq::numBands; ++b)
+                distinct = distinct && ParametricEq::bandColour (a) != ParametricEq::bandColour (b);
+
+        check (unpicked && picked && off && onAgain && placed && noneLeft && falls && distinct,
+               "parametric eq: pressing a handle picks its band out; double-clicking it switches the band off (a ring on the 0 dB line), the ring "
+               "on again; double-clicking empty space puts the first band off there (700 Hz, the curve at +5 dB), nothing when none is off; "
+               "the spectrum falls back 0.6 dB a frame; each band its own colour");
+    }
+
     auto passFirst = ParametricEq::defaultSettings();
     passFirst[0].band.type = BandType::lowPass;
     check (! ParametricEq (passFirst, rate).getRow (0).gain.isEnabled() && ParametricEq (passFirst, rate).getRow (1).gain.isEnabled(),

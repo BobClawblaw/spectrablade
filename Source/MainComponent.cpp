@@ -281,6 +281,13 @@ public:
     /** Unticks Preview without asking for anything (the preview has ended elsewhere). */
     void previewEnded()                             { content->preview.setToggleState (false, juce::dontSendNotification); }
 
+    /** Where the drawing's spectrum comes from: the newest output, as for the analysis panels. */
+    void setReadOutput (std::function<double (juce::AudioBuffer<float>&)> read)
+    {
+        content->readOutput = std::move (read);
+        content->panel->readOutput = content->readOutput;
+    }
+
 private:
     struct Content final : public juce::Component
     {
@@ -323,6 +330,7 @@ private:
         void makePanel (const ParametricEq::Settings& settings)
         {
             panel = std::make_unique<ParametricEq> (settings, rate);
+            panel->readOutput = readOutput;
             panel->onChange = [this]
             {
                 remember (panel->getSettings());
@@ -353,6 +361,7 @@ private:
         double rate;
         std::function<void (const ParametricEq::Settings&)> remember;
         std::function<void (const ParametricEq*)> previewBands;
+        std::function<double (juce::AudioBuffer<float>&)> readOutput;
         std::unique_ptr<ParametricEq> panel;
         juce::TextButton apply { "Apply" }, flat { "Flat" };
         juce::ToggleButton preview { "Preview on the selection" };
@@ -7590,6 +7599,7 @@ void MainComponent::toggleParametricEq()
                 safe->toggleParametricEq();
         });
     });
+    eqWindow->setReadOutput ([this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); });
     places->watch (*eqWindow, "Parametric EQ");
 }
 

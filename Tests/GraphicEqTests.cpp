@@ -142,4 +142,54 @@ void runGraphicEqTests()
                "built-in graphic EQ: 31 bands played in blocks of 1, 7, 512 and 3,000 frames give the offline samples bit for bit; its state and its "
                "preset values restore every gain exactly; no latency");
     }
+
+    // The panel, driven by synthesised mouse events: pressing sets a band, a stroke across sets each
+    // band passed over along its line, double-clicking resets one, the wheel steps it.
+    {
+        GraphicEq::Panel panel (10);
+        panel.setSize (580, 300);
+        auto changes = 0;
+        panel.onChange = [&changes] { ++changes; };
+        const auto event = [&panel] (juce::Point<float> at, juce::Point<float> down, bool dragged, juce::ModifierKeys mods = juce::ModifierKeys::leftButtonModifier)
+        {
+            const auto now = juce::Time::getCurrentTime();
+            return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(), at, mods, juce::MouseInputSource::defaultPressure,
+                                     juce::MouseInputSource::defaultOrientation, juce::MouseInputSource::defaultRotation,
+                                     juce::MouseInputSource::defaultTiltX, juce::MouseInputSource::defaultTiltY, &panel, &panel, now, down, now, 1, dragged);
+        };
+        const auto at = [&panel] (int band, double db) { return juce::Point<float> (panel.xForBand (band), panel.yForGain (db)); };
+
+        const auto scales = panel.bandAtX (panel.xForBand (7)) == 7 && std::abs (panel.gainForY (panel.yForGain (6.5)) - 6.5) < 1.0e-9
+                            && juce::exactlyEqual (panel.gainForY (panel.yForGain (40.0)), GraphicEq::maxGainDb)
+                            && juce::exactlyEqual (panel.gainForY (panel.getBarArea().getCentreY()), 0.0);
+
+        const auto press = at (2, 6.0);
+        panel.mouseDown (event (press, press, false));
+        const auto pressed = std::abs (panel.getGains()[2] - 6.0) < 0.051;
+
+        // One quick stroke from band 2 at +6 dB to band 6 at -6 dB: bands 3 to 5 follow the line.
+        panel.mouseDrag (event (at (6, -6.0), press, true));
+        const auto g = panel.getGains();
+        auto stroke = std::abs (g[6] + 6.0) < 0.051 && juce::exactlyEqual (g[0], 0.0) && juce::exactlyEqual (g[9], 0.0);
+
+        for (int b = 3; b <= 5; ++b)
+            stroke = stroke && std::abs (g[(size_t) b] - (6.0 - 3.0 * (b - 2))) < 0.11;
+
+        panel.mouseDoubleClick (event (at (4, 0.0), at (4, 0.0), false));
+        const auto reset = juce::exactlyEqual (panel.getGains()[4], 0.0);
+
+        juce::MouseWheelDetails up {};
+        up.deltaY = 0.25f;
+        panel.mouseWheelMove (event (at (8, 0.0), at (8, 0.0), false), up);
+        panel.mouseWheelMove (event (at (8, 0.0), at (8, 0.0), false, juce::ModifierKeys::shiftModifier), up);
+        const auto wheel = std::abs (panel.getGains()[8] - 0.6) < 1.0e-9;
+
+        const auto before = changes;
+        panel.setGains (std::vector<double> (10, 3.0));
+        const auto quiet = changes == before && juce::exactlyEqual (panel.getGains()[9], 3.0);
+
+        check (scales && pressed && stroke && reset && wheel && quiet && before == 5,
+               "graphic EQ panel: pressing sets the band to the gain there; one stroke across sets every band passed over along its line; "
+               "double-click resets a band; the wheel steps 0.5 dB (0.1 with Shift); setGains says nothing, each change here once");
+    }
 }

@@ -25,7 +25,13 @@ namespace GraphicEq
         valid, all at 0 dB, or an empty range. */
     AudioEdits::Snapshot apply (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const std::vector<double>& gainsDb);
 
-    /** A slider a band, its frequency under it, and Flat; onChange is called as one moves. */
+    /** The bands drawn as bars from the 0 dB line, each in a colour running from warm (low) to
+        cool (high), with the response they make together drawn over them and each band's frequency
+        under it. Pressing sets the band under the mouse to the gain there; dragging across sets
+        every band passed over, along the line the mouse drew, so a shape can be sketched in one
+        stroke. Double-clicking a band sets it back to 0 dB; the wheel over one moves it 0.5 dB a
+        step (0.1 with Shift). The band under the mouse says its frequency and gain. Flat sets them
+        all to 0 dB. onChange is called after each change made here. */
     class Panel final : public juce::Component
     {
     public:
@@ -36,12 +42,30 @@ namespace GraphicEq
 
         std::function<void()> onChange;
 
+        /** The drawing's scales: the bars' area, each band's column centre, and gain up it. */
+        juce::Rectangle<float> getBarArea() const;
+        float xForBand (int band) const;
+        int bandAtX (float x) const;                  // the nearest band's column
+        float yForGain (double db) const;
+        double gainForY (float y) const;              // to 0.1 dB, within maxGainDb
+
+        void paint (juce::Graphics&) override;
         void resized() override;
+        void mouseMove (const juce::MouseEvent&) override;
+        void mouseExit (const juce::MouseEvent&) override;
+        void mouseDown (const juce::MouseEvent&) override;
+        void mouseDrag (const juce::MouseEvent&) override;
+        void mouseDoubleClick (const juce::MouseEvent&) override;
+        void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
 
     private:
-        juce::OwnedArray<juce::Slider> sliders;
-        juce::OwnedArray<juce::Label> labels;
+        void setBand (int band, double db);
+        void changed();
+        float xForFrequency (double hz) const;        // between the column centres, on a log scale
+
+        std::vector<double> gains;
+        int hovered = -1;
+        juce::Point<float> last;                      // where the drag was at its last step
         juce::TextButton flat { "Flat" };
-        juce::Label top { {}, "+12 dB" }, bottom { {}, "-12 dB" };
     };
 }

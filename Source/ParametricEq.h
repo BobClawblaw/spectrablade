@@ -1,12 +1,23 @@
 #pragma once
 
 #include "Equalizer.h"
+#include "Analysis.h"
 
 /** Five equalizer bands at once, each with an on switch, a type, a frequency, a gain and a Q,
     over a drawing of the response they make together (20 Hz to 20 kHz across, -24 to +24 dB up).
-    Each band switched on has a point on the curve at its frequency: drag it to set the frequency
-    and the gain (so the curve passes under the mouse there), and turn the wheel over it for the Q. */
-class ParametricEq final : public juce::Component
+
+    Each band has a colour of its own: its own response is shaded in it, and its row of controls is
+    marked with it. Each band switched on has a numbered handle on the curve at its frequency: drag
+    it to set the frequency and the gain (so the curve passes under the mouse there), turn the wheel
+    over it for the Q, and double-click it to switch the band off. A band switched off shows as a
+    ring on the 0 dB line: double-click it to switch it back on. Double-clicking anywhere else puts
+    the first band switched off there. The handle under the mouse, or the one last dragged, says its
+    type, frequency, gain and Q beside it.
+
+    With readOutput set, the spectrum of what is playing is drawn behind the curve (-90 to 0 dBFS
+    up the drawing), falling back slowly. */
+class ParametricEq final : public juce::Component,
+                           private juce::Timer
 {
 public:
     static constexpr int numBands = 5;
@@ -41,6 +52,20 @@ public:
     /** Called after every change to a band. */
     std::function<void()> onChange;
 
+    /** Fills the buffer (2 channels, Analysis::fftSize frames) with the newest output; returns the
+        sample rate, 0 if none. Unset: no spectrum. */
+    std::function<double (juce::AudioBuffer<float>&)> readOutput;
+
+    /** The spectrum drawn behind the curve (dB by bin, as Analysis::spectrumDb), as from readOutput. */
+    void takeSpectrum (const std::vector<float>& spectrumDb, double spectrumRate);
+    const std::vector<float>& getSpectrum() const noexcept   { return spectrum; }
+
+    /** Each band's colour, the same in every theme. */
+    static juce::Colour bandColour (int index);
+
+    /** The band picked out (its handle ringed, its row marked): the one last pressed; -1 for none. */
+    int getSelectedBand() const noexcept             { return selected; }
+
     // The drawing's scales: frequency across on a log scale, gain up, inside the curve's area.
     juce::Rectangle<float> getCurveArea() const;
     float xForFrequency (double frequency) const;
@@ -53,6 +78,10 @@ public:
 
     /** The band switched on whose point is nearest, within grabRadius pixels; -1 for none. */
     int bandAt (juce::Point<float>) const;
+
+    /** The band switched off whose ring (at its frequency, on the 0 dB line) is nearest, within
+        grabRadius pixels; -1 for none. */
+    int offBandAt (juce::Point<float>) const;
     static constexpr float grabRadius = 10.0f;
 
     struct Row
@@ -69,16 +98,25 @@ public:
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
+    void mouseDoubleClick (const juce::MouseEvent&) override;
+    void mouseExit (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void resized() override;
 
 private:
     void readRow (int index);
+    void timerCallback() override;
+    juce::Path responsePath (int band) const;   // one band's response, or (-1) all of them together
+    void paintSpectrum (juce::Graphics&, juce::Rectangle<float> area) const;
+    void paintReadout (juce::Graphics&, int band) const;
 
     Settings settings;
     double sampleRate;
     std::array<std::unique_ptr<Row>, numBands> rows;
-    int dragging = -1;
+    int dragging = -1, hovered = -1, selected = -1;
+    std::vector<float> spectrum;
+    double spectrumRate = 0.0;
+    juce::AudioBuffer<float> recent { 2, Analysis::fftSize };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEq)
 };

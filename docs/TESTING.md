@@ -152,7 +152,7 @@ What they check:
 - Fade each region: each region faded as Fade Selection Edges fades it.
 - Previous sound: the sound before the previous silence, stepping back from each one's start, and none before the first.
 - EQ band: each band's designed response, sines changed by it, a range filtered as in a whole-file pass with the rest bit for bit.
-- Parametric EQ: bands read from the panel's controls, the curve the sum of the active bands, its scales, no band at Nyquist.
+- Parametric EQ: bands read from the panel's controls, the curve the sum of the active bands, its scales, no band at Nyquist; picking a band by its handle, double-clicking a handle off, its ring on again and empty space to place a band switched off; the spectrum falling back; a colour for each band.
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.
@@ -173,7 +173,7 @@ What they check:
 - Keyboard shortcuts window: search, keys taken and reset, sets exported and imported, key sets applied over the defaults.
 - Reverse Each Region: regions turned round in place, the rest untouched, overlapping and one-frame regions skipped.
 - Effect presets: exact values through the files, names, separate effects, damaged files; built-in effects' and the EQ's values.
-- Graphic EQ: the bands, a band's gain at and off its centre, the cascade against the bands' responses, refused settings; live bit for bit with offline.
+- Graphic EQ: the bands, a band's gain at and off its centre, the cascade against the bands' responses, refused settings; live bit for bit with offline; the panel: pressing sets a band, one stroke across sets every band passed over along its line, double-click resets one, the wheel steps it, setting the gains from outside says nothing.
 - Moving tracks: the edit, as an undo step, and dragging a header in the view.
 - Track height: clicks at another height, its limits, and short headers.
 - Pre-roll and post-roll: where playback starts and when a punch-out recording stops.
