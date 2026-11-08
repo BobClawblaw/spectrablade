@@ -3,7 +3,7 @@
 [![Latest release](https://img.shields.io/github/v/release/BobClawblaw/spectrablade?label=release)](https://github.com/BobClawblaw/spectrablade/releases/latest)
 [![Licence: AGPL-3.0](https://img.shields.io/github/license/BobClawblaw/spectrablade?label=licence)](LICENSE)
 ![macOS 13 or later](https://img.shields.io/badge/macOS-13%2B-black?logo=apple)
-![Apple silicon and Intel](https://img.shields.io/badge/arch-Apple%20silicon%20%7C%20Intel-555)
+![Apple silicon](https://img.shields.io/badge/arch-Apple%20silicon-555)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)
 [![JUCE 9.0.4](https://img.shields.io/badge/JUCE-9.0.4-8DC63F)](https://juce.com)
 ![Plug-ins: VST3 and AU](https://img.shields.io/badge/plug--ins-VST3%20%7C%20AU-orange)
@@ -13,7 +13,7 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
-**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon and Intel).
+**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon).
 
 **Status:** 0.14.0, on the way to 1.0. See the [changelog](CHANGELOG.md) for what each version holds, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
@@ -83,7 +83,7 @@ The audio in all of them was generated for the screenshots.
 
 ## Download and install
 
-The newest build is always at [Releases > Latest](https://github.com/BobClawblaw/spectrablade/releases/latest), and every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page, as `SpectraBlade-<version>.dmg`, with a `.sha256` beside each. They are universal (Apple silicon and Intel) and need macOS 13 or later.
+The newest build is always at [Releases > Latest](https://github.com/BobClawblaw/spectrablade/releases/latest), and every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page, as `SpectraBlade-<version>.dmg`, with a `.sha256` beside each. They are built for Apple silicon and need macOS 13 or later. There is no Intel build (releases up to 0.14.0 were universal, but their Intel half was never tried).
 
 Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications; the licence is beside it as `LICENSE.txt`. The app is signed ad hoc, not with a Developer ID, so macOS blocks it the first time: open it once, then choose Open Anyway under System Settings > Privacy & Security. After that it opens normally. macOS asks for microphone access the first time you choose a recording input.
 
@@ -132,7 +132,7 @@ CMake fetches JUCE 9.0.4, LAME 4.0 (checked against its SHA-256) and Signalsmith
 Scripts/package.sh
 ```
 
-This builds a universal Release app in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app, `LICENSE.txt`, LAME's licence as `LAME-LICENSE.txt`, and Signalsmith Stretch's and Signalsmith Linear's as `SIGNALSMITH-STRETCH-LICENSE.txt` and `SIGNALSMITH-LINEAR-LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
+This builds a Release app for Apple silicon (arm64 only) in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app, `LICENSE.txt`, LAME's licence as `LAME-LICENSE.txt`, and Signalsmith Stretch's and Signalsmith Linear's as `SIGNALSMITH-STRETCH-LICENSE.txt` and `SIGNALSMITH-LINEAR-LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
 
 To check a disk image's app on its own, mount it and point the tests at it:
 

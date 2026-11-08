@@ -30,16 +30,7 @@ namespace
         Ref ref;
     };
 
-    bool isAppleSilicon()
-    {
-       #if JUCE_ARM
-        return true;
-       #else
-        return false;
-       #endif
-    }
-
-    /** True when the bundle's executable has code for the architecture this process runs as. */
+    /** True when the bundle's executable has code for Apple silicon, the only Macs SpectraBlade is built for. */
     bool hasCodeForThisMac (const juce::File& bundleFile)
     {
         const auto path = bundleFile.getFullPathName();
@@ -55,7 +46,7 @@ namespace
         if (archs.ref == nullptr)
             return true;
 
-        const SInt32 wanted = isAppleSilicon() ? kCFBundleExecutableArchitectureARM64 : kCFBundleExecutableArchitectureX86_64;
+        const SInt32 wanted = kCFBundleExecutableArchitectureARM64;
 
         for (CFIndex i = 0; i < CFArrayGetCount (archs.ref); ++i)
         {
@@ -280,9 +271,7 @@ void ScannerWorker::reply (const juce::XmlElement& xml)
 juce::String ScannerWorker::missingCodeReason (const juce::String& formatName, const juce::String& identifier)
 {
     if (const auto bundle = bundleFor (formatName, identifier); bundle.exists() && ! hasCodeForThisMac (bundle))
-        return juce::String ("it has no code for ")
-               + (isAppleSilicon() ? "Apple silicon (it is built only for Intel Macs; it may work with SpectraBlade opened using Rosetta)"
-                                   : "Intel Macs (it is built only for Apple silicon)");
+        return "it has no code for Apple silicon (it is built only for Intel Macs)";
 
     return {};
 }

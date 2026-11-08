@@ -4,7 +4,8 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 324: Apple silicon only**
+- From here on SpectraBlade is built for Apple silicon alone. Releases up to 0.14.0 were universal, but their Intel half was never launched and no Intel Mac was ever tried, so rather than ship code nobody has run there is no Intel build: `Scripts/package.sh` builds arm64 only and stops if the app holds any other architecture, and the README (its badge, the download line and the install notes) says so. The plug-in scan always looks for Apple silicon code now (the check for which kind of Mac the app runs on is gone, since it runs on no other), and its message for a plug-in built only for Intel Macs no longer suggests opening SpectraBlade using Rosetta, which an Apple silicon-only app cannot be. Measured: the package script's build holds arm64 only (`lipo -archs`), and the suite's Intel-only test bundle is still reported as having no code for Apple silicon. Not tried by hand: the scan window's message.
 
 ## Released
 
