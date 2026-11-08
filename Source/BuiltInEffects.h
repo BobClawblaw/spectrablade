@@ -10,6 +10,7 @@
 #include "ParametricEq.h"
 #include "DynamicEq.h"
 #include "Exciter.h"
+#include "Maximizer.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
     their own ("SpectraBlade"), so racks, track chains, sessions and offline renders create,
@@ -33,6 +34,7 @@ namespace BuiltInEffects
     constexpr const char* dynamicEqId = "spectrablade:dynamic-eq";
     constexpr const char* multibandWidthId = "spectrablade:multiband-width";
     constexpr const char* exciterId = "spectrablade:exciter";
+    constexpr const char* maximizerId = "spectrablade:maximizer";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -694,6 +696,37 @@ namespace BuiltInEffects
         int channelsPrepared = 0;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ExciterProcessor)
+    };
+
+    /** The maximizer, live: gain, ceiling, character and transient emphasis as parameters (over
+        Effects > Maximizer's ranges). It runs a frame at a time with Maximizer::Core, so over a
+        whole file from its start it gives Maximizer::apply's samples, late by the core's latency,
+        which it reports (and reports again when the character changes it). */
+    class MaximizerProcessor final : public BuiltInEffect
+    {
+    public:
+        MaximizerProcessor();
+
+        Maximizer::Settings getSettings() const;
+        void setSettings (const Maximizer::Settings&);
+
+        double getReductionDb() const noexcept                        { return reductionDb.load(); }
+
+        juce::AudioProcessorEditor* createEditor() override;
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    private:
+        juce::AudioParameterFloat *gain = nullptr, *ceiling = nullptr, *emphasis = nullptr;
+        juce::AudioParameterChoice* character = nullptr;
+        Maximizer::Core core;
+        Maximizer::Settings applied;
+        std::atomic<double> reductionDb { 0.0 };
+        double rate = 48000.0;
+        int channelsPrepared = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MaximizerProcessor)
     };
 
     /** The dynamic EQ, live: each band's on, shape, mode, frequency, Q, gain, threshold, ratio, attack

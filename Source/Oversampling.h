@@ -71,6 +71,13 @@ public:
         return out;
     }
 
+    /** One frame in; out comes the largest magnitude among the four high-rate samples the
+        upsampling filter makes for the frame (taps - 1) / 8 frames back (upLatency): the frame's
+        true peak, as near as the filter draws the waveform between samples. No shaping, no
+        downsampling. */
+    double peakTick (double in) noexcept;
+    static constexpr int upLatency = (taps - 1) / 8;   // 20 frames
+
     /** The filter's response at a frequency (relative to the high rate, 0 to 0.5), in dB. */
     static double responseDb (double frequencyOverHighRate);
 

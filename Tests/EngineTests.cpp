@@ -39,6 +39,7 @@
 #include "MultibandTests.h"
 #include "DynamicEqTests.h"
 #include "ExciterTests.h"
+#include "MaximizerTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -565,6 +566,7 @@ int main (int argc, char* argv[])
         runMultibandTests();
         runDynamicEqTests();
         runExciterTests();
+        runMaximizerTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

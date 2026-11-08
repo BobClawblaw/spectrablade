@@ -186,6 +186,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:maximizer"] = {
+            { "Gentle (-1 dBTP)", { { "gain", 3.0 }, { "ceiling", -1.0 }, { "character", 0.0 }, { "emphasis", 20.0 } } },
+            { "Streaming (-1 dBTP)", { { "gain", 6.0 }, { "ceiling", -1.0 }, { "character", 1.0 }, { "emphasis", 30.0 } } },
+            { "Loud (-0.3 dBTP)", { { "gain", 10.0 }, { "ceiling", -0.3 }, { "character", 2.0 }, { "emphasis", 40.0 } } },
+            { "Punchy drums", { { "gain", 6.0 }, { "ceiling", -0.5 }, { "character", 1.0 }, { "emphasis", 100.0 } } } };
         t["spectrablade:exciter"] = {
             { "Warm lows", exciter (200, 3000, {{ { 9, 0, 60 }, { 0, 0, 0 }, { 0, 0, 0 } }}, 0) },
             { "Tape glue", exciter (200, 3000, {{ { 6, 1, 50 }, { 6, 1, 50 }, { 6, 1, 50 } }}, 0) },

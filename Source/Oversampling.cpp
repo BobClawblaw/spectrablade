@@ -59,6 +59,32 @@ void Oversampler4::reset() noexcept
     lowPos = highPos = 0;
 }
 
+double Oversampler4::peakTick (double in) noexcept
+{
+    const auto& kernel = kernelTaps();
+    lowPos = lowPos == 0 ? (int) lowHistory.size() - 1 : lowPos - 1;
+    lowHistory[(size_t) lowPos] = in;
+    auto peak = 0.0;
+
+    for (int phase = 0; phase < factor; ++phase)
+    {
+        auto y = 0.0;
+        auto index = lowPos;
+
+        for (int k = phase; k < taps; k += factor)
+        {
+            y += kernel[(size_t) k] * lowHistory[(size_t) index];
+
+            if (++index == (int) lowHistory.size())
+                index = 0;
+        }
+
+        peak = juce::jmax (peak, std::abs (y * factor));
+    }
+
+    return peak;
+}
+
 double Oversampler4::responseDb (double f)
 {
     const auto& h = kernelTaps();

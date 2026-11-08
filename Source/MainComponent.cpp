@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdMaximizer:  info.setInfo ("Maximizer...", "Make the sound as loud as it can be under a true-peak ceiling, with a character and the hits kept", "Effects", 0); break;
         case cmdExciter:    info.setInfo ("Exciter...", "Drive the lows, the middle and the highs each into a saturation curve of its own: tube, tape or transistor", "Effects", 0); break;
         case cmdMultibandWidth: info.setInfo ("Multiband Stereo Width...", "Narrow or widen the lows, the middle and the highs each on its own: a mono low end, wider highs", "Effects", 0); break;
         case cmdDynamicEq:  info.setInfo ("Dynamic EQ...", "EQ bands that cut or boost only while their part of the sound is over (or under) a threshold", "Effects", 0);
@@ -2021,6 +2022,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDynamicEq:  showDynamicEq(); break;
         case cmdMultibandWidth: showMultibandWidth(); break;
         case cmdExciter:    showExciter(); break;
+        case cmdMaximizer:  showMaximizer(); break;
         case cmdChorus:     showSweptDelay (false); break;
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
@@ -2555,7 +2557,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats });
             group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
             group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31 });
-            group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, cmdNoiseGate });
+            group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMaximizer, cmdMultiband, cmdDeEsser, cmdNoiseGate });
             group ("Saturation", { cmdExciter });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
@@ -7880,6 +7882,42 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showMaximizer()
+{
+    const auto& s = maximizerSettings;
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        return Maximizer::Settings { v.at ("gain"), v.at ("ceiling"), (Maximizer::Character) juce::jlimit (0, 2, juce::roundToInt (v.at ("character"))), v.at ("emphasis") };
+    };
+
+    showEffectDialog ("Maximizer",
+                      "The gain drives the sound into the ceiling, and nothing comes out above it, the peaks between samples held under it too. "
+                      "Character sets how the limiter moves: Transparent looks 10 ms ahead and recovers slowly, so little pumps or distorts; Loud "
+                      "looks 2 ms ahead and recovers fast, louder and rougher; Balanced sits between. Transient Emphasis lifts the attacks before "
+                      "the limiter (by up to 6 dB), so hits keep their edge through it.",
+                      { { "gain", "Gain (dB)", s.gainDb, 1, {}, 0, 24, 0.1 }, { "ceiling", "Ceiling (dBTP)", s.ceilingDb, 1, {}, -24, 0, 0.1 },
+                        { "character", "Character", (double) (int) s.character, 0, Maximizer::characterNames() },
+                        { "emphasis", "Transient emphasis (%)", s.emphasisPercent, 0, {}, 0, 100, 1 } },
+                      BuiltInEffects::maximizerId, PreviewOwner::maximizer,
+                      [toSettings] (const EffectValues& v) { return Maximizer::isValid (toSettings (v)); },
+                      "A setting is out of range: gain 0 to 24 dB, ceiling -24 to 0 dBTP, emphasis 0 to 100 %.",
+                      [] (const EffectValues&) { return std::make_unique<BuiltInEffects::MaximizerProcessor>(); },
+                      [toSettings] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          auto* live = dynamic_cast<BuiltInEffects::MaximizerProcessor*> (&p);
+
+                          if (live != nullptr)
+                              live->setSettings (toSettings (v));
+
+                          return live != nullptr;
+                      },
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          maximizerSettings = toSettings (v);
+                          runStep ({ "maximizer", v, nullptr });
+                      });
 }
 
 void MainComponent::showExciter()

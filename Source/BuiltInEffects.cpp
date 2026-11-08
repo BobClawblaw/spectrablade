@@ -49,6 +49,7 @@ namespace
     juce::PluginDescription dynamicEqDescription()      { return describe ("Dynamic EQ", "EQ", dynamicEqId, 0x53424451); }                   // "SBDQ"
     juce::PluginDescription multibandWidthDescription() { return describe ("Multiband Stereo Width", "Spatial", multibandWidthId, 0x53424d57); }   // "SBMW"
     juce::PluginDescription exciterDescription()        { return describe ("Exciter", "Distortion", exciterId, 0x53424558); }                     // "SBEX"
+    juce::PluginDescription maximizerDescription()      { return describe ("Maximizer", "Dynamics", maximizerId, 0x53424d58); }                   // "SBMX"
 
     juce::PluginDescription graphicEqDescription (int bands)
     {
@@ -130,6 +131,8 @@ namespace
                 effect = std::make_unique<MultibandWidthProcessor>();
             else if (d.fileOrIdentifier == exciterId)
                 effect = std::make_unique<ExciterProcessor>();
+            else if (d.fileOrIdentifier == maximizerId)
+                effect = std::make_unique<MaximizerProcessor>();
 
             if (effect == nullptr)
             {
@@ -151,7 +154,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription(), exciterDescription() };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription(), exciterDescription(), maximizerDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -1766,6 +1769,71 @@ void ExciterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 void ExciterProcessor::reset()
 {
     core.reset();
+}
+
+//==============================================================================
+MaximizerProcessor::MaximizerProcessor()
+    : BuiltInEffect (maximizerDescription(), "SPECTRABLADE_MAXIMIZER")
+{
+    const Maximizer::Settings start;
+    gain = addFloat ("gain", "Gain", { 0.0f, 24.0f }, (float) start.gainDb, "dB");
+    ceiling = addFloat ("ceiling", "Ceiling", { -24.0f, 0.0f }, (float) start.ceilingDb, "dBTP");
+    character = addChoice ("character", "Character", Maximizer::characterNames(), (int) start.character);
+    emphasis = addFloat ("emphasis", "Transient Emphasis", { 0.0f, 100.0f }, (float) start.emphasisPercent, "%");
+}
+
+Maximizer::Settings MaximizerProcessor::getSettings() const
+{
+    return { (double) gain->get(), (double) ceiling->get(), (Maximizer::Character) character->getIndex(), (double) emphasis->get() };
+}
+
+void MaximizerProcessor::setSettings (const Maximizer::Settings& s)
+{
+    setExactly (*gain, (float) s.gainDb);
+    setExactly (*ceiling, (float) s.ceilingDb);
+    *character = (int) s.character;
+    setExactly (*emphasis, (float) s.emphasisPercent);
+}
+
+juce::AudioProcessorEditor* MaximizerProcessor::createEditor()
+{
+    return new PresetsAndParameters (*this, [this] { return getReductionDb(); });
+}
+
+void MaximizerProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
+    core.prepare (channelsPrepared, rate);
+    applied = getSettings();
+    core.set (applied);
+    core.reset();
+    setLatencySamples (Maximizer::latencyFrames (applied.character, rate));
+}
+
+void MaximizerProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    const auto now = getSettings();
+
+    if (! juce::exactlyEqual (now.gainDb, applied.gainDb) || ! juce::exactlyEqual (now.ceilingDb, applied.ceilingDb) || now.character != applied.character
+        || ! juce::exactlyEqual (now.emphasisPercent, applied.emphasisPercent))
+    {
+        const auto characterChanged = now.character != applied.character;
+        applied = now;
+        core.set (applied);
+
+        if (characterChanged)
+            setLatencySamples (Maximizer::latencyFrames (applied.character, rate));
+    }
+
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
+    reductionDb = core.getReductionDb();
+}
+
+void MaximizerProcessor::reset()
+{
+    core.reset();
+    reductionDb = 0.0;
 }
 
 //==============================================================================
