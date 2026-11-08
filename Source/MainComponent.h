@@ -24,6 +24,7 @@
 #include "Maximizer.h"
 #include "TransientShaper.h"
 #include "MatchEq.h"
+#include "TonalBalance.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"

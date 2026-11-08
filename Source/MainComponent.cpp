@@ -70,11 +70,11 @@ namespace
         const juce::String editor { "editor" }, rack { "rack" }, selection { "selection" }, mixer { "mixer" },
                            clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
                            history { "history" }, notes { "notes" }, files { "files" }, levels { "levels" },
-                                spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" };
+                                spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" }, tonalBalance { "tonalBalance" };
 
         juce::StringArray all()
         {
-            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch };
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch, tonalBalance };
         }
     }
 
@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -1487,6 +1487,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('e', cmd | alt); info.setTicked (dock->isShown (Panels::rack)); break;
         case cmdShowSpectrum: info.setInfo ("Frequency Analysis", "Show or hide the spectrum of what goes to the outputs", "Window", 0);
                             info.setTicked (dock->isShown (Panels::spectrum)); break;
+        case cmdShowTonalBalance: info.setInfo ("Tonal Balance", "Show or hide the long-term spectrum of what goes to the outputs against a target range for a style", "Window", 0);
+                            info.setTicked (dock->isShown (Panels::tonalBalance)); break;
         case cmdShowPhase:  info.setInfo ("Phase Meter", "Show or hide the goniometer and correlation of what goes to the outputs", "Window", 0);
                             info.setTicked (dock->isShown (Panels::phase)); break;
         case cmdMaximizeEditor:
@@ -2250,6 +2252,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShowLevels: dock->toggle (Panels::levels); break;
         case cmdShowSpectrum: dock->toggle (Panels::spectrum); break;
         case cmdShowPhase:  dock->toggle (Panels::phase); break;
+        case cmdShowTonalBalance: dock->toggle (Panels::tonalBalance); break;
         case cmdMaximizeEditor:
             if (dock->getMaximised().isEmpty())
                 dock->maximise (Panels::editor);
@@ -2618,7 +2621,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowTonalBalance, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
 
             juce::PopupMenu workspaceMenu;
 
@@ -10437,6 +10440,12 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
         panel->readOutput = [this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); };
         made = std::move (panel);
     }
+    else if (id == Panels::tonalBalance)
+    {
+        auto panel = std::make_unique<TonalBalance::Panel>();
+        panel->readOutput = [this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); };
+        made = std::move (panel);
+    }
     else if (id == Panels::notes)
         made = std::make_unique<SessionNotes> (engine.session);
     else if (id == Panels::pitch)
@@ -10539,6 +10548,7 @@ juce::String MainComponent::getTitle (const juce::String& id)
     if (id == Panels::levels)          return "Levels";
     if (id == Panels::spectrum)        return "Frequency Analysis";
     if (id == Panels::phase)           return "Phase Meter";
+    if (id == Panels::tonalBalance)    return "Tonal Balance";
     if (id == Panels::video)           return "Video";
     if (id == Panels::pitch)           return "Pitch Editor";
     return id;
@@ -10575,6 +10585,8 @@ std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::Str
     if (id == Panels::spectrum)    return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::phase)       return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,
                                             dock->getLayout().isDocked (Panels::spectrum) ? Dock::Side::right : Dock::Side::bottom };
+    if (id == Panels::tonalBalance) return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,
+                                             dock->getLayout().isDocked (Panels::spectrum) ? Dock::Side::right : Dock::Side::bottom };
 
     // Lists and the rest join the rack's tabs, or sit at the right without it.
     return { Panels::rack, Dock::Side::centre };
