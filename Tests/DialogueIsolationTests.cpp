@@ -145,4 +145,20 @@ void runDialogueIsolationTests()
                "within 1.5 dB, the 525 Hz tone under the voice (between its harmonics) comes down over 6 dB, a clean voice passes within 0.5 dB; it can be cancelled; a reduction "
                "past 40 dB and an empty range are refused");
     }
+
+    // The report: the scene has speech in about a third of its frames (the voice's second of
+    // three); the background alone has it in under a tenth and comes down by about the reduction.
+    {
+        DialogueIsolation::Settings s;
+        s.reductionDb = 12.0f;
+        const auto in = scene (true, true), alone = scene (false, true);
+        DialogueIsolation::Report withVoice, background;
+        DialogueIsolation::isolate (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, in.getNumSamples(), rate, s, {}, &withVoice);
+        DialogueIsolation::isolate (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (alone)), 0, alone.getNumSamples(), rate, s, {}, &background);
+        std::cout << "      report: with the voice, speech in " << withVoice.speechShare << " of the frames, the typical block " << withVoice.loweredDb
+                  << " dB; the background alone " << background.speechShare << ", " << background.loweredDb << " dB" << std::endl;
+        check (withVoice.speechShare > 0.25f && withVoice.speechShare < 0.5f && background.speechShare < 0.1f && background.loweredDb < -9.0f && background.loweredDb > -13.0f,
+               "dialogue isolation: the report has speech in a quarter to a half of the scene's frames, and in under a tenth of the background alone, the typical block then "
+               "down by 9 to 13 dB (what the dialog and the result warn of)");
+    }
 }

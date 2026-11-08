@@ -44,8 +44,16 @@ namespace DialogueIsolation
     struct Pitch { double frequency = 0.0; double voicing = 0.0; };
     Pitch pitchOf (const juce::AudioBuffer<float>& audio, int at, double sampleRate);
 
+    /** What an isolation found: the share of the range's frames (0 to 1) read as speech (voiced,
+        or a fricative), and how far the range's typical block came down (the median over its
+        4,096-frame blocks with sound in them, dB, negative or 0). A share near nothing with the
+        typical block down by about the reduction means no voice was followed: a crowd of
+        voices, with no one pitch, is not kept. */
+    struct Report { float speechShare = 0.0f; float loweredDb = 0.0f; };
+
     /** Isolates speech over frames [start, end). progress gets 0..1 and returns false to cancel;
-        then this returns nullptr. Nullptr too for settings that aren't valid or an empty range. */
+        then this returns nullptr. Nullptr too for settings that aren't valid or an empty range.
+        The report, when wanted, is filled for a result. */
     AudioDocument::Snapshot isolate (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, Settings,
-                                     const std::function<bool (float)>& progress = {});
+                                     const std::function<bool (float)>& progress = {}, Report* report = nullptr);
 }

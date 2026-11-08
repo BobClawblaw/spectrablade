@@ -109,4 +109,29 @@ void runAdaptiveDenoiseTests()
                "halves (the noise followed without a print), the voice's first eight harmonics stay within 1.5 dB, 0 dB leaves the audio within 1e-5, "
                "it can be cancelled, a tracking span past 5 s and an empty range are refused");
     }
+
+    // The report: with the words, sound stands clear of the noise in about a third of the frames
+    // (the voice's two seconds of six, and the step before the tracker follows it); steady noise
+    // alone stands clear in under a tenth and comes down by about the reduction. The stepping
+    // noise alone is printed: its step stands clear until the tracker has followed it.
+    {
+        const auto words = scene (true), stepping = scene (false);
+        juce::Random r (12);
+        juce::AudioBuffer<float> steady (1, 6 * 48000);
+
+        for (int i = 0; i < steady.getNumSamples(); ++i)
+            steady.setSample (0, i, (float) (0.01 * (r.nextDouble() * 2.0 - 1.0)));
+
+        AdaptiveDenoise::Settings s;
+        s.reductionDb = 12.0f;
+        AdaptiveDenoise::Report withWords, alone, stepped;
+        AdaptiveDenoise::reduce (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (words)), 0, words.getNumSamples(), rate, s, {}, &withWords);
+        AdaptiveDenoise::reduce (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (steady)), 0, steady.getNumSamples(), rate, s, {}, &alone);
+        AdaptiveDenoise::reduce (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (stepping)), 0, stepping.getNumSamples(), rate, s, {}, &stepped);
+        std::cout << "      report: with the words " << withWords.signalShare << " of the frames clear of the noise, the typical block " << withWords.loweredDb
+                  << " dB; steady noise alone " << alone.signalShare << ", " << alone.loweredDb << " dB; the stepping noise alone " << stepped.signalShare << ", " << stepped.loweredDb << " dB" << std::endl;
+        check (withWords.signalShare > 0.25f && withWords.signalShare < 0.6f && alone.signalShare < 0.1f && alone.loweredDb < -9.0f && alone.loweredDb > -13.0f,
+               "adaptive de-noise: the report has sound clear of the noise in a quarter to six tenths of the frames with the words, and in under a tenth for steady noise alone, "
+               "the typical block then down by 9 to 13 dB (what the dialog and the result warn of)");
+    }
 }

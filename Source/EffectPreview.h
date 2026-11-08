@@ -20,7 +20,7 @@ public:
         AudioDocument::Snapshot snapshot;    // the whole audio, the range processed; null: left as it was
         juce::int64 start = 0, end = 0;      // where the processed range is now (a stretch moves its end)
         juce::String error;
-        juce::String note {};                // said while it plays (a generator's "Playing the first 30 s")
+        juce::String note {};                // said while it plays (a generator's "Playing the first 30 s"; an effect's finding)
     };
 
     /** Processes [start, end) of the audio; progress gets 0 to 1 and returns false to stop. */

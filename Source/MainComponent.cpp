@@ -188,6 +188,27 @@ namespace
     {
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, title, message);
     }
+
+    /** What Adaptive Noise Reduction says when sound stood clear of the tracked noise in under a
+        tenth of the frames: the whole came down. Empty otherwise. */
+    juce::String adaptiveDenoiseNote (const AdaptiveDenoise::Report& r)
+    {
+        if (r.signalShare >= 0.1f)
+            return {};
+
+        return "Sound stood 6 dB clear of the tracked noise in " + juce::String (juce::roundToInt (100.0f * r.signalShare)) + " % of the frames, so the typical stretch came down by "
+               + juce::String (-r.loweredDb, 1) + " dB: either the selection is noise alone, or a sound that never pauses (a room full of voices, say) was itself taken for the noise.";
+    }
+
+    /** What Dialogue Isolation says when speech was found in under a tenth of the frames. */
+    juce::String dialogueIsolationNote (const DialogueIsolation::Report& r)
+    {
+        if (r.speechShare >= 0.1f)
+            return {};
+
+        return "Speech was found in " + juce::String (juce::roundToInt (100.0f * r.speechShare)) + " % of the frames, so the typical stretch came down by "
+               + juce::String (-r.loweredDb, 1) + " dB: speech is found by its pitch, and a crowd of voices, with no one pitch to follow, is not kept.";
+    }
 }
 
 //==============================================================================
@@ -8613,7 +8634,8 @@ void MainComponent::showAdaptiveDenoise()
                       "always there, even under speech), so the estimate follows the noise as it changes. The reduction is how far noise is lowered at "
                       "most; the threshold how far above the tracked noise a sound must be to count as signal. A longer span is steadier, a shorter one "
                       "follows faster. It needs moments when the noise is there alone: a sound that never pauses (a room full of voices, say) is "
-                      "itself taken as the noise and lowered as a whole.",
+                      "itself taken as the noise and lowered as a whole; when sound stands clear of the noise in under a tenth of the frames, the "
+                      "preview and the result say so.",
                       { { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1, {}, 0, 12, 0.5 },
                         { "tracking", "Tracking span (s)", s.trackingSeconds, 1, {}, 0.5, 5, 0.1 } },
                       "spectrablade:adaptive-noise-reduction", PreviewOwner::none,
@@ -8629,7 +8651,9 @@ void MainComponent::showAdaptiveDenoise()
                           return std::optional<EffectPreview::Request> ({ "adaptive " + juce::String (settings.reductionDb, 3) + " " + juce::String (settings.thresholdDb, 3) + " " + juce::String (settings.trackingSeconds, 3),
                               [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
                               {
-                                  return EffectPreview::Rendered { AdaptiveDenoise::reduce (*audio, start, end, sampleRate, settings, progress), start, end, {} };
+                                  AdaptiveDenoise::Report report;
+                                  const auto out = AdaptiveDenoise::reduce (*audio, start, end, sampleRate, settings, progress, &report);
+                                  return EffectPreview::Rendered { out, start, end, {}, out != nullptr ? adaptiveDenoiseNote (report) : juce::String() };
                               } });
                       },
                       "Reduce");
@@ -8643,23 +8667,29 @@ void MainComponent::reduceNoiseAdaptively (AdaptiveDenoise::Settings s)
         return;
 
     auto result = std::make_shared<AudioDocument::Snapshot>();
+    auto report = std::make_shared<AdaptiveDenoise::Report>();
     const auto snapshot = doc.getSnapshot();
     const auto rate = doc.getSampleRate();
     const auto range = selectionOrAll();
     const auto version = doc.getVersion();
 
     backgroundJob = std::make_unique<BackgroundJob> (*this, "Reducing noise...",
-        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        [result, report, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
         {
-            *result = AdaptiveDenoise::reduce (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            *result = AdaptiveDenoise::reduce (*snapshot, range.getStart(), range.getEnd(), rate, s, progress, report.get());
             return *result != nullptr;
         },
-        [this, result, version, s]
+        [this, result, report, version, s]
         {
             if (engine.document.getVersion() != version)
                 showError ("Adaptive Noise Reduction", "The audio changed during processing, so the result was discarded.");
             else if (*result != nullptr)
+            {
                 applyEdit (*result, "Adaptive Noise Reduction " + juce::String (s.reductionDb, 1) + " dB", waveform.getSelection());
+
+                if (const auto note = adaptiveDenoiseNote (*report); note.isNotEmpty())
+                    showNote ("Adaptive Noise Reduction", note);
+            }
         });
     backgroundJob->launchThread();
 }
@@ -8674,7 +8704,8 @@ void MainComponent::showDialogueIsolation()
                       "pitch's harmonics (and fricatives by their highs standing over the background); what is kept is the harmonics and the highs "
                       "over the background, and all else comes down by the reduction. The background is what is always there, bin by bin, over the "
                       "last second and a half. A higher sensitivity counts frames as speech more readily (more of the voice kept, more of the rest with it). "
-                      "Speech is found by its pitch, so a crowd of voices, with no one pitch to follow, is not kept.",
+                      "Speech is found by its pitch, so a crowd of voices, with no one pitch to follow, is not kept; when speech is found in under a "
+                      "tenth of the frames, the preview and the result say so.",
                       { { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 }, { "sensitivity", "Sensitivity (%)", s.sensitivity, 0, {}, 0, 100, 1 } },
                       "spectrablade:dialogue-isolation", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { return DialogueIsolation::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
@@ -8689,7 +8720,9 @@ void MainComponent::showDialogueIsolation()
                           return std::optional<EffectPreview::Request> ({ "dialogue " + juce::String (settings.reductionDb, 3) + " " + juce::String (settings.sensitivity, 3),
                               [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
                               {
-                                  return EffectPreview::Rendered { DialogueIsolation::isolate (*audio, start, end, sampleRate, settings, progress), start, end, {} };
+                                  DialogueIsolation::Report report;
+                                  const auto out = DialogueIsolation::isolate (*audio, start, end, sampleRate, settings, progress, &report);
+                                  return EffectPreview::Rendered { out, start, end, {}, out != nullptr ? dialogueIsolationNote (report) : juce::String() };
                               } });
                       },
                       "Isolate");
@@ -8703,23 +8736,29 @@ void MainComponent::isolateDialogue (DialogueIsolation::Settings s)
         return;
 
     auto result = std::make_shared<AudioDocument::Snapshot>();
+    auto report = std::make_shared<DialogueIsolation::Report>();
     const auto snapshot = doc.getSnapshot();
     const auto rate = doc.getSampleRate();
     const auto range = selectionOrAll();
     const auto version = doc.getVersion();
 
     backgroundJob = std::make_unique<BackgroundJob> (*this, "Isolating dialogue...",
-        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        [result, report, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
         {
-            *result = DialogueIsolation::isolate (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            *result = DialogueIsolation::isolate (*snapshot, range.getStart(), range.getEnd(), rate, s, progress, report.get());
             return *result != nullptr;
         },
-        [this, result, version, s]
+        [this, result, report, version, s]
         {
             if (engine.document.getVersion() != version)
                 showError ("Dialogue Isolation", "The audio changed during processing, so the result was discarded.");
             else if (*result != nullptr)
+            {
                 applyEdit (*result, "Dialogue Isolation " + juce::String (s.reductionDb, 1) + " dB", waveform.getSelection());
+
+                if (const auto note = dialogueIsolationNote (*report); note.isNotEmpty())
+                    showNote ("Dialogue Isolation", note);
+            }
         });
     backgroundJob->launchThread();
 }
@@ -10658,7 +10697,7 @@ void MainComponent::startRenderedPreview (const EffectPreview::Request& request,
             player.play (loop.getStart(), -1);
 
         if (status != nullptr)
-            status (generates ? r.note : shortened ? "Playing the first " + juce::String ((int) EffectPreview::longestSeconds) + " s" : juce::String());
+            status (r.note.isNotEmpty() ? r.note : ! generates && shortened ? "Playing the first " + juce::String ((int) EffectPreview::longestSeconds) + " s" : juce::String());
     });
 }
 

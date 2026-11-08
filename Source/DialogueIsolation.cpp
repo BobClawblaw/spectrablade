@@ -210,7 +210,7 @@ Pitch pitchOf (const juce::AudioBuffer<float>& audio, int at, double sampleRate)
 }
 
 AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, Settings settings,
-                                 const std::function<bool (float)>& progress)
+                                 const std::function<bool (float)>& progress, Report* report)
 {
     if (! isValid (settings) || sampleRate <= 0.0)
         return nullptr;
@@ -248,6 +248,7 @@ AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce
     const auto holdFrames = juce::jmax (1, (int) std::lround (0.08 * sampleRate / hop));
     Pitch held;
     auto heldFor = 0;
+    auto reportFrames = 0, speechFrames = 0;   // the range's frames, and those read as speech
 
     for (int step = 0; step < steps; ++step)
     {
@@ -325,6 +326,12 @@ AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce
         const auto fricative = ! voiced && highsPower > 4.0 * highsBackground && highsPower > lowsPower;
         std::vector<char> keep ((size_t) bins, 0);
 
+        if (const auto centre = pos + size / 2 - size; centre >= 0 && centre < frames)
+        {
+            ++reportFrames;
+            speechFrames += voiced || fricative ? 1 : 0;
+        }
+
         if (voiced)
         {
             for (int h = 1; h * pitch.frequency <= 4000.0; ++h)
@@ -372,6 +379,32 @@ AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce
 
     if (cancelled)
         return nullptr;
+
+    if (report != nullptr)
+    {
+        // The typical block's fall: the median over the range's 4,096-frame blocks with sound in them.
+        std::vector<double> falls;
+
+        for (int from = size; from < size + frames; from += size)
+        {
+            auto inPower = 0.0, outPower = 0.0;
+
+            for (int ch = 0; ch < channels; ++ch)
+                for (int i = from; i < juce::jmin (from + size, size + frames); ++i)
+                {
+                    inPower += (double) in.getSample (ch, i) * in.getSample (ch, i);
+                    outPower += (double) out.getSample (ch, i) * out.getSample (ch, i);
+                }
+
+            if (inPower > 0.0)
+                falls.push_back (juce::jmin (0.0, 10.0 * std::log10 ((outPower + 1.0e-30) / inPower)));
+        }
+
+        std::sort (falls.begin(), falls.end());
+
+        report->speechShare = reportFrames > 0 ? (float) speechFrames / (float) reportFrames : 0.0f;
+        report->loweredDb = falls.empty() ? 0.0f : (float) falls[falls.size() / 2];
+    }
 
     return AudioEdits::processRange (s, start, end, [&out] (juce::AudioBuffer<float>& b)
     {

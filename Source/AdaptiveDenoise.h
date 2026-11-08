@@ -26,9 +26,19 @@ namespace AdaptiveDenoise
 
     bool isValid (const Settings&);
 
+    /** What a reduction found: the share of the range's frames (0 to 1) whose power from 100 Hz to
+        8 kHz stood 6 dB or more over the tracked noise in some channel (sound clear of the noise, by
+        the tracker's lights), and how far the range's typical block came down (the median over its
+        4,096-frame blocks with sound in them, dB, negative or 0). A share near nothing with the
+        typical block down by about the reduction means nothing stood clear: the range
+        is noise alone, or a sound that never pauses (a room full of voices) was itself taken for
+        the noise and lowered as a whole. */
+    struct Report { float signalShare = 0.0f; float loweredDb = 0.0f; };
+
     /** Reduces the tracked noise over frames [start, end), easing in and out over a frame at the
         edges. progress gets 0..1 and returns false to cancel; then this returns nullptr. Nullptr
-        too for settings that aren't valid or an empty range. */
+        too for settings that aren't valid or an empty range. The report, when wanted, is filled
+        for a result. */
     AudioDocument::Snapshot reduce (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, Settings,
-                                    const std::function<bool (float)>& progress = {});
+                                    const std::function<bool (float)>& progress = {}, Report* report = nullptr);
 }

@@ -26,7 +26,7 @@ bool isValid (const Settings& s)
 }
 
 AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, Settings settings,
-                                const std::function<bool (float)>& progress)
+                                const std::function<bool (float)>& progress, Report* report)
 {
     if (! isValid (settings) || sampleRate <= 0.0)
         return nullptr;
@@ -82,7 +82,9 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
 
     const auto steps = (padded - size) / hop + 1;
     const auto subSpan = juce::jmax (2, span / 4);
+    const auto lowBin = (int) (100.0 / (sampleRate / size)), highBin = juce::jmin (bins - 1, (int) (8000.0 / (sampleRate / size)));
     auto inSubWindow = 0;
+    auto reportFrames = 0, clearFrames = 0;   // the range's tracked frames, and those with sound 6 dB over the noise
 
     for (int step = 0; step < steps; ++step)
     {
@@ -99,6 +101,7 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
         // Tracked only from frames wholly within the audio there is (a frame over the silence
         // either side would read as noise falling to nothing).
         const auto tracked = pos >= size - before && pos + size <= size + frames + after;
+        auto standsClear = false;
 
         for (int ch = 0; ch < channels; ++ch)
         {
@@ -117,7 +120,6 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
                 // sub-window as well as this one so far (noise rising, which is broad and stays, against
                 // speech, which raises most bins too but not for that long).
                 auto risen = 0, counted = 0;
-                const auto lowBin = (int) (100.0 / (sampleRate / size)), highBin = juce::jmin (bins - 1, (int) (8000.0 / (sampleRate / size)));
 
                 for (int b = 0; b < bins; ++b)
                 {
@@ -181,12 +183,20 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
                 }
             }
 
+            auto bandPower = 0.0f, bandNoise = 0.0f;
+
             for (int b = 0; b < bins; ++b)
             {
                 const auto re = data[(size_t) (2 * b)], im = data[(size_t) (2 * b + 1)];
                 const auto p = re * re + im * im;
                 const auto noiseHere = t.noise[(size_t) b] * threshold;
                 auto gain = 1.0f;
+
+                if (b >= lowBin && b <= highBin)
+                {
+                    bandPower += p;
+                    bandNoise += t.noise[(size_t) b];
+                }
 
                 if (noiseHere > 0.0f)
                 {
@@ -207,6 +217,15 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
 
             for (int i = 0; i < size; ++i)
                 out.addSample (ch, pos + i, data[(size_t) i] * window[(size_t) i] / 2.0f);
+
+            if (bandNoise > 0.0f && bandPower > 4.0f * bandNoise)
+                standsClear = true;
+        }
+
+        if (tracked && centre >= 0 && centre < frames)
+        {
+            ++reportFrames;
+            clearFrames += standsClear ? 1 : 0;
         }
 
         if (tracked && ++inSubWindow >= subSpan)
@@ -230,6 +249,32 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
             inSubWindow = 0;
         }
 
+    }
+
+    if (report != nullptr)
+    {
+        // The typical block's fall: the median over the range's 4,096-frame blocks with sound in them.
+        std::vector<double> falls;
+
+        for (int from = size; from < size + frames; from += size)
+        {
+            auto inPower = 0.0, outPower = 0.0;
+
+            for (int ch = 0; ch < channels; ++ch)
+                for (int i = from; i < juce::jmin (from + size, size + frames); ++i)
+                {
+                    inPower += (double) in.getSample (ch, i) * in.getSample (ch, i);
+                    outPower += (double) out.getSample (ch, i) * out.getSample (ch, i);
+                }
+
+            if (inPower > 0.0)
+                falls.push_back (juce::jmin (0.0, 10.0 * std::log10 ((outPower + 1.0e-30) / inPower)));
+        }
+
+        std::sort (falls.begin(), falls.end());
+
+        report->signalShare = reportFrames > 0 ? (float) clearFrames / (float) reportFrames : 0.0f;
+        report->loweredDb = falls.empty() ? 0.0f : (float) falls[falls.size() / 2];
     }
 
     return AudioEdits::processRange (s, start, end, [&out] (juce::AudioBuffer<float>& b)
