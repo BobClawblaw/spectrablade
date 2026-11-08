@@ -457,4 +457,100 @@ AudioEdits::Snapshot deEss (const AudioSnapshot& s, juce::int64 start, juce::int
     core.set (d);
     return runPrimed (s, start, end, sampleRate, core);
 }
+
+//==============================================================================
+bool isValid (const Width& w, double sampleRate)
+{
+    const auto top = juce::jmin (20000.0, 0.45 * sampleRate);
+
+    if (sampleRate <= 0.0 || w.lowCrossover < 20.0 || w.highCrossover > top || w.highCrossover < 2.0 * w.lowCrossover)
+        return false;
+
+    for (auto p : w.percent)
+        if (p < 0.0 || p > 200.0)
+            return false;
+
+    return true;
+}
+
+Width spaced (Width w, double sampleRate)
+{
+    const auto top = juce::jmin (20000.0, 0.45 * sampleRate);
+    w.lowCrossover = juce::jlimit (20.0, top / 2.0, w.lowCrossover);
+    w.highCrossover = juce::jlimit (2.0 * w.lowCrossover, top, w.highCrossover);
+    return w;
+}
+
+void WidthCore::prepare (int numChannels, double sampleRate)
+{
+    rate = sampleRate;
+    channelsPrepared = numChannels;
+    set (settings);
+    reset();
+}
+
+void WidthCore::reset() noexcept
+{
+    for (auto* group : { &first, &second, &lowAlign })
+        for (auto& c : *group)
+            c.reset();
+}
+
+void WidthCore::set (const Width& w)
+{
+    settings = w;
+
+    for (size_t ch = 0; ch < 2; ++ch)
+    {
+        first[ch].set (w.lowCrossover, rate);
+        second[ch].set (w.highCrossover, rate);
+        lowAlign[ch].set (w.highCrossover, rate);
+    }
+
+    for (size_t b = 0; b < 3; ++b)
+        factors[b] = w.percent[b] / 100.0;
+}
+
+void WidthCore::process (float* const* channels, int numChannels, int numFrames) noexcept
+{
+    if (juce::jmin (numChannels, channelsPrepared) < 2)
+        return;
+
+    for (int i = 0; i < numFrames; ++i)
+    {
+        std::array<std::array<double, 3>, 2> parts {};
+
+        for (size_t ch = 0; ch < 2; ++ch)
+        {
+            double low = 0.0, rest = 0.0, middle = 0.0, high = 0.0;
+            first[ch].split (channels[ch][i], low, rest);
+            second[ch].split (rest, middle, high);
+            low = lowAlign[ch].allPass (low);
+            parts[ch] = { low, middle, high };
+        }
+
+        double left = 0.0, right = 0.0;
+
+        for (size_t b = 0; b < 3; ++b)
+        {
+            const auto mid = (parts[0][b] + parts[1][b]) / 2.0, side = (parts[0][b] - parts[1][b]) / 2.0 * factors[b];
+            left += mid + side;
+            right += mid - side;
+        }
+
+        channels[0][i] = (float) left;
+        channels[1][i] = (float) right;
+    }
+}
+
+AudioEdits::Snapshot widen (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, const Width& w)
+{
+    if (! isValid (w, sampleRate))
+        return nullptr;
+
+    WidthCore core;
+    core.prepare (s.getNumChannels(), sampleRate);
+    core.set (w);
+    return runPrimed (s, start, end, sampleRate, core);
+}
 }

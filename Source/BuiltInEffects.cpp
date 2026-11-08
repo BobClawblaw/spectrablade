@@ -47,6 +47,7 @@ namespace
     juce::PluginDescription multibandDescription()      { return describe ("Multiband Compressor", "Dynamics", multibandId, 0x53424d42); }   // "SBMB"
     juce::PluginDescription deEsserDescription()        { return describe ("De-esser", "Dynamics", deEsserId, 0x53424445); }                 // "SBDE"
     juce::PluginDescription dynamicEqDescription()      { return describe ("Dynamic EQ", "EQ", dynamicEqId, 0x53424451); }                   // "SBDQ"
+    juce::PluginDescription multibandWidthDescription() { return describe ("Multiband Stereo Width", "Spatial", multibandWidthId, 0x53424d57); }   // "SBMW"
 
     juce::PluginDescription graphicEqDescription (int bands)
     {
@@ -124,6 +125,8 @@ namespace
                 effect = std::make_unique<DeEsserProcessor>();
             else if (d.fileOrIdentifier == dynamicEqId)
                 effect = std::make_unique<DynamicEqProcessor>();
+            else if (d.fileOrIdentifier == multibandWidthId)
+                effect = std::make_unique<MultibandWidthProcessor>();
 
             if (effect == nullptr)
             {
@@ -145,7 +148,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription() };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -1603,6 +1606,69 @@ void DeEsserProcessor::reset()
 juce::AudioProcessorEditor* DeEsserProcessor::createEditor()
 {
     return new PresetsAndParameters (*this, [this] { return getReductionDb(); });
+}
+
+//==============================================================================
+MultibandWidthProcessor::MultibandWidthProcessor()
+    : BuiltInEffect (multibandWidthDescription(), "SPECTRABLADE_MULTIBAND_WIDTH")
+{
+    const Multiband::Width start;
+    const std::array<const char*, 3> ids { "low", "mid", "high" }, names { "Low Width", "Mid Width", "High Width" };
+    lowCrossover = addFloat ("lowCrossover", "Low Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.lowCrossover, "Hz");
+    highCrossover = addFloat ("highCrossover", "High Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.highCrossover, "Hz");
+
+    for (size_t b = 0; b < 3; ++b)
+        widths[b] = addFloat (ids[b], names[b], { 0.0f, 200.0f }, (float) start.percent[b], "%");
+}
+
+Multiband::Width MultibandWidthProcessor::getParameterSettings() const
+{
+    return { (double) lowCrossover->get(), (double) highCrossover->get(), { (double) widths[0]->get(), (double) widths[1]->get(), (double) widths[2]->get() } };
+}
+
+Multiband::Width MultibandWidthProcessor::getSettings() const
+{
+    return Multiband::spaced (getParameterSettings(), rate);
+}
+
+void MultibandWidthProcessor::setSettings (const Multiband::Width& w)
+{
+    setExactly (*lowCrossover, (float) w.lowCrossover);
+    setExactly (*highCrossover, (float) w.highCrossover);
+
+    for (size_t b = 0; b < 3; ++b)
+        setExactly (*widths[b], (float) w.percent[b]);
+}
+
+juce::AudioProcessorEditor* MultibandWidthProcessor::createEditor()
+{
+    return new PresetsAndParameters (*this);
+}
+
+void MultibandWidthProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
+    core.prepare (channelsPrepared, rate);
+    applied = { lowCrossover->get(), highCrossover->get(), widths[0]->get(), widths[1]->get(), widths[2]->get() };
+    core.set (getSettings());
+    core.reset();
+}
+
+void MultibandWidthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    if (const std::array<float, 5> now { lowCrossover->get(), highCrossover->get(), widths[0]->get(), widths[1]->get(), widths[2]->get() }; now != applied)
+    {
+        applied = now;
+        core.set (getSettings());
+    }
+
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
+}
+
+void MultibandWidthProcessor::reset()
+{
+    core.reset();
 }
 
 //==============================================================================

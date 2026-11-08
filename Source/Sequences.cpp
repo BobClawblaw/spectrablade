@@ -55,6 +55,7 @@ namespace
             { "stereo", "Make Stereo", {} },
             { "balance", "Balance", { "pan" } },
             { "stereoWidth", "Stereo Width", { "width" } },
+            { "multibandWidth", "Multiband Stereo Width", { "lowCrossover", "highCrossover", "low", "mid", "high" } },
             { "centre", "Centre Channel", { "keep", "low", "high", "reduction" } },
             { "phase", "Automatic Phase Correction", { "most", "turnOver" } },
             { "echo", "Echo", { "delay", "feedback" } },
@@ -95,6 +96,11 @@ namespace
     Dynamics::Limiter limiterOf (const Values& v)
     {
         return { get (v, "gain"), get (v, "ceiling"), get (v, "release"), get (v, "lookahead"), get (v, "peaks") > 0.5 };
+    }
+
+    Multiband::Width widthOf (const Values& v)
+    {
+        return { get (v, "lowCrossover"), get (v, "highCrossover"), { get (v, "low"), get (v, "mid"), get (v, "high") } };
     }
 
     Multiband::DeEsser deEsserOf (const Values& v)
@@ -258,6 +264,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "compressor" && ! Dynamics::isValid (compressorOf (v)))
         || (step.kind == "limiter" && ! Dynamics::isValid (limiterOf (v)))
         || (step.kind == "deEsser" && ! Multiband::isValid (deEsserOf (v), rate))
+        || (step.kind == "multibandWidth" && ! Multiband::isValid (widthOf (v), rate))
         || ((step.kind == "chorus" || step.kind == "flanger") && ! Modulation::isValid (delayOf (v)))
         || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
         || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v)))
@@ -302,6 +309,7 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
     else if (k == "compressor")     out.snapshot = Dynamics::compress (s, start, end, rate, compressorOf (v));
     else if (k == "limiter")        out.snapshot = Dynamics::limit (s, start, end, rate, limiterOf (v));
     else if (k == "deEsser")        out.snapshot = Multiband::deEss (s, start, end, rate, deEsserOf (v));
+    else if (k == "multibandWidth") out.snapshot = Multiband::widen (s, start, end, rate, widthOf (v));
     else if (k == "chorus" || k == "flanger") out.snapshot = Modulation::sweptDelay (s, start, end, rate, delayOf (v));
     else if (k == "phaser")         out.snapshot = Modulation::phaser (s, start, end, rate, phaserOf (v));
     else if (k == "reverb")         out.snapshot = RoomReverb::apply (s, start, end, rate, reverbOf (v));

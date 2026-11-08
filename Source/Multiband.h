@@ -2,7 +2,7 @@
 
 #include "Dynamics.h"
 
-/** Band-split dynamics: a three-band compressor and a de-esser. Both split the sound with
+/** Band-split effects: a three-band compressor, a de-esser and a three-band stereo width. All split the sound with
     Linkwitz-Riley crossovers (two second-order Butterworth filters in a row, 24 dB an octave), whose
     bands add back up to the sound with every frequency at its level, only its phase turned. */
 namespace Multiband
@@ -155,4 +155,46 @@ namespace Multiband
 
     /** De-esses [start, end). Nullptr for settings that aren't valid or an empty range. */
     AudioEdits::Snapshot deEss (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const DeEsser&);
+
+    //==============================================================================
+    /** The stereo width of each of three bands: 0 % makes the band mono (its side taken out), 100 %
+        leaves it, up to 200 % doubles its side. The low band at 0 % is a mono low end below the low
+        crossover. The mid (what the channels share) is never touched, so a mono sound, or more
+        channels than two past the first pair, comes through unchanged. */
+    struct Width
+    {
+        double lowCrossover = 150.0;     // Hz, between the low and the middle band
+        double highCrossover = 2000.0;   // Hz, between the middle and the high band
+        std::array<double, 3> percent { 100.0, 100.0, 100.0 };   // low, middle, high
+    };
+
+    /** Whether the settings can be used at this rate: crossovers from 20 Hz to 20 kHz, below 0.45
+        of the rate, the high one at least an octave above the low; each width from 0 to 200 %. */
+    bool isValid (const Width&, double sampleRate);
+
+    /** The settings with the crossovers moved into what the rate allows, as spaced (Compressor) does. */
+    Width spaced (Width, double sampleRate);
+
+    /** The width a frame at a time: the first two channels split into the bands (the compressor's
+        split, so a band at 100 % adds back flat), each band's side scaled, the bands added back up.
+        Other channels pass. */
+    class WidthCore
+    {
+    public:
+        void prepare (int numChannels, double sampleRate);
+        void reset() noexcept;
+        void set (const Width&);   // valid at the prepared rate
+
+        void process (float* const* channels, int numChannels, int numFrames) noexcept;
+
+    private:
+        double rate = 48000.0;
+        Width settings;
+        std::array<Crossover, 2> first, second, lowAlign;   // a channel each
+        std::array<double, 3> factors { 1.0, 1.0, 1.0 };
+        int channelsPrepared = 0;
+    };
+
+    /** Sets the bands' widths over [start, end). Nullptr for settings that aren't valid or an empty range. */
+    AudioEdits::Snapshot widen (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Width&);
 }

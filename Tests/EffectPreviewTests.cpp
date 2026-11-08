@@ -309,6 +309,7 @@ namespace
         if (key == multibandId)     return std::make_unique<MultibandProcessor>();
         if (key == deEsserId)       return std::make_unique<DeEsserProcessor>();
         if (key == dynamicEqId)     return std::make_unique<DynamicEqProcessor>();
+        if (key == multibandWidthId) return std::make_unique<MultibandWidthProcessor>();
         return nullptr;
     }
 

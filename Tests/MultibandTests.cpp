@@ -66,6 +66,106 @@ namespace
 
 void runMultibandTests()
 {
+    // Multiband width: left = a + b (a the mid, b the side) with the side in three bands; each band's
+    // side scaled on its own, the mid untouched, every band at 100 % flat, a mono sound unchanged.
+    {
+        juce::AudioBuffer<float> in (2, 48000);
+
+        for (int i = 0; i < 48000; ++i)
+        {
+            const auto t = i / rate;
+            const auto mid = 0.2 * std::sin (juce::MathConstants<double>::twoPi * 80.0 * t) + 0.2 * std::sin (juce::MathConstants<double>::twoPi * 700.0 * t)
+                             + 0.2 * std::sin (juce::MathConstants<double>::twoPi * 6000.0 * t);
+            const auto side = 0.1 * std::sin (juce::MathConstants<double>::twoPi * 60.0 * t + 1.0) + 0.1 * std::sin (juce::MathConstants<double>::twoPi * 500.0 * t + 1.0)
+                              + 0.1 * std::sin (juce::MathConstants<double>::twoPi * 8000.0 * t + 1.0);
+            in.setSample (0, i, (float) (mid + side));
+            in.setSample (1, i, (float) (mid - side));
+        }
+
+        const auto part = [] (const juce::AudioBuffer<float>& x, double hz, bool mid)   // the mid's or the side's amplitude at hz, over the second half
+        {
+            juce::AudioBuffer<float> m (2, x.getNumSamples());
+
+            for (int i = 0; i < x.getNumSamples(); ++i)
+                m.setSample (0, i, 0.5f * (x.getSample (0, i) + (mid ? 1.0f : -1.0f) * x.getSample (1, i)));
+
+            return amplitude (m, hz, 24000, 24000);
+        };
+
+        Multiband::Width w { 150.0, 2000.0, { 0.0, 100.0, 200.0 } };
+        const auto out = readAll (*Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, w));
+        const auto lowSide = db (part (out, 60.0, false) / part (in, 60.0, false)), midSide = db (part (out, 500.0, false) / part (in, 500.0, false));
+        const auto highSide = db (part (out, 8000.0, false) / part (in, 8000.0, false));
+        auto midWorst = 0.0;
+
+        for (auto hz : { 80.0, 700.0, 6000.0 })
+            midWorst = juce::jmax (midWorst, std::abs (db (part (out, hz, true) / part (in, hz, true))));
+
+        const Multiband::Width flat;
+        const auto unchanged = readAll (*Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, flat));
+        auto flatWorst = 0.0;
+
+        for (auto hz : { 60.0, 500.0, 8000.0 })
+            flatWorst = juce::jmax (flatWorst, std::abs (db (part (unchanged, hz, false) / part (in, hz, false))));
+
+        juce::AudioBuffer<float> mono (1, 48000);
+        mono.copyFrom (0, 0, in, 0, 0, 48000);
+        const auto monoOut = readAll (*Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (mono)), 0, 48000, rate, w));
+        auto monoSame = true;
+
+        for (int i = 0; i < 48000; ++i)
+            monoSame = monoSame && juce::exactlyEqual (monoOut.getSample (0, i), mono.getSample (0, i));
+
+        const Multiband::Width close { 1000.0, 1500.0, { 100.0, 100.0, 100.0 } }, wide { 150.0, 2000.0, { 100.0, 250.0, 100.0 } };
+        const auto refused = Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, close) == nullptr
+                             && Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, wide) == nullptr
+                             && juce::exactlyEqual (Multiband::spaced (close, rate).highCrossover, 2000.0);
+
+        // Live, in uneven blocks: the offline samples bit for bit; state and presets restore the settings.
+        BuiltInEffects::MultibandWidthProcessor live;
+        live.setSettings (w);
+        live.setPlayConfigDetails (2, 2, rate, 512);
+        live.prepareToPlay (rate, 3000);
+        juce::AudioBuffer<float> played (in);
+        juce::MidiBuffer midi;
+        const int sizes[] = { 1, 7, 512, 3000 };
+
+        for (int pos = 0, k = 0; pos < 48000; ++k)
+        {
+            const auto n = juce::jmin (sizes[k % 4], 48000 - pos);
+            juce::AudioBuffer<float> block (played.getArrayOfWritePointers(), 2, pos, n);
+            live.processBlock (block, midi);
+            pos += n;
+        }
+
+        const auto offline = readAll (*Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, live.getSettings()));
+        auto liveSame = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                liveSame = liveSame && juce::exactlyEqual (played.getSample (ch, i), offline.getSample (ch, i));
+
+        juce::MemoryBlock state;
+        live.getStateInformation (state);
+        BuiltInEffects::MultibandWidthProcessor copy, fromPreset;
+        copy.setStateInformation (state.getData(), (int) state.getSize());
+        fromPreset.setPresetValues (live.getPresetValues());
+        const auto values = [] (const Multiband::Width& x) { return std::array<double, 5> { x.lowCrossover, x.highCrossover, x.percent[0], x.percent[1], x.percent[2] }; };
+        const auto kept = values (copy.getSettings()) == values (live.getSettings()) && values (fromPreset.getSettings()) == values (live.getSettings())
+                          && live.getLatencySamples() == 0;
+
+        std::cout << "      multiband width: the side at 60 Hz " << lowSide << " dB, 500 Hz " << midSide << ", 8 kHz " << highSide << "; the mid moved at most "
+                  << midWorst << " dB; every band at 100 %: the side within " << flatWorst << " dB" << std::endl;
+        check (lowSide < -30.0 && std::abs (midSide) < 0.05 && std::abs (highSide - 6.02) < 0.1 && midWorst < 0.05 && flatWorst < 0.01 && monoSame && refused
+                   && liveSame && kept,
+               "multiband width: the low band at 0 % takes the side's 60 Hz down over 30 dB (what is left comes through the middle band's skirt, 24 dB an "
+               "octave, 1.3 octaves up), the middle at 100 % leaves 500 Hz, the high at 200 % "
+               "doubles 8 kHz (+6.02 dB); the mid is left within 0.05 dB at 80 Hz, 700 Hz and 6 kHz; every band at 100 % leaves the side within 0.01 dB; "
+               "a mono sound is untouched bit for bit; crossovers under an octave apart or a width past 200 % are refused, and spaced moves them apart; "
+               "the live effect played in blocks of 1, 7, 512 and 3,000 frames gives the offline samples bit for bit, its state and presets restore the "
+               "settings, no latency");
+    }
+
     // Flat: with every band at a ratio of 1, sines anywhere come out at their level (only phase turned).
     {
         auto worst = 0.0;

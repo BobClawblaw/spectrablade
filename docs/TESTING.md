@@ -167,6 +167,7 @@ What they check:
 - Reverb: the decay time measured, the pre-delay, damping, width, the tail and its end; live bit for bit with offline.
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
 - Multiband compressor and de-esser: the bands adding back up flat, each band acting only on its own frequencies, the de-esser's reduction on the band and on the whole sound and what Listen plays, refused settings; live bit for bit with offline, state and presets, the multiband window following its parameters, the windows' reduction readings.
+- Multiband stereo width: each band's side scaled on its own (the low at 0 % gone, the high at 200 % doubled), the mid untouched, every band at 100 % flat, a mono sound bit for bit, refused settings and spacing, the live effect bit for bit with offline in uneven blocks, state and presets.
 - Empty editor: the recent files listed, a click opening one.
 - Opening from Finder: the types offered all read, the files picked out of an open request.
 - Transport bar: tooltips following the keys; the selection panel's cells.

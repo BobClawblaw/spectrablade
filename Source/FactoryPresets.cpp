@@ -172,6 +172,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:multiband-width"] = {
+            { "Mono below 120 Hz", { { "lowCrossover", 120.0 }, { "highCrossover", 2000.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 100.0 } } },
+            { "Tight low end, wide top", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 } } },
+            { "Wider highs", { { "lowCrossover", 150.0 }, { "highCrossover", 3000.0 }, { "low", 100.0 }, { "mid", 100.0 }, { "high", 150.0 } } },
+            { "Narrower middle", { { "lowCrossover", 150.0 }, { "highCrossover", 2000.0 }, { "low", 100.0 }, { "mid", 60.0 }, { "high", 100.0 } } } };
         t["spectrablade:pan-ramp"] = {
             { "Left to right", { { "from", -100.0 }, { "to", 100.0 } } }, { "Right to left", { { "from", 100.0 }, { "to", -100.0 } } },
             { "Drift left to right", { { "from", -40.0 }, { "to", 40.0 } } } };

@@ -104,6 +104,7 @@ void runSequencesTests (AudioEngine& engine)
         const Dynamics::Compressor comp { -24.0, 3.0, 6.0, 10.0, 120.0, 2.0 };
         const Dynamics::Limiter lim { 3.0, -1.5, 40.0, 5.0, true };
         const Multiband::DeEsser ess { 6000.0, -30.0, 9.0, true };
+        const Multiband::Width width { 120.0, 2500.0, { 0.0, 100.0, 140.0 } };
         const Modulation::Delay chorus { 0.8, 12.0, 4.0, 0.1, 40.0, 30.0 };
         const Modulation::Phaser ph { 0.5, 300.0, 3000.0, 6, 0.3, 50.0, 20.0 };   // stages 2 in the dialog: 2 * (2 + 1)
         const RoomReverb::Settings rev { 20.0, 1.8, 60.0, 40.0, 80.0, 30.0 };
@@ -143,6 +144,8 @@ void runSequencesTests (AudioEngine& engine)
               Dynamics::limit (s, a, b, rate, lim) },
             { { "deEsser", { { "frequency", 6000.0 }, { "threshold", -30.0 }, { "reduction", 9.0 }, { "mode", 1.0 } }, nullptr },
               Multiband::deEss (s, a, b, rate, ess) },
+            { { "multibandWidth", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 } }, nullptr },
+              Multiband::widen (s, a, b, rate, width) },
             { { "chorus", { { "rate", 0.8 }, { "delay", 12.0 }, { "depth", 4.0 }, { "feedback", 0.1 }, { "mix", 40.0 }, { "spread", 30.0 } }, nullptr },
               Modulation::sweptDelay (s, a, b, rate, chorus) },
             { { "phaser", { { "rate", 0.5 }, { "low", 300.0 }, { "high", 3000.0 }, { "stages", 2.0 }, { "feedback", 0.3 }, { "mix", 50.0 }, { "spread", 20.0 } }, nullptr },
@@ -226,8 +229,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 35,
-               "sequences: each of the 35 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 36,
+               "sequences: each of the 36 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdMultibandWidth: info.setInfo ("Multiband Stereo Width...", "Narrow or widen the lows, the middle and the highs each on its own: a mono low end, wider highs", "Effects", 0); break;
         case cmdDynamicEq:  info.setInfo ("Dynamic EQ...", "EQ bands that cut or boost only while their part of the sound is over (or under) a threshold", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdChorus:     info.setInfo ("Chorus...", "Thicken the sound with a slowly swept copy of it, a few milliseconds late", "Effects", 0);
@@ -2017,6 +2018,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMultiband:  showMultiband(); break;
         case cmdDeEsser:    showDeEsser(); break;
         case cmdDynamicEq:  showDynamicEq(); break;
+        case cmdMultibandWidth: showMultibandWidth(); break;
         case cmdChorus:     showSweptDelay (false); break;
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
@@ -2555,7 +2557,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
             group ("Time and Pitch", { cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
-            group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdCentreChannel, cmdPhaseCorrection, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
+            group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdMultibandWidth, cmdCentreChannel, cmdPhaseCorrection, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
                                             cmdMixToMono, cmdMakeStereo, 0, cmdInvert, cmdInvertLeft, cmdInvertRight });
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
@@ -7875,6 +7877,42 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showMultibandWidth()
+{
+    const auto& s = multibandWidthSettings;
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        return Multiband::Width { v.at ("lowCrossover"), v.at ("highCrossover"), { v.at ("low"), v.at ("mid"), v.at ("high") } };
+    };
+    const auto rate = engine.document.getSampleRate();
+
+    showEffectDialog ("Multiband Stereo Width",
+                      "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), and each band's width set on its "
+                      "own: 0 % makes the band mono (its side taken out: the low band at 0 % is a mono low end), 100 % leaves it, and up to 200 % "
+                      "doubles its side. What the channels share is never touched. The high crossover stays at least an octave above the low one.",
+                      { { "lowCrossover", "Low crossover (Hz)", s.lowCrossover, 0, {}, 20, 10000, 1 }, { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 },
+                        { "low", "Lows (%)", s.percent[0], 0, {}, 0, 200, 1 }, { "mid", "Middle (%)", s.percent[1], 0, {}, 0, 200, 1 },
+                        { "high", "Highs (%)", s.percent[2], 0, {}, 0, 200, 1 } },
+                      BuiltInEffects::multibandWidthId, PreviewOwner::multibandWidth,
+                      [toSettings, rate] (const EffectValues& v) { return Multiband::isValid (toSettings (v), rate); },
+                      "A setting is out of range: crossovers from 20 Hz to 20 kHz (below half the rate), the high one at least an octave above the low; widths 0 to 200 %.",
+                      [] (const EffectValues&) { return std::make_unique<BuiltInEffects::MultibandWidthProcessor>(); },
+                      [toSettings] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          auto* live = dynamic_cast<BuiltInEffects::MultibandWidthProcessor*> (&p);
+
+                          if (live != nullptr)
+                              live->setSettings (toSettings (v));
+
+                          return live != nullptr;
+                      },
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          multibandWidthSettings = toSettings (v);
+                          runStep ({ "multibandWidth", v, nullptr });
+                      });
 }
 
 void MainComponent::showDeEsser()

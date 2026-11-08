@@ -30,6 +30,7 @@ namespace BuiltInEffects
     constexpr const char* multibandId = "spectrablade:multiband-compressor";
     constexpr const char* deEsserId = "spectrablade:de-esser";
     constexpr const char* dynamicEqId = "spectrablade:dynamic-eq";
+    constexpr const char* multibandWidthId = "spectrablade:multiband-width";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -627,6 +628,37 @@ namespace BuiltInEffects
         int channelsPrepared = 0;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeEsserProcessor)
+    };
+
+    /** The multiband stereo width, live: the crossovers and each band's width as parameters (over
+        Effects > Multiband Stereo Width's ranges); crossovers set closer than an octave, or past
+        what the rate allows, are moved apart as the offline effect would refuse them. It runs a
+        frame at a time with Multiband::WidthCore, so over a whole file from its start it gives
+        Multiband::widen's samples. No latency. */
+    class MultibandWidthProcessor final : public BuiltInEffect
+    {
+    public:
+        MultibandWidthProcessor();
+
+        /** The settings as played: the parameters' with the crossovers moved apart if need be. */
+        Multiband::Width getSettings() const;
+        Multiband::Width getParameterSettings() const;
+        void setSettings (const Multiband::Width&);
+
+        juce::AudioProcessorEditor* createEditor() override;
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    private:
+        juce::AudioParameterFloat *lowCrossover = nullptr, *highCrossover = nullptr;
+        std::array<juce::AudioParameterFloat*, 3> widths {};
+        Multiband::WidthCore core;
+        std::array<float, 5> applied {};
+        double rate = 48000.0;
+        int channelsPrepared = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultibandWidthProcessor)
     };
 
     /** The dynamic EQ, live: each band's on, shape, mode, frequency, Q, gain, threshold, ratio, attack
