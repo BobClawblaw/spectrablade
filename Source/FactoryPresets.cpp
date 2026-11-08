@@ -201,6 +201,10 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:wow-flutter"] = {
+            { "Wow only (under 4 Hz)", { { "fastest", 4.0 }, { "amount", 100.0 } } },
+            { "Wow and flutter", { { "fastest", 10.0 }, { "amount", 100.0 } } },
+            { "Half way", { { "fastest", 10.0 }, { "amount", 50.0 } } } };
         t["spectrablade:wind-rustle-bleed"] = {
             { "All three", { { "wind", 12.0 }, { "corner", 150.0 }, { "rustle", 12.0 }, { "bleed", 12.0 }, { "bleedThreshold", 20.0 } } },
             { "Wind only", { { "wind", 18.0 }, { "corner", 150.0 }, { "rustle", 0.0 }, { "bleed", 0.0 }, { "bleedThreshold", 20.0 } } },
