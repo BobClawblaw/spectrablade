@@ -164,6 +164,19 @@ void paintHandle (juce::Graphics& g, juce::Point<float> p, int index, bool stron
     g.drawText (juce::String (index + 1), juce::Rectangle<float> (radius * 2.0f, radius * 2.0f).withCentre (p), juce::Justification::centred);
 }
 
+void paintChannelTag (juce::Graphics& g, juce::Point<float> p, int index, Equalizer::Channel channel)
+{
+    if (channel == Equalizer::Channel::all)
+        return;
+
+    const auto box = juce::Rectangle<float> (13.0f, 13.0f).withCentre (p.translated (11.0f, -11.0f));
+    g.setColour (juce::Colour (0xff15171c).withAlpha (0.85f));
+    g.fillRoundedRectangle (box, 3.0f);
+    g.setColour (bandColour (index));
+    g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
+    g.drawText (Equalizer::channelNames()[(int) channel].substring (0, 1), box, juce::Justification::centred);
+}
+
 void paintOffRing (juce::Graphics& g, juce::Point<float> p, int index, bool strong)
 {
     g.setColour (bandColour (index).withAlpha (strong ? 0.8f : 0.35f));

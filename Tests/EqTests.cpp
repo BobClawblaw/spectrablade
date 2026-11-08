@@ -1,5 +1,6 @@
 #include <JuceHeader.h>
 #include "../Source/ParametricEq.h"
+#include "../Source/BuiltInEffects.h"
 #include "TestUtils.h"
 #include "EqTests.h"
 
@@ -50,6 +51,112 @@ namespace
 
 void runEqTests()
 {
+    // A band on the mid, the side, or one channel alone. Left = a + b and right = a - b, so a (1 kHz)
+    // is the mid and b (3 kHz) the side: a bell on the mid lifts a in both channels alike and
+    // leaves b; one on the side lifts b (with its sign) and leaves a; one on the left leaves the
+    // right bit for bit; on a mono sound a side band changes nothing and a mid band is the band.
+    // The live EQ with such bands, played in blocks, gives the offline samples bit for bit; the
+    // panel's row sets the channel and the presets keep it.
+    {
+        juce::AudioBuffer<float> in (2, 48000);
+
+        for (int i = 0; i < 48000; ++i)
+        {
+            const auto a = 0.3 * std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / rate);
+            const auto b = 0.3 * std::sin (juce::MathConstants<double>::twoPi * 3000.0 * i / rate);
+            in.setSample (0, i, (float) (a + b));
+            in.setSample (1, i, (float) (a - b));
+        }
+
+        const auto apply = [] (const juce::AudioBuffer<float>& x, const Band& band)
+        {
+            return readAll (*Equalizer::apply (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (x)), 0, x.getNumSamples(), rate, { band }));
+        };
+        const auto level = [] (const juce::AudioBuffer<float>& x, double hz, bool mid)   // a single-bin DFT of the mid or the side, over the second half
+        {
+            double re = 0.0, im = 0.0;
+
+            for (int i = 24000; i < 48000; ++i)
+            {
+                const auto v = 0.5 * (x.getSample (0, i) + (mid ? 1.0 : -1.0) * x.getSample (1, i));
+                const auto phase = juce::MathConstants<double>::twoPi * hz * i / rate;
+                re += v * std::cos (phase);
+                im += v * std::sin (phase);
+            }
+
+            return 20.0 * std::log10 (2.0 * std::sqrt (re * re + im * im) / 24000.0);
+        };
+
+        const Band onMid { BandType::peak, 1000.0, 12.0, 2.0, Equalizer::Channel::mid };
+        const auto mid = apply (in, onMid);
+        const auto midLift = level (mid, 1000.0, true) - level (in, 1000.0, true), sideKept = level (mid, 3000.0, false) - level (in, 3000.0, false);
+
+        const Band onSide { BandType::peak, 3000.0, 12.0, 2.0, Equalizer::Channel::side };
+        const auto side = apply (in, onSide);
+        const auto sideLift = level (side, 3000.0, false) - level (in, 3000.0, false), midKept = level (side, 1000.0, true) - level (in, 1000.0, true);
+
+        const Band onLeft { BandType::peak, 1000.0, 12.0, 2.0, Equalizer::Channel::left };
+        const auto left = apply (in, onLeft);
+        auto rightSame = true;
+
+        for (int i = 0; i < 48000; ++i)
+            rightSame = rightSame && juce::exactlyEqual (left.getSample (1, i), in.getSample (1, i));
+
+        const auto leftLift = rmsDb (left, 0, 24000, 48000) - rmsDb (in, 0, 24000, 48000);
+
+        juce::AudioBuffer<float> mono (1, 48000);
+        mono.copyFrom (0, 0, in, 0, 0, 48000);
+        const auto monoSide = apply (mono, onSide), monoMid = apply (mono, onMid), monoAll = apply (mono, { BandType::peak, 1000.0, 12.0, 2.0 });
+        auto monoRight = true;
+
+        for (int i = 0; i < 48000; ++i)
+            monoRight = monoRight && juce::exactlyEqual (monoSide.getSample (0, i), mono.getSample (0, i))
+                        && juce::exactlyEqual (monoMid.getSample (0, i), monoAll.getSample (0, i));
+
+        // Live, in uneven blocks.
+        BuiltInEffects::ParametricEqProcessor live;
+        live.setBand (1, true, onMid);
+        live.setBand (2, true, onSide);
+        live.setBand (3, true, onLeft);
+        live.setPlayConfigDetails (2, 2, rate, 512);
+        live.prepareToPlay (rate, 3000);
+        juce::AudioBuffer<float> played (in);
+        juce::MidiBuffer midi;
+        const int sizes[] = { 1, 7, 512, 3000 };
+
+        for (int pos = 0, k = 0; pos < 48000; ++k)
+        {
+            const auto n = juce::jmin (sizes[k % 4], 48000 - pos);
+            juce::AudioBuffer<float> block (played.getArrayOfWritePointers(), 2, pos, n);
+            live.processBlock (block, midi);
+            pos += n;
+        }
+
+        const auto offline = readAll (*Equalizer::apply (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, live.getActiveBands (rate)));
+        auto liveSame = live.getActiveBands (rate).size() == 3 && live.getActiveBands (rate)[0].channel == Equalizer::Channel::mid;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                liveSame = liveSame && juce::exactlyEqual (played.getSample (ch, i), offline.getSample (ch, i));
+
+        // The panel's row and the presets.
+        ParametricEq panel (ParametricEq::defaultSettings(), rate);
+        panel.getRow (2).channel.setSelectedItemIndex (2, juce::sendNotificationSync);
+        const auto rowSets = panel.getSettings()[2].band.channel == Equalizer::Channel::side;
+        const auto values = BuiltInEffects::eqPresetValues (panel.getSettings());
+        const auto restored = BuiltInEffects::eqSettingsFrom (values, ParametricEq::defaultSettings());
+        const auto presetKeeps = values.at ("band3Channel") == 2.0 && restored[2].band.channel == Equalizer::Channel::side && restored[0].band.channel == Equalizer::Channel::all;
+
+        std::cout << "      on the mid: 1 kHz " << midLift << " dB, the side's 3 kHz " << sideKept << "; on the side: 3 kHz " << sideLift << ", the mid's 1 kHz "
+                  << midKept << "; on the left: " << leftLift << " dB" << std::endl;
+        check (std::abs (midLift - 12.0) < 0.05 && std::abs (sideKept) < 0.01 && std::abs (sideLift - 12.0) < 0.05 && std::abs (midKept) < 0.01
+                   && leftLift > 5.0 && rightSame && monoRight && liveSame && rowSets && presetKeeps,
+               "eq bands by channel: a +12 dB bell on the mid lifts the mid's 1 kHz 12 dB and leaves the side's 3 kHz within 0.01 dB, one on the side "
+               "the other way round, one on the left lifts the left and leaves the right bit for bit, on a mono sound a side band changes nothing and a "
+               "mid band is the band; the live EQ with bands on the mid, the side and the left, played in blocks of 1, 7, 512 and 3,000 frames, gives "
+               "the offline samples bit for bit; the row's box sets a band's channel and the presets keep it");
+    }
+
     const Band bell { BandType::peak, 1000.0, 6.0, 1.0 };
     const Band lowShelf { BandType::lowShelf, 200.0, 6.0, 0.7071067811865476 };
     const Band highShelf { BandType::highShelf, 5000.0, -9.0, 0.7071067811865476 };

@@ -177,6 +177,85 @@ void runDynamicEqTests()
                "a low shelf's +6 dB reaches 20 Hz within 0.1 dB and 5 kHz is left within 0.1 dB");
     }
 
+    // A band on the mid, the side, or one channel alone: left = a + b and right = a - b, so a is the
+    // mid and b the side. A bell cutting the mid's 1 kHz leaves the side's 3 kHz; one on the side
+    // leaves the mid; one on the left leaves the right bit for bit; on a mono sound, a side band
+    // changes nothing and a mid band is the band.
+    {
+        juce::AudioBuffer<float> in (2, 48000);
+
+        for (int i = 0; i < 48000; ++i)
+        {
+            const auto a = 0.4 * std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / rate);
+            const auto b = 0.4 * std::sin (juce::MathConstants<double>::twoPi * 3000.0 * i / rate);
+            in.setSample (0, i, (float) (a + b));
+            in.setSample (1, i, (float) (a - b));
+        }
+
+        const auto midOf = [] (const juce::AudioBuffer<float>& x, double hz)
+        {
+            juce::AudioBuffer<float> m (1, x.getNumSamples());
+
+            for (int i = 0; i < x.getNumSamples(); ++i)
+                m.setSample (0, i, 0.5f * (x.getSample (0, i) + x.getSample (1, i)));
+
+            return amplitude (m, hz, 24000, 24000);
+        };
+        const auto sideOf = [] (const juce::AudioBuffer<float>& x, double hz)
+        {
+            juce::AudioBuffer<float> sd (1, x.getNumSamples());
+
+            for (int i = 0; i < x.getNumSamples(); ++i)
+                sd.setSample (0, i, 0.5f * (x.getSample (0, i) - x.getSample (1, i)));
+
+            return amplitude (sd, hz, 24000, 24000);
+        };
+
+        DynamicEq::Band band;
+        band.gainDb = -12.0;
+        band.thresholdDb = -40.0;
+        band.ratio = 20.0;
+        band.channel = Equalizer::Channel::mid;
+        const auto onMid = applied (in, only (band));
+        const auto midCut = db (midOf (onMid, 1000.0) / midOf (in, 1000.0)), sideKept = db (sideOf (onMid, 3000.0) / sideOf (in, 3000.0));
+
+        band.frequency = 3000.0;
+        band.channel = Equalizer::Channel::side;
+        const auto onSide = applied (in, only (band));
+        const auto sideCut = db (sideOf (onSide, 3000.0) / sideOf (in, 3000.0)), midKept = db (midOf (onSide, 1000.0) / midOf (in, 1000.0));
+
+        band.frequency = 1000.0;
+        band.channel = Equalizer::Channel::left;
+        const auto onLeft = applied (in, only (band));
+        auto rightSame = true;
+
+        for (int i = 0; i < 48000; ++i)
+            rightSame = rightSame && juce::exactlyEqual (onLeft.getSample (1, i), in.getSample (1, i));
+
+        const auto leftCut = db (amplitude (onLeft, 1000.0, 24000, 24000) / amplitude (in, 1000.0, 24000, 24000));
+
+        juce::AudioBuffer<float> mono (1, 48000);
+        mono.copyFrom (0, 0, in, 0, 0, 48000);
+        band.channel = Equalizer::Channel::side;
+        const auto monoSide = applied (mono, only (band));
+        band.channel = Equalizer::Channel::mid;
+        const auto monoMid = applied (mono, only (band));
+        band.channel = Equalizer::Channel::all;
+        const auto monoAll = applied (mono, only (band));
+        auto monoRight = true;
+
+        for (int i = 0; i < 48000; ++i)
+            monoRight = monoRight && juce::exactlyEqual (monoSide.getSample (0, i), mono.getSample (0, i))
+                        && juce::exactlyEqual (monoMid.getSample (0, i), monoAll.getSample (0, i));
+
+        std::cout << "      on the mid: 1 kHz " << midCut << " dB, the side's 3 kHz " << sideKept << "; on the side: 3 kHz " << sideCut << ", the mid's 1 kHz "
+                  << midKept << "; on the left: " << leftCut << " dB" << std::endl;
+        check (midCut < -11.5 && std::abs (sideKept) < 0.01 && sideCut < -11.5 && std::abs (midKept) < 0.01 && leftCut < -11.5 && rightSame && monoRight,
+               "dynamic eq: a band on the mid cuts the mid's 1 kHz by its 12 dB and leaves the side's 3 kHz within 0.01 dB, one on the side the other "
+               "way round, one on the left cuts the left and leaves the right bit for bit; on a mono sound a side band changes nothing and a mid band "
+               "is the band on every channel");
+    }
+
     // Refused settings, and an empty range.
     {
         const auto snap = AudioEdits::fromBuffer (sines ({ { 1000.0, 0.3 } }, 4800));
@@ -217,6 +296,8 @@ void runDynamicEqTests()
         s.bands[4].gainDb = 3.0;
         s.bands[4].mode = DynamicEq::Mode::under;
         s.bands[4].thresholdDb = -30.0;
+        s.bands[2].channel = Equalizer::Channel::mid;
+        s.bands[4].channel = Equalizer::Channel::side;
         s.outputDb = -1.5;
 
         BuiltInEffects::DynamicEqProcessor live;
@@ -262,7 +343,7 @@ void runDynamicEqTests()
             std::vector<double> v { x.outputDb };
 
             for (auto& b : x.bands)
-                v.insert (v.end(), { b.on ? 1.0 : 0.0, (double) b.shape, (double) b.mode, b.frequency, b.q, b.gainDb, b.thresholdDb, b.ratio, b.attackMs, b.releaseMs });
+                v.insert (v.end(), { b.on ? 1.0 : 0.0, (double) b.shape, (double) b.mode, (double) b.channel, b.frequency, b.q, b.gainDb, b.thresholdDb, b.ratio, b.attackMs, b.releaseMs });
 
             return v;
         };
@@ -306,7 +387,7 @@ void runDynamicEqTests()
         const auto leftAlone = std::abs (live.getParameterSettings().bands[1].frequency - 640.0) < 0.01 && std::abs (live.getParameterSettings().bands[2].gainDb + 6.0) < 0.01;
 
         check (same && readingsRight && kept && windowWorks && leftAlone && live.getLatencySamples() == 0,
-               "built-in dynamic eq: played in blocks of 1, 7, 512 and 3,000 frames it gives the offline samples bit for bit; the readings "
+               "built-in dynamic eq (a band on the mid, one on the side): played in blocks of 1, 7, 512 and 3,000 frames it gives the offline samples bit for bit; the readings "
                "are the core's gains and levels (a cut, 0 for a band off, a lift under); its state and preset values restore every setting; "
                "its window shows the effect's settings, a change on it reaches the effect, the effect's changes reach it, and closing it leaves the effect as it is; no latency");
     }
@@ -346,13 +427,16 @@ void runDynamicEqTests()
         panel.mouseUp (eventAt (panel, line, line));
         const auto threshold = std::abs (s.bands[4].thresholdDb + 42.0) < 0.11 && std::abs (panel.getControls().threshold.getValue() + 42.0) < 0.11;
 
+        panel.getControls().channel.setSelectedItemIndex (2, juce::sendNotificationSync);
+        const auto sided = s.bands[4].channel == Equalizer::Channel::side;
+
         const auto before = changes;
         panel.setSettings (DynamicEq::defaultSettings());
-        const auto quiet = changes == before && juce::exactlyEqual (s.bands[2].gainDb, 0.0);
+        const auto quiet = changes == before && juce::exactlyEqual (s.bands[2].gainDb, 0.0) && panel.getControls().channel.getSelectedItemIndex() == 0;
 
-        check (dragged && narrowed && off && on && threshold && quiet,
+        check (dragged && narrowed && off && on && threshold && sided && quiet,
                "dynamic eq panel: dragging a handle sets its band's frequency (2 kHz) and gain (-8 dB) and shows them in the controls; the wheel narrows "
                "a bell's Q by a tenth; double-click switches a band off (a ring on the 0 dB line) and on again; dragging the meter's line sets the "
-               "picked band's threshold (-42 dB); setSettings says nothing");
+               "picked band's threshold (-42 dB); the channel box puts the picked band on the side; setSettings says nothing");
     }
 }

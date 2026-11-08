@@ -81,6 +81,7 @@ namespace
             const auto n = "band" + juce::String ((int) i + 1);
             v[n + "On"] = bands[i].on ? 1.0 : 0.0;
             v[n + "Type"] = bands[i].type;
+            v[n + "Channel"] = 0.0;
             v[n + "Frequency"] = bands[i].frequency;
             v[n + "Gain"] = bands[i].gain;
             v[n + "Q"] = bands[i].q;
@@ -90,7 +91,7 @@ namespace
     }
 
     /** A dynamic EQ preset: each band as on, shape (0 bell, 1 low shelf, 2 high shelf), mode (0 over, 1 under), frequency, Q, gain,
-        threshold, ratio, attack and release; the bands not named are off at their starting places. */
+        threshold, ratio, attack and release, on every channel; the bands not named are off at their starting places. */
     Values dynamicEq (const std::vector<std::array<double, 10>>& bands, double output = 0.0)
     {
         Values v { { "output", output } };
@@ -100,8 +101,12 @@ namespace
                                                               { 0, 2, 0, 8000, 1, 0, -30, 4, 10, 150 } }};
 
         for (size_t b = 0; b < 5; ++b)
+        {
             for (size_t i = 0; i < 10; ++i)
                 v["band" + juce::String ((int) b + 1) + names[i]] = b < bands.size() ? bands[b][i] : starts[b][i];
+
+            v["band" + juce::String ((int) b + 1) + "Channel"] = 0.0;
+        }
 
         return v;
     }

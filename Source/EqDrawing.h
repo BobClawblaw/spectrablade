@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "Equalizer.h"
 
 /** What the EQ drawings share: the well they are drawn in, the frequency and gain grid, the spectrum
     of what is playing behind the curves, the glowing curve and the numbered handles. Frequency runs
@@ -48,6 +49,10 @@ namespace EqDrawing
     /** A numbered handle: a disc in its band's colour with a halo, larger when strong, ringed when
         picked out. */
     void paintHandle (juce::Graphics&, juce::Point<float>, int index, bool strong, bool picked);
+
+    /** A small tag by a handle (its upper right) naming the channel a band works on: M, S, L or R;
+        nothing for a band on every channel. */
+    void paintChannelTag (juce::Graphics&, juce::Point<float> handle, int index, Equalizer::Channel);
 
     /** A band switched off: a ring with its number. */
     void paintOffRing (juce::Graphics&, juce::Point<float>, int index, bool strong);

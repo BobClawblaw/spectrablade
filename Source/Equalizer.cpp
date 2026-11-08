@@ -61,6 +61,18 @@ namespace
 
 }
 
+const juce::StringArray& channelNames()
+{
+    static const juce::StringArray names { "Stereo", "Mid", "Side", "Left", "Right" };
+    return names;
+}
+
+bool operator== (const Band& a, const Band& b)
+{
+    return a.type == b.type && juce::exactlyEqual (a.frequency, b.frequency) && juce::exactlyEqual (a.gainDb, b.gainDb)
+        && juce::exactlyEqual (a.q, b.q) && a.channel == b.channel;
+}
+
 bool isFlat (const Band& band)
 {
     const auto isPass = band.type == BandType::highPass || band.type == BandType::lowPass;
@@ -84,6 +96,79 @@ void Filter::process (float* x, int n) noexcept
         z1 = b1 * in - a1 * y + z2;
         z2 = b2 * in - a2 * y;
         x[i] = (float) y;
+    }
+}
+
+double Filter::tick (double in) noexcept
+{
+    const auto y = b0 * in + z1;
+    z1 = b1 * in - a1 * y + z2;
+    z2 = b2 * in - a2 * y;
+    return y;
+}
+
+void Stage::set (const Band& b, double sampleRate, int numChannels)
+{
+    if (b.channel != band.channel || numChannels != channelsSet)
+    {
+        filters.assign ((size_t) juce::jmax (1, numChannels), {});
+        channelsSet = numChannels;
+    }
+
+    band = b;
+
+    for (auto& f : filters)
+        f.setBand (band, sampleRate);
+}
+
+void Stage::reset() noexcept
+{
+    for (auto& f : filters)
+        f.reset();
+}
+
+void Stage::process (float* const* channels, int numChannels, int numFrames) noexcept
+{
+    const auto n = juce::jmin (numChannels, (int) filters.size());
+
+    if (n <= 0)
+        return;
+
+    switch (band.channel)
+    {
+        case Channel::all:
+            for (int ch = 0; ch < n; ++ch)
+                filters[(size_t) ch].process (channels[ch], numFrames);
+            break;
+
+        case Channel::left:
+            filters[0].process (channels[0], numFrames);
+            break;
+
+        case Channel::right:
+            if (n > 1)
+                filters[1].process (channels[1], numFrames);
+            break;
+
+        case Channel::mid:
+        case Channel::side:
+            if (n < 2)
+            {
+                if (band.channel == Channel::mid)   // a mono sound is all mid
+                    filters[0].process (channels[0], numFrames);
+
+                break;
+            }
+
+            for (int i = 0; i < numFrames; ++i)
+            {
+                const double l = channels[0][i], r = channels[1][i];
+                auto mid = (l + r) / 2.0, side = (l - r) / 2.0;
+                (band.channel == Channel::mid ? mid : side) = filters[0].tick (band.channel == Channel::mid ? mid : side);
+                channels[0][i] = (float) (mid + side);
+                channels[1][i] = (float) (mid - side);
+            }
+            break;
     }
 }
 
@@ -123,18 +208,17 @@ AudioEdits::Snapshot apply (const AudioSnapshot& s, juce::int64 start, juce::int
         juce::AudioBuffer<float> before (b.getNumChannels(), prime);
 
         for (int ch = 0; ch < b.getNumChannels(); ++ch)
-        {
             before.copyFrom (ch, 0, b, ch, 0, prime);
 
-            for (auto& band : bands)
-            {
-                Filter f;
-                f.setBand (band, sampleRate);
-                f.process (b.getWritePointer (ch), b.getNumSamples());
-            }
-
-            b.copyFrom (ch, 0, before, ch, 0, prime);
+        for (auto& band : bands)
+        {
+            Stage stage;
+            stage.set (band, sampleRate, b.getNumChannels());
+            stage.process (b.getArrayOfWritePointers(), b.getNumChannels(), b.getNumSamples());
         }
+
+        for (int ch = 0; ch < b.getNumChannels(); ++ch)
+            b.copyFrom (ch, 0, before, ch, 0, prime);
     });
 }
 }

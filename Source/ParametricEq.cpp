@@ -47,6 +47,8 @@ ParametricEq::ParametricEq (const Settings& initial, double rate)
             row->type.addItem (typeNames[t], t + 1);
 
         row->type.setSelectedItemIndex ((int) band.type, juce::dontSendNotification);
+        row->channel.addItemList (Equalizer::channelNames(), 1);
+        row->channel.setSelectedItemIndex ((int) band.channel, juce::dontSendNotification);
 
         row->frequency.setSliderStyle (juce::Slider::LinearHorizontal);
         row->frequency.setTextBoxStyle (juce::Slider::TextBoxRight, false, 70, 20);
@@ -71,18 +73,19 @@ ParametricEq::ParametricEq (const Settings& initial, double rate)
 
         row->on.onClick = [this, i] { readRow (i); };
         row->type.onChange = [this, i] { readRow (i); };
+        row->channel.onChange = [this, i] { readRow (i); };
         row->frequency.onValueChange = [this, i] { readRow (i); };
         row->gain.onValueChange = [this, i] { readRow (i); };
         row->q.onValueChange = [this, i] { readRow (i); };
 
-        for (juce::Component* c : { (juce::Component*) &row->on, (juce::Component*) &row->type, (juce::Component*) &row->frequency,
-                                    (juce::Component*) &row->gain, (juce::Component*) &row->q })
+        for (juce::Component* c : { (juce::Component*) &row->on, (juce::Component*) &row->type, (juce::Component*) &row->channel,
+                                    (juce::Component*) &row->frequency, (juce::Component*) &row->gain, (juce::Component*) &row->q })
             addAndMakeVisible (c);
 
         rows[(size_t) i] = std::move (row);
     }
 
-    setSize (640, 220 + numBands * rowHeight);
+    setSize (700, 220 + numBands * rowHeight);
     startTimerHz (25);
 }
 
@@ -112,6 +115,7 @@ void ParametricEq::setSettings (const Settings& s)
         const auto& setting = settings[(size_t) i];
         row.on.setToggleState (setting.on, juce::dontSendNotification);
         row.type.setSelectedItemIndex ((int) setting.band.type, juce::dontSendNotification);
+        row.channel.setSelectedItemIndex ((int) setting.band.channel, juce::dontSendNotification);
         row.frequency.setValue (setting.band.frequency, juce::dontSendNotification);
         row.gain.setValue (setting.band.gainDb, juce::dontSendNotification);
         row.gain.setEnabled (! isPass (setting.band));
@@ -127,6 +131,7 @@ void ParametricEq::readRow (int index)
     auto& setting = settings[(size_t) index];
     setting.on = row.on.getToggleState();
     setting.band.type = (Equalizer::BandType) juce::jmax (0, row.type.getSelectedItemIndex());
+    setting.band.channel = (Equalizer::Channel) juce::jmax (0, row.channel.getSelectedItemIndex());
     setting.band.frequency = row.frequency.getValue();
     // The slider steps from its bottom end, so 0 dB comes back as about 1e-15; the step is 0.1 dB.
     setting.band.gainDb = std::round (row.gain.getValue() * 10.0) / 10.0;
@@ -394,6 +399,9 @@ void ParametricEq::paintReadout (juce::Graphics& g, int band) const
 
     text << "  Q " << juce::String (b.q, 2);
 
+    if (b.channel != Equalizer::Channel::all)
+        text << "  " << Equalizer::channelNames()[(int) b.channel];
+
     if (! settings[(size_t) band].on)
         text = "Off: double-click to switch on";
 
@@ -462,9 +470,14 @@ void ParametricEq::paint (juce::Graphics& g)
         const auto strong = i == selected || i == hovered;
 
         if (settings[(size_t) i].on)
+        {
             EqDrawing::paintHandle (g, pointFor (i), i, strong, i == selected);
+            EqDrawing::paintChannelTag (g, pointFor (i), i, settings[(size_t) i].band.channel);
+        }
         else
+        {
             EqDrawing::paintOffRing (g, { xForFrequency (settings[(size_t) i].band.frequency), zero }, i, strong);
+        }
     }
 
     const auto shown = dragging >= 0 ? dragging : hovered;
@@ -480,9 +493,11 @@ void ParametricEq::resized()
     for (auto& row : rows)
     {
         auto line = controls.removeFromTop (rowHeight).reduced (0, 3);
-        row->on.setBounds (line.removeFromLeft (44));
-        row->type.setBounds (line.removeFromLeft (110));
-        line.removeFromLeft (8);
+        row->on.setBounds (line.removeFromLeft (40));
+        row->type.setBounds (line.removeFromLeft (100));
+        line.removeFromLeft (4);
+        row->channel.setBounds (line.removeFromLeft (78));
+        line.removeFromLeft (6);
         const auto third = line.getWidth() / 3;
         row->frequency.setBounds (line.removeFromLeft (third + labelWidth / 2));
         row->gain.setBounds (line.removeFromLeft (third));

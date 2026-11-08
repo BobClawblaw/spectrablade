@@ -113,8 +113,8 @@ namespace BuiltInEffects
     };
 
     /** The parametric EQ, live: five bands as Effects > Parametric EQ has them, each on, type,
-        frequency, gain and Q an automatable parameter, run block by block with the Equalizer
-        filters. A band switched off, flat (a bell or shelf at 0 dB) or at or past Nyquist at the
+        channel, frequency, gain and Q an automatable parameter, run block by block with the
+        Equalizer stages. A band switched off, flat (a bell or shelf at 0 dB) or at or past Nyquist at the
         current rate passes the audio unchanged and starts afresh when it comes back. Played over
         a whole file from its start, it gives exactly the samples Equalizer::apply gives for the
         same bands. No latency. Mono or stereo, the same on every channel. */
@@ -136,6 +136,7 @@ namespace BuiltInEffects
 
         juce::AudioParameterBool& onParameter (int index) const      { return *bandParameters[(size_t) index].on; }
         juce::AudioParameterChoice& typeParameter (int index) const  { return *bandParameters[(size_t) index].type; }
+        juce::AudioParameterChoice& channelParameter (int index) const { return *bandParameters[(size_t) index].channel; }
         juce::AudioParameterFloat& frequencyParameter (int index) const { return *bandParameters[(size_t) index].frequency; }
         juce::AudioParameterFloat& gainParameter (int index) const   { return *bandParameters[(size_t) index].gain; }
         juce::AudioParameterFloat& qParameter (int index) const      { return *bandParameters[(size_t) index].q; }
@@ -150,6 +151,7 @@ namespace BuiltInEffects
         {
             juce::AudioParameterBool* on = nullptr;
             juce::AudioParameterChoice* type = nullptr;
+            juce::AudioParameterChoice* channel = nullptr;
             juce::AudioParameterFloat* frequency = nullptr;
             juce::AudioParameterFloat* gain = nullptr;
             juce::AudioParameterFloat* q = nullptr;
@@ -159,11 +161,12 @@ namespace BuiltInEffects
 
         std::array<BandParameters, numBands> bandParameters;
         double rate = 48000.0;
+        int channelsRunning = 0;
 
-        // Each band's filters, one a channel, and the band they were last set for (nothing when
-        // the band was passing the audio through), so they are reset only when a band comes back.
-        std::array<std::vector<Equalizer::Filter>, numBands> filters;
-        std::array<std::optional<Equalizer::Band>, numBands> filtersSetFor;
+        // Each band's stage and the band it was last set for (nothing when the band was passing the
+        // audio through), so it is reset only when a band comes back.
+        std::array<Equalizer::Stage, numBands> stages;
+        std::array<std::optional<Equalizer::Band>, numBands> stagesSetFor;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEqProcessor)
     };
@@ -643,7 +646,7 @@ namespace BuiltInEffects
         struct BandParameters
         {
             juce::AudioParameterBool* on;
-            juce::AudioParameterChoice *shape, *mode;
+            juce::AudioParameterChoice *shape, *mode, *channel;
             juce::AudioParameterFloat *frequency, *q, *gain, *threshold, *ratio, *attack, *release;
         };
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioEdits.h"
+#include "Equalizer.h"
 #include "EqDrawing.h"
 
 /** A dynamic EQ: five bands, each a bell or a shelf that moves only while its own part of the sound
@@ -15,7 +16,9 @@
     band reacts to is its part's: mean-square over a few cycles of its frequency, the loudest channel
     leading (so a stereo image stays put), a sine reading its peak in dBFS. A shelf's part hears the
     far side of its corner faintly (6 dB an octave down), so a loud bass can nudge a high shelf's
-    level a little. The bands run in order, each on what the ones before it put out. */
+    level a little. A band works on every channel, on the mid or the side of a stereo pair, or on
+    the left or the right alone (Equalizer::Channel): its part comes from that signal and its change
+    goes back to it. The bands run in order, each on what the ones before it put out. */
 namespace DynamicEq
 {
     constexpr int numBands = 5;
@@ -39,6 +42,7 @@ namespace DynamicEq
         double attackMs = 10.0;        // 0.1 to 500 ms: the time to move 63% of the way as it starts acting
         double releaseMs = 150.0;      // 5 to 5,000 ms: and as it lets go
         Mode mode = Mode::over;
+        Equalizer::Channel channel = Equalizer::Channel::all;
     };
 
     struct Settings
@@ -107,7 +111,7 @@ namespace DynamicEq
         together glow (now) over a faint line (at most).
 
         Under the drawing, one band's settings at a time: the band picked by its number (or its handle),
-        on or off, bell or shelf, over or under, and its frequency, Q, gain, threshold, ratio, attack
+        on or off, bell or shelf, over or under, its channel, and its frequency, Q, gain, threshold, ratio, attack
         and release; and the output. Beside the drawing, the picked band's level as it plays, with its
         threshold across it: drag the threshold there to set it by eye.
 
@@ -156,7 +160,7 @@ namespace DynamicEq
         {
             std::array<juce::TextButton, numBands> tabs;
             juce::ToggleButton on { "On" };
-            juce::ComboBox shape, mode;
+            juce::ComboBox shape, mode, channel;
             juce::Slider frequency, q, gain, threshold, ratio, attack, release, output;
         };
 

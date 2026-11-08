@@ -179,17 +179,70 @@ void Core::process (float* const* channels, int numChannels, int numFrames) noex
                 continue;
 
             const auto& f = filters[i];
-            auto loudest = 0.0;
-
-            for (int ch = 0; ch < n; ++ch)
+            const auto run = [&f] (State& st, double x)
             {
-                auto& st = states[(size_t) ch][i];
-                const double x = channels[ch][frame];
                 const auto y = f.b0 * x + st.z1;
                 st.z1 = f.b1 * x - f.a1 * y + st.z2;
                 st.z2 = f.b2 * x - f.a2 * y;
-                parts[(size_t) ch] = y;
-                loudest = juce::jmax (loudest, y * y);
+                return y;
+            };
+            auto loudest = 0.0;
+
+            // The part of each channel the change goes to (with its sign), and the loudest part's
+            // square: from every channel, from the mid or the side (a mono sound is all mid), or
+            // from the left or the right alone.
+            switch (settings.bands[i].channel)
+            {
+                case Equalizer::Channel::all:
+                    for (int ch = 0; ch < n; ++ch)
+                    {
+                        parts[(size_t) ch] = run (states[(size_t) ch][i], channels[ch][frame]);
+                        loudest = juce::jmax (loudest, parts[(size_t) ch] * parts[(size_t) ch]);
+                    }
+                    break;
+
+                case Equalizer::Channel::left:
+                case Equalizer::Channel::right:
+                {
+                    const auto ch = settings.bands[i].channel == Equalizer::Channel::left ? 0 : 1;
+
+                    for (int c = 0; c < n; ++c)
+                        parts[(size_t) c] = 0.0;
+
+                    if (ch < n)
+                    {
+                        parts[(size_t) ch] = run (states[(size_t) ch][i], channels[ch][frame]);
+                        loudest = parts[(size_t) ch] * parts[(size_t) ch];
+                    }
+                    break;
+                }
+
+                case Equalizer::Channel::mid:
+                case Equalizer::Channel::side:
+                {
+                    const auto mid = settings.bands[i].channel == Equalizer::Channel::mid;
+
+                    for (int c = 0; c < n; ++c)
+                        parts[(size_t) c] = 0.0;
+
+                    if (n < 2)
+                    {
+                        if (mid)
+                        {
+                            parts[0] = run (states[0][i], channels[0][frame]);
+                            loudest = parts[0] * parts[0];
+                        }
+
+                        break;
+                    }
+
+                    const double l = channels[0][frame], r = channels[1][frame];
+                    const auto y = run (states[0][i], mid ? (l + r) / 2.0 : (l - r) / 2.0);
+                    parts[0] = y;
+                    parts[1] = mid ? y : -y;
+                    loudest = y * y;
+                    break;
+                }
             }
 
             meanSquare[i] = loudest + detector[i] * (meanSquare[i] - loudest);
@@ -269,6 +322,7 @@ Panel::Panel (const Settings& initial, double rate)
 
     c.shape.addItemList (shapeNames, 1);
     c.mode.addItemList (modeNames, 1);
+    c.channel.addItemList (Equalizer::channelNames(), 1);
 
     const auto setUp = [this] (juce::Slider& s, const juce::String& name, double low, double high, double interval, const juce::String& suffix, double mid)
     {
@@ -300,8 +354,9 @@ Panel::Panel (const Settings& initial, double rate)
     c.on.onClick = [this] { readControls(); };
     c.shape.onChange = [this] { readControls(); };
     c.mode.onChange = [this] { readControls(); };
+    c.channel.onChange = [this] { readControls(); };
 
-    for (juce::Component* comp : { (juce::Component*) &c.on, (juce::Component*) &c.shape, (juce::Component*) &c.mode })
+    for (juce::Component* comp : { (juce::Component*) &c.on, (juce::Component*) &c.shape, (juce::Component*) &c.mode, (juce::Component*) &c.channel })
         addAndMakeVisible (comp);
 
     showSelected();
@@ -345,6 +400,7 @@ void Panel::showSelected()
     c.on.setColour (juce::ToggleButton::tickColourId, EqDrawing::bandColour (selected));
     c.shape.setSelectedItemIndex ((int) b.shape, juce::dontSendNotification);
     c.mode.setSelectedItemIndex ((int) b.mode, juce::dontSendNotification);
+    c.channel.setSelectedItemIndex ((int) b.channel, juce::dontSendNotification);
     c.frequency.setValue (b.frequency, juce::dontSendNotification);
     c.q.setValue (b.q, juce::dontSendNotification);
     c.q.setEnabled (b.shape == Shape::bell);
@@ -366,6 +422,7 @@ void Panel::readControls()
     b.on = c.on.getToggleState();
     b.shape = (Shape) juce::jmax (0, c.shape.getSelectedItemIndex());
     b.mode = (Mode) juce::jmax (0, c.mode.getSelectedItemIndex());
+    b.channel = (Equalizer::Channel) juce::jmax (0, c.channel.getSelectedItemIndex());
     b.frequency = c.frequency.getValue();
     b.q = c.q.getValue();
     b.gainDb = c.gain.getValue();
@@ -643,6 +700,10 @@ juce::String Panel::describe (int band) const
 
     text << "  " << signedDb (b.gainDb) << (b.mode == Mode::over ? " over " : " under ") << juce::String (b.thresholdDb, 1) << " dB";
     text << "  now " << signedDb (readings.gainDb[(size_t) band]);
+
+    if (b.channel != Equalizer::Channel::all)
+        text << "  " << Equalizer::channelNames()[(int) b.channel];
+
     return text;
 }
 
@@ -700,9 +761,14 @@ void Panel::paint (juce::Graphics& g)
             const auto strong = i == selected || i == hovered;
 
             if (settings.bands[(size_t) i].on)
+            {
                 EqDrawing::paintHandle (g, pointFor (i), i, strong, i == selected);
+                EqDrawing::paintChannelTag (g, pointFor (i), i, settings.bands[(size_t) i].channel);
+            }
             else
+            {
                 EqDrawing::paintOffRing (g, { xForFrequency (settings.bands[(size_t) i].frequency), zero }, i, strong);
+            }
         }
 
         const auto shown = dragging >= 0 ? dragging : hovered;
@@ -758,7 +824,9 @@ void Panel::resized()
     c.on.setBounds (top.removeFromLeft (56));
     c.shape.setBounds (top.removeFromLeft (120));
     top.removeFromLeft (8);
-    c.mode.setBounds (top.removeFromLeft (180));
+    c.mode.setBounds (top.removeFromLeft (170));
+    top.removeFromLeft (8);
+    c.channel.setBounds (top.removeFromLeft (84));
 
     // Two columns of sliders, each with its name to its left.
     r.removeFromTop (4);

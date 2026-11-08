@@ -4,8 +4,10 @@
 #include "Analysis.h"
 #include "EqDrawing.h"
 
-/** Five equalizer bands at once, each with an on switch, a type, a frequency, a gain and a Q,
+/** Five equalizer bands at once, each with an on switch, a type, a channel (every channel, the
+    mid or the side of a stereo pair, or the left or the right alone), a frequency, a gain and a Q,
     over a drawing of the response they make together (20 Hz to 20 kHz across, -24 to +24 dB up).
+    A band on one channel is tagged with its letter on its handle.
 
     Each band has a colour of its own: its own response is shaded in it, and its row of controls is
     marked with it. Each band switched on has a numbered handle on the curve at its frequency: drag
@@ -88,7 +90,7 @@ public:
     struct Row
     {
         juce::ToggleButton on;
-        juce::ComboBox type;
+        juce::ComboBox type, channel;
         juce::Slider frequency, gain, q;
     };
 

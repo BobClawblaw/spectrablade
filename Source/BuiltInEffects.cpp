@@ -419,6 +419,7 @@ ParametricEqProcessor::ParametricEqProcessor()
 
         p.on = addBool ("band" + n + "On", "Band " + n + " On", true);
         p.type = addChoice ("band" + n + "Type", "Band " + n + " Type", typeNames, (int) start.type);
+        p.channel = addChoice ("band" + n + "Channel", "Band " + n + " Channel", Equalizer::channelNames(), (int) start.channel);
         p.frequency = addFloat ("band" + n + "Frequency", "Band " + n + " Frequency", hz, (float) start.frequency, "Hz");
         p.gain = addFloat ("band" + n + "Gain", "Band " + n + " Gain", db, (float) start.gainDb, "dB");
         p.q = addFloat ("band" + n + "Q", "Band " + n + " Q", q, (float) start.q);
@@ -428,7 +429,8 @@ ParametricEqProcessor::ParametricEqProcessor()
 Equalizer::Band ParametricEqProcessor::bandFromParameters (int index) const
 {
     const auto& p = bandParameters[(size_t) index];
-    return { (Equalizer::BandType) p.type->getIndex(), (double) p.frequency->get(), (double) p.gain->get(), (double) p.q->get() };
+    return { (Equalizer::BandType) p.type->getIndex(), (double) p.frequency->get(), (double) p.gain->get(), (double) p.q->get(),
+             (Equalizer::Channel) p.channel->getIndex() };
 }
 
 std::array<std::pair<bool, Equalizer::Band>, ParametricEqProcessor::numBands> ParametricEqProcessor::getBands() const
@@ -457,6 +459,7 @@ void ParametricEqProcessor::setBand (int index, bool on, const Equalizer::Band& 
     auto& p = bandParameters[(size_t) index];
     p.on->setValueNotifyingHost (on ? 1.0f : 0.0f);
     p.type->setValueNotifyingHost (p.type->convertTo0to1 ((float) (int) band.type));
+    p.channel->setValueNotifyingHost (p.channel->convertTo0to1 ((float) (int) band.channel));
     setExactly (*p.frequency, (float) band.frequency);
     setExactly (*p.gain, (float) band.gainDb);
     setExactly (*p.q, (float) band.q);
@@ -470,7 +473,7 @@ void ParametricEqProcessor::prepareToPlay (double sampleRate, int)
 
 void ParametricEqProcessor::reset()
 {
-    for (auto& f : filtersSetFor)
+    for (auto& f : stagesSetFor)
         f.reset();
 }
 
@@ -478,11 +481,17 @@ void ParametricEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 {
     const auto channels = juce::jmin (buffer.getNumChannels(), getTotalNumInputChannels());
 
+    if (channels != channelsRunning)
+    {
+        channelsRunning = channels;
+        reset();
+    }
+
     for (int i = 0; i < numBands; ++i)
     {
         const auto band = bandFromParameters (i);
-        auto& set = filtersSetFor[(size_t) i];
-        auto& bandFilters = filters[(size_t) i];
+        auto& set = stagesSetFor[(size_t) i];
+        auto& stage = stages[(size_t) i];
 
         if (! bandParameters[(size_t) i].on->get() || Equalizer::isFlat (band) || ! Equalizer::isValid (band, rate))
         {
@@ -490,23 +499,19 @@ void ParametricEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
             continue;
         }
 
-        if (! set.has_value() || (int) bandFilters.size() != channels)
+        if (! set.has_value())
         {
-            bandFilters.assign ((size_t) channels, {});  // a band coming back starts from silence
-            set.reset();
+            stage.set (band, rate, channels);
+            stage.reset();   // a band coming back starts from silence
+            set = band;
         }
-
-        if (! set.has_value() || set->type != band.type || ! juce::exactlyEqual (set->frequency, band.frequency)
-            || ! juce::exactlyEqual (set->gainDb, band.gainDb) || ! juce::exactlyEqual (set->q, band.q))
+        else if (*set != band)
         {
-            for (auto& f : bandFilters)
-                f.setBand (band, rate);
-
+            stage.set (band, rate, channels);
             set = band;
         }
 
-        for (int ch = 0; ch < channels; ++ch)
-            bandFilters[(size_t) ch].process (buffer.getWritePointer (ch), buffer.getNumSamples());
+        stage.process (buffer.getArrayOfWritePointers(), channels, buffer.getNumSamples());
     }
 }
 
@@ -546,6 +551,7 @@ EffectPresets::Values eqPresetValues (const ParametricEq::Settings& s)
         const auto& b = s[(size_t) i];
         v[n + "On"] = b.on ? 1.0 : 0.0;
         v[n + "Type"] = (double) (int) b.band.type;
+        v[n + "Channel"] = (double) (int) b.band.channel;
         v[n + "Frequency"] = b.band.frequency;
         v[n + "Gain"] = b.band.gainDb;
         v[n + "Q"] = b.band.q;
@@ -566,14 +572,16 @@ ParametricEq::Settings eqSettingsFrom (const EffectPresets::Values& v, Parametri
     {
         const auto n = "band" + juce::String (i + 1);
         auto& b = s[(size_t) i];
-        auto on = b.on ? 1.0 : 0.0, type = (double) (int) b.band.type;
+        auto on = b.on ? 1.0 : 0.0, type = (double) (int) b.band.type, channel = (double) (int) b.band.channel;
         take (n + "On", on);
         take (n + "Type", type);
+        take (n + "Channel", channel);
         take (n + "Frequency", b.band.frequency);
         take (n + "Gain", b.band.gainDb);
         take (n + "Q", b.band.q);
         b.on = on != 0.0;
         b.band.type = (Equalizer::BandType) juce::jlimit (0, typeNames.size() - 1, (int) std::lround (type));
+        b.band.channel = (Equalizer::Channel) juce::jlimit (0, Equalizer::channelNames().size() - 1, (int) std::lround (channel));
     }
 
     return s;
@@ -1559,6 +1567,7 @@ DynamicEqProcessor::DynamicEqProcessor()
         p.on = addBool (id + "On", name + " On", b.on);
         p.shape = addChoice (id + "Shape", name + " Shape", { "Bell", "Low Shelf", "High Shelf" }, (int) b.shape);
         p.mode = addChoice (id + "Mode", name + " Mode", { "Over", "Under" }, (int) b.mode);
+        p.channel = addChoice (id + "Channel", name + " Channel", Equalizer::channelNames(), (int) b.channel);
         p.frequency = addFloat (id + "Frequency", name + " Frequency", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) b.frequency, "Hz");
         p.q = addFloat (id + "Q", name + " Q", { 0.1f, 20.0f, 0.0f, 0.4f }, (float) b.q);
         p.gain = addFloat (id + "Gain", name + " Gain", { -24.0f, 24.0f }, (float) b.gainDb, "dB");
@@ -1576,8 +1585,8 @@ std::vector<float> DynamicEqProcessor::parameterValues() const
     std::vector<float> v { output->get() };
 
     for (auto& p : bands)
-        v.insert (v.end(), { p.on->get() ? 1.0f : 0.0f, (float) p.shape->getIndex(), (float) p.mode->getIndex(), p.frequency->get(), p.q->get(),
-                             p.gain->get(), p.threshold->get(), p.ratio->get(), p.attack->get(), p.release->get() });
+        v.insert (v.end(), { p.on->get() ? 1.0f : 0.0f, (float) p.shape->getIndex(), (float) p.mode->getIndex(), (float) p.channel->getIndex(),
+                             p.frequency->get(), p.q->get(), p.gain->get(), p.threshold->get(), p.ratio->get(), p.attack->get(), p.release->get() });
 
     return v;
 }
@@ -1591,7 +1600,8 @@ DynamicEq::Settings DynamicEqProcessor::getParameterSettings() const
     {
         const auto& p = bands[i];
         s.bands[i] = { p.on->get(), (DynamicEq::Shape) p.shape->getIndex(), (double) p.frequency->get(), (double) p.q->get(), (double) p.gain->get(),
-                       (double) p.threshold->get(), (double) p.ratio->get(), (double) p.attack->get(), (double) p.release->get(), (DynamicEq::Mode) p.mode->getIndex() };
+                       (double) p.threshold->get(), (double) p.ratio->get(), (double) p.attack->get(), (double) p.release->get(), (DynamicEq::Mode) p.mode->getIndex(),
+                       (Equalizer::Channel) p.channel->getIndex() };
     }
 
     return s;
@@ -1611,6 +1621,7 @@ void DynamicEqProcessor::setSettings (const DynamicEq::Settings& s)
         *p.on = b.on;
         *p.shape = (int) b.shape;
         *p.mode = (int) b.mode;
+        *p.channel = (int) b.channel;
         setExactly (*p.frequency, (float) b.frequency);
         setExactly (*p.q, (float) b.q);
         setExactly (*p.gain, (float) b.gainDb);

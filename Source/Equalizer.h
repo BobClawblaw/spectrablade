@@ -15,13 +15,26 @@ namespace Equalizer
         lowPass     // -3 dB at the frequency with q = 0.7071, 12 dB an octave above it
     };
 
+    /** Where a band works: on every channel, on the mid (what left and right share) or the side
+        (what differs between them) of a stereo pair, or on the left or the right alone. On a mono
+        sound, mid is the sound and side nothing; on more than two channels, mid and side are made
+        from the first two and the rest are left as they are. */
+    enum class Channel { all, mid, side, left, right };
+
+    /** The channels' names in menu order: Stereo, Mid, Side, Left, Right. */
+    const juce::StringArray& channelNames();
+
     struct Band
     {
         BandType type = BandType::peak;
         double frequency = 1000.0;
         double gainDb = 0.0;    // unused by the passes
         double q = 0.7071067811865476;
+        Channel channel = Channel::all;
     };
+
+    bool operator== (const Band&, const Band&);
+    inline bool operator!= (const Band& a, const Band& b)    { return ! (a == b); }
 
     constexpr double maxGainDb = 48.0, minQ = 0.05, maxQ = 50.0;
 
@@ -42,16 +55,35 @@ namespace Equalizer
         void setBand (const Band&, double sampleRate);
         void reset() noexcept                       { z1 = z2 = 0.0; }
         void process (float* samples, int numSamples) noexcept;
+        double tick (double sample) noexcept;
 
     private:
         double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
         double z1 = 0, z2 = 0;
     };
 
+    /** One band on the channels it works on (Band::channel), a block at a time, its state carried
+        from block to block as Filter's is: the offline apply and the live EQ both run their bands
+        through stages, so they give the same samples. */
+    class Stage
+    {
+    public:
+        /** The band at this rate for this many channels (valid). The state is kept when only the
+            coefficients change; a change of channel, or of the channel count, starts afresh. */
+        void set (const Band&, double sampleRate, int numChannels);
+        void reset() noexcept;
+        void process (float* const* channels, int numChannels, int numFrames) noexcept;
+
+    private:
+        Band band;
+        int channelsSet = 0;
+        std::vector<Filter> filters;   // one a channel for all, left and right; the first alone for mid and side
+    };
+
     /** The band's gain at a frequency, in dB; 0 for a band that isn't valid. */
     double responseDb (const Band&, double sampleRate, double frequency);
 
-    /** Runs the bands, in order, over [start, end) on every channel. The filters first run over up
+    /** Runs the bands, in order, over [start, end), each on the channels it works on. The filters first run over up
         to a second of the audio before the range, so the range starts as it would in a longer
         pass; that audio is kept as it was. Nothing rings past the range's end. Nullptr for no
         bands, a band that isn't valid or an empty range. */
