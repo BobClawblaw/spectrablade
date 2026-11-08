@@ -292,8 +292,9 @@ Matched matchLoudness (const AudioSnapshot& s, juce::int64 start, juce::int64 en
         return m;
 
     m.gainDb = juce::jlimit (-48.0, 48.0, targetLufs - integrated);
+    auto lastGain = m.gainDb, lastLoudness = integrated;
 
-    for (int pass = 0; pass < 4; ++pass)
+    for (int pass = 0; pass < 8; ++pass)
     {
         auto next = limit (s, start, end, sampleRate, Limiter { m.gainDb, juce::jlimit (-48.0, 0.0, ceilingDbtp), 50.0, 5.0, true });
 
@@ -313,7 +314,11 @@ Matched matchLoudness (const AudioSnapshot& s, juce::int64 start, juce::int64 en
         if (std::abs (shortfall) <= 0.05 || ! std::isfinite (shortfall) || m.gainDb >= 48.0)
             break;
 
-        m.gainDb = juce::jmin (48.0, m.gainDb + shortfall);
+        // What a dB of gain gained last time (1 before any limiting), never taken under a quarter.
+        const auto gained = m.gainDb != lastGain ? juce::jlimit (0.25, 1.0, (r->integrated - lastLoudness) / (m.gainDb - lastGain)) : 1.0;
+        lastGain = m.gainDb;
+        lastLoudness = r->integrated;
+        m.gainDb = juce::jmin (48.0, m.gainDb + shortfall / gained);
     }
 
     return m;

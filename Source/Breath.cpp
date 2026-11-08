@@ -6,7 +6,8 @@ namespace Breath
 namespace
 {
     constexpr double blockSeconds = 0.01, speechReach = 1.0, floorReach = 3.0, shortestSeconds = 0.08, longestSeconds = 0.8, rampSeconds = 0.02;
-    constexpr double crossingsPerSecond = 1200.0, overFloorDb = 6.0;
+    constexpr double crossingsPerSecond = 1200.0, overFloorDb = 6.0, surroundReach = 0.5;
+    constexpr double silentDb = -90.0;   // blocks under this are digital silence, not a floor
 }
 
 bool isValid (const Settings& s)
@@ -61,25 +62,43 @@ std::vector<Found> find (const AudioSnapshot& s, juce::int64 start, juce::int64 
 
     // Each block's speech level and floor from the blocks round it.
     const auto speechBlocks = (int) (speechReach / blockSeconds), floorBlocks = (int) (floorReach / blockSeconds);
-    std::vector<char> candidate ((size_t) blocks, 0);
+    std::vector<char> candidate ((size_t) blocks, 0), quiet ((size_t) blocks, 0);
+    std::vector<double> floorDb ((size_t) blocks, -200.0), around;
 
     for (int i = 0; i < blocks; ++i)
     {
-        auto speech = -200.0, floor = 200.0;
+        auto speech = -200.0;
 
         for (int j = juce::jmax (0, i - speechBlocks); j <= juce::jmin (blocks - 1, i + speechBlocks); ++j)
             speech = juce::jmax (speech, levelDb[(size_t) j]);
 
-        for (int j = juce::jmax (0, i - floorBlocks); j <= juce::jmin (blocks - 1, i + floorBlocks); ++j)
-            floor = juce::jmin (floor, levelDb[(size_t) j]);
+        around.clear();
 
-        candidate[(size_t) i] = levelDb[(size_t) i] < speech - settings.thresholdDb && levelDb[(size_t) i] > floor + overFloorDb
-                                && crossings[(size_t) i] > crossingsPerSecond;
+        for (int j = juce::jmax (0, i - floorBlocks); j <= juce::jmin (blocks - 1, i + floorBlocks); ++j)
+            if (levelDb[(size_t) j] > silentDb)
+                around.push_back (levelDb[(size_t) j]);
+
+        if (! around.empty())
+        {
+            const auto twentieth = around.begin() + (long) (around.size() / 20);
+            std::nth_element (around.begin(), twentieth, around.end());
+            floorDb[(size_t) i] = *twentieth;
+        }
+
+        const auto floor = floorDb[(size_t) i];
+        quiet[(size_t) i] = levelDb[(size_t) i] < speech - settings.thresholdDb;
+
+        candidate[(size_t) i] = quiet[(size_t) i] && levelDb[(size_t) i] > floor + overFloorDb && crossings[(size_t) i] > crossingsPerSecond;
     }
 
-    // Runs of candidates of the right length.
+    // Runs of candidates of the right length that stand over their surroundings: the non-speech
+    // blocks within half a second either side that aren't candidates themselves (the floor when
+    // there are none). A noisy floor's swells stand over it by less than a breath does.
     std::vector<Found> found;
     const auto shortest = (int) std::lround (shortestSeconds / blockSeconds), longest = (int) std::lround (longestSeconds / blockSeconds);
+    const auto surroundBlocks = (int) (surroundReach / blockSeconds);
+    const auto median = [] (std::vector<double>& v) { const auto mid = v.begin() + (long) (v.size() / 2); std::nth_element (v.begin(), mid, v.end()); return *mid; };
+    std::vector<double> surroundings, run;
 
     for (int i = 0; i < blocks;)
     {
@@ -95,7 +114,23 @@ std::vector<Found> find (const AudioSnapshot& s, juce::int64 start, juce::int64 
             ++j;
 
         if (j - i >= shortest && j - i <= longest)
-            found.push_back ({ start + (juce::int64) i * block, start + (juce::int64) j * block });
+        {
+            surroundings.clear();
+
+            for (int k = juce::jmax (0, i - surroundBlocks); k < i; ++k)
+                if (quiet[(size_t) k] && ! candidate[(size_t) k])
+                    surroundings.push_back (levelDb[(size_t) k]);
+
+            for (int k = j; k < juce::jmin (blocks, j + surroundBlocks); ++k)
+                if (quiet[(size_t) k] && ! candidate[(size_t) k])
+                    surroundings.push_back (levelDb[(size_t) k]);
+
+            run.assign (levelDb.begin() + i, levelDb.begin() + j);
+            const auto over = median (run) - (surroundings.empty() ? floorDb[(size_t) i] : median (surroundings));
+
+            if (over >= overFloorDb)
+                found.push_back ({ start + (juce::int64) i * block, start + (juce::int64) j * block, (float) over });
+        }
 
         i = j;
     }
@@ -113,13 +148,15 @@ AudioDocument::Snapshot apply (const AudioSnapshot& s, juce::int64 start, juce::
 
     const auto breaths = find (s, start, end, sampleRate, settings);
 
-    const auto floorGain = std::pow (10.0, -settings.reductionDb / 20.0);
     const auto ramp = juce::jmax (1, (int) std::lround (rampSeconds * sampleRate));
+    const auto reductionDb = settings.reductionDb;
 
-    return AudioEdits::processRange (s, start, end, [&breaths, start, floorGain, ramp] (juce::AudioBuffer<float>& b)
+    return AudioEdits::processRange (s, start, end, [&breaths, start, reductionDb, ramp] (juce::AudioBuffer<float>& b)
     {
         for (const auto& breath : breaths)
         {
+            // By the reduction, but no further than to its surroundings.
+            const auto floorGain = std::pow (10.0, -juce::jmin ((double) reductionDb, (double) breath.overDb) / 20.0);
             const auto from = (int) (breath.start - start), to = (int) (breath.end - start);
 
             for (int i = juce::jmax (0, from - ramp); i < juce::jmin (b.getNumSamples(), to + ramp); ++i)

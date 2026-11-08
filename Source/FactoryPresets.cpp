@@ -286,11 +286,11 @@ namespace
             { "Loud (-0.3 dBTP)", { { "gain", 10.0 }, { "ceiling", -0.3 }, { "character", 2.0 }, { "emphasis", 40.0 } } },
             { "Punchy drums", { { "gain", 6.0 }, { "ceiling", -0.5 }, { "character", 1.0 }, { "emphasis", 100.0 } } } };
         t["spectrablade:exciter"] = {
-            { "Warm lows", exciter (200, 3000, {{ { 9, 0, 60 }, { 0, 0, 0 }, { 0, 0, 0 } }}, 0) },
-            { "Tape glue", exciter (200, 3000, {{ { 6, 1, 50 }, { 6, 1, 50 }, { 6, 1, 50 } }}, 0) },
-            { "Air and presence", exciter (250, 4000, {{ { 0, 0, 0 }, { 4, 0, 30 }, { 10, 0, 50 } }}, 0) },
-            { "Vocal edge", exciter (200, 2500, {{ { 0, 0, 0 }, { 8, 2, 35 }, { 12, 0, 45 } }}, 0) },
-            { "Crunch", exciter (150, 2000, {{ { 12, 2, 70 }, { 18, 2, 80 }, { 12, 2, 60 } }}, -2) } };
+            { "Warm lows", exciter (200, 3000, {{ { 21, 0, 60 }, { 0, 0, 0 }, { 0, 0, 0 } }}, 0) },
+            { "Tape glue", exciter (200, 3000, {{ { 18, 1, 50 }, { 18, 1, 50 }, { 18, 1, 50 } }}, 0) },
+            { "Air and presence", exciter (250, 4000, {{ { 0, 0, 0 }, { 16, 0, 30 }, { 22, 0, 50 } }}, 0) },
+            { "Vocal edge", exciter (200, 2500, {{ { 0, 0, 0 }, { 20, 2, 35 }, { 24, 0, 45 } }}, 0) },
+            { "Crunch", exciter (150, 2000, {{ { 24, 2, 70 }, { 30, 2, 80 }, { 24, 2, 60 } }}, -2) } };
         t["spectrablade:multiband-width"] = {
             { "Mono below 120 Hz", { { "lowCrossover", 120.0 }, { "highCrossover", 2000.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 100.0 } } },
             { "Tight low end, wide top", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 } } },

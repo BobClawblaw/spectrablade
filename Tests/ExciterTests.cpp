@@ -110,24 +110,24 @@ void runExciterTests()
         }
 
         const auto in = sine (1000.0, 0.5);
-        const auto tube = applied (in, everyBand (Exciter::Curve::tube, 18.0));
-        const auto tape = applied (in, everyBand (Exciter::Curve::tape, 18.0));
-        const auto transistor = applied (in, everyBand (Exciter::Curve::transistor, 18.0));
+        const auto tube = applied (in, everyBand (Exciter::Curve::tube, 30.0));
+        const auto tape = applied (in, everyBand (Exciter::Curve::tape, 30.0));
+        const auto transistor = applied (in, everyBand (Exciter::Curve::transistor, 30.0));
         const auto h = [] (const juce::AudioBuffer<float>& b, int n) { return db (amplitude (b, 1000.0 * n) / amplitude (b, 1000.0)); };
         std::cout << "      harmonics (dB below the fundamental): tube 2nd " << h (tube, 2) << ", 3rd " << h (tube, 3) << "; tape 2nd " << h (tape, 2) << ", 3rd " << h (tape, 3)
                   << ", 5th " << h (tape, 5) << "; transistor 2nd " << h (transistor, 2) << ", 3rd " << h (transistor, 3) << ", 5th " << h (transistor, 5) << std::endl;
         check (slopes && bounded && h (tube, 2) > -30.0 && h (tape, 2) < -80.0 && h (tape, 3) > -30.0 && h (transistor, 2) < -80.0
                    && h (transistor, 5) > h (tape, 5),
-               "exciter curves: each has a slope of 1 at zero and stays within 1; driven 18 dB, Tube's 2nd harmonic is within 30 dB of the fundamental, "
+               "exciter curves: each has a slope of 1 at zero and stays within 1; driven 30 dB (18 past the 12 dB of headroom), Tube's 2nd harmonic is within 30 dB of the fundamental, "
                "Tape's 2nd is over 80 dB down with its 3rd within 30 dB, Transistor's 2nd is over 80 dB down and its 5th stronger than Tape's");
     }
 
-    // Aliasing: a 15 kHz sine driven 12 dB into Tape makes a 45 kHz 3rd harmonic that would fold to
+    // Aliasing: a 15 kHz sine driven 24 dB (12 past the headroom) into Tape makes a 45 kHz 3rd harmonic that would fold to
     // 3 kHz; oversampled, little of it comes back, where shaping at the rate itself folds it all.
     // (Driven far harder, the 13th harmonic at 195 kHz folds to 3 kHz even at four times the rate.)
     {
         const auto in = sine (15000.0, 0.5);
-        const auto out = applied (in, everyBand (Exciter::Curve::tape, 12.0));
+        const auto out = applied (in, everyBand (Exciter::Curve::tape, 24.0));
         juce::AudioBuffer<float> naive (in);
         const auto g = std::pow (10.0, 12.0 / 20.0);
 
@@ -138,7 +138,7 @@ void runExciterTests()
         const auto folded = db (amplitude (out, 3000.0) / amplitude (out, 15000.0)), naiveFolded = db (amplitude (naive, 3000.0) / amplitude (naive, 15000.0));
         std::cout << "      aliasing: the 3rd harmonic of 15 kHz folded to 3 kHz " << folded << " dB below the fundamental oversampled, " << naiveFolded << " shaped at the rate" << std::endl;
         check (folded < -50.0 && naiveFolded > -25.0,
-               "exciter: a 15 kHz sine driven 12 dB into Tape puts its 3rd harmonic (45 kHz) folded to 3 kHz over 50 dB below the fundamental "
+               "exciter: a 15 kHz sine driven 24 dB (12 past the headroom) into Tape puts its 3rd harmonic (45 kHz) folded to 3 kHz over 50 dB below the fundamental "
                "(shaped at the rate itself it would be within 25 dB)");
     }
 

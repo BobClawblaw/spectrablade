@@ -7804,7 +7804,9 @@ void MainComponent::showMultiband()
     auto* box = new juce::AlertWindow ("Multiband Compressor",
                                        "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), each band "
                                        "compressed on its own as the Compressor does (6 dB knee), and the bands added back up: at a ratio of 1 "
-                                       "everywhere, every frequency keeps its level. The high crossover stays at least an octave above the low one.",
+                                       "everywhere, every frequency keeps its level. The high crossover stays at least an octave above the low one. The "
+                                       "band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): "
+                                       "limit after this, not before.",
                                        juce::MessageBoxIconType::NoIcon, this);
     auto panel = std::make_shared<Multiband::Panel>();
     panel->setSettings (multibandSettings);
@@ -8602,7 +8604,8 @@ void MainComponent::showAdaptiveDenoise()
                       "Noise reduced with no noise print: each frequency's noise is taken as the least it has been over the tracking span (what is "
                       "always there, even under speech), so the estimate follows the noise as it changes. The reduction is how far noise is lowered at "
                       "most; the threshold how far above the tracked noise a sound must be to count as signal. A longer span is steadier, a shorter one "
-                      "follows faster.",
+                      "follows faster. It needs moments when the noise is there alone: a sound that never pauses (a room full of voices, say) is "
+                      "itself taken as the noise and lowered as a whole.",
                       { { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1, {}, 0, 12, 0.5 },
                         { "tracking", "Tracking span (s)", s.trackingSeconds, 1, {}, 0.5, 5, 0.1 } },
                       "spectrablade:adaptive-noise-reduction", PreviewOwner::none,
@@ -8662,7 +8665,8 @@ void MainComponent::showDialogueIsolation()
                       "Speech kept and everything else lowered. Each frame is judged for speech by its pitch and how much of its power sits on that "
                       "pitch's harmonics (and fricatives by their highs standing over the background); what is kept is the harmonics and the highs "
                       "over the background, and all else comes down by the reduction. The background is what is always there, bin by bin, over the "
-                      "last second and a half. A higher sensitivity counts frames as speech more readily (more of the voice kept, more of the rest with it).",
+                      "last second and a half. A higher sensitivity counts frames as speech more readily (more of the voice kept, more of the rest with it). "
+                      "Speech is found by its pitch, so a crowd of voices, with no one pitch to follow, is not kept.",
                       { { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 }, { "sensitivity", "Sensitivity (%)", s.sensitivity, 0, {}, 0, 100, 1 } },
                       "spectrablade:dialogue-isolation", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { return DialogueIsolation::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
@@ -8906,7 +8910,7 @@ void MainComponent::showTransientShaper()
                       "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), and in each band the attacks (the "
                       "first moments of a hit, where a fast envelope stands over a slow one) and the sustain (what rings on after, where the slow "
                       "stands over the fast) are turned up or down on their own, by up to 12 dB. A steady sound is left as it is. The high "
-                      "crossover stays at least an octave above the low one.",
+                      "crossover stays at least an octave above the low one. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
                       fields, BuiltInEffects::transientShaperId, PreviewOwner::transientShaper,
                       [toSettings, rate] (const EffectValues& v) { return TransientShaper::isValid (toSettings (v), rate); },
                       "A setting is out of range: crossovers from 20 Hz to 20 kHz (below half the rate), the high one at least an octave above the low; attack and sustain within 12 dB, output within 24 dB.",
@@ -9000,7 +9004,7 @@ void MainComponent::showExciter()
                       "curve of its own and mixed back with the band as it was. Tube rounds the halves unevenly (even and odd harmonics), Tape rounds "
                       "them alike (odd harmonics), Transistor clips harder. The drive sets how far the band goes into the curve; the level stays "
                       "about where it was. The shaping runs at four times the rate, so what it makes above the audible band is filtered off rather "
-                      "than folded back. The high crossover stays at least an octave above the low one.",
+                      "than folded back. The high crossover stays at least an octave above the low one. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
                       fields, BuiltInEffects::exciterId, PreviewOwner::exciter,
                       [toSettings, rate] (const EffectValues& v) { return Exciter::isValid (toSettings (v), rate); },
                       "A setting is out of range: crossovers from 20 Hz to 20 kHz (below half the rate), the high one at least an octave above the low; drive 0 to 36 dB, mix 0 to 100 %, output within 24 dB.",
@@ -9033,7 +9037,7 @@ void MainComponent::showMultibandWidth()
     showEffectDialog ("Multiband Stereo Width",
                       "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), and each band's width set on its "
                       "own: 0 % makes the band mono (its side taken out: the low band at 0 % is a mono low end), 100 % leaves it, and up to 200 % "
-                      "doubles its side. What the channels share is never touched. The high crossover stays at least an octave above the low one.",
+                      "doubles its side. What the channels share is never touched. The high crossover stays at least an octave above the low one. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
                       { { "lowCrossover", "Low crossover (Hz)", s.lowCrossover, 0, {}, 20, 10000, 1 }, { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 },
                         { "low", "Lows (%)", s.percent[0], 0, {}, 0, 200, 1 }, { "mid", "Middle (%)", s.percent[1], 0, {}, 0, 200, 1 },
                         { "high", "Highs (%)", s.percent[2], 0, {}, 0, 200, 1 } },
@@ -9070,7 +9074,7 @@ void MainComponent::showDeEsser()
                       "Whenever the highs above the frequency are louder than the threshold, they are turned down by however far they are over, "
                       "up to the reduction, within a millisecond, coming back over 60 ms. Turn down the high band alone (the rest of the voice "
                       "untouched) or the whole sound. Frequency 1 to 16 kHz, threshold -60 to 0 dB, reduction 0 to 24 dB. "
-                      "Listen plays only what it takes out, to set the frequency and threshold by ear; OK always applies the result.",
+                      "Listen plays only what it takes out, to set the frequency and threshold by ear; OK always applies the result. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
                       { { "frequency", "Frequency (Hz)", s.frequency, 0, {}, 1000, 16000, 50 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1, {}, -60, 0, 0.5 },
                         { "reduction", "Reduction (dB)", s.maxReductionDb, 1, {}, 0, 24, 0.5 },
                         { "mode", "Turn down", s.wholeSound ? 1.0 : 0.0, 0, { "The high band", "The whole sound" } },

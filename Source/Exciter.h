@@ -10,7 +10,10 @@
     odd; Tape, soft and even on both halves (tanh), odd harmonics only; Transistor, harder, a cubic
     that reaches a flat top, odd harmonics with more of the higher ones. The drive sets how far the
     band goes into the curve (the band scaled up by the drive, shaped, and scaled back), so the
-    harmonics grow with it while the level stays about where it was. The shaping runs at four times
+    harmonics grow with it while the level stays about where it was. The curve sits 12 dB of headroom
+    past full scale (headroomDb): at 0 dB of drive a full-scale band only just reaches the bend
+    (0.18 dB down at a full-scale peak, nothing on a quiet one), so the effect at 0 dB leaves a sound
+    as it was, a hot master included; the drive brings the bend closer. The shaping runs at four times
     the rate (Oversampler4), so the harmonics above Nyquist are filtered off, not folded back, and
     the band as it was is delayed to match; the whole comes out Oversampler4::latency frames late,
     which the live effect reports and the offline apply takes off. A one-pole high-pass at 5 Hz
@@ -19,6 +22,9 @@ namespace Exciter
 {
     enum class Curve { tube, tape, transistor };
 
+    /** How far past full scale the curve's bend sits at 0 dB of drive. */
+    constexpr double headroomDb = 12.0;
+
     const juce::StringArray& curveNames();
 
     /** The curve's output for an input (any size; from -1 to 1 for a full-scale sample). */
@@ -26,7 +32,7 @@ namespace Exciter
 
     struct Band
     {
-        double driveDb = 0.0;        // 0 to 36 dB into the curve
+        double driveDb = 0.0;        // 0 to 36 dB into the curve (0 leaves the band as it is, within 0.18 dB at full scale)
         Curve curve = Curve::tube;
         double mixPercent = 100.0;   // 0 (the band as it was) to 100 (the shaped band alone)
     };

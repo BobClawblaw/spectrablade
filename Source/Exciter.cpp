@@ -96,7 +96,7 @@ void Core::set (const Settings& s)
 
     for (size_t b = 0; b < 3; ++b)
     {
-        drive[b] = std::pow (10.0, s.bands[b].driveDb / 20.0);
+        drive[b] = std::pow (10.0, (s.bands[b].driveDb - headroomDb) / 20.0);
         wet[b] = s.bands[b].mixPercent / 100.0;
     }
 

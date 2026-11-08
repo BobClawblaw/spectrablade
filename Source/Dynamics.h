@@ -128,9 +128,10 @@ namespace Dynamics
     };
 
     /** Brings [start, end), measured at `integrated` LUFS, to the target loudness with gain into a
-        true-peak limiter at the ceiling (50 ms release, 5 ms look-ahead). Limiting takes a little
-        loudness off, so the result is measured and the gain raised by the shortfall, up to four
-        passes, until it is within 0.05 LU of the target. The gain stops at 48 dB. Nullptr snapshot
+        true-peak limiter at the ceiling (50 ms release, 5 ms look-ahead). Limiting takes loudness
+        off, the more the harder it works, so the result is measured and the gain raised by the
+        shortfall divided by how much the last raise gained (the first time, the whole shortfall),
+        up to eight passes, until it is within 0.05 LU of the target. The gain stops at 48 dB. Nullptr snapshot
         for an empty range or a target, ceiling or measurement that isn't finite. */
     Matched matchLoudness (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate,
                            double integrated, double targetLufs, double ceilingDbtp);
