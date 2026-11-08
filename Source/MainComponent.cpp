@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdBreathControl)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdSpill)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdSpill:
+            info.setInfo ("Wind, Rustle and Bleed...", "Lower gusts of wind, bursts of rustle and the bleed between words in a speech recording", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
         case cmdBreathControl: info.setInfo ("Breath Control...", "Find the breaths between words and lower them", "Effects", 0); break;
         case cmdDePlosive: info.setInfo ("De-plosive...", "Lower the thumps a p or a b puts into the microphone", "Effects", 0); break;
         case cmdAdaptiveDenoise:
@@ -2059,6 +2063,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDeCrackle:  showMouthDeClick (true); break;
         case cmdDePlosive:  showDePlosive(); break;
         case cmdBreathControl: showBreathControl(); break;
+        case cmdSpill:      showSpill(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2607,7 +2612,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
-            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
@@ -7967,6 +7972,73 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::showSpill()
+{
+    const auto& s = spillSettings;
+    const auto rate = engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        return Spill::Settings { v.at ("wind"), v.at ("corner"), v.at ("rustle"), v.at ("bleed"), v.at ("bleedThreshold") };
+    };
+
+    showEffectDialog ("Wind, Rustle and Bleed",
+                      "Three jobs on a speech recording. Wind: the lows below the corner lowered while they gust (over their typical level in a "
+                      "block without voice). Rustle: the highs above 1 kHz lowered during a burst of them (20 to 400 ms, without voice and away "
+                      "from it; a fricative sits next to a vowel, rustle does not). Bleed: everything lowered between the words, where the sound "
+                      "lies more than the bleed threshold under the speech round it and away from voice. A reduction at 0 leaves that job out.",
+                      { { "wind", "Wind reduction (dB)", s.windReductionDb, 1, {}, 0, 40, 0.5 }, { "corner", "Wind corner (Hz)", s.windCornerHz, 0, {}, 60, 400, 1 },
+                        { "rustle", "Rustle reduction (dB)", s.rustleReductionDb, 1, {}, 0, 40, 0.5 },
+                        { "bleed", "Bleed reduction (dB)", s.bleedReductionDb, 1, {}, 0, 40, 0.5 }, { "bleedThreshold", "Bleed threshold (dB under the speech)", s.bleedThresholdDb, 1, {}, 6, 40, 0.5 } },
+                      "spectrablade:wind-rustle-bleed", PreviewOwner::none,
+                      [toSettings, rate] (const EffectValues& v) { return Spill::isValid (toSettings (v), rate); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          spillSettings = toSettings (v);
+                          reduceSpill (spillSettings);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "spill " + juce::String (settings.windReductionDb, 3) + " " + juce::String (settings.windCornerHz, 3) + " "
+                                                                              + juce::String (settings.rustleReductionDb, 3) + " " + juce::String (settings.bleedReductionDb, 3) + " "
+                                                                              + juce::String (settings.bleedThresholdDb, 3),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  return EffectPreview::Rendered { Spill::apply (*audio, start, end, sampleRate, settings, progress), start, end, {} };
+                              } });
+                      },
+                      "Reduce");
+}
+
+void MainComponent::reduceSpill (Spill::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Reducing wind, rustle and bleed...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = Spill::apply (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Wind, Rustle and Bleed", "The audio changed during processing, so the result was discarded.");
+            else if (*result != nullptr)
+                applyEdit (*result, "Wind, Rustle and Bleed", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showBreathControl()

@@ -30,6 +30,7 @@
 #include "AdaptiveDenoise.h"
 #include "Plosive.h"
 #include "Breath.h"
+#include "Spill.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -286,6 +287,9 @@ private:
     AdaptiveDenoise::Settings adaptiveSettings;
     Plosive::Settings plosiveSettings;
     Breath::Settings breathSettings;
+    Spill::Settings spillSettings;
+    void showSpill();
+    void reduceSpill (Spill::Settings);
     void showBreathControl();
     void showMouthDeClick (bool crackle);
     void showDePlosive();

@@ -43,15 +43,24 @@ Pitch pitchOf (const std::vector<float>& power, double sampleRate)
         return {};
 
     // Candidates a sixteenth of an octave apart; each compares the power a bin within a quarter of
-    // itself round its first twelve harmonics (counted once a bin) with the power a bin in the gaps.
-    const auto totalBins = highBin - lowBin + 1;
+    // itself round its first twelve harmonics (counted once a bin) with the power a bin in the gaps
+    // between them: the median of the gaps' own densities, so one tone in a gap doesn't count for
+    // all, and the gaps are the harmonics' own neighbours (a spectrum falling smoothly with
+    // frequency would read as harmonics against the quiet far above them otherwise).
+    std::vector<double> cumulative ((size_t) power.size() + 1, 0.0);
+
+    for (size_t k = 0; k < power.size(); ++k)
+        cumulative[k + 1] = cumulative[k] + power[k];
+
     Pitch best;
+    std::vector<double> gapDensities;
 
     for (auto f0 = lowestPitch; f0 <= highestPitch; f0 *= std::pow (2.0, 1.0 / 16.0))
     {
         auto sum = 0.0;
         auto counted = 0, found = 0, lastBin = -1;
         std::vector<std::pair<double, int>> windows;   // each harmonic's power and bins
+        gapDensities.clear();
 
         for (int h = 1; h <= harmonicsCounted; ++h)
         {
@@ -63,6 +72,10 @@ Pitch pitchOf (const std::vector<float>& power, double sampleRate)
             const auto from = juce::jmax (lowBin, (int) std::ceil ((centre - f0 / 4.0) / binHz)), to = juce::jmin (highBin, (int) ((centre + f0 / 4.0) / binHz));
             auto here = 0.0;
             auto width = 0;
+            const auto gapFrom = juce::jmax (lowBin, lastBin + 1), gapTo = juce::jmax (from, lastBin + 1) - 1;   // the gap before this window
+
+            if (gapTo >= gapFrom)
+                gapDensities.push_back ((cumulative[(size_t) gapTo + 1] - cumulative[(size_t) gapFrom]) / (gapTo - gapFrom + 1));
 
             for (int k = juce::jmax (from, lastBin + 1); k <= to; ++k)
             {
@@ -76,12 +89,11 @@ Pitch pitchOf (const std::vector<float>& power, double sampleRate)
             windows.emplace_back (here, width);
         }
 
-        const auto gapBins = totalBins - counted;
-
-        if (counted == 0 || gapBins <= 0)
+        if (counted == 0 || gapDensities.empty())
             continue;
 
-        const auto gapDensity = juce::jmax (1.0e-15, (total - sum) / gapBins);
+        std::sort (gapDensities.begin(), gapDensities.end());
+        const auto gapDensity = juce::jmax (1.0e-15, gapDensities[gapDensities.size() / 2]);
 
         for (const auto& [here, width] : windows)
             if (width > 0 && here / width > 4.0 * gapDensity)

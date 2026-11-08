@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:wind-rustle-bleed"] = {
+            { "All three", { { "wind", 12.0 }, { "corner", 150.0 }, { "rustle", 12.0 }, { "bleed", 12.0 }, { "bleedThreshold", 20.0 } } },
+            { "Wind only", { { "wind", 18.0 }, { "corner", 150.0 }, { "rustle", 0.0 }, { "bleed", 0.0 }, { "bleedThreshold", 20.0 } } },
+            { "Rustle only", { { "wind", 0.0 }, { "corner", 150.0 }, { "rustle", 12.0 }, { "bleed", 0.0 }, { "bleedThreshold", 20.0 } } },
+            { "Bleed only", { { "wind", 0.0 }, { "corner", 150.0 }, { "rustle", 0.0 }, { "bleed", 15.0 }, { "bleedThreshold", 18.0 } } } };
         t["spectrablade:breath-control"] = {
             { "Standard", { { "threshold", 15.0 }, { "reduction", 12.0 } } },
             { "Gentle", { { "threshold", 15.0 }, { "reduction", 6.0 } } },
