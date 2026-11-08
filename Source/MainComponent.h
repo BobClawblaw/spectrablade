@@ -36,6 +36,7 @@
 #include "Rebalance.h"
 #include "Ambience.h"
 #include "DialogueContour.h"
+#include "Azimuth.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -300,6 +301,9 @@ private:
     int ambienceCaptures = 0;
     Ambience::Settings ambienceSettings;
     DialogueContour::Settings contourSettings;
+    Azimuth::Settings azimuthSettings;
+    void showAzimuth();
+    void correctAzimuth (Azimuth::Settings);
     void showDialogueContour();
     void reshapeContour (DialogueContour::Settings);
     void captureAmbience();

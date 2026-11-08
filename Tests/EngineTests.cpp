@@ -54,6 +54,7 @@
 #include "RebalanceTests.h"
 #include "AmbienceTests.h"
 #include "DialogueContourTests.h"
+#include "AzimuthTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -595,6 +596,7 @@ int main (int argc, char* argv[])
         runRebalanceTests();
         runAmbienceTests();
         runDialogueContourTests();
+        runAzimuthTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

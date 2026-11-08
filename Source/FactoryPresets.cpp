@@ -201,6 +201,10 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:azimuth"] = {
+            { "Tape (up to 5 ms)", { { "most", 5.0 }, { "amount", 100.0 } } },
+            { "Wide search (50 ms)", { { "most", 50.0 }, { "amount", 100.0 } } },
+            { "Half way", { { "most", 5.0 }, { "amount", 50.0 } } } };
         t["spectrablade:dialogue-contour"] = {
             { "Land the line (fall 2)", { { "semitones", -2.0 }, { "ending", 0.4 }, { "curve", 0.0 } } },
             { "Firm ending (fall 4)", { { "semitones", -4.0 }, { "ending", 0.5 }, { "curve", 0.3 } } },

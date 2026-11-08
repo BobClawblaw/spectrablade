@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdDialogueContour)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdAzimuth)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdAzimuth:
+            info.setInfo ("Azimuth...", "Find the drifting time offset between the channels of a tape transfer and take it out", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && engine.document.getNumChannels() == 2 && backgroundJob == nullptr);
+            break;
         case cmdDialogueContour:
             info.setInfo ("Dialogue Contour...", "Reshape the pitch of a phrase's ending: a fall or a lift over its last moments", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
@@ -2090,6 +2094,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdRebalance:  showRebalance(); break;
         case cmdCaptureAmbience: captureAmbience(); break;
         case cmdDialogueContour: showDialogueContour(); break;
+        case cmdAzimuth:    showAzimuth(); break;
         case cmdAmbienceMatch: showAmbienceMatch(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
@@ -2634,7 +2639,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
             group ("Time and Pitch", { cmdDialogueContour, 0,  cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
-            group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdMultibandWidth, cmdCentreChannel, cmdPhaseCorrection, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
+            group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdMultibandWidth, cmdCentreChannel, cmdPhaseCorrection, cmdAzimuth, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
                                             cmdMixToMono, cmdMakeStereo, 0, cmdInvert, cmdInvertLeft, cmdInvertRight });
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
@@ -7999,6 +8004,68 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::showAzimuth()
+{
+    const auto& s = azimuthSettings;
+    const auto toSettings = [] (const EffectValues& v) { return Azimuth::Settings { v.at ("most"), v.at ("amount") }; };
+
+    showEffectDialog ("Azimuth",
+                      "The time offset between the two channels of a tape transfer (a head out of line with the tracks) found as it drifts and taken "
+                      "out: measured over windows of two seconds, a second apart, as Automatic Phase Correction measures it, with unclear windows "
+                      "filled from their neighbours and the readings smoothed; the channels are then moved by half the offset each, the late one "
+                      "earlier and the other later, by a fractional delay that follows the drift sample by sample.",
+                      { { "most", "Most offset looked for (ms)", s.mostMs, 1, {}, 0.5, 50, 0.1 }, { "amount", "Amount (%)", s.amountPercent, 0, {}, 0, 100, 1 } },
+                      "spectrablade:azimuth", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return Azimuth::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          azimuthSettings = toSettings (v);
+                          correctAzimuth (azimuthSettings);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "azimuth " + juce::String (settings.mostMs, 3) + " " + juce::String (settings.amountPercent, 3),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  auto result = Azimuth::correct (*audio, start, end, sampleRate, settings, progress);
+                                  return EffectPreview::Rendered { result, start, end, result == nullptr ? juce::String ("No clear offset read: two channels and at least two seconds are needed.") : juce::String() };
+                              } });
+                      },
+                      "Correct");
+}
+
+void MainComponent::correctAzimuth (Azimuth::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Correcting the azimuth...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = Azimuth::correct (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Azimuth", "The audio changed during processing, so the result was discarded.");
+            else if (*result == nullptr)
+                showError ("Azimuth", "No clear offset was read: the audio must have two channels and the selection be at least two seconds, with the channels related.");
+            else
+                applyEdit (*result, "Azimuth", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showDialogueContour()
