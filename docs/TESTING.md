@@ -167,6 +167,7 @@ What they check:
 - Ambience match: room tone laid under silence matching the print's shape and level, eased at the edge, the same twice, filling only the quiet against adding regardless, refused prints and settings.
 - Dialogue contour: a fall and a rise over a phrase's ending measured before, in the middle of and at the end of it, zero shifts before the ending, refused settings, cancelling.
 - Azimuth: a drifting offset read at both ends and taken out to within 0.05 frames at the start, the middle and the end, mono and short ranges refused, cancelling.
+- Codec preview: MP3 and AAC round trips lined up with the original, their error and level measured, the audio outside the range untouched, a bad bit rate refused, cancelling.
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.

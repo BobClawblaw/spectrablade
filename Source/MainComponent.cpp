@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdAzimuth)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdCodecPreview)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdCodecPreview:
+            info.setInfo ("Codec Preview...", "Hear the selection as it will come back from an MP3 or AAC file at a bit rate", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && engine.document.getNumChannels() <= 2 && backgroundJob == nullptr);
+            break;
         case cmdAzimuth:
             info.setInfo ("Azimuth...", "Find the drifting time offset between the channels of a tape transfer and take it out", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && engine.document.getNumChannels() == 2 && backgroundJob == nullptr);
@@ -2095,6 +2099,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCaptureAmbience: captureAmbience(); break;
         case cmdDialogueContour: showDialogueContour(); break;
         case cmdAzimuth:    showAzimuth(); break;
+        case cmdCodecPreview: showCodecPreview(); break;
         case cmdAmbienceMatch: showAmbienceMatch(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
@@ -2631,7 +2636,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
-            group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats , 0, cmdDither });
+            group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats , 0, cmdDither, cmdCodecPreview });
             group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
             group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31, 0, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq });
             group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMaximizer, cmdMultiband, cmdTransientShaper, cmdDeEsser, cmdNoiseGate });
@@ -8004,6 +8009,91 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::showCodecPreview()
+{
+    const auto& s = codecPreviewSettings;
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        LossyFiles::Settings settings;
+        settings.kind = juce::roundToInt (v.at ("kind")) == 1 ? LossyFiles::Kind::aac : LossyFiles::Kind::mp3;
+        settings.kbps = juce::roundToInt (v.at ("kbps"));
+        return settings;
+    };
+    juce::StringArray rates;
+
+    for (auto r : LossyFiles::bitRates())
+        rates.add (juce::String (r) + " kbps");
+
+    const auto rateIndex = juce::jmax (0, LossyFiles::bitRates().indexOf (s.kbps));
+    const auto toSettingsFromIndex = [toSettings] (const EffectValues& v)
+    {
+        auto values = v;
+        values["kbps"] = (double) LossyFiles::bitRates()[juce::jlimit (0, LossyFiles::bitRates().size() - 1, juce::roundToInt (v.at ("rate")))];
+        return toSettings (values);
+    };
+
+    showEffectDialog ("Codec Preview",
+                      "The selection as it will come back from an MP3 or an AAC file at the bit rate: written through the real encoder to a temporary "
+                      "file, read back, lined up with the original and put in its place, so what plays is the codec's own output. Apply keeps "
+                      "that output in the file, for an A/B or to work on what a listener will hear.",
+                      { { "kind", "Format", s.kind == LossyFiles::Kind::aac ? 1.0 : 0.0, 0, { "MP3", "AAC" } },
+                        { "rate", "Bit rate", (double) rateIndex, 0, rates } },
+                      "spectrablade:codec-preview", PreviewOwner::none,
+                      [toSettingsFromIndex] (const EffectValues& v) { return toSettingsFromIndex (v).isValid(); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettingsFromIndex] (const EffectValues& v)
+                      {
+                          codecPreviewSettings = toSettingsFromIndex (v);
+                          applyCodecPreview (codecPreviewSettings);
+                      },
+                      [toSettingsFromIndex] (const EffectValues& v)
+                      {
+                          const auto settings = toSettingsFromIndex (v);
+                          return std::optional<EffectPreview::Request> ({ "codec " + juce::String (settings.kind == LossyFiles::Kind::aac ? "aac" : "mp3") + " " + juce::String (settings.kbps),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  juce::String error;
+                                  const auto r = CodecPreview::roundTrip (*audio, start, end, sampleRate, settings, error, progress);
+                                  return EffectPreview::Rendered { r.has_value() ? r->snapshot : nullptr, start, end, r.has_value() ? juce::String() : error };
+                              } });
+                      },
+                      "Keep");
+}
+
+void MainComponent::applyCodecPreview (LossyFiles::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<std::optional<CodecPreview::Result>>();
+    auto error = std::make_shared<juce::String>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Encoding and decoding...",
+        [result, error, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = CodecPreview::roundTrip (*snapshot, range.getStart(), range.getEnd(), rate, s, *error, progress);
+            return result->has_value();
+        },
+        [this, result, error, version, s]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Codec Preview", "The audio changed during processing, so the result was discarded.");
+            else if (! result->has_value())
+            {
+                if (error->isNotEmpty())
+                    showError ("Codec Preview", *error);
+            }
+            else
+                applyEdit ((*result)->snapshot, juce::String (s.kind == LossyFiles::Kind::aac ? "AAC" : "MP3") + " " + juce::String (s.kbps) + " kbps", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showAzimuth()

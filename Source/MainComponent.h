@@ -37,6 +37,7 @@
 #include "Ambience.h"
 #include "DialogueContour.h"
 #include "Azimuth.h"
+#include "CodecPreview.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -302,6 +303,9 @@ private:
     Ambience::Settings ambienceSettings;
     DialogueContour::Settings contourSettings;
     Azimuth::Settings azimuthSettings;
+    LossyFiles::Settings codecPreviewSettings;
+    void showCodecPreview();
+    void applyCodecPreview (LossyFiles::Settings);
     void showAzimuth();
     void correctAzimuth (Azimuth::Settings);
     void showDialogueContour();

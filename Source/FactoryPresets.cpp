@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:codec-preview"] = {
+            { "MP3 at 128 kbps", { { "kind", 0.0 }, { "rate", 5.0 } } },
+            { "MP3 at 320 kbps", { { "kind", 0.0 }, { "rate", 0.0 } } },
+            { "AAC at 128 kbps", { { "kind", 1.0 }, { "rate", 5.0 } } },
+            { "AAC at 256 kbps", { { "kind", 1.0 }, { "rate", 1.0 } } } };
         t["spectrablade:azimuth"] = {
             { "Tape (up to 5 ms)", { { "most", 5.0 }, { "amount", 100.0 } } },
             { "Wide search (50 ms)", { { "most", 50.0 }, { "amount", 100.0 } } },

@@ -166,6 +166,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Ambience.cpp
     Source/DialogueContour.cpp
     Source/Azimuth.cpp
+    Source/CodecPreview.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp
@@ -282,6 +283,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/AmbienceTests.cpp
     Tests/DialogueContourTests.cpp
     Tests/AzimuthTests.cpp
+    Tests/CodecPreviewTests.cpp
     Tests/ModulationTests.cpp
     Tests/ReverbTests.cpp
     Tests/ConvolverTests.cpp
@@ -392,6 +394,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Ambience.cpp
     Source/DialogueContour.cpp
     Source/Azimuth.cpp
+    Source/CodecPreview.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp
