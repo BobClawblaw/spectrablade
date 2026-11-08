@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdRebalance)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdAmbienceMatch)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,11 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdCaptureAmbience: info.setInfo ("Capture Room Tone", "Learn the room tone from a selection of it alone, to lay under other parts", "Effects", 0); break;
+        case cmdAmbienceMatch:
+            info.setInfo ("Ambience Match...", "Lay the captured room tone under the selection", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && ambiencePrint.has_value() && backgroundJob == nullptr);
+            break;
         case cmdRebalance:
             info.setInfo ("Rebalance...", "Turn the voice, the bass, the drums and the rest of a mix up or down", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
@@ -2079,6 +2084,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdWowFlutter: showWowFlutter(); break;
         case cmdSpectralRecovery: showSpectralRecovery(); break;
         case cmdRebalance:  showRebalance(); break;
+        case cmdCaptureAmbience: captureAmbience(); break;
+        case cmdAmbienceMatch: showAmbienceMatch(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2627,7 +2634,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
-            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, 0, cmdCaptureAmbience, cmdAmbienceMatch, 0, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdRebalance, 0,  cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
@@ -7987,6 +7994,65 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::captureAmbience()
+{
+    const auto sel = selectionOrAll();
+    auto& doc = engine.document;
+    const auto print = Ambience::capture (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), doc.getSampleRate());
+
+    if (! print.has_value())
+    {
+        showError ("Capture Room Tone", "Select at least " + formatTime (Ambience::frameSize, doc.getSampleRate()) + " of room tone alone, then capture it.");
+        return;
+    }
+
+    ambiencePrint = print;
+    ++ambienceCaptures;
+    commands.commandStatusChanged();
+}
+
+void MainComponent::showAmbienceMatch()
+{
+    if (! ambiencePrint.has_value())
+        return;
+
+    if (! juce::exactlyEqual (ambiencePrint->sampleRate, engine.document.getSampleRate()))
+    {
+        showError ("Ambience Match", "The room tone was captured at " + juce::String (ambiencePrint->sampleRate / 1000.0, 1) + " kHz. Capture it again from this file.");
+        return;
+    }
+
+    const auto& s = ambienceSettings;
+    const auto toSettings = [] (const EffectValues& v) { return Ambience::Settings { (float) v.at ("level"), juce::roundToInt (v.at ("where")) == 0 }; };
+
+    showEffectDialog ("Ambience Match",
+                      "The captured room tone laid under the selection: new tone made from the print (its magnitudes with random phase, so it is "
+                      "steady and never repeats), scaled by the level, added and eased in and out at the edges. Fill only the quiet adds tone only "
+                      "where the selection is quieter than the print, by the shortfall, so a background is evened out rather than doubled.",
+                      { { "level", "Level (dB against the print)", s.levelDb, 1, {}, -24, 12, 0.5 },
+                        { "where", "Where", s.fillOnlyTheQuiet ? 0.0 : 1.0, 0, { "Fill only the quiet", "Add regardless" } } },
+                      "spectrablade:ambience-match", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return Ambience::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          ambienceSettings = toSettings (v);
+                          const auto r = selectionOrAll();
+
+                          if (auto next = Ambience::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), *ambiencePrint, ambienceSettings))
+                              applyEdit (std::move (next), "Ambience Match", waveform.getSelection());
+                      },
+                      [print = *ambiencePrint, captures = ambienceCaptures, toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "ambience " + juce::String (captures) + " " + juce::String (settings.levelDb, 3) + (settings.fillOnlyTheQuiet ? " quiet" : " all"),
+                              [print, settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>&)
+                              {
+                                  return EffectPreview::Rendered { Ambience::apply (*audio, start, end, sampleRate, print, settings), start, end, {} };
+                              } });
+                      },
+                      "Lay Under");
 }
 
 void MainComponent::showRebalance()

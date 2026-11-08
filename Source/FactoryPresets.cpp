@@ -201,6 +201,10 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:ambience-match"] = {
+            { "Even out the background", { { "level", 0.0 }, { "where", 0.0 } } },
+            { "Fill a silence", { { "level", 0.0 }, { "where", 1.0 } } },
+            { "A little under", { { "level", -6.0 }, { "where", 0.0 } } } };
         t["spectrablade:rebalance"] = {
             { "Voice up", { { "voice", 4.0 }, { "bass", 0.0 }, { "drums", 0.0 }, { "rest", 0.0 }, { "corner", 150.0 } } },
             { "Voice down (backing)", { { "voice", -18.0 }, { "bass", 0.0 }, { "drums", 0.0 }, { "rest", 0.0 }, { "corner", 150.0 } } },

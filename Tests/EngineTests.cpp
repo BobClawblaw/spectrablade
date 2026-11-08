@@ -52,6 +52,7 @@
 #include "WowFlutterTests.h"
 #include "SpectralRecoveryTests.h"
 #include "RebalanceTests.h"
+#include "AmbienceTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -591,6 +592,7 @@ int main (int argc, char* argv[])
         runWowFlutterTests();
         runSpectralRecoveryTests();
         runRebalanceTests();
+        runAmbienceTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

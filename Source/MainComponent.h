@@ -34,6 +34,7 @@
 #include "WowFlutter.h"
 #include "SpectralRecovery.h"
 #include "Rebalance.h"
+#include "Ambience.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -294,6 +295,11 @@ private:
     WowFlutter::Settings wowSettings;
     SpectralRecovery::Settings recoverySettings;
     Rebalance::Settings rebalanceSettings;
+    std::optional<Ambience::Print> ambiencePrint;
+    int ambienceCaptures = 0;
+    Ambience::Settings ambienceSettings;
+    void captureAmbience();
+    void showAmbienceMatch();
     void showRebalance();
     void rebalance (Rebalance::Settings);
     void showSpectralRecovery();
