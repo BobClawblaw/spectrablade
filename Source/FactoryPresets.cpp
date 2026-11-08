@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:adaptive-noise-reduction"] = {
+            { "Gentle", { { "reduction", 6.0 }, { "threshold", 3.0 }, { "tracking", 1.5 } } },
+            { "Standard", { { "reduction", 12.0 }, { "threshold", 3.0 }, { "tracking", 1.5 } } },
+            { "Strong", { { "reduction", 20.0 }, { "threshold", 4.0 }, { "tracking", 2.0 } } },
+            { "Changing noise", { { "reduction", 12.0 }, { "threshold", 3.0 }, { "tracking", 0.7 } } } };
         t["spectrablade:dialogue-isolation"] = {
             { "Gentle", { { "reduction", 6.0 }, { "sensitivity", 60.0 } } },
             { "Standard", { { "reduction", 12.0 }, { "sensitivity", 50.0 } } },

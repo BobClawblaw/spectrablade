@@ -156,6 +156,7 @@ target_sources(SpectraBlade PRIVATE
     Source/TonalBalance.cpp
     Source/Dither.cpp
     Source/DialogueIsolation.cpp
+    Source/AdaptiveDenoise.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp
@@ -262,6 +263,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/TonalBalanceTests.cpp
     Tests/DitherTests.cpp
     Tests/DialogueIsolationTests.cpp
+    Tests/AdaptiveDenoiseTests.cpp
     Tests/ModulationTests.cpp
     Tests/ReverbTests.cpp
     Tests/ConvolverTests.cpp
@@ -362,6 +364,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/TonalBalance.cpp
     Source/Dither.cpp
     Source/DialogueIsolation.cpp
+    Source/AdaptiveDenoise.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp

@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdAdaptiveDenoise:
+            info.setInfo ("Adaptive Noise Reduction...", "Reduce noise with no noise print, following the noise as it changes", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
         case cmdDialogueIsolation:
             info.setInfo ("Dialogue Isolation...", "Keep the speech and lower everything else, in the selection or the whole file", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
@@ -2040,6 +2044,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdTransientShaper: showTransientShaper(); break;
         case cmdDither:     showDither(); break;
         case cmdDialogueIsolation: showDialogueIsolation(); break;
+        case cmdAdaptiveDenoise: showAdaptiveDenoise(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2588,7 +2593,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
-            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
@@ -7903,6 +7908,66 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showAdaptiveDenoise()
+{
+    const auto& s = adaptiveSettings;
+    const auto toSettings = [] (const EffectValues& v) { return AdaptiveDenoise::Settings { (float) v.at ("reduction"), (float) v.at ("threshold"), (float) v.at ("tracking") }; };
+
+    showEffectDialog ("Adaptive Noise Reduction",
+                      "Noise reduced with no noise print: each frequency's noise is taken as the least it has been over the tracking span (what is "
+                      "always there, even under speech), so the estimate follows the noise as it changes. The reduction is how far noise is lowered at "
+                      "most; the threshold how far above the tracked noise a sound must be to count as signal. A longer span is steadier, a shorter one "
+                      "follows faster.",
+                      { { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1, {}, 0, 12, 0.5 },
+                        { "tracking", "Tracking span (s)", s.trackingSeconds, 1, {}, 0.5, 5, 0.1 } },
+                      "spectrablade:adaptive-noise-reduction", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return AdaptiveDenoise::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          adaptiveSettings = toSettings (v);
+                          reduceNoiseAdaptively (adaptiveSettings);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "adaptive " + juce::String (settings.reductionDb, 3) + " " + juce::String (settings.thresholdDb, 3) + " " + juce::String (settings.trackingSeconds, 3),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  return EffectPreview::Rendered { AdaptiveDenoise::reduce (*audio, start, end, sampleRate, settings, progress), start, end, {} };
+                              } });
+                      },
+                      "Reduce");
+}
+
+void MainComponent::reduceNoiseAdaptively (AdaptiveDenoise::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Reducing noise...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = AdaptiveDenoise::reduce (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version, s]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Adaptive Noise Reduction", "The audio changed during processing, so the result was discarded.");
+            else if (*result != nullptr)
+                applyEdit (*result, "Adaptive Noise Reduction " + juce::String (s.reductionDb, 1) + " dB", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showDialogueIsolation()

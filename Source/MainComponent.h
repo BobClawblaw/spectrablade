@@ -27,6 +27,7 @@
 #include "TonalBalance.h"
 #include "Dither.h"
 #include "DialogueIsolation.h"
+#include "AdaptiveDenoise.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -280,6 +281,9 @@ private:
     Dither::Settings ditherSettings;
     void showDither();
     DialogueIsolation::Settings dialogueSettings;
+    AdaptiveDenoise::Settings adaptiveSettings;
+    void showAdaptiveDenoise();
+    void reduceNoiseAdaptively (AdaptiveDenoise::Settings);
     void showDialogueIsolation();
     void isolateDialogue (DialogueIsolation::Settings);
     void captureMatchReference();
