@@ -101,6 +101,9 @@ namespace Equalizer
 
         /** The bands (valid at this rate, in order) for this many channels; starts from silence. */
         void prepare (const std::vector<Band>&, double sampleRate, int numChannels);
+
+        /** Any curve instead: its gain in dB at a frequency (in Hz), on every channel alike. */
+        void prepare (const std::function<double (double)>& gainDbAt, double sampleRate, int numChannels);
         void reset();
 
         /** In place: each frame comes out latency frames late. */
@@ -112,6 +115,9 @@ namespace Equalizer
         const std::vector<std::vector<float>>& getImpulses() const noexcept   { return impulses; }
 
     private:
+        void build (const std::vector<double>& ll, const std::vector<double>& lr, const std::vector<double>& rl, const std::vector<double>& rr,
+                    const std::vector<double>& others, bool leftTouched, bool rightTouched, bool crossed, bool othersTouched);
+
         std::vector<std::vector<float>> impulses;
         std::unique_ptr<Convolver::Core> straight, across;   // the channels from themselves, and from each other
         std::vector<bool> plain;                             // a channel only delayed

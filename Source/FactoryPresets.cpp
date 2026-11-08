@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:match-eq"] = {
+            { "Natural (third-octave)", { { "amount", 100.0 }, { "smoothing", 4.0 }, { "most", 12.0 } } },
+            { "Gentle nudge", { { "amount", 50.0 }, { "smoothing", 6.0 }, { "most", 6.0 } } },
+            { "Broad strokes", { { "amount", 100.0 }, { "smoothing", 12.0 }, { "most", 9.0 } } },
+            { "Exact", { { "amount", 100.0 }, { "smoothing", 1.0 }, { "most", 24.0 } } } };
         t["spectrablade:transient-shaper"] = {
             { "Punchier drums", transientShaper (200, 3000, {{ { 4, -2 }, { 5, -2 }, { 3, 0 } }}, 0) },
             { "Softer attacks", transientShaper (200, 3000, {{ { -4, 0 }, { -5, 0 }, { -4, 0 } }}, 0) },

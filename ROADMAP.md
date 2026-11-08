@@ -2,23 +2,22 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric (with a linear-phase mode), dynamic and graphic EQ (the parametric and dynamic bands on the mid, the side, the left or the right), compressor, multiband compressor, true-peak limiter and maximizer, de-esser, multiband stereo width, exciter, transient shaper, noise reduction from a noise print, reduce reverb, click repair, hum removal, de-clip, repair, spectral attenuate/remove/heal, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs.
+Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric (with a linear-phase mode), dynamic, graphic and match EQ (the parametric and dynamic bands on the mid, the side, the left or the right), compressor, multiband compressor, true-peak limiter and maximizer, de-esser, multiband stereo width, exciter, transient shaper, noise reduction from a noise print, reduce reverb, click repair, hum removal, de-clip, repair, spectral attenuate/remove/heal, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs.
 
-1. **Match EQ:** the spectrum of a reference (a file or a selection) taken onto the sound, smoothed and with an amount.
-2. **Tonal balance view:** the sound's spectrum against target ranges for a genre.
-3. **Dither and word length:** noise-shaped dither to 16 or 24 bits, as a last step.
-4. **Dialogue isolation:** speech kept and everything else lowered, with an amount for each.
-5. **Voice de-noise (adaptive):** noise tracked as it changes, with no noise print needed.
-6. **Mouth de-click, de-crackle and de-plosive.**
-7. **Breath control:** breaths found between words and lowered.
-8. **Wind, rustle and bleed reduction.**
-9. **Wow and flutter:** pitch drift from tape or vinyl found and taken out.
-10. **Spectral recovery:** the highs missing from band-limited audio (phone, low-rate MP3) rebuilt.
-11. **Music rebalance:** voice, bass, drums and the rest each turned up or down (source separation).
-12. **Ambience match:** the room tone of one part laid under another.
-13. **Dialogue contour:** the pitch of a phrase's ending reshaped.
-14. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
-15. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
+1. **Tonal balance view:** the sound's spectrum against target ranges for a genre.
+2. **Dither and word length:** noise-shaped dither to 16 or 24 bits, as a last step.
+3. **Dialogue isolation:** speech kept and everything else lowered, with an amount for each.
+4. **Voice de-noise (adaptive):** noise tracked as it changes, with no noise print needed.
+5. **Mouth de-click, de-crackle and de-plosive.**
+6. **Breath control:** breaths found between words and lowered.
+7. **Wind, rustle and bleed reduction.**
+8. **Wow and flutter:** pitch drift from tape or vinyl found and taken out.
+9. **Spectral recovery:** the highs missing from band-limited audio (phone, low-rate MP3) rebuilt.
+10. **Music rebalance:** voice, bass, drums and the rest each turned up or down (source separation).
+11. **Ambience match:** the room tone of one part laid under another.
+12. **Dialogue contour:** the pitch of a phrase's ending reshaped.
+13. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
+14. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
 
 Sound Library: a browser for a large sound-effects library (100k to a million files and more), with drag and drop into the app and out of it.
 

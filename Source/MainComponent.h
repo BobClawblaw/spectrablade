@@ -23,6 +23,7 @@
 #include "Exciter.h"
 #include "Maximizer.h"
 #include "TransientShaper.h"
+#include "MatchEq.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -270,6 +271,13 @@ private:
     void showMaximizer();
     TransientShaper::Settings transientShaperSettings;
     void showTransientShaper();
+    std::optional<MatchEq::Profile> matchReference;
+    int matchReferenceCaptures = 0;   // counts captures, so a preview knows its reference
+    MatchEq::Settings matchSettings;
+    void captureMatchReference();
+    void captureMatchReferenceFromFile();
+    void showMatchEq();
+    void applyMatchEq (MatchEq::Settings);
     DynamicEq::Settings dynamicEqSettings = DynamicEq::defaultSettings();
     void showMultiband();
     void showDynamicEq();

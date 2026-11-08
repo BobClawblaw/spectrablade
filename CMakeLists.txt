@@ -152,6 +152,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Exciter.cpp
     Source/Maximizer.cpp
     Source/TransientShaper.cpp
+    Source/MatchEq.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp
@@ -254,6 +255,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/ExciterTests.cpp
     Tests/MaximizerTests.cpp
     Tests/TransientShaperTests.cpp
+    Tests/MatchEqTests.cpp
     Tests/ModulationTests.cpp
     Tests/ReverbTests.cpp
     Tests/ConvolverTests.cpp
@@ -350,6 +352,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Exciter.cpp
     Source/Maximizer.cpp
     Source/TransientShaper.cpp
+    Source/MatchEq.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp

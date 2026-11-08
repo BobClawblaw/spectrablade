@@ -276,6 +276,25 @@ void LinearPhase::prepare (const std::vector<Band>& bands, double sampleRate, in
         }
     }
 
+    build (ll, lr, rl, rr, others, leftTouched, rightTouched, crossed, othersTouched);
+}
+
+void LinearPhase::prepare (const std::function<double (double)>& gainDbAt, double sampleRate, int numChannels)
+{
+    channelsPrepared = juce::jmax (1, numChannels);
+    const auto bins = (size_t) (grid / 2 + 1);
+    std::vector<double> curve (bins, 1.0), none (bins, 0.0);
+
+    for (size_t k = 0; k < bins; ++k)
+        curve[k] = std::pow (10.0, gainDbAt ((double) k * sampleRate / grid) / 20.0);
+
+    build (curve, none, none, curve, curve, true, channelsPrepared >= 2, false, true);
+}
+
+void LinearPhase::build (const std::vector<double>& ll, const std::vector<double>& lr, const std::vector<double>& rl, const std::vector<double>& rr,
+                         const std::vector<double>& others, bool leftTouched, bool rightTouched, bool crossed, bool othersTouched)
+{
+    const auto stereo = channelsPrepared >= 2;
     impulses.assign (stereo ? 5 : 1, {});
     plain.assign ((size_t) channelsPrepared, true);
 

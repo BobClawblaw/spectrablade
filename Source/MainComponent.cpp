@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,12 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdCaptureMatchReference: info.setInfo ("Capture Match Reference", "Learn the tone of the selection, to match other sounds to it", "Effects", 0); break;
+        case cmdCaptureMatchReferenceFromFile: info.setInfo ("Capture Match Reference from File...", "Learn the tone of an audio file, to match sounds to it", "Effects", 0); break;
+        case cmdMatchEq:
+            info.setInfo ("Match EQ...", "Take the captured reference's tone onto the selection or the whole file", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && matchReference.has_value() && backgroundJob == nullptr);
+            break;
         case cmdTransientShaper: info.setInfo ("Transient Shaper...", "Turn the attacks and the sustain of hits up or down on their own, in the lows, the middle and the highs", "Effects", 0); break;
         case cmdMaximizer:  info.setInfo ("Maximizer...", "Make the sound as loud as it can be under a true-peak ceiling, with a character and the hits kept", "Effects", 0); break;
         case cmdExciter:    info.setInfo ("Exciter...", "Drive the lows, the middle and the highs each into a saturation curve of its own: tube, tape or transistor", "Effects", 0); break;
@@ -2025,6 +2031,9 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdExciter:    showExciter(); break;
         case cmdMaximizer:  showMaximizer(); break;
         case cmdTransientShaper: showTransientShaper(); break;
+        case cmdCaptureMatchReference: captureMatchReference(); break;
+        case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
+        case cmdMatchEq:    showMatchEq(); break;
         case cmdChorus:     showSweptDelay (false); break;
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
@@ -2558,7 +2567,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats });
             group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
-            group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31 });
+            group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31, 0, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq });
             group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMaximizer, cmdMultiband, cmdTransientShaper, cmdDeEsser, cmdNoiseGate });
             group ("Saturation", { cmdExciter });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
@@ -7884,6 +7893,143 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::captureMatchReference()
+{
+    const auto sel = selectionOrAll();
+    auto& doc = engine.document;
+    const auto profile = MatchEq::measure (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), doc.getSampleRate());
+
+    if (! profile.has_value())
+    {
+        showError ("Capture Match Reference", "Select at least " + formatTime (Analysis::fftSize, doc.getSampleRate()) + " of sound (not silence), then capture it.");
+        return;
+    }
+
+    matchReference = profile;
+    ++matchReferenceCaptures;
+    commands.commandStatusChanged();
+}
+
+void MainComponent::captureMatchReferenceFromFile()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Choose a reference", juce::File::getSpecialLocation (juce::File::userMusicDirectory), "*.wav;*.aif;*.aiff;*.flac;*.mp3;*.m4a;*.ogg");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              const auto file = fc.getResult();
+
+                              if (file == juce::File())
+                                  return;
+
+                              std::unique_ptr<juce::AudioFormatReader> reader (engine.formatManager.createReaderFor (file));
+
+                              if (reader == nullptr || reader->numChannels < 1 || reader->lengthInSamples < 1)
+                              {
+                                  showError ("Capture Match Reference", file.getFileName() + " isn't an audio file SpectraBlade can read.");
+                                  return;
+                              }
+
+                              // At most ten minutes of it, at this file's rate.
+                              const auto rate = engine.document.hasAudio() ? engine.document.getSampleRate() : reader->sampleRate;
+                              const auto frames = (int) juce::jmin (reader->lengthInSamples, (juce::int64) (600.0 * reader->sampleRate));
+                              juce::AudioBuffer<float> read ((int) reader->numChannels, frames);
+                              reader->read (&read, 0, frames, 0, true, true);
+                              juce::AudioBuffer<float> atRate;
+
+                              if (! juce::exactlyEqual (reader->sampleRate, rate))
+                                  SampleRateConverter::convert (read, reader->sampleRate, rate, atRate);
+                              else
+                                  atRate = std::move (read);
+
+                              const auto snapshot = AudioEdits::fromBuffer (std::move (atRate));
+                              const auto profile = MatchEq::measure (*snapshot, 0, snapshot->getNumFrames(), rate);
+
+                              if (! profile.has_value())
+                              {
+                                  showError ("Capture Match Reference", file.getFileName() + " is too short (under " + formatTime (Analysis::fftSize, rate) + ") or silent.");
+                                  return;
+                              }
+
+                              matchReference = profile;
+                              ++matchReferenceCaptures;
+                              commands.commandStatusChanged();
+                          });
+}
+
+void MainComponent::showMatchEq()
+{
+    if (! matchReference.has_value())
+        return;
+
+    if (! juce::exactlyEqual (matchReference->sampleRate, engine.document.getSampleRate()))
+    {
+        showError ("Match EQ", "The reference was captured at " + juce::String (matchReference->sampleRate / 1000.0, 1) + " kHz. Capture it again for this file.");
+        return;
+    }
+
+    const auto& s = matchSettings;
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        return MatchEq::Settings { v.at ("amount"), v.at ("smoothing") / 12.0, v.at ("most") };
+    };
+
+    showEffectDialog ("Match EQ",
+                      "The tone of the captured reference taken onto the sound: the reference's long-term spectrum less the sound's, smoothed over "
+                      "the width, with the overall level left as it is and no frequency moved by more than the most, scaled by the amount, and "
+                      "applied in linear phase. Capture a reference from a selection or a file first.",
+                      { { "amount", "Amount (%)", s.amountPercent, 0, {}, 0, 100, 1 }, { "smoothing", "Smoothing (twelfths of an octave)", s.smoothingOctaves * 12.0, 0, {}, 1, 24, 1 },
+                        { "most", "Most (dB)", s.mostDb, 1, {}, 0, 24, 0.5 } },
+                      "spectrablade:match-eq", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return MatchEq::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          matchSettings = toSettings (v);
+                          applyMatchEq (matchSettings);
+                      },
+                      [reference = *matchReference, captures = matchReferenceCaptures, toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "match " + juce::String (captures) + " " + juce::String (settings.amountPercent, 3) + " "
+                                                                              + juce::String (settings.smoothingOctaves, 4) + " " + juce::String (settings.mostDb, 3),
+                              [reference, settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>&)
+                              {
+                                  return EffectPreview::Rendered { MatchEq::apply (*audio, start, end, sampleRate, reference, settings), start, end, {} };
+                              } });
+                      },
+                      "Match");
+}
+
+void MainComponent::applyMatchEq (MatchEq::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr || ! matchReference.has_value())
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Matching...",
+        [result, snapshot, rate, range, reference = *matchReference, s] (const std::function<bool (float)>&)
+        {
+            *result = MatchEq::apply (*snapshot, range.getStart(), range.getEnd(), rate, reference, s);
+            return *result != nullptr;
+        },
+        [this, result, version]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Match EQ", "The audio changed during processing, so the result was discarded.");
+            else if (*result == nullptr)
+                showError ("Match EQ", "The selection is too short to measure (under " + formatTime (Analysis::fftSize, engine.document.getSampleRate()) + ") or silent.");
+            else
+                applyEdit (*result, "Match EQ", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showTransientShaper()
