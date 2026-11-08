@@ -44,6 +44,7 @@
 #include "MatchEqTests.h"
 #include "TonalBalanceTests.h"
 #include "DitherTests.h"
+#include "DialogueIsolationTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -575,6 +576,7 @@ int main (int argc, char* argv[])
         runMatchEqTests();
         runTonalBalanceTests();
         runDitherTests();
+        runDialogueIsolationTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

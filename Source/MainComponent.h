@@ -26,6 +26,7 @@
 #include "MatchEq.h"
 #include "TonalBalance.h"
 #include "Dither.h"
+#include "DialogueIsolation.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -278,6 +279,9 @@ private:
     MatchEq::Settings matchSettings;
     Dither::Settings ditherSettings;
     void showDither();
+    DialogueIsolation::Settings dialogueSettings;
+    void showDialogueIsolation();
+    void isolateDialogue (DialogueIsolation::Settings);
     void captureMatchReference();
     void captureMatchReferenceFromFile();
     void showMatchEq();

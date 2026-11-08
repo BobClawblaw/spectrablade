@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdDialogueIsolation:
+            info.setInfo ("Dialogue Isolation...", "Keep the speech and lower everything else, in the selection or the whole file", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
         case cmdDither:     info.setInfo ("Dither...", "Round the audio to 16 or 24 bits with dither, the last step before saving at that depth", "Effects", 0); break;
         case cmdCaptureMatchReference: info.setInfo ("Capture Match Reference", "Learn the tone of the selection, to match other sounds to it", "Effects", 0); break;
         case cmdCaptureMatchReferenceFromFile: info.setInfo ("Capture Match Reference from File...", "Learn the tone of an audio file, to match sounds to it", "Effects", 0); break;
@@ -2035,6 +2039,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMaximizer:  showMaximizer(); break;
         case cmdTransientShaper: showTransientShaper(); break;
         case cmdDither:     showDither(); break;
+        case cmdDialogueIsolation: showDialogueIsolation(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2583,7 +2588,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
-            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, 0, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
@@ -7898,6 +7903,65 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showDialogueIsolation()
+{
+    const auto& s = dialogueSettings;
+    const auto toSettings = [] (const EffectValues& v) { return DialogueIsolation::Settings { (float) v.at ("reduction"), (float) v.at ("sensitivity") }; };
+
+    showEffectDialog ("Dialogue Isolation",
+                      "Speech kept and everything else lowered. Each frame is judged for speech by its pitch and how much of its power sits on that "
+                      "pitch's harmonics (and fricatives by their highs standing over the background); what is kept is the harmonics and the highs "
+                      "over the background, and all else comes down by the reduction. The background is what is always there, bin by bin, over the "
+                      "last second and a half. A higher sensitivity counts frames as speech more readily (more of the voice kept, more of the rest with it).",
+                      { { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 }, { "sensitivity", "Sensitivity (%)", s.sensitivity, 0, {}, 0, 100, 1 } },
+                      "spectrablade:dialogue-isolation", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return DialogueIsolation::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          dialogueSettings = toSettings (v);
+                          isolateDialogue (dialogueSettings);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "dialogue " + juce::String (settings.reductionDb, 3) + " " + juce::String (settings.sensitivity, 3),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  return EffectPreview::Rendered { DialogueIsolation::isolate (*audio, start, end, sampleRate, settings, progress), start, end, {} };
+                              } });
+                      },
+                      "Isolate");
+}
+
+void MainComponent::isolateDialogue (DialogueIsolation::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Isolating dialogue...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = DialogueIsolation::isolate (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version, s]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Dialogue Isolation", "The audio changed during processing, so the result was discarded.");
+            else if (*result != nullptr)
+                applyEdit (*result, "Dialogue Isolation " + juce::String (s.reductionDb, 1) + " dB", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showDither()

@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:dialogue-isolation"] = {
+            { "Gentle", { { "reduction", 6.0 }, { "sensitivity", 60.0 } } },
+            { "Standard", { { "reduction", 12.0 }, { "sensitivity", 50.0 } } },
+            { "Strong", { { "reduction", 20.0 }, { "sensitivity", 40.0 } } },
+            { "Keep more of the voice", { { "reduction", 12.0 }, { "sensitivity", 80.0 } } } };
         t["spectrablade:dither"] = {
             { "CD (16 bits, light shaping)", { { "bits", 0.0 }, { "shaping", 1.0 } } },
             { "16 bits, flat", { { "bits", 0.0 }, { "shaping", 0.0 } } },
