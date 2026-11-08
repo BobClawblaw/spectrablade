@@ -33,6 +33,7 @@
 #include "Spill.h"
 #include "WowFlutter.h"
 #include "SpectralRecovery.h"
+#include "Rebalance.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -292,6 +293,9 @@ private:
     Spill::Settings spillSettings;
     WowFlutter::Settings wowSettings;
     SpectralRecovery::Settings recoverySettings;
+    Rebalance::Settings rebalanceSettings;
+    void showRebalance();
+    void rebalance (Rebalance::Settings);
     void showSpectralRecovery();
     void recoverSpectrum (SpectralRecovery::Settings);
     void showWowFlutter();

@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdSpectralRecovery)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdRebalance)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdRebalance:
+            info.setInfo ("Rebalance...", "Turn the voice, the bass, the drums and the rest of a mix up or down", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
         case cmdSpectralRecovery:
             info.setInfo ("Spectral Recovery...", "Rebuild the highs missing from band-limited audio from the band that is there", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
@@ -2074,6 +2078,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSpill:      showSpill(); break;
         case cmdWowFlutter: showWowFlutter(); break;
         case cmdSpectralRecovery: showSpectralRecovery(); break;
+        case cmdRebalance:  showRebalance(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2623,7 +2628,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
             group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
-            group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
+            group ("Spectral", { cmdRebalance, 0,  cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
         }
@@ -7982,6 +7987,68 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::showRebalance()
+{
+    const auto& s = rebalanceSettings;
+    const auto toSettings = [] (const EffectValues& v) { return Rebalance::Settings { v.at ("voice"), v.at ("bass"), v.at ("drums"), v.at ("rest"), v.at ("corner") }; };
+
+    showEffectDialog ("Rebalance",
+                      "The voice, the bass, the drums and the rest of a mix each turned up or down. Each bin of each frame is shared among the four "
+                      "by soft masks that add up to one: drums are what is percussive (standing out across frequency more than across time); of the "
+                      "rest, the bass is what lies below the corner, the voice is the mid's harmonics in a frame that reads as voiced, and the rest "
+                      "is what is left, the sides included. A reading of the mix, not a separation: a steady chord in the middle reads as voice, a "
+                      "kick's body as bass.",
+                      { { "voice", "Voice (dB)", s.voiceDb, 1, {}, -40, 12, 0.5 }, { "bass", "Bass (dB)", s.bassDb, 1, {}, -40, 12, 0.5 },
+                        { "drums", "Drums (dB)", s.drumsDb, 1, {}, -40, 12, 0.5 }, { "rest", "The rest (dB)", s.restDb, 1, {}, -40, 12, 0.5 },
+                        { "corner", "Bass corner (Hz)", s.bassCornerHz, 0, {}, 60, 300, 1 } },
+                      "spectrablade:rebalance", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return Rebalance::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          rebalanceSettings = toSettings (v);
+                          rebalance (rebalanceSettings);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "rebalance " + juce::String (settings.voiceDb, 3) + " " + juce::String (settings.bassDb, 3) + " "
+                                                                              + juce::String (settings.drumsDb, 3) + " " + juce::String (settings.restDb, 3) + " " + juce::String (settings.bassCornerHz, 3),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  return EffectPreview::Rendered { Rebalance::apply (*audio, start, end, sampleRate, settings, progress), start, end, {} };
+                              } });
+                      });
+}
+
+void MainComponent::rebalance (Rebalance::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Rebalancing...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = Rebalance::apply (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Rebalance", "The audio changed during processing, so the result was discarded.");
+            else if (*result != nullptr)
+                applyEdit (*result, "Rebalance", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showSpectralRecovery()

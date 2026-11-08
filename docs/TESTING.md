@@ -163,6 +163,7 @@ What they check:
 - Wind, rustle and bleed: a gust lowered with the bleed between words left, a burst of rustle lowered with the gust left, the bleed between words lowered, the words' harmonics kept under each job, cancelling, refused settings.
 - Wow and flutter: 1 % of wow read as a speed curve and taken out of three tones, steady tones left, one tone's vibrato not taken for wow, refused settings, cancelling.
 - Spectral recovery: the cutoff of a brick-walled buzz found (and none for full audio), the missing band rebuilt within 6 dB of the original's profile, the band below untouched, refused settings, cancelling.
+- Rebalance: every stem at 0 dB giving the mix back, each stem turned down taking its own part of a synthetic mix down and leaving the others, refused settings, cancelling.
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.

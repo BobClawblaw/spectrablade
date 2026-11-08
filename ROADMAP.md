@@ -2,13 +2,12 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric (with a linear-phase mode), dynamic, graphic and match EQ (the parametric and dynamic bands on the mid, the side, the left or the right), compressor, multiband compressor, true-peak limiter and maximizer, de-esser, multiband stereo width, exciter, transient shaper, noise reduction from a noise print or adaptive, dialogue isolation, reduce reverb, click repair (with mouth de-click and de-crackle), de-plosive, breath control, wind, rustle and bleed reduction, wow and flutter, spectral recovery, hum removal, de-clip, repair, spectral attenuate/remove/heal, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs, dither, a tonal balance panel.
+Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric (with a linear-phase mode), dynamic, graphic and match EQ (the parametric and dynamic bands on the mid, the side, the left or the right), compressor, multiband compressor, true-peak limiter and maximizer, de-esser, multiband stereo width, exciter, transient shaper, noise reduction from a noise print or adaptive, dialogue isolation, reduce reverb, click repair (with mouth de-click and de-crackle), de-plosive, breath control, wind, rustle and bleed reduction, wow and flutter, spectral recovery, hum removal, de-clip, repair, spectral attenuate/remove/heal, rebalance, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs, dither, a tonal balance panel.
 
-1. **Music rebalance:** voice, bass, drums and the rest each turned up or down (source separation).
-2. **Ambience match:** the room tone of one part laid under another.
-3. **Dialogue contour:** the pitch of a phrase's ending reshaped.
-4. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
-5. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
+1. **Ambience match:** the room tone of one part laid under another.
+2. **Dialogue contour:** the pitch of a phrase's ending reshaped.
+3. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
+4. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
 
 Sound Library: a browser for a large sound-effects library (100k to a million files and more), with drag and drop into the app and out of it.
 

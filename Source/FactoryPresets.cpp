@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:rebalance"] = {
+            { "Voice up", { { "voice", 4.0 }, { "bass", 0.0 }, { "drums", 0.0 }, { "rest", 0.0 }, { "corner", 150.0 } } },
+            { "Voice down (backing)", { { "voice", -18.0 }, { "bass", 0.0 }, { "drums", 0.0 }, { "rest", 0.0 }, { "corner", 150.0 } } },
+            { "Drums down", { { "voice", 0.0 }, { "bass", 0.0 }, { "drums", -12.0 }, { "rest", 0.0 }, { "corner", 150.0 } } },
+            { "Bass and drums up", { { "voice", 0.0 }, { "bass", 3.0 }, { "drums", 3.0 }, { "rest", 0.0 }, { "corner", 150.0 } } } };
         t["spectrablade:spectral-recovery"] = {
             { "Found cutoff, natural", { { "auto", 1.0 }, { "cutoff", 6000.0 }, { "level", -3.0 }, { "highest", 16000.0 } } },
             { "Found cutoff, brighter", { { "auto", 1.0 }, { "cutoff", 6000.0 }, { "level", 0.0 }, { "highest", 18000.0 } } },
