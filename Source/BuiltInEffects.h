@@ -11,6 +11,7 @@
 #include "DynamicEq.h"
 #include "Exciter.h"
 #include "Maximizer.h"
+#include "TransientShaper.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
     their own ("SpectraBlade"), so racks, track chains, sessions and offline renders create,
@@ -35,6 +36,7 @@ namespace BuiltInEffects
     constexpr const char* multibandWidthId = "spectrablade:multiband-width";
     constexpr const char* exciterId = "spectrablade:exciter";
     constexpr const char* maximizerId = "spectrablade:maximizer";
+    constexpr const char* transientShaperId = "spectrablade:transient-shaper";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -727,6 +729,38 @@ namespace BuiltInEffects
         int channelsPrepared = 0;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MaximizerProcessor)
+    };
+
+    /** The transient shaper, live: the crossovers, each band's attack and sustain, and the output as
+        parameters (over Effects > Transient Shaper's ranges); crossovers set too close or too high
+        are moved apart as the offline effect would refuse them. It runs a frame at a time with
+        TransientShaper::Core, so over a whole file from its start it gives TransientShaper::apply's
+        samples. No latency. */
+    class TransientShaperProcessor final : public BuiltInEffect
+    {
+    public:
+        TransientShaperProcessor();
+
+        TransientShaper::Settings getSettings() const;            // as played
+        TransientShaper::Settings getParameterSettings() const;
+        void setSettings (const TransientShaper::Settings&);
+
+        juce::AudioProcessorEditor* createEditor() override;
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    private:
+        std::vector<float> valuesOfParameters() const;
+
+        juce::AudioParameterFloat *lowCrossover = nullptr, *highCrossover = nullptr, *output = nullptr;
+        std::array<std::pair<juce::AudioParameterFloat*, juce::AudioParameterFloat*>, 3> bands {};   // attack, sustain
+        TransientShaper::Core core;
+        std::vector<float> applied;
+        double rate = 48000.0;
+        int channelsPrepared = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TransientShaperProcessor)
     };
 
     /** The dynamic EQ, live: each band's on, shape, mode, frequency, Q, gain, threshold, ratio, attack

@@ -312,6 +312,7 @@ namespace
         if (key == multibandWidthId) return std::make_unique<MultibandWidthProcessor>();
         if (key == exciterId)       return std::make_unique<ExciterProcessor>();
         if (key == maximizerId)     return std::make_unique<MaximizerProcessor>();
+        if (key == transientShaperId) return std::make_unique<TransientShaperProcessor>();
         return nullptr;
     }
 

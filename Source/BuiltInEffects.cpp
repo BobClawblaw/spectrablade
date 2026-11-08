@@ -50,6 +50,7 @@ namespace
     juce::PluginDescription multibandWidthDescription() { return describe ("Multiband Stereo Width", "Spatial", multibandWidthId, 0x53424d57); }   // "SBMW"
     juce::PluginDescription exciterDescription()        { return describe ("Exciter", "Distortion", exciterId, 0x53424558); }                     // "SBEX"
     juce::PluginDescription maximizerDescription()      { return describe ("Maximizer", "Dynamics", maximizerId, 0x53424d58); }                   // "SBMX"
+    juce::PluginDescription transientShaperDescription() { return describe ("Transient Shaper", "Dynamics", transientShaperId, 0x53425453); }     // "SBTS"
 
     juce::PluginDescription graphicEqDescription (int bands)
     {
@@ -133,6 +134,8 @@ namespace
                 effect = std::make_unique<ExciterProcessor>();
             else if (d.fileOrIdentifier == maximizerId)
                 effect = std::make_unique<MaximizerProcessor>();
+            else if (d.fileOrIdentifier == transientShaperId)
+                effect = std::make_unique<TransientShaperProcessor>();
 
             if (effect == nullptr)
             {
@@ -154,7 +157,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription(), exciterDescription(), maximizerDescription() };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription(), exciterDescription(), maximizerDescription(), transientShaperDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -1834,6 +1837,97 @@ void MaximizerProcessor::reset()
 {
     core.reset();
     reductionDb = 0.0;
+}
+
+//==============================================================================
+TransientShaperProcessor::TransientShaperProcessor()
+    : BuiltInEffect (transientShaperDescription(), "SPECTRABLADE_TRANSIENT_SHAPER")
+{
+    const TransientShaper::Settings start;
+    const std::array<const char*, 3> ids { "low", "mid", "high" }, names { "Low", "Mid", "High" };
+    lowCrossover = addFloat ("lowCrossover", "Low Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.lowCrossover, "Hz");
+    highCrossover = addFloat ("highCrossover", "High Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.highCrossover, "Hz");
+
+    for (size_t b = 0; b < 3; ++b)
+    {
+        const juce::String id (ids[b]), name (names[b]);
+        bands[b].first = addFloat (id + "Attack", name + " Attack", { -12.0f, 12.0f }, (float) start.bands[b].attackDb, "dB");
+        bands[b].second = addFloat (id + "Sustain", name + " Sustain", { -12.0f, 12.0f }, (float) start.bands[b].sustainDb, "dB");
+    }
+
+    output = addFloat ("output", "Output", { -24.0f, 24.0f }, (float) start.outputDb, "dB");
+}
+
+std::vector<float> TransientShaperProcessor::valuesOfParameters() const
+{
+    std::vector<float> v { lowCrossover->get(), highCrossover->get(), output->get() };
+
+    for (auto& b : bands)
+        v.insert (v.end(), { b.first->get(), b.second->get() });
+
+    return v;
+}
+
+TransientShaper::Settings TransientShaperProcessor::getParameterSettings() const
+{
+    TransientShaper::Settings s;
+    s.lowCrossover = lowCrossover->get();
+    s.highCrossover = highCrossover->get();
+    s.outputDb = output->get();
+
+    for (size_t b = 0; b < 3; ++b)
+        s.bands[b] = { (double) bands[b].first->get(), (double) bands[b].second->get() };
+
+    return s;
+}
+
+TransientShaper::Settings TransientShaperProcessor::getSettings() const
+{
+    return TransientShaper::spaced (getParameterSettings(), rate);
+}
+
+void TransientShaperProcessor::setSettings (const TransientShaper::Settings& s)
+{
+    setExactly (*lowCrossover, (float) s.lowCrossover);
+    setExactly (*highCrossover, (float) s.highCrossover);
+    setExactly (*output, (float) s.outputDb);
+
+    for (size_t b = 0; b < 3; ++b)
+    {
+        setExactly (*bands[b].first, (float) s.bands[b].attackDb);
+        setExactly (*bands[b].second, (float) s.bands[b].sustainDb);
+    }
+}
+
+juce::AudioProcessorEditor* TransientShaperProcessor::createEditor()
+{
+    return new PresetsAndParameters (*this);
+}
+
+void TransientShaperProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
+    core.prepare (channelsPrepared, rate);
+    applied = valuesOfParameters();
+    core.set (getSettings());
+    core.reset();
+}
+
+void TransientShaperProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    if (auto now = valuesOfParameters(); now != applied)
+    {
+        applied = std::move (now);
+        core.set (getSettings());
+    }
+
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
+}
+
+void TransientShaperProcessor::reset()
+{
+    core.reset();
 }
 
 //==============================================================================

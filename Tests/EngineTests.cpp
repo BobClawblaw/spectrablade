@@ -40,6 +40,7 @@
 #include "DynamicEqTests.h"
 #include "ExciterTests.h"
 #include "MaximizerTests.h"
+#include "TransientShaperTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -567,6 +568,7 @@ int main (int argc, char* argv[])
         runDynamicEqTests();
         runExciterTests();
         runMaximizerTests();
+        runTransientShaperTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

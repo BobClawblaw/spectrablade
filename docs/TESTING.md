@@ -170,6 +170,7 @@ What they check:
 - Multiband stereo width: each band's side scaled on its own (the low at 0 % gone, the high at 200 % doubled), the mid untouched, every band at 100 % flat, a mono sound bit for bit, refused settings and spacing, the live effect bit for bit with offline in uneven blocks, state and presets.
 - Exciter: the oversampler's latency, DC, passband and stopband; the curves' slope and bounds and each one's harmonics (Tube even, Tape odd, Transistor harder); aliasing of a driven 15 kHz tone against shaping at the rate; mix 0 flat; the live effect bit for bit with offline late by its latency, state, presets, refused settings.
 - Maximizer: the ceiling held in samples and true peak for every character (a faded sine; a sound starting loud at once measured), a quiet sound bit for bit in place, Loud louder than Balanced than Transparent, the emphasis lowering the body after a hit, the live effect bit for bit with offline late by a latency that follows the character, state, presets, refused settings.
+- Transient shaper: attack lifting the first millisecond of hits and leaving their tails, sustain lifting the tails (the tone in the band below moved only by the crossovers' skirts, measured), every gain at 0 flat, a band alone, the live effect bit for bit with offline, no latency, state, presets, refused settings.
 - Empty editor: the recent files listed, a click opening one.
 - Opening from Finder: the types offered all read, the files picked out of an open request.
 - Transport bar: tooltips following the keys; the selection panel's cells.

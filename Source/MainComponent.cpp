@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdTransientShaper: info.setInfo ("Transient Shaper...", "Turn the attacks and the sustain of hits up or down on their own, in the lows, the middle and the highs", "Effects", 0); break;
         case cmdMaximizer:  info.setInfo ("Maximizer...", "Make the sound as loud as it can be under a true-peak ceiling, with a character and the hits kept", "Effects", 0); break;
         case cmdExciter:    info.setInfo ("Exciter...", "Drive the lows, the middle and the highs each into a saturation curve of its own: tube, tape or transistor", "Effects", 0); break;
         case cmdMultibandWidth: info.setInfo ("Multiband Stereo Width...", "Narrow or widen the lows, the middle and the highs each on its own: a mono low end, wider highs", "Effects", 0); break;
@@ -2023,6 +2024,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMultibandWidth: showMultibandWidth(); break;
         case cmdExciter:    showExciter(); break;
         case cmdMaximizer:  showMaximizer(); break;
+        case cmdTransientShaper: showTransientShaper(); break;
         case cmdChorus:     showSweptDelay (false); break;
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
@@ -2557,7 +2559,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats });
             group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
             group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31 });
-            group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMaximizer, cmdMultiband, cmdDeEsser, cmdNoiseGate });
+            group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMaximizer, cmdMultiband, cmdTransientShaper, cmdDeEsser, cmdNoiseGate });
             group ("Saturation", { cmdExciter });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
@@ -7882,6 +7884,61 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showTransientShaper()
+{
+    const auto& s = transientShaperSettings;
+    const auto rate = engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        TransientShaper::Settings t;
+        t.lowCrossover = v.at ("lowCrossover");
+        t.highCrossover = v.at ("highCrossover");
+        t.outputDb = v.at ("output");
+        const std::array<const char*, 3> ids { "low", "mid", "high" };
+
+        for (size_t b = 0; b < 3; ++b)
+            t.bands[b] = { v.at (ids[b] + juce::String ("Attack")), v.at (ids[b] + juce::String ("Sustain")) };
+
+        return t;
+    };
+    std::vector<EffectField> fields { { "lowCrossover", "Low crossover (Hz)", s.lowCrossover, 0, {}, 20, 10000, 1 },
+                                      { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 } };
+    const std::array<const char*, 3> ids { "low", "mid", "high" }, names { "Lows", "Middle", "Highs" };
+
+    for (size_t b = 0; b < 3; ++b)
+    {
+        const juce::String id (ids[b]), name (names[b]);
+        fields.push_back ({ id + "Attack", name + ": attack (dB)", s.bands[b].attackDb, 1, {}, -12, 12, 0.5 });
+        fields.push_back ({ id + "Sustain", name + ": sustain (dB)", s.bands[b].sustainDb, 1, {}, -12, 12, 0.5 });
+    }
+
+    fields.push_back ({ "output", "Output (dB)", s.outputDb, 1, {}, -24, 24, 0.5 });
+
+    showEffectDialog ("Transient Shaper",
+                      "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), and in each band the attacks (the "
+                      "first moments of a hit, where a fast envelope stands over a slow one) and the sustain (what rings on after, where the slow "
+                      "stands over the fast) are turned up or down on their own, by up to 12 dB. A steady sound is left as it is. The high "
+                      "crossover stays at least an octave above the low one.",
+                      fields, BuiltInEffects::transientShaperId, PreviewOwner::transientShaper,
+                      [toSettings, rate] (const EffectValues& v) { return TransientShaper::isValid (toSettings (v), rate); },
+                      "A setting is out of range: crossovers from 20 Hz to 20 kHz (below half the rate), the high one at least an octave above the low; attack and sustain within 12 dB, output within 24 dB.",
+                      [] (const EffectValues&) { return std::make_unique<BuiltInEffects::TransientShaperProcessor>(); },
+                      [toSettings] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          auto* live = dynamic_cast<BuiltInEffects::TransientShaperProcessor*> (&p);
+
+                          if (live != nullptr)
+                              live->setSettings (toSettings (v));
+
+                          return live != nullptr;
+                      },
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          transientShaperSettings = toSettings (v);
+                          runStep ({ "transientShaper", v, nullptr });
+                      });
 }
 
 void MainComponent::showMaximizer()

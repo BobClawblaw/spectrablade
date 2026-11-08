@@ -111,6 +111,21 @@ namespace
         return v;
     }
 
+    /** A transient shaper preset: the crossovers, then each band's attack and sustain, then the output. */
+    Values transientShaper (double lowCrossover, double highCrossover, const std::array<std::array<double, 2>, 3>& bands, double output)
+    {
+        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output } };
+        const std::array<const char*, 3> names { "low", "mid", "high" };
+
+        for (size_t b = 0; b < 3; ++b)
+        {
+            v[names[b] + juce::String ("Attack")] = bands[b][0];
+            v[names[b] + juce::String ("Sustain")] = bands[b][1];
+        }
+
+        return v;
+    }
+
     /** An exciter preset: the crossovers, then each band's drive, curve (0 tube, 1 tape, 2 transistor) and mix, then the output. */
     Values exciter (double lowCrossover, double highCrossover, const std::array<std::array<double, 3>, 3>& bands, double output)
     {
@@ -186,6 +201,12 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:transient-shaper"] = {
+            { "Punchier drums", transientShaper (200, 3000, {{ { 4, -2 }, { 5, -2 }, { 3, 0 } }}, 0) },
+            { "Softer attacks", transientShaper (200, 3000, {{ { -4, 0 }, { -5, 0 }, { -4, 0 } }}, 0) },
+            { "More room", transientShaper (200, 3000, {{ { 0, 3 }, { 0, 4 }, { 0, 4 } }}, 0) },
+            { "Tighter low end", transientShaper (150, 3000, {{ { 3, -6 }, { 0, 0 }, { 0, 0 } }}, 0) },
+            { "Snappy top", transientShaper (200, 2500, {{ { 0, 0 }, { 2, 0 }, { 6, -3 } }}, 0) } };
         t["spectrablade:maximizer"] = {
             { "Gentle (-1 dBTP)", { { "gain", 3.0 }, { "ceiling", -1.0 }, { "character", 0.0 }, { "emphasis", 20.0 } } },
             { "Streaming (-1 dBTP)", { { "gain", 6.0 }, { "ceiling", -1.0 }, { "character", 1.0 }, { "emphasis", 30.0 } } },
