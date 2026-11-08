@@ -51,6 +51,188 @@ namespace
 
 void runEqTests()
 {
+    // Linear phase: the bands' levels with no phase turned. Sines come out at the bands' response
+    // (a narrow bell low down drawn a little more broadly); an impulse comes out symmetric about
+    // itself; the channels compose as the minimum-phase bands do, a channel no band touches bit for
+    // bit; the live engine, played in blocks, gives the offline samples late by its latency.
+    {
+        using Equalizer::Channel;
+        const std::vector<Band> bands { { BandType::lowShelf, 100.0, 6.0, 0.7071067811865476 }, { BandType::peak, 1000.0, -8.0, 2.0 },
+                                        { BandType::highShelf, 8000.0, 4.0, 0.7071067811865476 } };
+        const std::vector<Band> narrowBell { { BandType::peak, 40.0, 6.0, 4.0 } };   // 10 Hz wide: narrower than the impulse can draw
+        const auto wanted = [] (const std::vector<Band>& set, double hz)
+        {
+            auto db = 0.0;
+
+            for (auto& b : set)
+                db += Equalizer::responseDb (b, rate, hz);
+
+            return db;
+        };
+        const auto linearDb = [] (const std::vector<Band>& set, double hz)
+        {
+            const auto in = sine (hz, 96000);
+            const auto out = readAll (*Equalizer::applyLinearPhase (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 96000, rate, set));
+            return rmsDb (out, 0, 48000, 96000) - rmsDb (in, 0, 48000, 96000);
+        };
+        auto worst = 0.0;
+        std::cout << "      linear phase, level errors:";
+
+        for (auto hz : { 30.0, 50.0, 100.0, 300.0, 1000.0, 3000.0, 8000.0, 15000.0 })
+        {
+            const auto error = linearDb (bands, hz) - wanted (bands, hz);
+            std::cout << " " << hz << " Hz " << juce::String (error, 4);
+            worst = juce::jmax (worst, std::abs (error));
+        }
+
+        const auto narrow = linearDb (narrowBell, 40.0) - wanted (narrowBell, 40.0);
+        std::cout << " dB; the 40 Hz bell (Q 4, 10 Hz wide) off by " << narrow << " dB" << std::endl;
+
+        // An impulse: symmetric about where it was, the minimum-phase one not.
+        juce::AudioBuffer<float> click (1, 60000);
+        click.clear();
+        click.setSample (0, 30000, 1.0f);
+        const auto linear = readAll (*Equalizer::applyLinearPhase (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (click)), 0, 60000, rate, bands));
+        const auto minimum = readAll (*Equalizer::apply (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (click)), 0, 60000, rate, bands));
+        auto asymmetry = 0.0, minimumAsymmetry = 0.0;
+
+        for (int k = 1; k < 8000; ++k)
+        {
+            asymmetry = juce::jmax (asymmetry, (double) std::abs (linear.getSample (0, 30000 + k) - linear.getSample (0, 30000 - k)));
+            minimumAsymmetry = juce::jmax (minimumAsymmetry, (double) std::abs (minimum.getSample (0, 30000 + k) - minimum.getSample (0, 30000 - k)));
+        }
+
+        std::cout << "      an impulse: linear phase asymmetric by " << asymmetry << ", minimum phase by " << minimumAsymmetry << std::endl;
+
+        // Channels: left = a + b, right = a - b; a band on the side leaves a sound with no side
+        // (left = right) within rounding, one on the right leaves the left bit for bit (delayed).
+        juce::AudioBuffer<float> same (2, 48000), in (2, 48000);
+
+        for (int i = 0; i < 48000; ++i)
+        {
+            const auto a = 0.3 * std::sin (juce::MathConstants<double>::twoPi * 1000.0 * i / rate);
+            const auto b = 0.3 * std::sin (juce::MathConstants<double>::twoPi * 3000.0 * i / rate);
+            same.setSample (0, i, (float) a);
+            same.setSample (1, i, (float) a);
+            in.setSample (0, i, (float) (a + b));
+            in.setSample (1, i, (float) (a - b));
+        }
+
+        const Band onSide { BandType::peak, 3000.0, 12.0, 2.0, Channel::side }, onRight { BandType::peak, 1000.0, 12.0, 2.0, Channel::right };
+        const auto sided = readAll (*Equalizer::applyLinearPhase (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (same)), 0, 48000, rate, { onSide }));
+        const auto righted = readAll (*Equalizer::applyLinearPhase (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, { onRight }));
+        auto sideLeft = 0.0;
+        auto leftSame = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 20000; i < 48000 - 9000; ++i)
+                sideLeft = juce::jmax (sideLeft, (double) std::abs (sided.getSample (ch, i) - same.getSample (ch, i)));
+
+        for (int i = 0; i < 48000; ++i)
+            leftSame = leftSame && juce::exactlyEqual (righted.getSample (0, i), in.getSample (0, i));
+
+        // A band on the side lifts the side's 3 kHz 12 dB and leaves the mid's 1 kHz (measured on the
+        // middle, clear of the ends).
+        const auto level = [] (const juce::AudioBuffer<float>& x, double hz, bool mid)
+        {
+            double re = 0.0, im = 0.0;
+
+            for (int i = 16000; i < 32000; ++i)
+            {
+                const auto v = 0.5 * (x.getSample (0, i) + (mid ? 1.0 : -1.0) * x.getSample (1, i));
+                const auto phase = juce::MathConstants<double>::twoPi * hz * i / rate;
+                re += v * std::cos (phase);
+                im += v * std::sin (phase);
+            }
+
+            return 20.0 * std::log10 (2.0 * std::sqrt (re * re + im * im) / 16000.0);
+        };
+        const auto sidedIn = readAll (*Equalizer::applyLinearPhase (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, { onSide }));
+        const auto sideLift = level (sidedIn, 3000.0, false) - level (in, 3000.0, false), midKept = level (sidedIn, 1000.0, true) - level (in, 1000.0, true);
+
+        // Live, in uneven blocks: the offline samples, late by the latency.
+        Equalizer::LinearPhase engine;
+        engine.prepare (bands, rate, 1);
+        const auto source = sine (440.0, 48000);
+        juce::AudioBuffer<float> played (1, 48000 + Equalizer::LinearPhase::latency);
+        played.clear();
+        played.copyFrom (0, 0, source, 0, 0, 48000);
+        const int sizes[] = { 1, 7, 512, 3000 };
+
+        for (int pos = 0, k = 0; pos < played.getNumSamples(); ++k)
+        {
+            const auto n = juce::jmin (sizes[k % 4], played.getNumSamples() - pos);
+            float* ptr[] = { played.getWritePointer (0, pos) };
+            engine.process (ptr, 1, n);
+            pos += n;
+        }
+
+        const auto offline = readAll (*Equalizer::applyLinearPhase (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (source)), 0, 48000, rate, bands));
+        auto liveSame = true;
+
+        for (int i = 0; i < 48000; ++i)
+            liveSame = liveSame && juce::exactlyEqual (played.getSample (0, i + Equalizer::LinearPhase::latency), offline.getSample (0, i));
+
+        check (worst < 0.1 && std::abs (narrow) < 1.5 && asymmetry < 1.0e-5 && minimumAsymmetry > 0.1 && sideLeft < 1.0e-5 && leftSame
+                   && std::abs (sideLift - 12.0) < 0.1 && std::abs (midKept) < 0.01 && liveSame,
+               "linear phase: sines from 30 Hz to 15 kHz come out within 0.1 dB of the bands' response (a bell at 40 Hz with a Q of 4, 10 Hz wide, within 1.5 dB); "
+               "an impulse comes out symmetric about itself (within 1e-5; the minimum-phase one is not); a band on the side leaves a sound with no "
+               "side within 1e-5 and lifts the side's 3 kHz 12 dB with the mid's 1 kHz kept; a band on the right leaves the left bit for bit; the "
+               "engine played in blocks of 1, 7, 512 and 3,000 frames gives the offline samples bit for bit, late by its latency");
+
+        // The live EQ with Linear Phase on: its latency reported, the offline samples late by it in
+        // uneven blocks, 0 again when it is off; the panel's switch and the presets carry it.
+        BuiltInEffects::ParametricEqProcessor live;
+        live.setBand (0, true, bands[0]);
+        live.setBand (2, true, bands[1]);
+        live.setBand (4, true, bands[2]);
+        live.setPlayConfigDetails (2, 2, rate, 512);
+        live.prepareToPlay (rate, 3000);
+        const auto before = live.getLatencySamples();
+        live.linearPhaseParameter().setValueNotifyingHost (1.0f);
+        juce::AudioBuffer<float> stereo (2, 48000 + Equalizer::LinearPhase::latency);
+        stereo.clear();
+        stereo.copyFrom (0, 0, in, 0, 0, 48000);
+        stereo.copyFrom (1, 0, in, 1, 0, 48000);
+        juce::MidiBuffer midi;
+
+        for (int pos = 0, k = 0; pos < stereo.getNumSamples(); ++k)
+        {
+            const auto n = juce::jmin (sizes[k % 4], stereo.getNumSamples() - pos);
+            juce::AudioBuffer<float> block (stereo.getArrayOfWritePointers(), 2, pos, n);
+            live.processBlock (block, midi);
+            pos += n;
+        }
+
+        const auto during = live.getLatencySamples();
+        const auto offlineStereo = readAll (*Equalizer::applyLinearPhase (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, live.getActiveBands (rate)));
+        auto liveStereoSame = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                liveStereoSame = liveStereoSame && juce::exactlyEqual (stereo.getSample (ch, i + Equalizer::LinearPhase::latency), offlineStereo.getSample (ch, i));
+
+        live.linearPhaseParameter().setValueNotifyingHost (0.0f);
+        juce::AudioBuffer<float> one (2, 64);
+        one.clear();
+        live.processBlock (one, midi);
+        const auto after = live.getLatencySamples();
+
+        ParametricEq panel (ParametricEq::defaultSettings(), rate);
+        auto told = 0;
+        panel.onChange = [&told] { ++told; };
+        panel.setLinearPhase (true);
+        const auto quietSet = told == 0 && panel.isLinearPhase();
+        const auto values = BuiltInEffects::eqPresetValues (panel.getSettings(), panel.isLinearPhase());
+        const auto carried = values.at ("linearPhase") == 1.0 && BuiltInEffects::eqLinearPhaseFrom (values, false)
+                             && ! BuiltInEffects::eqLinearPhaseFrom (BuiltInEffects::eqPresetValues (panel.getSettings()), true);
+
+        std::cout << "      live linear phase: latency " << before << " off, " << during << " on, " << after << " off again" << std::endl;
+        check (before == 0 && during == Equalizer::LinearPhase::latency && after == 0 && liveStereoSame && quietSet && carried,
+               "the live EQ in linear phase: reports the engine's latency while on (0 before and after), and played in blocks of 1, 7, 512 and "
+               "3,000 frames gives the offline samples bit for bit, late by it; the panel's switch set from outside says nothing; the presets carry it");
+    }
+
     // A band on the mid, the side, or one channel alone. Left = a + b and right = a - b, so a (1 kHz)
     // is the mid and b (3 kHz) the side: a bell on the mid lifts a in both channels alike and
     // leaves b; one on the side lifts b (with its sign) and leaves a; one on the left leaves the

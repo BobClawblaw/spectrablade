@@ -117,7 +117,9 @@ namespace BuiltInEffects
         Equalizer stages. A band switched off, flat (a bell or shelf at 0 dB) or at or past Nyquist at the
         current rate passes the audio unchanged and starts afresh when it comes back. Played over
         a whole file from its start, it gives exactly the samples Equalizer::apply gives for the
-        same bands. No latency. Mono or stereo, the same on every channel. */
+        same bands. No latency. With Linear Phase on, the bands run through Equalizer::LinearPhase
+        instead (the samples Equalizer::applyLinearPhase gives, its latency reported); a band moved
+        while playing remakes the impulse on the spot, in the audio's time. Mono or stereo, the same on every channel. */
     class ParametricEqProcessor final : public BuiltInEffect
     {
     public:
@@ -137,6 +139,7 @@ namespace BuiltInEffects
         juce::AudioParameterBool& onParameter (int index) const      { return *bandParameters[(size_t) index].on; }
         juce::AudioParameterChoice& typeParameter (int index) const  { return *bandParameters[(size_t) index].type; }
         juce::AudioParameterChoice& channelParameter (int index) const { return *bandParameters[(size_t) index].channel; }
+        juce::AudioParameterBool& linearPhaseParameter() const       { return *linearPhase; }
         juce::AudioParameterFloat& frequencyParameter (int index) const { return *bandParameters[(size_t) index].frequency; }
         juce::AudioParameterFloat& gainParameter (int index) const   { return *bandParameters[(size_t) index].gain; }
         juce::AudioParameterFloat& qParameter (int index) const      { return *bandParameters[(size_t) index].q; }
@@ -160,8 +163,15 @@ namespace BuiltInEffects
         Equalizer::Band bandFromParameters (int index) const;
 
         std::array<BandParameters, numBands> bandParameters;
+        juce::AudioParameterBool* linearPhase = nullptr;
         double rate = 48000.0;
         int channelsRunning = 0;
+
+        // Linear phase: the engine, the bands it was made for, and whether it is running (its latency
+        // reported; 0 otherwise).
+        Equalizer::LinearPhase linear;
+        std::vector<Equalizer::Band> linearSetFor;
+        bool linearRunning = false;
 
         // Each band's stage and the band it was last set for (nothing when the band was passing the
         // audio through), so it is reset only when a band comes back.
@@ -172,11 +182,15 @@ namespace BuiltInEffects
     };
 
     /** The Parametric EQ panel's bands as a preset, under the live EQ's parameter IDs (band1On,
-        band1Type, band1Frequency, band1Gain, band1Q, ...), so the window and the live EQ share them. */
-    EffectPresets::Values eqPresetValues (const ParametricEq::Settings&);
+        band1Type, band1Channel, band1Frequency, band1Gain, band1Q, ..., linearPhase), so the window
+        and the live EQ share them. */
+    EffectPresets::Values eqPresetValues (const ParametricEq::Settings&, bool linearPhase = false);
 
     /** The bands a preset sets, over `start` (bands or values it doesn't name stay as they are). */
     ParametricEq::Settings eqSettingsFrom (const EffectPresets::Values&, ParametricEq::Settings start);
+
+    /** Whether a preset asks for linear phase; `start` when it doesn't say. */
+    bool eqLinearPhaseFrom (const EffectPresets::Values&, bool start);
 
     /** The live EQ's window: the Parametric EQ panel, its bands and curve, on the processor's
         parameters. Moving a control sets the parameters as a gesture, so a track's automation
@@ -204,6 +218,7 @@ namespace BuiltInEffects
         std::unique_ptr<ParametricEq> panel;
         EffectPresets::Bar presets;
         ParametricEq::Settings shown;
+        bool shownLinear = false;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ParametricEqEditor)
     };

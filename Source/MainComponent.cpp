@@ -261,14 +261,14 @@ private:
 class MainComponent::EqWindow final : public juce::DocumentWindow
 {
 public:
-    EqWindow (const ParametricEq::Settings& settings, double sampleRate, std::function<void (const ParametricEq&)> onApply,
-              std::function<void (const ParametricEq::Settings&)> onSettings, std::function<void (const ParametricEq*)> onPreview,
+    EqWindow (const ParametricEq::Settings& settings, bool linearPhase, double sampleRate, std::function<void (const ParametricEq&)> onApply,
+              std::function<void (const ParametricEq::Settings&, bool)> onSettings, std::function<void (const ParametricEq*)> onPreview,
               std::function<void()> onClose)
         : DocumentWindow ("Parametric EQ", Theme::surface, DocumentWindow::closeButton),
           closeCallback (std::move (onClose))
     {
         setUsingNativeTitleBar (true);
-        content = new Content (settings, sampleRate, std::move (onApply), std::move (onSettings), std::move (onPreview));
+        content = new Content (settings, linearPhase, sampleRate, std::move (onApply), std::move (onSettings), std::move (onPreview));
         setContentOwned (content, true);
         setResizable (true, false);
         setResizeLimits (780, 320, 3000, 2000);
@@ -291,20 +291,21 @@ public:
 private:
     struct Content final : public juce::Component
     {
-        Content (const ParametricEq::Settings& settings, double sampleRate, std::function<void (const ParametricEq&)> onApply,
-                 std::function<void (const ParametricEq::Settings&)> onSettings, std::function<void (const ParametricEq*)> onPreview)
+        Content (const ParametricEq::Settings& settings, bool linearPhase, double sampleRate, std::function<void (const ParametricEq&)> onApply,
+                 std::function<void (const ParametricEq::Settings&, bool)> onSettings, std::function<void (const ParametricEq*)> onPreview)
             : rate (sampleRate), remember (std::move (onSettings)), previewBands (std::move (onPreview))
         {
-            makePanel (settings);
+            makePanel (settings, linearPhase);
             apply.onClick = [this, applyBands = std::move (onApply)] { applyBands (*panel); };   // applying ends the preview
             preview.onClick = [this] { previewBands (preview.getToggleState() ? panel.get() : nullptr); };
             presets = std::make_unique<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::parametricEqId,
-                                                            [this] { return BuiltInEffects::eqPresetValues (panel->getSettings()); },
+                                                            [this] { return BuiltInEffects::eqPresetValues (panel->getSettings(), panel->isLinearPhase()); },
                                                             [this] (const EffectPresets::Values& v)
                                                             {
                                                                 const auto s = BuiltInEffects::eqSettingsFrom (v, panel->getSettings());
-                                                                makePanel (s);
-                                                                remember (s);
+                                                                const auto linear = BuiltInEffects::eqLinearPhaseFrom (v, panel->isLinearPhase());
+                                                                makePanel (s, linear);
+                                                                remember (s, linear);
                                                                 changed();
                                                                 resized();
                                                             });
@@ -316,8 +317,9 @@ private:
                 for (auto& b : s)
                     b.band.gainDb = 0.0;
 
-                makePanel (s);
-                remember (s);
+                const auto linear = panel->isLinearPhase();
+                makePanel (s, linear);
+                remember (s, linear);
                 changed();
                 resized();
             };
@@ -327,13 +329,14 @@ private:
             setSize (juce::jmax (820, panel->getWidth()), panel->getHeight() + 40);   // wide enough for the buttons and presets
         }
 
-        void makePanel (const ParametricEq::Settings& settings)
+        void makePanel (const ParametricEq::Settings& settings, bool linearPhase)
         {
             panel = std::make_unique<ParametricEq> (settings, rate);
+            panel->setLinearPhase (linearPhase);
             panel->readOutput = readOutput;
             panel->onChange = [this]
             {
-                remember (panel->getSettings());
+                remember (panel->getSettings(), panel->isLinearPhase());
                 changed();
             };
             addAndMakeVisible (*panel);
@@ -359,7 +362,7 @@ private:
         }
 
         double rate;
-        std::function<void (const ParametricEq::Settings&)> remember;
+        std::function<void (const ParametricEq::Settings&, bool)> remember;
         std::function<void (const ParametricEq*)> previewBands;
         std::function<double (juce::AudioBuffer<float>&)> readOutput;
         std::unique_ptr<ParametricEq> panel;
@@ -7590,8 +7593,8 @@ void MainComponent::toggleParametricEq()
     }
 
     const auto rate = engine.document.hasAudio() ? engine.document.getSampleRate() : 48000.0;
-    eqWindow = std::make_unique<EqWindow> (eqSettings, rate, [this] (const ParametricEq& eq) { applyParametricEq (eq.getActiveBands()); },
-                                           [this] (const ParametricEq::Settings& s) { eqSettings = s; },
+    eqWindow = std::make_unique<EqWindow> (eqSettings, eqLinearPhase, rate, [this] (const ParametricEq& eq) { applyParametricEq (eq.getActiveBands(), eq.isLinearPhase()); },
+                                           [this] (const ParametricEq::Settings& s, bool linear) { eqSettings = s; eqLinearPhase = linear; },
                                            [this] (const ParametricEq* eq) { previewParametricEq (eq); },
                                            [this]
     {
@@ -7629,6 +7632,8 @@ void MainComponent::previewParametricEq (const ParametricEq* eq)
     for (int i = 0; i < BuiltInEffects::ParametricEqProcessor::numBands; ++i)
         live->setBand (i, settings[(size_t) i].on, settings[(size_t) i].band);
 
+    live->linearPhaseParameter().setValueNotifyingHost (eq->isLinearPhase() ? 1.0f : 0.0f);
+
     if (made != nullptr)
     {
         startPreview (PreviewOwner::parametricEq, std::move (made), [this]
@@ -7642,7 +7647,7 @@ void MainComponent::previewParametricEq (const ParametricEq* eq)
     }
 }
 
-void MainComponent::applyParametricEq (const std::vector<Equalizer::Band>& bands)
+void MainComponent::applyParametricEq (const std::vector<Equalizer::Band>& bands, bool linearPhase)
 {
     auto& doc = engine.document;
 
@@ -7665,8 +7670,11 @@ void MainComponent::applyParametricEq (const std::vector<Equalizer::Band>& bands
 
     const auto r = selectionOrAll();
 
-    if (auto next = Equalizer::apply (*doc.getSnapshot(), r.getStart(), r.getEnd(), doc.getSampleRate(), bands))
-        applyEdit (std::move (next), "Parametric EQ", waveform.getSelection());
+    auto next = linearPhase ? Equalizer::applyLinearPhase (*doc.getSnapshot(), r.getStart(), r.getEnd(), doc.getSampleRate(), bands)
+                            : Equalizer::apply (*doc.getSnapshot(), r.getStart(), r.getEnd(), doc.getSampleRate(), bands);
+
+    if (next != nullptr)
+        applyEdit (std::move (next), linearPhase ? "Parametric EQ (Linear Phase)" : "Parametric EQ", waveform.getSelection());
 }
 
 void MainComponent::showCompressor()

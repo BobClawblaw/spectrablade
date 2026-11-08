@@ -278,9 +278,10 @@ private:
     void showAbout();
     std::vector<double> graphicEq10Gains = std::vector<double> (10, 0.0), graphicEq31Gains = std::vector<double> (31, 0.0);
 
-    void applyParametricEq (const std::vector<Equalizer::Band>&);
+    void applyParametricEq (const std::vector<Equalizer::Band>&, bool linearPhase);
     void previewParametricEq (const ParametricEq*);   // nullptr: stop
     ParametricEq::Settings eqSettings = ParametricEq::defaultSettings();
+    bool eqLinearPhase = false;
     int eqBandType = 0;
     double eqBandHz = 1000.0, eqBandGainDb = 6.0, eqBandQ = 1.0;
     int echoDelayMs = 250, echoFeedbackPercent = 40;

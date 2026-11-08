@@ -18,7 +18,10 @@
     type, frequency, gain and Q beside it.
 
     With readOutput set, the spectrum of what is playing is drawn behind the curve (-90 to 0 dBFS
-    up the drawing), falling back slowly. */
+    up the drawing), falling back slowly.
+
+    Linear Phase, under the drawing, asks for the bands as one symmetric impulse (Equalizer::LinearPhase):
+    the same curve with no phase turned, at a delay. */
 class ParametricEq final : public juce::Component,
                            private juce::Timer
 {
@@ -52,7 +55,11 @@ public:
     /** The response of the active bands together at a frequency, in dB. */
     double responseDb (double frequency) const;
 
-    /** Called after every change to a band. */
+    /** Whether the bands are to run in linear phase. The switch's change calls onChange too. */
+    bool isLinearPhase() const noexcept              { return linearPhase.getToggleState(); }
+    void setLinearPhase (bool);                      // without onChange
+
+    /** Called after every change to a band, or to Linear Phase. */
     std::function<void()> onChange;
 
     /** Fills the buffer (2 channels, Analysis::fftSize frames) with the newest output; returns the
@@ -115,6 +122,7 @@ private:
     Settings settings;
     double sampleRate;
     std::array<std::unique_ptr<Row>, numBands> rows;
+    juce::ToggleButton linearPhase { "Linear phase" };
     int dragging = -1, hovered = -1, selected = -1;
     EqDrawing::HeldSpectrum spectrum;
     juce::AudioBuffer<float> recent;

@@ -74,7 +74,7 @@ namespace
 
     Values parametric (const std::array<Band, 5>& bands)
     {
-        Values v;
+        Values v { { "linearPhase", 0.0 } };
 
         for (size_t i = 0; i < bands.size(); ++i)
         {

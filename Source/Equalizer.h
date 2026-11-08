@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AudioEdits.h"
+#include "Convolver.h"
 
 /** Equalizer bands: second-order filters made from their analogue prototypes by the bilinear
     transform, with the frequency prewarped so each band's frequency lands where it is asked. */
@@ -82,6 +83,48 @@ namespace Equalizer
 
     /** The band's gain at a frequency, in dB; 0 for a band that isn't valid. */
     double responseDb (const Band&, double sampleRate, double frequency);
+
+    /** The bands in linear phase: one symmetric impulse (taps frames long, its centre (taps - 1) / 2
+        frames in) whose magnitude is the bands' response together, so every frequency comes out at
+        the bands' level with no phase turned, (taps - 1) / 2 frames late plus the convolver's block.
+        The impulse is the inverse transform of the response sampled on a fine grid, under a Hann
+        window, so a feature narrower than about two bins of the window (some 6 Hz at 48 kHz) is
+        drawn more broadly than the bands ask. Bands on the mid, the side, the left or the right are
+        composed in order into a matrix of impulses (left from left and from right, right likewise);
+        a channel no band touches is only delayed, bit for bit. The live EQ and the offline apply run
+        the same engine, so they give the same samples. */
+    class LinearPhase
+    {
+    public:
+        static constexpr int taps = 16383;
+        static constexpr int latency = (taps - 1) / 2 + Convolver::blockSize;
+
+        /** The bands (valid at this rate, in order) for this many channels; starts from silence. */
+        void prepare (const std::vector<Band>&, double sampleRate, int numChannels);
+        void reset();
+
+        /** In place: each frame comes out latency frames late. */
+        void process (float* const* channels, int numChannels, int numFrames) noexcept;
+
+        /** The impulses: for two channels and more, [0] left from left, [1] right from right, [2] left
+            from right, [3] right from left, [4] the others' (the bands on every channel); a mono
+            sound has [0] alone. Empty for a channel no band touches. */
+        const std::vector<std::vector<float>>& getImpulses() const noexcept   { return impulses; }
+
+    private:
+        std::vector<std::vector<float>> impulses;
+        std::unique_ptr<Convolver::Core> straight, across;   // the channels from themselves, and from each other
+        std::vector<bool> plain;                             // a channel only delayed
+        std::vector<std::vector<float>> delays;
+        std::vector<float*> pointers;
+        int delayPos = 0, channelsPrepared = 0;
+        juce::AudioBuffer<float> swapped, junk;
+    };
+
+    /** Runs the bands in linear phase over [start, end): the result lands where the audio was (the
+        engine's delay taken off), with the impulse fed from up to taps frames of the audio before
+        the range (kept as it was) and nothing rings past the range's end. Nullptr as apply. */
+    AudioEdits::Snapshot applyLinearPhase (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const std::vector<Band>&);
 
     /** Runs the bands, in order, over [start, end), each on the channels it works on. The filters first run over up
         to a second of the audio before the range, so the range starts as it would in a longer

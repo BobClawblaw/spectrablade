@@ -85,7 +85,15 @@ ParametricEq::ParametricEq (const Settings& initial, double rate)
         rows[(size_t) i] = std::move (row);
     }
 
-    setSize (700, 220 + numBands * rowHeight);
+    linearPhase.setTooltip ("The bands as one symmetric impulse: the same curve with no phase turned, " + juce::String (Equalizer::LinearPhase::latency)
+                            + " frames late when played live (" + juce::String (1000.0 * Equalizer::LinearPhase::latency / sampleRate, 0) + " ms at this rate)");
+    linearPhase.onClick = [this]
+    {
+        if (onChange)
+            onChange();
+    };
+    addAndMakeVisible (linearPhase);
+    setSize (700, 246 + numBands * rowHeight);
     startTimerHz (25);
 }
 
@@ -103,6 +111,11 @@ void ParametricEq::timerCallback()
 {
     if (isShowing() && spectrum.read (readOutput, recent))
         repaint (getCurveArea().toNearestInt());
+}
+
+void ParametricEq::setLinearPhase (bool on)
+{
+    linearPhase.setToggleState (on, juce::dontSendNotification);
 }
 
 void ParametricEq::setSettings (const Settings& s)
@@ -169,7 +182,7 @@ double ParametricEq::responseDb (double frequency) const
 
 juce::Rectangle<float> ParametricEq::getCurveArea() const
 {
-    return getLocalBounds().removeFromTop (getHeight() - numBands * rowHeight - 8).reduced (8).toFloat();
+    return getLocalBounds().removeFromTop (getHeight() - numBands * rowHeight - 34).reduced (8).toFloat();
 }
 
 float ParametricEq::xForFrequency (double frequency) const
@@ -488,7 +501,8 @@ void ParametricEq::paint (juce::Graphics& g)
 
 void ParametricEq::resized()
 {
-    auto controls = getLocalBounds().removeFromBottom (numBands * rowHeight + 8).reduced (8, 4);
+    auto controls = getLocalBounds().removeFromBottom (numBands * rowHeight + 34).reduced (8, 4);
+    linearPhase.setBounds (controls.removeFromTop (26).removeFromLeft (130));
 
     for (auto& row : rows)
     {

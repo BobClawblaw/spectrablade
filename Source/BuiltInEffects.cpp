@@ -424,6 +424,8 @@ ParametricEqProcessor::ParametricEqProcessor()
         p.gain = addFloat ("band" + n + "Gain", "Band " + n + " Gain", db, (float) start.gainDb, "dB");
         p.q = addFloat ("band" + n + "Q", "Band " + n + " Q", q, (float) start.q);
     }
+
+    linearPhase = addBool ("linearPhase", "Linear Phase", false);
 }
 
 Equalizer::Band ParametricEqProcessor::bandFromParameters (int index) const
@@ -475,6 +477,8 @@ void ParametricEqProcessor::reset()
 {
     for (auto& f : stagesSetFor)
         f.reset();
+
+    linear.reset();
 }
 
 void ParametricEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -484,6 +488,31 @@ void ParametricEqProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
     if (channels != channelsRunning)
     {
         channelsRunning = channels;
+        reset();
+        linearRunning = false;
+    }
+
+    if (linearPhase->get())
+    {
+        // The impulse for the bands as they are now, remade when they change; with no bands, the
+        // audio is only delayed, in step with the latency.
+        if (auto bands = getActiveBands (rate); ! linearRunning || bands != linearSetFor)
+        {
+            linear.prepare (bands, rate, channels);
+            linearSetFor = std::move (bands);
+            linearRunning = true;
+            setLatencySamples (Equalizer::LinearPhase::latency);
+            reset();
+        }
+
+        linear.process (buffer.getArrayOfWritePointers(), channels, buffer.getNumSamples());
+        return;
+    }
+
+    if (linearRunning)
+    {
+        linearRunning = false;
+        setLatencySamples (0);
         reset();
     }
 
@@ -541,9 +570,9 @@ namespace
     }
 }
 
-EffectPresets::Values eqPresetValues (const ParametricEq::Settings& s)
+EffectPresets::Values eqPresetValues (const ParametricEq::Settings& s, bool linearPhase)
 {
-    EffectPresets::Values v;
+    EffectPresets::Values v { { "linearPhase", linearPhase ? 1.0 : 0.0 } };
 
     for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
     {
@@ -558,6 +587,12 @@ EffectPresets::Values eqPresetValues (const ParametricEq::Settings& s)
     }
 
     return v;
+}
+
+bool eqLinearPhaseFrom (const EffectPresets::Values& v, bool start)
+{
+    const auto f = v.find ("linearPhase");
+    return f != v.end() && std::isfinite (f->second) ? f->second != 0.0 : start;
 }
 
 ParametricEq::Settings eqSettingsFrom (const EffectPresets::Values& v, ParametricEq::Settings s)
@@ -598,7 +633,9 @@ ParametricEqEditor::ParametricEqEditor (ParametricEqProcessor& owner)
 {
     const auto rate = owner.getSampleRate() > 0.0 ? owner.getSampleRate() : 48000.0;
     shown = settingsOf (eq);
+    shownLinear = eq.linearPhaseParameter().get();
     panel = std::make_unique<ParametricEq> (shown, rate);
+    panel->setLinearPhase (shownLinear);
     panel->onChange = [this] { panelChanged(); };
     addAndMakeVisible (*panel);
     addAndMakeVisible (presets);
@@ -617,6 +654,15 @@ void ParametricEqEditor::panelChanged()
 {
     // Only the bands the panel changed, each as one gesture per parameter, so nothing else moves.
     const auto& wanted = panel->getSettings();
+
+    if (panel->isLinearPhase() != shownLinear)
+    {
+        auto& p = eq.linearPhaseParameter();
+        p.beginChangeGesture();
+        p.setValueNotifyingHost (panel->isLinearPhase() ? 1.0f : 0.0f);
+        p.endChangeGesture();
+        shownLinear = panel->isLinearPhase();
+    }
 
     for (int i = 0; i < ParametricEqProcessor::numBands; ++i)
     {
@@ -642,6 +688,12 @@ void ParametricEqEditor::panelChanged()
 
 void ParametricEqEditor::refresh()
 {
+    if (const auto linearNow = eq.linearPhaseParameter().get(); linearNow != shownLinear)
+    {
+        shownLinear = linearNow;
+        panel->setLinearPhase (linearNow);
+    }
+
     const auto now = settingsOf (eq);
     auto changed = false;
 
