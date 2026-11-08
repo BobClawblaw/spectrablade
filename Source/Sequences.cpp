@@ -17,6 +17,7 @@
 #include "TransientShaper.h"
 #include "Dither.h"
 #include "Plosive.h"
+#include "Breath.h"
 #include "OfflineRender.h"
 #include "Reverb.h"
 #include "SampleRateConverter.h"
@@ -64,6 +65,7 @@ namespace
             { "maximizer", "Maximizer", { "gain", "ceiling", "character", "emphasis" } },
             { "dither", "Dither", { "bits", "shaping" } },
             { "deplosive", "De-plosive", { "corner", "threshold", "reduction" } },
+            { "breath", "Breath Control", { "threshold", "reduction" } },
             { "transientShaper", "Transient Shaper", { "lowCrossover", "highCrossover", "lowAttack", "lowSustain", "midAttack", "midSustain", "highAttack", "highSustain", "output" } },
             { "exciter", "Exciter", { "lowCrossover", "highCrossover", "lowDrive", "lowCurve", "lowMix", "midDrive", "midCurve", "midMix", "highDrive", "highCurve", "highMix", "output" } },
             { "centre", "Centre Channel", { "keep", "low", "high", "reduction" } },
@@ -128,6 +130,11 @@ namespace
         }
 
         return s;
+    }
+
+    Breath::Settings breathOf (const Values& v)
+    {
+        return { (float) get (v, "threshold"), (float) get (v, "reduction") };
     }
 
     Plosive::Settings plosiveOf (const Values& v)
@@ -329,6 +336,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "maximizer" && ! Maximizer::isValid (maximizerOf (v)))
         || (step.kind == "dither" && (get (v, "bits") < 0.0 || get (v, "bits") > 1.0))
         || (step.kind == "deplosive" && ! Plosive::isValid (plosiveOf (v), rate))
+        || (step.kind == "breath" && ! Breath::isValid (breathOf (v)))
         || (step.kind == "transientShaper" && ! TransientShaper::isValid (transientShaperOf (v), rate))
         || ((step.kind == "chorus" || step.kind == "flanger") && ! Modulation::isValid (delayOf (v)))
         || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
@@ -379,6 +387,7 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
     else if (k == "maximizer")      out.snapshot = Maximizer::apply (s, start, end, rate, maximizerOf (v));
     else if (k == "dither")         out.snapshot = Dither::apply (s, start, end, ditherOf (v));
     else if (k == "deplosive")      out.snapshot = Plosive::apply (s, start, end, rate, plosiveOf (v));
+    else if (k == "breath")         out.snapshot = Breath::apply (s, start, end, rate, breathOf (v));
     else if (k == "transientShaper") out.snapshot = TransientShaper::apply (s, start, end, rate, transientShaperOf (v));
     else if (k == "chorus" || k == "flanger") out.snapshot = Modulation::sweptDelay (s, start, end, rate, delayOf (v));
     else if (k == "phaser")         out.snapshot = Modulation::phaser (s, start, end, rate, phaserOf (v));

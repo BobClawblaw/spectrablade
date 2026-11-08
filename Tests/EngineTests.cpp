@@ -47,6 +47,7 @@
 #include "DialogueIsolationTests.h"
 #include "AdaptiveDenoiseTests.h"
 #include "PlosiveTests.h"
+#include "BreathTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -581,6 +582,7 @@ int main (int argc, char* argv[])
         runDialogueIsolationTests();
         runAdaptiveDenoiseTests();
         runPlosiveTests();
+        runBreathTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

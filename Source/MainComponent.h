@@ -29,6 +29,7 @@
 #include "DialogueIsolation.h"
 #include "AdaptiveDenoise.h"
 #include "Plosive.h"
+#include "Breath.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -284,6 +285,8 @@ private:
     DialogueIsolation::Settings dialogueSettings;
     AdaptiveDenoise::Settings adaptiveSettings;
     Plosive::Settings plosiveSettings;
+    Breath::Settings breathSettings;
+    void showBreathControl();
     void showMouthDeClick (bool crackle);
     void showDePlosive();
     void showAdaptiveDenoise();

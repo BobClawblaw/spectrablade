@@ -201,6 +201,10 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:breath-control"] = {
+            { "Standard", { { "threshold", 15.0 }, { "reduction", 12.0 } } },
+            { "Gentle", { { "threshold", 15.0 }, { "reduction", 6.0 } } },
+            { "Nearly gone", { { "threshold", 12.0 }, { "reduction", 24.0 } } } };
         t["spectrablade:mouth-declick"] = {
             { "Standard", { { "threshold", 10.0 }, { "length", 8.0 } } },
             { "Faint clicks", { { "threshold", 7.0 }, { "length", 8.0 } } },

@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdDePlosive)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdBreathControl)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdBreathControl: info.setInfo ("Breath Control...", "Find the breaths between words and lower them", "Effects", 0); break;
         case cmdDePlosive: info.setInfo ("De-plosive...", "Lower the thumps a p or a b puts into the microphone", "Effects", 0); break;
         case cmdAdaptiveDenoise:
             info.setInfo ("Adaptive Noise Reduction...", "Reduce noise with no noise print, following the noise as it changes", "Effects", 0);
@@ -2057,6 +2058,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMouthDeClick: showMouthDeClick (false); break;
         case cmdDeCrackle:  showMouthDeClick (true); break;
         case cmdDePlosive:  showDePlosive(); break;
+        case cmdBreathControl: showBreathControl(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2605,7 +2607,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
-            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
@@ -7965,6 +7967,34 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::showBreathControl()
+{
+    const auto& s = breathSettings;
+    const auto toSettings = [] (const EffectValues& v) { return Breath::Settings { (float) v.at ("threshold"), (float) v.at ("reduction") }; };
+
+    showEffectDialog ("Breath Control",
+                      "The breaths between words found and lowered: a stretch of 80 to 800 ms that lies more than the threshold under the speech "
+                      "round it and over the room noise, and sounds like air rather than voice (its zero-crossing rate), is lowered by the "
+                      "reduction, eased in and out over 20 ms. Words and pauses that are only room noise are left alone.",
+                      { { "threshold", "Threshold (dB under the speech)", s.thresholdDb, 1, {}, 6, 40, 0.5 }, { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 } },
+                      "spectrablade:breath-control", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return Breath::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          breathSettings = toSettings (v);
+                          const auto r = selectionOrAll();
+
+                          if (Breath::find (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), engine.document.getSampleRate(), breathSettings).empty())
+                          {
+                              showError ("Breath Control", "No breaths were found in the selection. Lower the threshold to catch quieter ones.");
+                              return;
+                          }
+
+                          runStep ({ "breath", v, nullptr });
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "breath", v, nullptr }); });
 }
 
 void MainComponent::showDePlosive()

@@ -159,6 +159,7 @@ What they check:
 - Dialogue isolation: the pitch finder on a buzz and on noise with a tone, the background between words lowered by the reduction, the harmonics kept, a tone between them lowered, a clean voice passed, cancelling, refused settings.
 - Adaptive noise reduction: noise stepping up 12 dB followed without a print (the gaps after each word lowered by the reduction in both halves), the voice's harmonics kept, 0 dB leaving the audio as it was, cancelling, refused settings.
 - De-plosive: two thumps lowered by near the reduction, the voice's harmonics and a steady hum untouched, a voice without thumps passed, refused settings.
+- Breath control: two breaths found where they are and nothing else, lowered by the reduction, a word and the room noise untouched, a range too short refused.
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.
