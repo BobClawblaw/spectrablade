@@ -80,6 +80,38 @@ void runDialogueIsolationTests()
                "dialogue isolation: a 150 Hz buzz is found within a sixteenth of an octave with voicing over 0.8; noise with a tone has voicing under 0.55");
     }
 
+    // A low voice with a strong formant: an 80 Hz buzz (twenty-four harmonics falling 6 dB an
+    // octave) with its fundamental at a fifth and its third harmonic six times over, so the frame
+    // repeats at a third of its period nearly as well as at the period, read at 80 Hz at 48 and at
+    // 96 kHz; the same buzz without the formant too.
+    {
+        auto worstFrequency = 0.0, leastFormantVoicing = 1.0, leastPlainVoicing = 1.0;
+
+        for (const auto hz : { 48000.0, 96000.0 })
+            for (const auto formant : { 6.0, 1.0 })
+            {
+                juce::AudioBuffer<float> b (1, 8192);
+
+                for (int i = 0; i < b.getNumSamples(); ++i)
+                {
+                    auto v = 0.0;
+
+                    for (int h = 1; h <= 24; ++h)
+                        v += (h == 3 ? formant : h == 1 && formant > 1.0 ? 0.2 : 1.0) / h * std::sin (juce::MathConstants<double>::twoPi * 80.0 * h * i / hz + 0.7 * h);
+
+                    b.setSample (0, i, (float) (0.1 * v));
+                }
+
+                const auto p = DialogueIsolation::pitchOf (b, 2048, hz);
+                std::cout << "      pitch at " << hz << " Hz, formant x" << formant << ": " << p.frequency << " Hz, voicing " << p.voicing << std::endl;
+                worstFrequency = juce::jmax (worstFrequency, std::abs (p.frequency - 80.0));
+                (formant > 1.0 ? leastFormantVoicing : leastPlainVoicing) = juce::jmin (formant > 1.0 ? leastFormantVoicing : leastPlainVoicing, p.voicing);
+            }
+
+        check (worstFrequency < 80.0 * 0.045 && leastFormantVoicing > 0.8 && leastPlainVoicing > 0.75,
+               "dialogue isolation: an 80 Hz buzz whose third harmonic stands six times over its fundamental at a fifth (a low voice with a strong formant) reads 80 Hz within a sixteenth of an octave with voicing over 0.8 at 48 and at 96 kHz, as does the plain buzz with voicing over 0.75 (a 43 ms frame at 96 kHz holds under four of its periods)");
+    }
+
     // The scene isolated: the background between the words (0 to 1 s, 2 to 3 s) lowered by about
     // the reduction, the voice's harmonics kept within 1.5 dB, the 525 Hz tone lowered during the
     // voice too (it is not a harmonic of 150 Hz); a clean voice passes within 0.5 dB; cancelling.

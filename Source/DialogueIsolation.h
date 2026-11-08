@@ -4,14 +4,18 @@
 
 /** Dialogue isolation: speech kept and everything else lowered. The audio is analysed in
     4,096-point frames at 75 % overlap (square-root Hann windows, as the noise reduction). Each frame
-    is judged for speech: a pitch is looked for from 70 to 400 Hz by comparing, for each candidate,
-    the power per bin within a quarter of it round its first twelve harmonics with the power per bin
-    in the gaps between them (from 80 Hz to 4 kHz); a candidate counts only with at least three
-    harmonics, and two thirds of those looked for, standing four times over the gaps (a lone tone
-    is periodic but not speech; a candidate an octave under the pitch finds only every other one),
-    the higher of candidates within 2 % wins, and the best one's voicing is that ratio over one plus itself (0 for nothing periodic, near 1 for a
-    clean buzz); a frame with voicing over the sensitivity's threshold is voiced speech, and in it the bins within a quarter of the pitch of each harmonic (up to 4 kHz)
-    and the bins from 4 to 8 kHz that stand over the background are kept. A frame whose power from
+    is judged for speech by its pitch (pitchOf below): how well the frame repeats at some period
+    from 70 to 400 Hz (the autocorrelation of its 100 Hz to 1.5 kHz, the frame's own taper taken
+    out), the shortest period within 15 % of the best repeat taken, as long as the frame does not
+    repeat as well at half of it (a lone tone does) and at least three of its first twelve harmonics
+    (under 4 kHz) stand twice over the gaps between them (a lone tone or a chance repeat in noise
+    has fewer). Where the shortest period fails that last test, the longer ones up to four times it
+    are tried, asked for five harmonics with one among the first three, since a low voice with a
+    strong formant repeats at a third of its period nearly as well as at the period. A frame with
+    voicing over the sensitivity's threshold is voiced speech, as is a frame within 80 ms after one
+    whose voicing falls short of the threshold by less than 0.15 (a voice's breathier moments and
+    its ends), and in it the bins within a quarter of the pitch of each harmonic (up to 4 kHz) and
+    the bins from 4 to 8 kHz that stand over the background are kept. A frame whose power from
     2 to 8 kHz stands 6 dB over the background where the rest does not is a fricative (an s or an f)
     and keeps that band. The background is the running minimum of each bin's smoothed power over
     the last second and a half (what is always there). Everything not kept is lowered by the
@@ -34,7 +38,9 @@ namespace DialogueIsolation
         buffer count as silence), in Hz, and its voicing (0 to 1): how well the frame repeats at
         that period, the frame's own taper taken out, so a steady voice reads near 1 and noise
         under about 0.4. 0 Hz and 0 for nothing periodic enough, and for a lone tone or a chance
-        repeat in noise (fewer than three harmonics standing over the gaps between them). */
+        repeat in noise (fewer than three harmonics standing over the gaps between them). A low
+        voice whose shortest repeat is a harmonic's (a strong formant) is read at its own period
+        when that holds five harmonics, one among the first three. */
     struct Pitch { double frequency = 0.0; double voicing = 0.0; };
     Pitch pitchOf (const juce::AudioBuffer<float>& audio, int at, double sampleRate);
 

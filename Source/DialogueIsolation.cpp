@@ -113,70 +113,100 @@ Pitch pitchOf (const juce::AudioBuffer<float>& audio, int at, double sampleRate)
     if (best <= 0.0)
         return {};
 
-    auto chosen = 0;
+    // The peaks within 15 % of the best, shortest lag first.
+    std::vector<int> peaks;
 
-    for (int lag = first; lag <= longest && chosen == 0; ++lag)
+    for (int lag = first; lag <= longest; ++lag)
         if (correlation[(size_t) lag] >= 0.85 * best && correlation[(size_t) lag] >= correlation[(size_t) lag - 1] && correlation[(size_t) lag] >= correlation[(size_t) lag + 1])
-            chosen = lag;
+            peaks.push_back (lag);
 
-    if (chosen == 0)
+    if (peaks.empty())
         return {};
 
     // A lone tone repeats just as well at half the period (its own, or a multiple of its own);
     // a voice, whose odd harmonics turn over there, does not.
-    if (correlation[(size_t) (chosen / 2)] >= 0.9 * correlation[(size_t) chosen])
+    const auto repeatsAtHalf = [&] (int lag) { return correlation[(size_t) (lag / 2)] >= 0.9 * correlation[(size_t) lag]; };
+
+    if (repeatsAtHalf (peaks.front()))
         return {};
 
-    const auto left = correlation[(size_t) chosen - 1], middle = correlation[(size_t) chosen], right = correlation[(size_t) chosen + 1];
-    const auto curve = left - 2.0 * middle + right;
-    const auto offset = curve < 0.0 ? juce::jlimit (-0.5, 0.5, 0.5 * (left - right) / curve) : 0.0;
-    const auto period = chosen + offset;
-    const auto voicing = juce::jlimit (0.0, 1.0, middle - 0.25 * (left - right) * offset);
-    const auto frequency = sampleRate / period;
-
-    // A voice has harmonics: of the first twelve (under 4 kHz), each holding twice the power a bin
-    // of the gaps round them, or this is a lone tone or a chance repeat in noise.
-    const auto lowBin = (int) std::ceil (lowestPitch / binHz);
-    std::vector<std::pair<double, double>> windows;   // each harmonic's power a bin, and the gap's before it
-    auto lastBin = lowBin - 1;
-
-    for (int h = 1; h <= harmonicsCounted && h * frequency <= 4000.0; ++h)
+    // The period refined between the lags round a peak, and how well the frame repeats there.
+    const auto refined = [&] (int lag)
     {
-        const auto centre = h * frequency;
-        const auto from = juce::jmax (lastBin + 1, (int) std::ceil ((centre - frequency / 4.0) / binHz)), to = juce::jmin (paddedBins - 1, (int) ((centre + frequency / 4.0) / binHz));
+        const auto left = correlation[(size_t) lag - 1], middle = correlation[(size_t) lag], right = correlation[(size_t) lag + 1];
+        const auto curve = left - 2.0 * middle + right;
+        const auto offset = curve < 0.0 ? juce::jlimit (-0.5, 0.5, 0.5 * (left - right) / curve) : 0.0;
+        return Pitch { sampleRate / (lag + offset), juce::jlimit (0.0, 1.0, middle - 0.25 * (left - right) * offset) };
+    };
 
-        if (to < from)
+    // Which of a pitch's first twelve harmonics (under 4 kHz) stand over the gaps round them, each
+    // holding twice the power a bin of the gaps either side (the one before, and the one before
+    // the next), so a spectrum falling through them, or a hump of narrow noise, is not a peak.
+    const auto lowBin = (int) std::ceil (lowestPitch / binHz);
+    const auto harmonicsOf = [&] (double frequency)
+    {
+        std::vector<std::pair<double, double>> windows;   // each harmonic's power a bin, and the gap's before it
+        auto lastBin = lowBin - 1;
+
+        for (int h = 1; h <= harmonicsCounted && h * frequency <= 4000.0; ++h)
+        {
+            const auto centre = h * frequency;
+            const auto from = juce::jmax (lastBin + 1, (int) std::ceil ((centre - frequency / 4.0) / binHz)), to = juce::jmin (paddedBins - 1, (int) ((centre + frequency / 4.0) / binHz));
+
+            if (to < from)
+                continue;
+
+            auto here = 0.0, gap = 0.0;
+
+            for (int k = from; k <= to; ++k)
+                here += power[(size_t) k];
+
+            for (int k = lastBin + 1; k < from; ++k)
+                gap += power[(size_t) k];
+
+            windows.emplace_back (here / (to - from + 1), from > lastBin + 1 ? gap / (from - lastBin - 1) : -1.0);
+            lastBin = to;
+        }
+
+        std::vector<int> found;
+
+        for (size_t i = 0; i < windows.size(); ++i)
+        {
+            const auto before = windows[i].second, after = i + 1 < windows.size() ? windows[i + 1].second : -1.0;
+            const auto gap = juce::jmax (before, after);
+
+            if (gap >= 0.0 && windows[i].first > 2.0 * gap)
+                found.push_back ((int) i);
+        }
+
+        return found;
+    };
+
+    // A voice has harmonics: three of them, or this is a lone tone or a chance repeat in noise.
+    const auto chosen = refined (peaks.front());
+
+    if (harmonicsOf (chosen.frequency).size() >= 3)
+        return chosen;
+
+    // The shortest peak can be a harmonic's own period where the fundamental is weak or under the
+    // correlation's band: a low voice with a strong formant repeats at a third of its period nearly
+    // as well as at the period, and the harmonics of a third of the period are not its own. The
+    // longer peaks, up to four times that lag, are tried in turn, each asked for more (five
+    // harmonics, one of them among the first three) so a chance repeat in noise gains nothing from
+    // the second look.
+    for (size_t i = 1; i < peaks.size() && peaks[i] <= 4 * peaks.front(); ++i)
+    {
+        if (repeatsAtHalf (peaks[i]))
             continue;
 
-        auto here = 0.0, gap = 0.0;
+        const auto candidate = refined (peaks[i]);
+        const auto found = harmonicsOf (candidate.frequency);
 
-        for (int k = from; k <= to; ++k)
-            here += power[(size_t) k];
-
-        for (int k = lastBin + 1; k < from; ++k)
-            gap += power[(size_t) k];
-
-        windows.emplace_back (here / (to - from + 1), from > lastBin + 1 ? gap / (from - lastBin - 1) : -1.0);
-        lastBin = to;
+        if (found.size() >= 5 && found.front() < 3)
+            return candidate;
     }
 
-    auto found = 0;
-
-    for (size_t i = 0; i < windows.size(); ++i)
-    {
-        // Over both the gaps either side (the one before, and the one before the next), so a
-        // spectrum falling through them, or a hump of narrow noise, is not a peak.
-        const auto before = windows[i].second, after = i + 1 < windows.size() ? windows[i + 1].second : -1.0;
-        const auto gap = juce::jmax (before, after);
-
-        if (gap >= 0.0 && windows[i].first > 2.0 * gap)
-            ++found;
-    }
-
-    if (found < 3)
-        return {};
-
-    return { frequency, voicing };
+    return {};
 }
 
 AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, Settings settings,
