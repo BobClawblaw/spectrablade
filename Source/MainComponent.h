@@ -35,6 +35,7 @@
 #include "SpectralRecovery.h"
 #include "Rebalance.h"
 #include "Ambience.h"
+#include "DialogueContour.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -298,6 +299,9 @@ private:
     std::optional<Ambience::Print> ambiencePrint;
     int ambienceCaptures = 0;
     Ambience::Settings ambienceSettings;
+    DialogueContour::Settings contourSettings;
+    void showDialogueContour();
+    void reshapeContour (DialogueContour::Settings);
     void captureAmbience();
     void showAmbienceMatch();
     void showRebalance();

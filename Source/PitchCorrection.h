@@ -128,6 +128,12 @@ namespace PitchCorrection
     AudioDocument::Snapshot moveNotes (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Track&,
                                        const std::vector<Note>&, const std::function<bool (float)>& progress = {});
 
+    /** Moves the pitch over [start, end) by the shift given for each frame of the track (in cents;
+        frames without a pitch are left), the track from analyse over the same range. nullptr for an
+        empty range, a shift list of another length, or when cancelled. */
+    AudioDocument::Snapshot shiftBy (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate, const Track&,
+                                     std::vector<double> shiftCents, const std::function<bool (float)>& progress = {});
+
     /** Moves the pitch over [start, end) to the scale, easing from the audio as it was over 10 ms at
         the edges of a range that doesn't reach the file's. nullptr for an empty range, invalid
         settings, or when cancelled. */

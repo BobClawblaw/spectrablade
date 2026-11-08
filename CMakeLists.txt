@@ -164,6 +164,7 @@ target_sources(SpectraBlade PRIVATE
     Source/SpectralRecovery.cpp
     Source/Rebalance.cpp
     Source/Ambience.cpp
+    Source/DialogueContour.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp
@@ -278,6 +279,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/SpectralRecoveryTests.cpp
     Tests/RebalanceTests.cpp
     Tests/AmbienceTests.cpp
+    Tests/DialogueContourTests.cpp
     Tests/ModulationTests.cpp
     Tests/ReverbTests.cpp
     Tests/ConvolverTests.cpp
@@ -386,6 +388,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/SpectralRecovery.cpp
     Source/Rebalance.cpp
     Source/Ambience.cpp
+    Source/DialogueContour.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp

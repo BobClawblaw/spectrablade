@@ -587,6 +587,12 @@ std::vector<double> shiftsFor (const Track& track, const std::vector<Note>& note
     return out;
 }
 
+AudioDocument::Snapshot shiftBy (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate, const Track& track,
+                                 std::vector<double> shiftCents, const std::function<bool (float)>& progress)
+{
+    return render (snapshot, start, end, sampleRate, track, std::move (shiftCents), progress);
+}
+
 AudioDocument::Snapshot moveNotes (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate, const Track& track,
                                    const std::vector<Note>& notes, const std::function<bool (float)>& progress)
 {

@@ -53,6 +53,7 @@
 #include "SpectralRecoveryTests.h"
 #include "RebalanceTests.h"
 #include "AmbienceTests.h"
+#include "DialogueContourTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -593,6 +594,7 @@ int main (int argc, char* argv[])
         runSpectralRecoveryTests();
         runRebalanceTests();
         runAmbienceTests();
+        runDialogueContourTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

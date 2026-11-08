@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdAmbienceMatch)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdDialogueContour)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdDialogueContour:
+            info.setInfo ("Dialogue Contour...", "Reshape the pitch of a phrase's ending: a fall or a lift over its last moments", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
         case cmdCaptureAmbience: info.setInfo ("Capture Room Tone", "Learn the room tone from a selection of it alone, to lay under other parts", "Effects", 0); break;
         case cmdAmbienceMatch:
             info.setInfo ("Ambience Match...", "Lay the captured room tone under the selection", "Effects", 0);
@@ -2085,6 +2089,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSpectralRecovery: showSpectralRecovery(); break;
         case cmdRebalance:  showRebalance(); break;
         case cmdCaptureAmbience: captureAmbience(); break;
+        case cmdDialogueContour: showDialogueContour(); break;
         case cmdAmbienceMatch: showAmbienceMatch(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
@@ -2628,7 +2633,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Saturation", { cmdExciter });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
-            group ("Time and Pitch", { cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
+            group ("Time and Pitch", { cmdDialogueContour, 0,  cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
             group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdMultibandWidth, cmdCentreChannel, cmdPhaseCorrection, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
                                             cmdMixToMono, cmdMakeStereo, 0, cmdInvert, cmdInvertLeft, cmdInvertRight });
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
@@ -7994,6 +7999,69 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::showDialogueContour()
+{
+    const auto& s = contourSettings;
+    const auto toSettings = [] (const EffectValues& v) { return DialogueContour::Settings { (float) v.at ("semitones"), (float) v.at ("ending"), (float) v.at ("curve") }; };
+
+    showEffectDialog ("Dialogue Contour",
+                      "The pitch of a phrase's ending reshaped: over the last stretch of pitched sound before the end of the selection, as long as "
+                      "the ending asked for, the pitch is moved by a ramp from nothing at the ending's start to the full move at its end, so a line "
+                      "that trails up can be made to land, or a flat ending given a lift. The curve bends the ramp: most of the move early (under 0) "
+                      "or late (over 0). Everything before the ending is left as it is.",
+                      { { "semitones", "Move (semitones)", s.semitones, 1, {}, -12, 12, 0.5 }, { "ending", "Ending (s)", s.endingSeconds, 2, {}, 0.1, 1.5, 0.05 },
+                        { "curve", "Curve", s.curve, 2, {}, -1, 1, 0.1 } },
+                      "spectrablade:dialogue-contour", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return DialogueContour::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          contourSettings = toSettings (v);
+                          reshapeContour (contourSettings);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "contour " + juce::String (settings.semitones, 3) + " " + juce::String (settings.endingSeconds, 3) + " " + juce::String (settings.curve, 3),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  auto result = DialogueContour::apply (*audio, start, end, sampleRate, settings, progress);
+                                  return EffectPreview::Rendered { result, start, end, result == nullptr ? juce::String ("No pitched sound found to reshape.") : juce::String() };
+                              } });
+                      },
+                      "Reshape");
+}
+
+void MainComponent::reshapeContour (DialogueContour::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Reshaping the ending...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = DialogueContour::apply (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Dialogue Contour", "The audio changed during processing, so the result was discarded.");
+            else if (*result == nullptr)
+                showError ("Dialogue Contour", "No pitched sound was found in the selection to reshape.");
+            else
+                applyEdit (*result, "Dialogue Contour", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::captureAmbience()

@@ -165,6 +165,7 @@ What they check:
 - Spectral recovery: the cutoff of a brick-walled buzz found (and none for full audio), the missing band rebuilt within 6 dB of the original's profile, the band below untouched, refused settings, cancelling.
 - Rebalance: every stem at 0 dB giving the mix back, each stem turned down taking its own part of a synthetic mix down and leaving the others, refused settings, cancelling.
 - Ambience match: room tone laid under silence matching the print's shape and level, eased at the edge, the same twice, filling only the quiet against adding regardless, refused prints and settings.
+- Dialogue contour: a fall and a rise over a phrase's ending measured before, in the middle of and at the end of it, zero shifts before the ending, refused settings, cancelling.
 - EQ points: dragging a band's point sets its frequency and puts the curve under the mouse; the wheel sets the Q.
 - Compressor and limiter: the compressor's curve, settling and timing on steps; no sample over the limiter's ceiling, with the audio before it kept.
 - True-peak limiting and Match Loudness through it: a sine's crests between samples held at the ceiling; peaky audio brought to its target under the ceiling.
