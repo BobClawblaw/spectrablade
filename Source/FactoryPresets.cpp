@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:spectral-recovery"] = {
+            { "Found cutoff, natural", { { "auto", 1.0 }, { "cutoff", 6000.0 }, { "level", -3.0 }, { "highest", 16000.0 } } },
+            { "Found cutoff, brighter", { { "auto", 1.0 }, { "cutoff", 6000.0 }, { "level", 0.0 }, { "highest", 18000.0 } } },
+            { "Phone line (3.4 kHz)", { { "auto", 0.0 }, { "cutoff", 3400.0 }, { "level", -3.0 }, { "highest", 12000.0 } } },
+            { "Low-rate MP3 (11 kHz)", { { "auto", 0.0 }, { "cutoff", 11000.0 }, { "level", -3.0 }, { "highest", 18000.0 } } } };
         t["spectrablade:wow-flutter"] = {
             { "Wow only (under 4 Hz)", { { "fastest", 4.0 }, { "amount", 100.0 } } },
             { "Wow and flutter", { { "fastest", 10.0 }, { "amount", 100.0 } } },

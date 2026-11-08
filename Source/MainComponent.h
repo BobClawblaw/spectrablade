@@ -32,6 +32,7 @@
 #include "Breath.h"
 #include "Spill.h"
 #include "WowFlutter.h"
+#include "SpectralRecovery.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -290,6 +291,9 @@ private:
     Breath::Settings breathSettings;
     Spill::Settings spillSettings;
     WowFlutter::Settings wowSettings;
+    SpectralRecovery::Settings recoverySettings;
+    void showSpectralRecovery();
+    void recoverSpectrum (SpectralRecovery::Settings);
     void showWowFlutter();
     void correctWowFlutter (WowFlutter::Settings);
     void showSpill();

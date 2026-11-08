@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdWowFlutter)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdSpectralRecovery)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1335,6 +1335,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
             break;
+        case cmdSpectralRecovery:
+            info.setInfo ("Spectral Recovery...", "Rebuild the highs missing from band-limited audio from the band that is there", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
         case cmdWowFlutter:
             info.setInfo ("Wow and Flutter...", "Find the pitch drift of a tape or a record and take it out", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
@@ -2069,6 +2073,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdBreathControl: showBreathControl(); break;
         case cmdSpill:      showSpill(); break;
         case cmdWowFlutter: showWowFlutter(); break;
+        case cmdSpectralRecovery: showSpectralRecovery(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2617,7 +2622,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
-            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
@@ -7977,6 +7982,75 @@ void MainComponent::showMouthDeClick (bool crackle)
                               } });
                       },
                       "Repair");
+}
+
+void MainComponent::showSpectralRecovery()
+{
+    const auto& s = recoverySettings;
+    const auto rate = engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        return SpectralRecovery::Settings { juce::roundToInt (v.at ("auto")) == 1 ? 0.0 : v.at ("cutoff"), v.at ("level"), v.at ("highest") };
+    };
+
+    showEffectDialog ("Spectral Recovery",
+                      "The highs missing from band-limited audio (a phone line, a low-rate MP3, an old transfer) rebuilt from the band that is there: "
+                      "the octave below the cutoff copied up an octave (a partial's harmonics where they would lie), continuing the spectrum's slope "
+                      "just below the cutoff, then again an octave higher, up to the top asked for. The cutoff is found from the audio or given. "
+                      "Nothing below the cutoff changes. Rebuilt highs are a likeness, not the original.",
+                      { { "auto", "Cutoff", juce::exactlyEqual (s.cutoffHz, 0.0) ? 1.0 : 0.0, 0, { "As given below", "Found from the audio" } },
+                        { "cutoff", "Cutoff if given (Hz)", s.cutoffHz > 0.0 ? s.cutoffHz : 6000.0, 0, {}, 1000, 16000, 10 },
+                        { "level", "Level (dB against the continued slope)", s.levelDb, 1, {}, -24, 6, 0.5 },
+                        { "highest", "Rebuild up to (Hz)", s.highestHz, 0, {}, 2000, 20000, 100 } },
+                      "spectrablade:spectral-recovery", PreviewOwner::none,
+                      [toSettings, rate] (const EffectValues& v) { return SpectralRecovery::isValid (toSettings (v), rate); }, "A setting is out of range (the top must be under half the sample rate).", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          recoverySettings = toSettings (v);
+                          recoverSpectrum (recoverySettings);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto settings = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "recover " + juce::String (settings.cutoffHz, 1) + " " + juce::String (settings.levelDb, 3) + " " + juce::String (settings.highestHz, 1),
+                              [settings] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  auto result = SpectralRecovery::recover (*audio, start, end, sampleRate, settings, progress);
+                                  return EffectPreview::Rendered { result, start, end, result == nullptr ? juce::String ("No cutoff found: the audio reaches the top.") : juce::String() };
+                              } });
+                      },
+                      "Rebuild");
+}
+
+void MainComponent::recoverSpectrum (SpectralRecovery::Settings s)
+{
+    auto& doc = engine.document;
+
+    if (backgroundJob != nullptr)
+        return;
+
+    auto result = std::make_shared<AudioDocument::Snapshot>();
+    const auto snapshot = doc.getSnapshot();
+    const auto rate = doc.getSampleRate();
+    const auto range = selectionOrAll();
+    const auto version = doc.getVersion();
+
+    backgroundJob = std::make_unique<BackgroundJob> (*this, "Rebuilding the highs...",
+        [result, snapshot, rate, range, s] (const std::function<bool (float)>& progress)
+        {
+            *result = SpectralRecovery::recover (*snapshot, range.getStart(), range.getEnd(), rate, s, progress);
+            return *result != nullptr;
+        },
+        [this, result, version]
+        {
+            if (engine.document.getVersion() != version)
+                showError ("Spectral Recovery", "The audio changed during processing, so the result was discarded.");
+            else if (*result == nullptr)
+                showError ("Spectral Recovery", "No cutoff was found: the audio reaches the top, or the selection is shorter than a window. Give a cutoff to rebuild above anyway.");
+            else
+                applyEdit (*result, "Spectral Recovery", waveform.getSelection());
+        });
+    backgroundJob->launchThread();
 }
 
 void MainComponent::showWowFlutter()

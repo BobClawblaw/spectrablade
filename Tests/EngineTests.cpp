@@ -50,6 +50,7 @@
 #include "BreathTests.h"
 #include "SpillTests.h"
 #include "WowFlutterTests.h"
+#include "SpectralRecoveryTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -587,6 +588,7 @@ int main (int argc, char* argv[])
         runBreathTests();
         runSpillTests();
         runWowFlutterTests();
+        runSpectralRecoveryTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();
