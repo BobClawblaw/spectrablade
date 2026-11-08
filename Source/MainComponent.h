@@ -28,6 +28,7 @@
 #include "Dither.h"
 #include "DialogueIsolation.h"
 #include "AdaptiveDenoise.h"
+#include "Plosive.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -282,6 +283,9 @@ private:
     void showDither();
     DialogueIsolation::Settings dialogueSettings;
     AdaptiveDenoise::Settings adaptiveSettings;
+    Plosive::Settings plosiveSettings;
+    void showMouthDeClick (bool crackle);
+    void showDePlosive();
     void showAdaptiveDenoise();
     void reduceNoiseAdaptively (AdaptiveDenoise::Settings);
     void showDialogueIsolation();

@@ -201,6 +201,18 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:mouth-declick"] = {
+            { "Standard", { { "threshold", 10.0 }, { "length", 8.0 } } },
+            { "Faint clicks", { { "threshold", 7.0 }, { "length", 8.0 } } },
+            { "Only the obvious", { { "threshold", 14.0 }, { "length", 6.0 } } } };
+        t["spectrablade:de-crackle"] = {
+            { "Standard", { { "threshold", 8.0 }, { "length", 0.8 } } },
+            { "Fine crackle", { { "threshold", 6.0 }, { "length", 0.5 } } },
+            { "Heavy crackle", { { "threshold", 7.0 }, { "length", 1.5 } } } };
+        t["spectrablade:de-plosive"] = {
+            { "Standard", { { "corner", 150.0 }, { "threshold", 12.0 }, { "reduction", 18.0 } } },
+            { "Gentle", { { "corner", 120.0 }, { "threshold", 15.0 }, { "reduction", 10.0 } } },
+            { "Strong", { { "corner", 200.0 }, { "threshold", 9.0 }, { "reduction", 30.0 } } } };
         t["spectrablade:adaptive-noise-reduction"] = {
             { "Gentle", { { "reduction", 6.0 }, { "threshold", 3.0 }, { "tracking", 1.5 } } },
             { "Standard", { { "reduction", 12.0 }, { "threshold", 3.0 }, { "tracking", 1.5 } } },

@@ -17,6 +17,7 @@
 #include "../Source/Maximizer.h"
 #include "../Source/TransientShaper.h"
 #include "../Source/Dither.h"
+#include "../Source/Plosive.h"
 #include "../Source/OfflineRender.h"
 #include "../Source/Reverb.h"
 #include "../Source/SampleRateConverter.h"
@@ -171,6 +172,8 @@ void runSequencesTests (AudioEngine& engine)
               TransientShaper::apply (s, a, b, rate, shaper) },
             { { "dither", { { "bits", 0.0 }, { "shaping", 2.0 } }, nullptr },
               Dither::apply (s, a, b, Dither::Settings { 16, Dither::Shaping::strong }) },
+            { { "deplosive", { { "corner", 150.0 }, { "threshold", 12.0 }, { "reduction", 18.0 } }, nullptr },
+              Plosive::apply (s, a, b, rate, Plosive::Settings { 150.0, 12.0, 18.0 }) },
             { { "chorus", { { "rate", 0.8 }, { "delay", 12.0 }, { "depth", 4.0 }, { "feedback", 0.1 }, { "mix", 40.0 }, { "spread", 30.0 } }, nullptr },
               Modulation::sweptDelay (s, a, b, rate, chorus) },
             { { "phaser", { { "rate", 0.5 }, { "low", 300.0 }, { "high", 3000.0 }, { "stages", 2.0 }, { "feedback", 0.3 }, { "mix", 50.0 }, { "spread", 20.0 } }, nullptr },
@@ -254,8 +257,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 40,
-               "sequences: each of the 40 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 41,
+               "sequences: each of the 41 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

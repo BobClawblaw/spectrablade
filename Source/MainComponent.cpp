@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdDePlosive)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,15 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdMouthDeClick:
+            info.setInfo ("Mouth De-click...", "Find and rebuild the small clicks of lips and tongue in speech", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
+        case cmdDeCrackle:
+            info.setInfo ("De-crackle...", "Find and rebuild dense tiny clicks: crackle", "Effects", 0);
+            info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
+            break;
+        case cmdDePlosive: info.setInfo ("De-plosive...", "Lower the thumps a p or a b puts into the microphone", "Effects", 0); break;
         case cmdAdaptiveDenoise:
             info.setInfo ("Adaptive Noise Reduction...", "Reduce noise with no noise print, following the noise as it changes", "Effects", 0);
             info.setActive (engine.document.hasAudio() && ! multitrackMode && backgroundJob == nullptr);
@@ -2045,6 +2054,9 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDither:     showDither(); break;
         case cmdDialogueIsolation: showDialogueIsolation(); break;
         case cmdAdaptiveDenoise: showAdaptiveDenoise(); break;
+        case cmdMouthDeClick: showMouthDeClick (false); break;
+        case cmdDeCrackle:  showMouthDeClick (true); break;
+        case cmdDePlosive:  showDePlosive(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2593,7 +2605,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
             group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
             menu.addSeparator();
-            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
+            group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
             add ({ 0, cmdApplyRack, 0, cmdRecordSequence, cmdPlaySequence });
             break;
@@ -7908,6 +7920,74 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showMouthDeClick (bool crackle)
+{
+    // Click and Pop Repair with settings for the job: mouth clicks are faint and up to 8 ms long,
+    // crackle fainter still and under a millisecond; remembered on their own.
+    auto* settings = appProperties.getUserSettings();
+    const juce::String prefix = crackle ? "crackle" : "mouthClick";
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        ClickRepair::Settings s;
+        s.thresholdDb = (float) v.at ("threshold");
+        s.maxLengthMs = (float) v.at ("length");
+        return s;
+    };
+
+    showEffectDialog (crackle ? "De-crackle" : "Mouth De-click",
+                      crackle ? juce::String ("Finds dense tiny clicks (crackle from a worn record, a dirty contact, a dry mouth) and rebuilds those samples "
+                                              "from the audio around them, as Click and Pop Repair does with a lower threshold and a shorter longest click. "
+                                              "Lower the threshold to catch fainter crackle; raise it if the sound's own detail is being taken for it.")
+                              : juce::String ("Finds the small clicks lips and tongue make in speech and rebuilds those samples from the audio around them, "
+                                              "as Click and Pop Repair does with a lower threshold and a longer longest click. Lower the threshold to "
+                                              "catch fainter clicks; raise it if consonants are being taken for clicks."),
+                      { { "threshold", "Threshold (dB above the background)", settings->getDoubleValue (prefix + "Threshold", crackle ? 8.0 : 10.0), 1, {}, 3.0, 60.0, 0.5 },
+                        { "length", "Longest click (ms)", settings->getDoubleValue (prefix + "MaxLength", crackle ? 0.8 : 8.0), 1, {}, 0.1, 20.0, 0.1 } },
+                      crackle ? "spectrablade:de-crackle" : "spectrablade:mouth-declick", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, settings, prefix, toSettings] (const EffectValues& v)
+                      {
+                          const auto s = toSettings (v);
+                          settings->setValue (prefix + "Threshold", s.thresholdDb);
+                          settings->setValue (prefix + "MaxLength", s.maxLengthMs);
+                          repairClicks (s);
+                      },
+                      [toSettings] (const EffectValues& v)
+                      {
+                          const auto s = toSettings (v);
+                          return std::optional<EffectPreview::Request> ({ "clicks " + juce::String (s.thresholdDb, 3) + " " + juce::String (s.maxLengthMs, 3),
+                              [s] (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>& progress)
+                              {
+                                  const auto r = ClickRepair::repair (*audio, start, end, sampleRate, s, progress);
+                                  return EffectPreview::Rendered { r.has_value() ? r->snapshot : nullptr, start, end,
+                                                                   r.has_value() ? juce::String() : juce::String ("Stopped.") };
+                              } });
+                      },
+                      "Repair");
+}
+
+void MainComponent::showDePlosive()
+{
+    const auto& s = plosiveSettings;
+    const auto rate = engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v) { return Plosive::Settings { v.at ("corner"), v.at ("threshold"), v.at ("reduction") }; };
+
+    showEffectDialog ("De-plosive",
+                      "The thumps a p or a b puts into a microphone (a burst of air, mostly below the corner, a few tens of milliseconds long) found "
+                      "and lowered, the rest left alone. Where the lows stand over their own typical level by the threshold while the sound above "
+                      "the corner does not rise with them, the lows are lowered by the reduction for as long as it lasts. A steady bass, however "
+                      "loud, is left as it is.",
+                      { { "corner", "Corner (Hz)", s.cornerHz, 0, {}, 60, 400, 1 }, { "threshold", "Threshold (dB over the typical lows)", s.thresholdDb, 1, {}, 3, 30, 0.5 },
+                        { "reduction", "Reduction (dB)", s.reductionDb, 1, {}, 0, 40, 0.5 } },
+                      "spectrablade:de-plosive", PreviewOwner::none,
+                      [toSettings, rate] (const EffectValues& v) { return Plosive::isValid (toSettings (v), rate); }, "A setting is out of range.", nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          plosiveSettings = toSettings (v);
+                          runStep ({ "deplosive", v, nullptr });
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "deplosive", v, nullptr }); });
 }
 
 void MainComponent::showAdaptiveDenoise()
