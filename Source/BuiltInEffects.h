@@ -9,6 +9,7 @@
 #include "Multiband.h"
 #include "ParametricEq.h"
 #include "DynamicEq.h"
+#include "Exciter.h"
 
 /** SpectraBlade's own effects, offered beside scanned plug-ins. They live in a plug-in format of
     their own ("SpectraBlade"), so racks, track chains, sessions and offline renders create,
@@ -31,6 +32,7 @@ namespace BuiltInEffects
     constexpr const char* deEsserId = "spectrablade:de-esser";
     constexpr const char* dynamicEqId = "spectrablade:dynamic-eq";
     constexpr const char* multibandWidthId = "spectrablade:multiband-width";
+    constexpr const char* exciterId = "spectrablade:exciter";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -659,6 +661,39 @@ namespace BuiltInEffects
         int channelsPrepared = 0;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MultibandWidthProcessor)
+    };
+
+    /** The exciter, live: the crossovers, each band's drive, curve and mix, and the output as
+        parameters (over Effects > Exciter's ranges); crossovers set too close or too high are moved
+        apart as the offline effect would refuse them. It runs a frame at a time with Exciter::Core,
+        so over a whole file from its start it gives Exciter::apply's samples, late by the core's
+        latency, which it reports. */
+    class ExciterProcessor final : public BuiltInEffect
+    {
+    public:
+        ExciterProcessor();
+
+        Exciter::Settings getSettings() const;            // as played: the crossovers moved apart if need be
+        Exciter::Settings getParameterSettings() const;
+        void setSettings (const Exciter::Settings&);
+
+        juce::AudioProcessorEditor* createEditor() override;
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    private:
+        juce::AudioParameterFloat *lowCrossover = nullptr, *highCrossover = nullptr, *output = nullptr;
+        struct BandParameters { juce::AudioParameterFloat *drive, *mix; juce::AudioParameterChoice* curve; };
+        std::array<BandParameters, 3> bands {};
+        std::vector<float> valuesOfParameters() const;
+
+        Exciter::Core core;
+        std::vector<float> applied;
+        double rate = 48000.0;
+        int channelsPrepared = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ExciterProcessor)
     };
 
     /** The dynamic EQ, live: each band's on, shape, mode, frequency, Q, gain, threshold, ratio, attack

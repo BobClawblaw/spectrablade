@@ -148,6 +148,8 @@ target_sources(SpectraBlade PRIVATE
     Source/ParametricEq.cpp
     Source/EqDrawing.cpp
     Source/DynamicEq.cpp
+    Source/Oversampling.cpp
+    Source/Exciter.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp
@@ -247,6 +249,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/DynamicsTests.cpp
     Tests/MultibandTests.cpp
     Tests/DynamicEqTests.cpp
+    Tests/ExciterTests.cpp
     Tests/ModulationTests.cpp
     Tests/ReverbTests.cpp
     Tests/ConvolverTests.cpp
@@ -339,6 +342,8 @@ target_sources(SpectraBladeTests PRIVATE
     Source/ParametricEq.cpp
     Source/EqDrawing.cpp
     Source/DynamicEq.cpp
+    Source/Oversampling.cpp
+    Source/Exciter.cpp
     Source/NoiseReduction.cpp
     Source/Dereverb.cpp
     Source/CentreChannel.cpp

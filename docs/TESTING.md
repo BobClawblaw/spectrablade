@@ -168,6 +168,7 @@ What they check:
 - Convolution reverb: against direct convolution, a delayed click, the impulse's scaling and rate, the tail; live bit for bit a block late, the impulse kept in its state.
 - Multiband compressor and de-esser: the bands adding back up flat, each band acting only on its own frequencies, the de-esser's reduction on the band and on the whole sound and what Listen plays, refused settings; live bit for bit with offline, state and presets, the multiband window following its parameters, the windows' reduction readings.
 - Multiband stereo width: each band's side scaled on its own (the low at 0 % gone, the high at 200 % doubled), the mid untouched, every band at 100 % flat, a mono sound bit for bit, refused settings and spacing, the live effect bit for bit with offline in uneven blocks, state and presets.
+- Exciter: the oversampler's latency, DC, passband and stopband; the curves' slope and bounds and each one's harmonics (Tube even, Tape odd, Transistor harder); aliasing of a driven 15 kHz tone against shaping at the rate; mix 0 flat; the live effect bit for bit with offline late by its latency, state, presets, refused settings.
 - Empty editor: the recent files listed, a click opening one.
 - Opening from Finder: the types offered all read, the files picked out of an open request.
 - Transport bar: tooltips following the keys; the selection panel's cells.

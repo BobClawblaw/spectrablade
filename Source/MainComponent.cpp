@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdExciter:    info.setInfo ("Exciter...", "Drive the lows, the middle and the highs each into a saturation curve of its own: tube, tape or transistor", "Effects", 0); break;
         case cmdMultibandWidth: info.setInfo ("Multiband Stereo Width...", "Narrow or widen the lows, the middle and the highs each on its own: a mono low end, wider highs", "Effects", 0); break;
         case cmdDynamicEq:  info.setInfo ("Dynamic EQ...", "EQ bands that cut or boost only while their part of the sound is over (or under) a threshold", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -2019,6 +2020,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdDeEsser:    showDeEsser(); break;
         case cmdDynamicEq:  showDynamicEq(); break;
         case cmdMultibandWidth: showMultibandWidth(); break;
+        case cmdExciter:    showExciter(); break;
         case cmdChorus:     showSweptDelay (false); break;
         case cmdFlanger:    showSweptDelay (true); break;
         case cmdPhaser:     showPhaser(); break;
@@ -2554,6 +2556,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
             group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31 });
             group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMultiband, cmdDeEsser, cmdNoiseGate });
+            group ("Saturation", { cmdExciter });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
             group ("Time and Pitch", { cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
@@ -7877,6 +7880,64 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showExciter()
+{
+    const auto& s = exciterSettings;
+    const auto rate = engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        Exciter::Settings e;
+        e.lowCrossover = v.at ("lowCrossover");
+        e.highCrossover = v.at ("highCrossover");
+        e.outputDb = v.at ("output");
+        const std::array<const char*, 3> ids { "low", "mid", "high" };
+
+        for (size_t b = 0; b < 3; ++b)
+            e.bands[b] = { v.at (ids[b] + juce::String ("Drive")), (Exciter::Curve) juce::jlimit (0, 2, juce::roundToInt (v.at (ids[b] + juce::String ("Curve")))),
+                           v.at (ids[b] + juce::String ("Mix")) };
+
+        return e;
+    };
+    std::vector<EffectField> fields { { "lowCrossover", "Low crossover (Hz)", s.lowCrossover, 0, {}, 20, 10000, 1 },
+                                      { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 } };
+    const std::array<const char*, 3> ids { "low", "mid", "high" }, names { "Lows", "Middle", "Highs" };
+
+    for (size_t b = 0; b < 3; ++b)
+    {
+        const juce::String id (ids[b]), name (names[b]);
+        fields.push_back ({ id + "Drive", name + ": drive (dB)", s.bands[b].driveDb, 1, {}, 0, 36, 0.5 });
+        fields.push_back ({ id + "Curve", name + ": curve", (double) (int) s.bands[b].curve, 0, Exciter::curveNames() });
+        fields.push_back ({ id + "Mix", name + ": mix (%)", s.bands[b].mixPercent, 0, {}, 0, 100, 1 });
+    }
+
+    fields.push_back ({ "output", "Output (dB)", s.outputDb, 1, {}, -24, 24, 0.5 });
+
+    showEffectDialog ("Exciter",
+                      "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), each band driven into a saturation "
+                      "curve of its own and mixed back with the band as it was. Tube rounds the halves unevenly (even and odd harmonics), Tape rounds "
+                      "them alike (odd harmonics), Transistor clips harder. The drive sets how far the band goes into the curve; the level stays "
+                      "about where it was. The shaping runs at four times the rate, so what it makes above the audible band is filtered off rather "
+                      "than folded back. The high crossover stays at least an octave above the low one.",
+                      fields, BuiltInEffects::exciterId, PreviewOwner::exciter,
+                      [toSettings, rate] (const EffectValues& v) { return Exciter::isValid (toSettings (v), rate); },
+                      "A setting is out of range: crossovers from 20 Hz to 20 kHz (below half the rate), the high one at least an octave above the low; drive 0 to 36 dB, mix 0 to 100 %, output within 24 dB.",
+                      [] (const EffectValues&) { return std::make_unique<BuiltInEffects::ExciterProcessor>(); },
+                      [toSettings] (juce::AudioPluginInstance& p, const EffectValues& v)
+                      {
+                          auto* live = dynamic_cast<BuiltInEffects::ExciterProcessor*> (&p);
+
+                          if (live != nullptr)
+                              live->setSettings (toSettings (v));
+
+                          return live != nullptr;
+                      },
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          exciterSettings = toSettings (v);
+                          runStep ({ "exciter", v, nullptr });
+                      });
 }
 
 void MainComponent::showMultibandWidth()

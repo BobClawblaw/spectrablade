@@ -111,6 +111,20 @@ namespace
         return v;
     }
 
+    /** An exciter preset: the crossovers, then each band's drive, curve (0 tube, 1 tape, 2 transistor) and mix, then the output. */
+    Values exciter (double lowCrossover, double highCrossover, const std::array<std::array<double, 3>, 3>& bands, double output)
+    {
+        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output } };
+        const std::array<const char*, 3> names { "low", "mid", "high" };
+        const std::array<const char*, 3> settings { "Drive", "Curve", "Mix" };
+
+        for (size_t b = 0; b < 3; ++b)
+            for (size_t s = 0; s < 3; ++s)
+                v[names[b] + juce::String (settings[s])] = bands[b][s];
+
+        return v;
+    }
+
     /** A multiband preset: the crossovers, then each band's threshold, ratio, attack, release and makeup, then the output. */
     Values multiband (double lowCrossover, double highCrossover, const std::array<std::array<double, 5>, 3>& bands, double output)
     {
@@ -172,6 +186,12 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:exciter"] = {
+            { "Warm lows", exciter (200, 3000, {{ { 9, 0, 60 }, { 0, 0, 0 }, { 0, 0, 0 } }}, 0) },
+            { "Tape glue", exciter (200, 3000, {{ { 6, 1, 50 }, { 6, 1, 50 }, { 6, 1, 50 } }}, 0) },
+            { "Air and presence", exciter (250, 4000, {{ { 0, 0, 0 }, { 4, 0, 30 }, { 10, 0, 50 } }}, 0) },
+            { "Vocal edge", exciter (200, 2500, {{ { 0, 0, 0 }, { 8, 2, 35 }, { 12, 0, 45 } }}, 0) },
+            { "Crunch", exciter (150, 2000, {{ { 12, 2, 70 }, { 18, 2, 80 }, { 12, 2, 60 } }}, -2) } };
         t["spectrablade:multiband-width"] = {
             { "Mono below 120 Hz", { { "lowCrossover", 120.0 }, { "highCrossover", 2000.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 100.0 } } },
             { "Tight low end, wide top", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 } } },

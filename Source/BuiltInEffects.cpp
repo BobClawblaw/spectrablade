@@ -48,6 +48,7 @@ namespace
     juce::PluginDescription deEsserDescription()        { return describe ("De-esser", "Dynamics", deEsserId, 0x53424445); }                 // "SBDE"
     juce::PluginDescription dynamicEqDescription()      { return describe ("Dynamic EQ", "EQ", dynamicEqId, 0x53424451); }                   // "SBDQ"
     juce::PluginDescription multibandWidthDescription() { return describe ("Multiband Stereo Width", "Spatial", multibandWidthId, 0x53424d57); }   // "SBMW"
+    juce::PluginDescription exciterDescription()        { return describe ("Exciter", "Distortion", exciterId, 0x53424558); }                     // "SBEX"
 
     juce::PluginDescription graphicEqDescription (int bands)
     {
@@ -127,6 +128,8 @@ namespace
                 effect = std::make_unique<DynamicEqProcessor>();
             else if (d.fileOrIdentifier == multibandWidthId)
                 effect = std::make_unique<MultibandWidthProcessor>();
+            else if (d.fileOrIdentifier == exciterId)
+                effect = std::make_unique<ExciterProcessor>();
 
             if (effect == nullptr)
             {
@@ -148,7 +151,7 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription() };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription(), exciterDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -1667,6 +1670,100 @@ void MultibandWidthProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
 }
 
 void MultibandWidthProcessor::reset()
+{
+    core.reset();
+}
+
+//==============================================================================
+ExciterProcessor::ExciterProcessor()
+    : BuiltInEffect (exciterDescription(), "SPECTRABLADE_EXCITER")
+{
+    const Exciter::Settings start;
+    const std::array<const char*, 3> ids { "low", "mid", "high" }, names { "Low", "Mid", "High" };
+    lowCrossover = addFloat ("lowCrossover", "Low Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.lowCrossover, "Hz");
+    highCrossover = addFloat ("highCrossover", "High Crossover", { 20.0f, 20000.0f, 0.0f, 0.25f }, (float) start.highCrossover, "Hz");
+
+    for (size_t b = 0; b < 3; ++b)
+    {
+        const juce::String id (ids[b]), name (names[b]);
+        bands[b].drive = addFloat (id + "Drive", name + " Drive", { 0.0f, 36.0f }, (float) start.bands[b].driveDb, "dB");
+        bands[b].curve = addChoice (id + "Curve", name + " Curve", Exciter::curveNames(), (int) start.bands[b].curve);
+        bands[b].mix = addFloat (id + "Mix", name + " Mix", { 0.0f, 100.0f }, (float) start.bands[b].mixPercent, "%");
+    }
+
+    output = addFloat ("output", "Output", { -24.0f, 24.0f }, (float) start.outputDb, "dB");
+}
+
+std::vector<float> ExciterProcessor::valuesOfParameters() const
+{
+    std::vector<float> v { lowCrossover->get(), highCrossover->get(), output->get() };
+
+    for (auto& b : bands)
+        v.insert (v.end(), { b.drive->get(), (float) b.curve->getIndex(), b.mix->get() });
+
+    return v;
+}
+
+Exciter::Settings ExciterProcessor::getParameterSettings() const
+{
+    Exciter::Settings s;
+    s.lowCrossover = lowCrossover->get();
+    s.highCrossover = highCrossover->get();
+    s.outputDb = output->get();
+
+    for (size_t b = 0; b < 3; ++b)
+        s.bands[b] = { (double) bands[b].drive->get(), (Exciter::Curve) bands[b].curve->getIndex(), (double) bands[b].mix->get() };
+
+    return s;
+}
+
+Exciter::Settings ExciterProcessor::getSettings() const
+{
+    return Exciter::spaced (getParameterSettings(), rate);
+}
+
+void ExciterProcessor::setSettings (const Exciter::Settings& s)
+{
+    setExactly (*lowCrossover, (float) s.lowCrossover);
+    setExactly (*highCrossover, (float) s.highCrossover);
+    setExactly (*output, (float) s.outputDb);
+
+    for (size_t b = 0; b < 3; ++b)
+    {
+        setExactly (*bands[b].drive, (float) s.bands[b].driveDb);
+        *bands[b].curve = (int) s.bands[b].curve;
+        setExactly (*bands[b].mix, (float) s.bands[b].mixPercent);
+    }
+}
+
+juce::AudioProcessorEditor* ExciterProcessor::createEditor()
+{
+    return new PresetsAndParameters (*this);
+}
+
+void ExciterProcessor::prepareToPlay (double sampleRate, int)
+{
+    rate = sampleRate;
+    channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
+    core.prepare (channelsPrepared, rate);
+    applied = valuesOfParameters();
+    core.set (getSettings());
+    core.reset();
+    setLatencySamples (Exciter::Core::latency);
+}
+
+void ExciterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+{
+    if (auto now = valuesOfParameters(); now != applied)
+    {
+        applied = std::move (now);
+        core.set (getSettings());
+    }
+
+    core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
+}
+
+void ExciterProcessor::reset()
 {
     core.reset();
 }

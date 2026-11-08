@@ -310,6 +310,7 @@ namespace
         if (key == deEsserId)       return std::make_unique<DeEsserProcessor>();
         if (key == dynamicEqId)     return std::make_unique<DynamicEqProcessor>();
         if (key == multibandWidthId) return std::make_unique<MultibandWidthProcessor>();
+        if (key == exciterId)       return std::make_unique<ExciterProcessor>();
         return nullptr;
     }
 

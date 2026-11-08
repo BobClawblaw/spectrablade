@@ -12,6 +12,7 @@
 #include "Loudness.h"
 #include "Modulation.h"
 #include "Multiband.h"
+#include "Exciter.h"
 #include "OfflineRender.h"
 #include "Reverb.h"
 #include "SampleRateConverter.h"
@@ -56,6 +57,7 @@ namespace
             { "balance", "Balance", { "pan" } },
             { "stereoWidth", "Stereo Width", { "width" } },
             { "multibandWidth", "Multiband Stereo Width", { "lowCrossover", "highCrossover", "low", "mid", "high" } },
+            { "exciter", "Exciter", { "lowCrossover", "highCrossover", "lowDrive", "lowCurve", "lowMix", "midDrive", "midCurve", "midMix", "highDrive", "highCurve", "highMix", "output" } },
             { "centre", "Centre Channel", { "keep", "low", "high", "reduction" } },
             { "phase", "Automatic Phase Correction", { "most", "turnOver" } },
             { "echo", "Echo", { "delay", "feedback" } },
@@ -101,6 +103,24 @@ namespace
     Multiband::Width widthOf (const Values& v)
     {
         return { get (v, "lowCrossover"), get (v, "highCrossover"), { get (v, "low"), get (v, "mid"), get (v, "high") } };
+    }
+
+    Exciter::Settings exciterOf (const Values& v)
+    {
+        Exciter::Settings s;
+        s.lowCrossover = get (v, "lowCrossover");
+        s.highCrossover = get (v, "highCrossover");
+        s.outputDb = get (v, "output");
+        const std::array<const char*, 3> ids { "low", "mid", "high" };
+
+        for (size_t b = 0; b < 3; ++b)
+        {
+            const juce::String id (ids[b]);
+            s.bands[b] = { get (v, (id + "Drive").toRawUTF8()), (Exciter::Curve) juce::jlimit (0, 2, juce::roundToInt (get (v, (id + "Curve").toRawUTF8()))),
+                           get (v, (id + "Mix").toRawUTF8()) };
+        }
+
+        return s;
     }
 
     Multiband::DeEsser deEsserOf (const Values& v)
@@ -265,6 +285,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "limiter" && ! Dynamics::isValid (limiterOf (v)))
         || (step.kind == "deEsser" && ! Multiband::isValid (deEsserOf (v), rate))
         || (step.kind == "multibandWidth" && ! Multiband::isValid (widthOf (v), rate))
+        || (step.kind == "exciter" && ! Exciter::isValid (exciterOf (v), rate))
         || ((step.kind == "chorus" || step.kind == "flanger") && ! Modulation::isValid (delayOf (v)))
         || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
         || (step.kind == "reverb" && ! RoomReverb::isValid (reverbOf (v)))
@@ -310,6 +331,7 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
     else if (k == "limiter")        out.snapshot = Dynamics::limit (s, start, end, rate, limiterOf (v));
     else if (k == "deEsser")        out.snapshot = Multiband::deEss (s, start, end, rate, deEsserOf (v));
     else if (k == "multibandWidth") out.snapshot = Multiband::widen (s, start, end, rate, widthOf (v));
+    else if (k == "exciter")        out.snapshot = Exciter::apply (s, start, end, rate, exciterOf (v));
     else if (k == "chorus" || k == "flanger") out.snapshot = Modulation::sweptDelay (s, start, end, rate, delayOf (v));
     else if (k == "phaser")         out.snapshot = Modulation::phaser (s, start, end, rate, phaserOf (v));
     else if (k == "reverb")         out.snapshot = RoomReverb::apply (s, start, end, rate, reverbOf (v));
