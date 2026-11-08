@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.0: previews on every effect, our own stretch, and the mastering and repair suite**
+- `SpectraBlade-0.14.0.dmg` on the repository's Releases page, with its SHA-256: Milestones 287 to 323 below on top of 0.13.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 and x86_64, signed it, and the whole suite (1403 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.0, holds both architectures, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. The app's Intel half was not launched, and no Intel Mac was tried. Nothing in this release has been listened to; the parts of each milestone not tried by hand are listed with it below.
+
 **Milestone 323: Level Speech's fastest change**
 - Level Speech has a new setting, the fastest change (1 to 30 dB a second): each step's gain is held under a rise at that rate from the gains before and after it (a forward pass, then a backward one, before the ceiling and the smoothing), so a swing between passages takes its time and the gain never goes above what the passages ask, only arrives later. At 30, the largest setting and the default, the gains are exactly what they were (bit for bit in the tests): on the four real recordings of milestone 320 the gains moved at most 5.0 (the voice-over), 10.0 (the shortwave) and 12.6 dB a second (the handheld), all at pauses and changes of speaker, which is where a fader rider moves fast too, so no limit is imposed until one is heard to be needed; the setting is there to lower if the levelling pumps. Sequences and the batch recorded before carry no "speed" value and run as they did. Measured on the test's passages (-12, -30 and -21 LUFS, 4 s each, a second of room noise between): at 6 dB a second the gains rise at most 0.3 dB a step, never over the unlimited gains, and the quiet passage's last half second is 1.2 LU from the target (its 18 dB swing takes 3 s, and the gain starts down early for the louder passage after it); at 30 the gains are the unlimited ones bit for bit. Not listened to.
 
@@ -292,8 +300,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
   - The whole suite passed (1337 checks).
 - Not tried by hand in the app: the dialogs, the previews by ear, the right-click menu, and the wheel with a real mouse or trackpad. A trackpad's smooth scrolling counts a step for every 0.08 of scroll, a figure not tuned on a trackpad.
 - Not converted yet: Meet Delivery Spec, DTMF Tones, Noise Gate and the fade, silence and region dialogs keep their old plain dialogs. Parametric EQ, the graphic EQs and the multiband compressor keep their own windows, which already had a live preview.
-
-## Released
 
 **Release 0.13.0: a Sound Library, a Pitch Editor, 7.1, surround effects, delivery specs and scrubbing**
 - `SpectraBlade-0.13.0.dmg` on the repository's Releases page, with its SHA-256: Milestones 248 to 286 below on top of 0.12.0. Universal app, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).

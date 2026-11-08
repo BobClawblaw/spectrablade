@@ -15,7 +15,7 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 **[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon and Intel).
 
-**Status:** 0.13.0, on the way to 1.0. See the [changelog](CHANGELOG.md) for what each version holds, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
+**Status:** 0.14.0, on the way to 1.0. See the [changelog](CHANGELOG.md) for what each version holds, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
 ## Features
 
@@ -137,7 +137,7 @@ This builds a universal Release app in `build-release/`, signs it ad hoc, runs t
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.13.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.14.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Tests
