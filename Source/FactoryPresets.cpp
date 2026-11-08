@@ -111,10 +111,10 @@ namespace
         return v;
     }
 
-    /** A transient shaper preset: the crossovers, then each band's attack and sustain, then the output. */
+    /** A transient shaper preset: the crossovers, then each band's attack and sustain, then the output; the split in minimum phase. */
     Values transientShaper (double lowCrossover, double highCrossover, const std::array<std::array<double, 2>, 3>& bands, double output)
     {
-        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output } };
+        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output }, { "linearPhase", 0.0 } };
         const std::array<const char*, 3> names { "low", "mid", "high" };
 
         for (size_t b = 0; b < 3; ++b)
@@ -126,10 +126,10 @@ namespace
         return v;
     }
 
-    /** An exciter preset: the crossovers, then each band's drive, curve (0 tube, 1 tape, 2 transistor) and mix, then the output. */
+    /** An exciter preset: the crossovers, then each band's drive, curve (0 tube, 1 tape, 2 transistor) and mix, then the output; the split in minimum phase. */
     Values exciter (double lowCrossover, double highCrossover, const std::array<std::array<double, 3>, 3>& bands, double output)
     {
-        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output } };
+        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output }, { "linearPhase", 0.0 } };
         const std::array<const char*, 3> names { "low", "mid", "high" };
         const std::array<const char*, 3> settings { "Drive", "Curve", "Mix" };
 
@@ -140,10 +140,10 @@ namespace
         return v;
     }
 
-    /** A multiband preset: the crossovers, then each band's threshold, ratio, attack, release and makeup, then the output. */
+    /** A multiband preset: the crossovers, then each band's threshold, ratio, attack, release and makeup, then the output; the split in minimum phase. */
     Values multiband (double lowCrossover, double highCrossover, const std::array<std::array<double, 5>, 3>& bands, double output)
     {
-        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output } };
+        Values v { { "lowCrossover", lowCrossover }, { "highCrossover", highCrossover }, { "output", output }, { "linearPhase", 0.0 } };
         const std::array<const char*, 3> names { "low", "mid", "high" };
         const std::array<const char*, 5> settings { "Threshold", "Ratio", "Attack", "Release", "Makeup" };
 
@@ -292,10 +292,10 @@ namespace
             { "Vocal edge", exciter (200, 2500, {{ { 0, 0, 0 }, { 20, 2, 35 }, { 24, 0, 45 } }}, 0) },
             { "Crunch", exciter (150, 2000, {{ { 24, 2, 70 }, { 30, 2, 80 }, { 24, 2, 60 } }}, -2) } };
         t["spectrablade:multiband-width"] = {
-            { "Mono below 120 Hz", { { "lowCrossover", 120.0 }, { "highCrossover", 2000.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 100.0 } } },
-            { "Tight low end, wide top", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 } } },
-            { "Wider highs", { { "lowCrossover", 150.0 }, { "highCrossover", 3000.0 }, { "low", 100.0 }, { "mid", 100.0 }, { "high", 150.0 } } },
-            { "Narrower middle", { { "lowCrossover", 150.0 }, { "highCrossover", 2000.0 }, { "low", 100.0 }, { "mid", 60.0 }, { "high", 100.0 } } } };
+            { "Mono below 120 Hz", { { "lowCrossover", 120.0 }, { "highCrossover", 2000.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 100.0 }, { "linearPhase", 0.0 } } },
+            { "Tight low end, wide top", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 }, { "linearPhase", 0.0 } } },
+            { "Wider highs", { { "lowCrossover", 150.0 }, { "highCrossover", 3000.0 }, { "low", 100.0 }, { "mid", 100.0 }, { "high", 150.0 }, { "linearPhase", 0.0 } } },
+            { "Narrower middle", { { "lowCrossover", 150.0 }, { "highCrossover", 2000.0 }, { "low", 100.0 }, { "mid", 60.0 }, { "high", 100.0 }, { "linearPhase", 0.0 } } } };
         t["spectrablade:pan-ramp"] = {
             { "Left to right", { { "from", -100.0 }, { "to", 100.0 } } }, { "Right to left", { { "from", 100.0 }, { "to", -100.0 } } },
             { "Drift left to right", { { "from", -40.0 }, { "to", 40.0 } } } };
@@ -408,11 +408,11 @@ namespace
             { "Master, louder (+6 dB)", { { "gain", 6.0 }, { "ceiling", -1.0 }, { "release", 50.0 }, { "lookahead", 5.0 }, { "peaks", 1.0 } } },
             { "Transparent (sample peaks, -0.3 dBFS)", { { "gain", 0.0 }, { "ceiling", -0.3 }, { "release", 200.0 }, { "lookahead", 5.0 }, { "peaks", 0.0 } } } };
         t["spectrablade:de-esser"] = {
-            { "Female vocal", { { "frequency", 7000.0 }, { "threshold", -30.0 }, { "reduction", 6.0 }, { "mode", 0.0 }, { "listen", 0.0 } } },
-            { "Male vocal", { { "frequency", 5000.0 }, { "threshold", -30.0 }, { "reduction", 6.0 }, { "mode", 0.0 }, { "listen", 0.0 } } },
-            { "Gentle", { { "frequency", 6500.0 }, { "threshold", -24.0 }, { "reduction", 3.0 }, { "mode", 0.0 }, { "listen", 0.0 } } },
-            { "Strong", { { "frequency", 6000.0 }, { "threshold", -36.0 }, { "reduction", 10.0 }, { "mode", 0.0 }, { "listen", 0.0 } } },
-            { "Podcast (whole sound)", { { "frequency", 6000.0 }, { "threshold", -30.0 }, { "reduction", 6.0 }, { "mode", 1.0 }, { "listen", 0.0 } } } };
+            { "Female vocal", { { "frequency", 7000.0 }, { "threshold", -30.0 }, { "reduction", 6.0 }, { "mode", 0.0 }, { "linearPhase", 0.0 }, { "listen", 0.0 } } },
+            { "Male vocal", { { "frequency", 5000.0 }, { "threshold", -30.0 }, { "reduction", 6.0 }, { "mode", 0.0 }, { "linearPhase", 0.0 }, { "listen", 0.0 } } },
+            { "Gentle", { { "frequency", 6500.0 }, { "threshold", -24.0 }, { "reduction", 3.0 }, { "mode", 0.0 }, { "linearPhase", 0.0 }, { "listen", 0.0 } } },
+            { "Strong", { { "frequency", 6000.0 }, { "threshold", -36.0 }, { "reduction", 10.0 }, { "mode", 0.0 }, { "linearPhase", 0.0 }, { "listen", 0.0 } } },
+            { "Podcast (whole sound)", { { "frequency", 6000.0 }, { "threshold", -30.0 }, { "reduction", 6.0 }, { "mode", 1.0 }, { "linearPhase", 0.0 }, { "listen", 0.0 } } } };
         t["spectrablade:dynamic-eq"] = {
             { "Tame harsh vocals", dynamicEq ({ { 1, 0, 0, 3200, 1.5, -6, -30, 4, 5, 120 } }) },
             { "Control a boomy low end", dynamicEq ({ { 1, 1, 0, 120, 1, -6, -24, 4, 20, 200 } }) },

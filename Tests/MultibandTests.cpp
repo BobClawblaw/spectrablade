@@ -121,6 +121,39 @@ void runMultibandTests()
                              && Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, wide) == nullptr
                              && juce::exactlyEqual (Multiband::spaced (close, rate).highCrossover, 2000.0);
 
+        // In linear phase: the same bands (the sides scaled alike, the mid untouched), every band at 100 %
+        // the sound exactly as it was (to the float's rounding), a mono sound untouched bit for bit.
+        auto wl = w;
+        wl.linearPhase = true;
+        const auto outLinear = readAll (*Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, wl));
+        const auto lowSideL = db (part (outLinear, 60.0, false) / part (in, 60.0, false)), midSideL = db (part (outLinear, 500.0, false) / part (in, 500.0, false));
+        const auto highSideL = db (part (outLinear, 8000.0, false) / part (in, 8000.0, false));
+        auto midWorstL = 0.0;
+
+        for (auto hz : { 80.0, 700.0, 6000.0 })
+            midWorstL = juce::jmax (midWorstL, std::abs (db (part (outLinear, hz, true) / part (in, hz, true))));
+
+        auto flatL = flat;
+        flatL.linearPhase = true;
+        const auto unchangedL = readAll (*Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (in)), 0, 48000, rate, flatL));
+        const auto monoOutL = readAll (*Multiband::widen (*AudioEdits::fromBuffer (juce::AudioBuffer<float> (mono)), 0, 48000, rate, wl));
+        auto flatWorstL = 0.0f;
+        auto monoSameL = true;
+
+        for (int i = 0; i < 48000; ++i)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+                flatWorstL = juce::jmax (flatWorstL, std::abs (unchangedL.getSample (ch, i) - in.getSample (ch, i)));
+
+            monoSameL = monoSameL && juce::exactlyEqual (monoOutL.getSample (0, i), mono.getSample (0, i));
+        }
+
+        std::cout << "      linear-phase width: sides " << lowSideL << " / " << midSideL << " / " << highSideL << " dB, mid moved at most " << midWorstL
+                  << " dB, flat off by at most " << flatWorstL << std::endl;
+        check (lowSideL < -30.0 && std::abs (midSideL) < 0.1 && std::abs (highSideL - 6.02) < 0.1 && midWorstL < 0.1 && flatWorstL < 1.0e-5f && monoSameL,
+               "multiband width in linear phase: the low side gone (under -30 dB), the mid side kept, the high side doubled, the mid untouched; "
+               "every band at 100 % gives the sound back within 1e-5, a mono sound bit for bit");
+
         // Live, in uneven blocks: the offline samples bit for bit; state and presets restore the settings.
         BuiltInEffects::MultibandWidthProcessor live;
         live.setSettings (w);
@@ -445,5 +478,116 @@ void runMultibandTests()
         check (multibandSame && deEsserSame && kept && apart && multiband.getLatencySamples() == 0 && deEsser.getLatencySamples() == 0,
                "built-in multiband compressor and de-esser: played in blocks of 1, 7, 512 and 3,000 frames they give the offline samples bit for "
                "bit; state and preset values restore every setting; crossovers set too close are moved an octave apart; no latency");
+    }
+
+    // The linear-phase split holds the peaks: square waves at full scale through the compressor at a
+    // ratio of 1, the width at 100 % and the de-esser taking nothing come back as they were, where the
+    // minimum-phase split lifts their peaks. Live, late by the latency, which is reported and
+    // reported again when the switch turns.
+    {
+        juce::AudioBuffer<float> in (2, 48000);
+
+        for (int i = 0; i < 48000; ++i)
+        {
+            in.setSample (0, i, std::sin (juce::MathConstants<double>::twoPi * 100.0 * i / rate) >= 0.0 ? 1.0f : -1.0f);
+            in.setSample (1, i, std::sin (juce::MathConstants<double>::twoPi * 700.0 * i / rate) >= 0.0 ? 1.0f : -1.0f);
+        }
+
+        const auto snap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (in));
+        const auto peakOf = [] (const juce::AudioBuffer<float>& b) { return (double) b.getMagnitude (0, b.getNumSamples()); };
+        const auto worstOff = [&in] (const juce::AudioBuffer<float>& b)
+        {
+            auto worst = 0.0f;
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 48000; ++i)
+                    worst = juce::jmax (worst, std::abs (b.getSample (ch, i) - in.getSample (ch, i)));
+
+            return worst;
+        };
+
+        auto idle = unity();
+        idle.lowCrossover = 150.0;
+        idle.highCrossover = 3000.0;
+        const auto turned = readAll (*Multiband::compress (*snap, 0, 48000, rate, idle));
+        idle.linearPhase = true;
+        Multiband::Width flat;
+        flat.linearPhase = true;
+        const Multiband::DeEsser nothing { 6000.0, -30.0, 0.0, false, true };
+
+        // The offline references from the live effects' own settings (a parameter holds its value as
+        // a float on a skewed range, so 2000 Hz comes back a hair off), as the other live checks do.
+        BuiltInEffects::MultibandProcessor compressor;
+        compressor.setSettings (idle);
+        BuiltInEffects::MultibandWidthProcessor width;
+        width.setSettings (flat);
+        BuiltInEffects::DeEsserProcessor deEsser;
+        deEsser.setSettings (nothing);
+        const auto held = readAll (*Multiband::compress (*snap, 0, 48000, rate, compressor.getSettings()));
+        const auto heldWidth = readAll (*Multiband::widen (*snap, 0, 48000, rate, width.getSettings()));
+        const auto heldEss = readAll (*Multiband::deEss (*snap, 0, 48000, rate, deEsser.getSettings()));
+
+        std::cout << "      peaks: in " << db (peakOf (in)) << " dBFS, minimum-phase split " << db (peakOf (turned)) << ", linear-phase split "
+                  << db (peakOf (held)) << " (off the input by at most " << worstOff (held) << "), width " << worstOff (heldWidth) << ", de-esser "
+                  << worstOff (heldEss) << std::endl;
+
+        // Live, late by the latency: the offline samples bit for bit.
+        const auto late = [&in] (BuiltInEffects::BuiltInEffect& effect, const juce::AudioBuffer<float>& offline, int latency)
+        {
+            effect.setPlayConfigDetails (2, 2, rate, 512);
+            effect.prepareToPlay (rate, 3000);
+            juce::AudioBuffer<float> played (2, 48000 + latency);
+            played.clear();
+
+            for (int ch = 0; ch < 2; ++ch)
+                played.copyFrom (ch, 0, in, ch, 0, 48000);
+
+            juce::MidiBuffer midi;
+            const int sizes[] = { 1, 7, 512, 3000 };
+
+            for (int pos = 0, k = 0; pos < played.getNumSamples(); ++k)
+            {
+                const auto n = juce::jmin (sizes[k % 4], played.getNumSamples() - pos);
+                juce::AudioBuffer<float> block (played.getArrayOfWritePointers(), 2, pos, n);
+                effect.processBlock (block, midi);
+                pos += n;
+            }
+
+            if (effect.getLatencySamples() != latency)
+                return false;
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < 48000; ++i)
+                    if (! juce::exactlyEqual (played.getSample (ch, i + latency), offline.getSample (ch, i)))
+                        return false;
+
+            return true;
+        };
+
+        constexpr auto latency = Multiband::Split::linearLatency;
+        const auto compressorLate = late (compressor, held, latency), widthLate = late (width, heldWidth, latency), deEsserLate = late (deEsser, heldEss, latency);
+        const auto liveLate = compressorLate && widthLate && deEsserLate;
+
+        // The switch turned off while playing: the latency reported again, and the minimum-phase samples.
+        idle.linearPhase = false;
+        compressor.setSettings (idle);
+        juce::AudioBuffer<float> block (in);
+        juce::MidiBuffer midi;
+        compressor.processBlock (block, midi);
+        const auto backToNone = compressor.getLatencySamples() == 0 && compressor.getSettings().linearPhase == false;
+
+        juce::MemoryBlock state;
+        width.getStateInformation (state);
+        BuiltInEffects::MultibandWidthProcessor copy;
+        copy.setStateInformation (state.getData(), (int) state.getSize());
+
+        std::cout << "      live late: compressor " << (compressorLate ? "yes" : "NO") << ", width " << (widthLate ? "yes" : "NO") << ", de-esser "
+                  << (deEsserLate ? "yes" : "NO") << "; back to none " << (backToNone ? "yes" : "NO") << ", state keeps the switch "
+                  << (copy.getSettings().linearPhase ? "yes" : "NO") << std::endl;
+        check (juce::exactlyEqual (peakOf (in), 1.0) && peakOf (turned) > 1.1 && worstOff (held) < 1.0e-5f && worstOff (heldWidth) < 1.0e-5f && worstOff (heldEss) < 1.0e-5f
+                   && liveLate && backToNone && copy.getSettings().linearPhase,
+               "linear-phase band split: full-scale squares through the minimum-phase split peak over 1.1, through the linear-phase split they come "
+               "back within 1e-5 of themselves (compressor at 1:1, width at 100 %, de-esser taking nothing); live in uneven blocks each gives the "
+               "offline samples bit for bit, late by the " + juce::String (latency) + " frames it reports, 0 again once the switch is off; the state keeps the switch");
     }
 }

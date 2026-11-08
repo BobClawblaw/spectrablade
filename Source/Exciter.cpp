@@ -57,7 +57,8 @@ Settings spaced (Settings s, double sampleRate)
 void Core::prepare (int numChannels, double sampleRate)
 {
     rate = sampleRate;
-    channels.assign ((size_t) juce::jmax (1, numChannels), {});
+    channels.assign ((size_t) juce::jlimit (1, 64, numChannels), {});
+    split.prepare ((int) channels.size(), rate);
     blocker = std::exp (-juce::MathConstants<double>::twoPi * 5.0 / rate);
     set (settings);
     reset();
@@ -65,11 +66,10 @@ void Core::prepare (int numChannels, double sampleRate)
 
 void Core::reset() noexcept
 {
+    split.reset();
+
     for (auto& ch : channels)
     {
-        for (auto* c : { &ch.first, &ch.second, &ch.lowAlign })
-            c->reset();
-
         for (auto& s : ch.shapers)
             s.reset();
 
@@ -86,13 +86,7 @@ void Core::reset() noexcept
 void Core::set (const Settings& s)
 {
     settings = s;
-
-    for (auto& ch : channels)
-    {
-        ch.first.set (s.lowCrossover, rate);
-        ch.second.set (s.highCrossover, rate);
-        ch.lowAlign.set (s.highCrossover, rate);
-    }
+    split.set (s.lowCrossover, s.highCrossover, s.linearPhase);
 
     for (size_t b = 0; b < 3; ++b)
     {
@@ -107,41 +101,50 @@ void Core::process (float* const* data, int numChannels, int numFrames) noexcept
 {
     const auto n = juce::jmin (numChannels, (int) channels.size());
 
-    for (int i = 0; i < numFrames; ++i)
+    for (int done = 0; done < numFrames && n > 0;)
     {
+        const auto frames = juce::jmin (Multiband::Split::chunk, numFrames - done);
+        std::array<const float*, 64> in {};
+
         for (int c = 0; c < n; ++c)
+            in[(size_t) c] = data[c] + done;
+
+        split.run (in.data(), n, frames);
+
+        for (int i = 0; i < frames; ++i)
         {
-            auto& ch = channels[(size_t) c];
-            double low = 0.0, rest = 0.0, middle = 0.0, high = 0.0;
-            ch.first.split (data[c][i], low, rest);
-            ch.second.split (rest, middle, high);
-            low = ch.lowAlign.allPass (low);
-            const std::array<double, 3> parts { low, middle, high };
-            auto sum = 0.0;
-
-            for (size_t b = 0; b < 3; ++b)
+            for (int c = 0; c < n; ++c)
             {
-                const auto curve = settings.bands[b].curve;
-                const auto g = drive[b];
-                auto shaped = ch.shapers[b].tick (parts[b], [curve, g] (double x) { return shape (curve, x * g) / g; });
+                auto& ch = channels[(size_t) c];
+                auto sum = 0.0;
 
-                // The offset off, and the band as it was from the same moment.
-                const auto blocked = shaped - ch.blockIn[b] + blocker * ch.blockOut[b];
-                ch.blockIn[b] = shaped;
-                ch.blockOut[b] = blocked;
-                shaped = blocked;
+                for (size_t b = 0; b < 3; ++b)
+                {
+                    const auto part = split.band (c, (int) b)[i];
+                    const auto curve = settings.bands[b].curve;
+                    const auto g = drive[b];
+                    auto shaped = ch.shapers[b].tick (part, [curve, g] (double x) { return shape (curve, x * g) / g; });
 
-                auto& delayed = ch.dry[b][(size_t) dryPos];
-                const auto was = delayed;
-                delayed = parts[b];
-                sum += wet[b] * shaped + (1.0 - wet[b]) * was;
+                    // The offset off, and the band as it was from the same moment.
+                    const auto blocked = shaped - ch.blockIn[b] + blocker * ch.blockOut[b];
+                    ch.blockIn[b] = shaped;
+                    ch.blockOut[b] = blocked;
+                    shaped = blocked;
+
+                    auto& delayed = ch.dry[b][(size_t) dryPos];
+                    const auto was = delayed;
+                    delayed = part;
+                    sum += wet[b] * shaped + (1.0 - wet[b]) * was;
+                }
+
+                data[c][done + i] = (float) (sum * output);
             }
 
-            data[c][i] = (float) (sum * output);
+            if (++dryPos == Oversampler4::latency)
+                dryPos = 0;
         }
 
-        if (++dryPos == Oversampler4::latency)
-            dryPos = 0;
+        done += frames;
     }
 }
 
@@ -150,31 +153,9 @@ AudioEdits::Snapshot apply (const AudioSnapshot& s, juce::int64 start, juce::int
     if (! isValid (settings, sampleRate))
         return nullptr;
 
-    start = juce::jlimit ((juce::int64) 0, s.getNumFrames(), start);
-    end = juce::jlimit (start, s.getNumFrames(), end);
-
-    if (start == end || end - start > std::numeric_limits<int>::max() / 4)
-        return nullptr;
-
-    const auto prime = (int) juce::jmin (start, (juce::int64) std::ceil (sampleRate));
-
-    return AudioEdits::processRange (s, start - prime, end, [&settings, sampleRate, prime] (juce::AudioBuffer<float>& b)
-    {
-        const auto channels = b.getNumChannels(), frames = b.getNumSamples();
-        Core core;
-        core.prepare (channels, sampleRate);
-        core.set (settings);
-
-        juce::AudioBuffer<float> work (channels, frames + Core::latency);
-        work.clear();
-
-        for (int ch = 0; ch < channels; ++ch)
-            work.copyFrom (ch, 0, b, ch, 0, frames);
-
-        core.process (work.getArrayOfWritePointers(), channels, work.getNumSamples());
-
-        for (int ch = 0; ch < channels; ++ch)
-            b.copyFrom (ch, prime, work, ch, Core::latency + prime, frames - prime);
-    });
+    Core core;
+    core.prepare (s.getNumChannels(), sampleRate);
+    core.set (settings);
+    return Multiband::runPrimed (s, start, end, sampleRate, core);
 }
 }

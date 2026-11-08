@@ -1392,6 +1392,7 @@ MultibandProcessor::MultibandProcessor()
     }
 
     output = addFloat ("output", "Output", { -24.0f, 24.0f }, (float) start.outputDb, "dB");
+    linearPhase = addBool ("linearPhase", "Linear Phase", start.linearPhase);
 }
 
 std::vector<juce::AudioParameterFloat*> MultibandProcessor::parameterOrder() const
@@ -1411,6 +1412,7 @@ std::vector<float> MultibandProcessor::valuesOf (const Multiband::Compressor& s)
     for (auto& b : s.bands)
         v.insert (v.end(), { (float) b.thresholdDb, (float) b.ratio, (float) b.attackMs, (float) b.releaseMs, (float) b.makeupDb });
 
+    v.push_back (s.linearPhase ? 1.0f : 0.0f);
     return v;
 }
 
@@ -1420,6 +1422,7 @@ Multiband::Compressor MultibandProcessor::getParameterSettings() const
     s.lowCrossover = lowCrossover->get();
     s.highCrossover = highCrossover->get();
     s.outputDb = output->get();
+    s.linearPhase = linearPhase->get();
 
     for (size_t b = 0; b < 3; ++b)
         s.bands[b] = { (double) bands[b].threshold->get(), (double) bands[b].ratio->get(), Dynamics::Compressor().kneeDb,
@@ -1440,6 +1443,8 @@ void MultibandProcessor::setSettings (const Multiband::Compressor& s)
 
     for (size_t i = 0; i < order.size(); ++i)
         setExactly (*order[i], v[i]);
+
+    *linearPhase = s.linearPhase;
 }
 
 juce::AudioProcessorEditor* MultibandProcessor::createEditor()
@@ -1455,6 +1460,7 @@ void MultibandProcessor::prepareToPlay (double sampleRate, int)
     applied = valuesOf (getParameterSettings());
     core.set (getSettings());
     core.reset();
+    setLatencySamples (core.getLatency());
 }
 
 void MultibandProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -1463,6 +1469,9 @@ void MultibandProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     {
         applied = now;
         core.set (getSettings());
+
+        if (core.getLatency() != getLatencySamples())
+            setLatencySamples (core.getLatency());
     }
 
     core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
@@ -1526,6 +1535,14 @@ void MultibandEditor::panelChanged()
         order[i]->endChangeGesture();
     }
 
+    if (! juce::exactlyEqual (wanted.back(), panelValues.back()))
+    {
+        auto& p = effect.linearPhaseParameter();
+        p.beginChangeGesture();
+        p.setValueNotifyingHost (wanted.back());
+        p.endChangeGesture();
+    }
+
     panelValues = wanted;
     shown = MultibandProcessor::valuesOf (effect.getParameterSettings());
 }
@@ -1563,13 +1580,14 @@ DeEsserProcessor::DeEsserProcessor()
     threshold = addFloat ("threshold", "Threshold", { -60.0f, 0.0f }, (float) start.thresholdDb, "dB");
     reduction = addFloat ("reduction", "Reduction", { 0.0f, 24.0f }, (float) start.maxReductionDb, "dB");
     mode = addChoice ("mode", "Turn Down", { "The high band", "The whole sound" }, 0);   // the high band, as Multiband::DeEsser starts
+    linearPhase = addBool ("linearPhase", "Linear Phase", start.linearPhase);
     listen = addBool ("listen", "Listen", false);
 }
 
 Multiband::DeEsser DeEsserProcessor::getSettings() const
 {
     // Below 0.45 of the rate, as the offline effect needs it under half.
-    return { juce::jmin ((double) frequency->get(), 0.45 * rate), (double) threshold->get(), (double) reduction->get(), mode->getIndex() == 1 };
+    return { juce::jmin ((double) frequency->get(), 0.45 * rate), (double) threshold->get(), (double) reduction->get(), mode->getIndex() == 1, linearPhase->get() };
 }
 
 void DeEsserProcessor::setSettings (const Multiband::DeEsser& s)
@@ -1578,6 +1596,7 @@ void DeEsserProcessor::setSettings (const Multiband::DeEsser& s)
     setExactly (*threshold, (float) s.thresholdDb);
     setExactly (*reduction, (float) s.maxReductionDb);
     *mode = s.wholeSound ? 1 : 0;
+    *linearPhase = s.linearPhase;
 }
 
 void DeEsserProcessor::prepareToPlay (double sampleRate, int)
@@ -1588,6 +1607,7 @@ void DeEsserProcessor::prepareToPlay (double sampleRate, int)
     applied = getSettings();
     core.set (applied);
     core.reset();
+    setLatencySamples (core.getLatency());
 }
 
 void DeEsserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -1595,10 +1615,14 @@ void DeEsserProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     const auto now = getSettings();
 
     if (! juce::exactlyEqual (now.frequency, applied.frequency) || ! juce::exactlyEqual (now.thresholdDb, applied.thresholdDb)
-        || ! juce::exactlyEqual (now.maxReductionDb, applied.maxReductionDb) || now.wholeSound != applied.wholeSound)
+        || ! juce::exactlyEqual (now.maxReductionDb, applied.maxReductionDb) || now.wholeSound != applied.wholeSound
+        || now.linearPhase != applied.linearPhase)
     {
         applied = now;
         core.set (applied);
+
+        if (core.getLatency() != getLatencySamples())
+            setLatencySamples (core.getLatency());
     }
 
     core.setListening (listen->get());
@@ -1628,11 +1652,14 @@ MultibandWidthProcessor::MultibandWidthProcessor()
 
     for (size_t b = 0; b < 3; ++b)
         widths[b] = addFloat (ids[b], names[b], { 0.0f, 200.0f }, (float) start.percent[b], "%");
+
+    linearPhase = addBool ("linearPhase", "Linear Phase", start.linearPhase);
 }
 
 Multiband::Width MultibandWidthProcessor::getParameterSettings() const
 {
-    return { (double) lowCrossover->get(), (double) highCrossover->get(), { (double) widths[0]->get(), (double) widths[1]->get(), (double) widths[2]->get() } };
+    return { (double) lowCrossover->get(), (double) highCrossover->get(), { (double) widths[0]->get(), (double) widths[1]->get(), (double) widths[2]->get() },
+             linearPhase->get() };
 }
 
 Multiband::Width MultibandWidthProcessor::getSettings() const
@@ -1647,6 +1674,8 @@ void MultibandWidthProcessor::setSettings (const Multiband::Width& w)
 
     for (size_t b = 0; b < 3; ++b)
         setExactly (*widths[b], (float) w.percent[b]);
+
+    *linearPhase = w.linearPhase;
 }
 
 juce::AudioProcessorEditor* MultibandWidthProcessor::createEditor()
@@ -1659,17 +1688,22 @@ void MultibandWidthProcessor::prepareToPlay (double sampleRate, int)
     rate = sampleRate;
     channelsPrepared = juce::jmax (1, getTotalNumInputChannels());
     core.prepare (channelsPrepared, rate);
-    applied = { lowCrossover->get(), highCrossover->get(), widths[0]->get(), widths[1]->get(), widths[2]->get() };
+    applied = { lowCrossover->get(), highCrossover->get(), widths[0]->get(), widths[1]->get(), widths[2]->get(), linearPhase->get() ? 1.0f : 0.0f };
     core.set (getSettings());
     core.reset();
+    setLatencySamples (core.getLatency());
 }
 
 void MultibandWidthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
-    if (const std::array<float, 5> now { lowCrossover->get(), highCrossover->get(), widths[0]->get(), widths[1]->get(), widths[2]->get() }; now != applied)
+    if (const std::array<float, 6> now { lowCrossover->get(), highCrossover->get(), widths[0]->get(), widths[1]->get(), widths[2]->get(),
+                                         linearPhase->get() ? 1.0f : 0.0f }; now != applied)
     {
         applied = now;
         core.set (getSettings());
+
+        if (core.getLatency() != getLatencySamples())
+            setLatencySamples (core.getLatency());
     }
 
     core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
@@ -1698,6 +1732,7 @@ ExciterProcessor::ExciterProcessor()
     }
 
     output = addFloat ("output", "Output", { -24.0f, 24.0f }, (float) start.outputDb, "dB");
+    linearPhase = addBool ("linearPhase", "Linear Phase", start.linearPhase);
 }
 
 std::vector<float> ExciterProcessor::valuesOfParameters() const
@@ -1707,6 +1742,7 @@ std::vector<float> ExciterProcessor::valuesOfParameters() const
     for (auto& b : bands)
         v.insert (v.end(), { b.drive->get(), (float) b.curve->getIndex(), b.mix->get() });
 
+    v.push_back (linearPhase->get() ? 1.0f : 0.0f);
     return v;
 }
 
@@ -1720,6 +1756,7 @@ Exciter::Settings ExciterProcessor::getParameterSettings() const
     for (size_t b = 0; b < 3; ++b)
         s.bands[b] = { (double) bands[b].drive->get(), (Exciter::Curve) bands[b].curve->getIndex(), (double) bands[b].mix->get() };
 
+    s.linearPhase = linearPhase->get();
     return s;
 }
 
@@ -1740,6 +1777,8 @@ void ExciterProcessor::setSettings (const Exciter::Settings& s)
         *bands[b].curve = (int) s.bands[b].curve;
         setExactly (*bands[b].mix, (float) s.bands[b].mixPercent);
     }
+
+    *linearPhase = s.linearPhase;
 }
 
 juce::AudioProcessorEditor* ExciterProcessor::createEditor()
@@ -1755,7 +1794,7 @@ void ExciterProcessor::prepareToPlay (double sampleRate, int)
     applied = valuesOfParameters();
     core.set (getSettings());
     core.reset();
-    setLatencySamples (Exciter::Core::latency);
+    setLatencySamples (core.getLatency());
 }
 
 void ExciterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -1764,6 +1803,9 @@ void ExciterProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     {
         applied = std::move (now);
         core.set (getSettings());
+
+        if (core.getLatency() != getLatencySamples())
+            setLatencySamples (core.getLatency());
     }
 
     core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());
@@ -1856,6 +1898,7 @@ TransientShaperProcessor::TransientShaperProcessor()
     }
 
     output = addFloat ("output", "Output", { -24.0f, 24.0f }, (float) start.outputDb, "dB");
+    linearPhase = addBool ("linearPhase", "Linear Phase", start.linearPhase);
 }
 
 std::vector<float> TransientShaperProcessor::valuesOfParameters() const
@@ -1865,6 +1908,7 @@ std::vector<float> TransientShaperProcessor::valuesOfParameters() const
     for (auto& b : bands)
         v.insert (v.end(), { b.first->get(), b.second->get() });
 
+    v.push_back (linearPhase->get() ? 1.0f : 0.0f);
     return v;
 }
 
@@ -1878,6 +1922,7 @@ TransientShaper::Settings TransientShaperProcessor::getParameterSettings() const
     for (size_t b = 0; b < 3; ++b)
         s.bands[b] = { (double) bands[b].first->get(), (double) bands[b].second->get() };
 
+    s.linearPhase = linearPhase->get();
     return s;
 }
 
@@ -1897,6 +1942,8 @@ void TransientShaperProcessor::setSettings (const TransientShaper::Settings& s)
         setExactly (*bands[b].first, (float) s.bands[b].attackDb);
         setExactly (*bands[b].second, (float) s.bands[b].sustainDb);
     }
+
+    *linearPhase = s.linearPhase;
 }
 
 juce::AudioProcessorEditor* TransientShaperProcessor::createEditor()
@@ -1912,6 +1959,7 @@ void TransientShaperProcessor::prepareToPlay (double sampleRate, int)
     applied = valuesOfParameters();
     core.set (getSettings());
     core.reset();
+    setLatencySamples (core.getLatency());
 }
 
 void TransientShaperProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -1920,6 +1968,9 @@ void TransientShaperProcessor::processBlock (juce::AudioBuffer<float>& buffer, j
     {
         applied = std::move (now);
         core.set (getSettings());
+
+        if (core.getLatency() != getLatencySamples())
+            setLatencySamples (core.getLatency());
     }
 
     core.process (buffer.getArrayOfWritePointers(), juce::jmin (buffer.getNumChannels(), channelsPrepared), buffer.getNumSamples());

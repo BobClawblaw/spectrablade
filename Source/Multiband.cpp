@@ -8,33 +8,6 @@ namespace
     constexpr double butterworthQ = 0.7071067811865476;
 
     bool inRange (double v, double low, double high)    { return std::isfinite (v) && v >= low && v <= high; }
-
-    /** Runs a core over [start, end) after priming it on up to a second of the audio before, which is
-        kept as it was, so the range starts as it would in a longer pass (as the EQ does). */
-    template <typename Core>
-    AudioEdits::Snapshot runPrimed (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, Core& core)
-    {
-        start = juce::jlimit ((juce::int64) 0, s.getNumFrames(), start);
-        end = juce::jlimit (start, s.getNumFrames(), end);
-
-        if (start == end || end - start > std::numeric_limits<int>::max() / 2)
-            return nullptr;
-
-        const auto prime = (int) juce::jmin (start, (juce::int64) std::ceil (sampleRate));
-
-        return AudioEdits::processRange (s, start - prime, end, [&core, prime] (juce::AudioBuffer<float>& b)
-        {
-            juce::AudioBuffer<float> before (b.getNumChannels(), prime);
-
-            for (int ch = 0; ch < b.getNumChannels(); ++ch)
-                before.copyFrom (ch, 0, b, ch, 0, prime);
-
-            core.process (b.getArrayOfWritePointers(), b.getNumChannels(), b.getNumSamples());
-
-            for (int ch = 0; ch < b.getNumChannels(); ++ch)
-                b.copyFrom (ch, 0, before, ch, 0, prime);
-        });
-    }
 }
 
 //==============================================================================
@@ -49,6 +22,7 @@ double Crossover::Biquad::run (double x) noexcept
 void Crossover::set (double frequency, double sampleRate)
 {
     // Second-order Butterworth low- and high-passes by the bilinear transform, prewarped.
+    rateSet = sampleRate;
     const auto w = juce::MathConstants<double>::twoPi * frequency / sampleRate;
     const auto cosW = std::cos (w), alpha = std::sin (w) / (2.0 * butterworthQ), a0 = 1.0 + alpha;
     const auto setTo = [&] (Biquad& f, bool low)
@@ -88,6 +62,177 @@ double Crossover::allPass (double in) noexcept
     return allLows[1].run (allLows[0].run (in)) + allHighs[1].run (allHighs[0].run (in));
 }
 
+double Crossover::lowLevelAt (double hz) const noexcept
+{
+    // The two low-passes are the same filter, so the level is one biquad's squared.
+    const auto& f = lows[0];
+    const auto z = std::polar (1.0, -juce::MathConstants<double>::twoPi * hz / rateSet);
+    const auto one = std::abs ((f.b0 + f.b1 * z + f.b2 * z * z) / (1.0 + f.a1 * z + f.a2 * z * z));
+    return one * one;
+}
+
+//==============================================================================
+void Split::prepare (int numChannels, double sampleRate)
+{
+    rate = sampleRate;
+    channels.assign ((size_t) juce::jmax (0, numChannels), {});
+    parts.assign (channels.size(), {});
+    sames.assign (channels.size(), nullptr);
+
+    for (auto& p : parts)
+        for (auto& band : p)
+            band.assign ((size_t) chunk, 0.0);
+
+    for (auto& ch : channels)
+        ch.delay.assign ((size_t) linearLatency, 0.0f);
+
+    const auto n = (int) channels.size();
+    lowWork.setSize (n, chunk);
+    highWork.setSize (n, chunk);
+    sameWork.setSize (n, chunk);
+    built = false;
+
+    if (low > 0.0)
+        set (low, high, linear);
+
+    reset();
+}
+
+void Split::reset() noexcept
+{
+    for (auto& ch : channels)
+    {
+        for (auto* c : { &ch.first, &ch.second, &ch.lowAlign })
+            c->reset();
+
+        std::fill (ch.delay.begin(), ch.delay.end(), 0.0f);
+    }
+
+    lows.reset();
+    highs.reset();
+    delayPos = 0;
+}
+
+void Split::set (double lowCrossover, std::optional<double> highCrossover, bool linearPhase)
+{
+    const auto changed = ! built || ! juce::exactlyEqual (lowCrossover, low) || highCrossover != high || linearPhase != linear;
+    low = lowCrossover;
+    high = highCrossover;
+    linear = linearPhase;
+
+    if (! changed || channels.empty())
+        return;
+
+    built = true;
+
+    for (auto& ch : channels)
+    {
+        ch.first.set (low, rate);
+
+        if (high)
+        {
+            ch.second.set (*high, rate);
+            ch.lowAlign.set (*high, rate);
+        }
+    }
+
+    if (! linear)
+        return;
+
+    // The impulses with the crossovers' own levels: the lows' low-pass, and for the highs the part
+    // above the high crossover (what its low-pass leaves).
+    const auto n = (int) channels.size();
+    const auto& model = channels[0];
+    const auto decibels = [] (double level) { return 20.0 * std::log10 (juce::jmax (1.0e-12, level)); };
+    lows.prepare ([&model, decibels] (double hz) { return decibels (model.first.lowLevelAt (hz)); }, rate, n);
+
+    if (high)
+        highs.prepare ([&model, decibels] (double hz) { return decibels (1.0 - model.second.lowLevelAt (hz)); }, rate, n);
+}
+
+void Split::run (const float* const* in, int numChannels, int numFrames) noexcept
+{
+    const auto n = juce::jmin (numChannels, (int) channels.size());
+    numFrames = juce::jmin (numFrames, chunk);
+
+    if (! linear)
+    {
+        for (int c = 0; c < n; ++c)
+        {
+            auto& ch = channels[(size_t) c];
+            auto& p = parts[(size_t) c];
+            sames[(size_t) c] = in[c];
+
+            for (int i = 0; i < numFrames; ++i)
+            {
+                // Low and the rest at the low crossover; the rest into middle and high at the high one;
+                // the low band turned as the high split turns the others, so the three add up flat.
+                double lowPart = 0.0, rest = 0.0, middle = 0.0, highPart = 0.0;
+                ch.first.split (in[c][i], lowPart, rest);
+
+                if (high)
+                {
+                    ch.second.split (rest, middle, highPart);
+                    lowPart = ch.lowAlign.allPass (lowPart);
+                }
+                else
+                {
+                    middle = rest;
+                }
+
+                p[0][(size_t) i] = lowPart;
+                p[1][(size_t) i] = middle;
+                p[2][(size_t) i] = highPart;
+            }
+        }
+
+        return;
+    }
+
+    for (int c = 0; c < n; ++c)
+    {
+        lowWork.copyFrom (c, 0, in[c], numFrames);
+
+        if (high)
+            highWork.copyFrom (c, 0, in[c], numFrames);
+    }
+
+    lows.process (lowWork.getArrayOfWritePointers(), n, numFrames);
+
+    if (high)
+        highs.process (highWork.getArrayOfWritePointers(), n, numFrames);
+
+    for (int c = 0; c < n; ++c)
+    {
+        auto& ch = channels[(size_t) c];
+        auto& p = parts[(size_t) c];
+        auto* same = sameWork.getWritePointer (c);
+        const auto* lowOut = lowWork.getReadPointer (c);
+        const auto* highOut = highWork.getReadPointer (c);
+        auto pos = delayPos;
+
+        for (int i = 0; i < numFrames; ++i)
+        {
+            // The sound as it was, late by the impulses' delay, is the three bands together.
+            const auto was = ch.delay[(size_t) pos];
+            ch.delay[(size_t) pos] = in[c][i];
+            same[i] = was;
+
+            if (++pos == linearLatency)
+                pos = 0;
+
+            const auto lowPart = lowOut[i], highPart = high ? highOut[i] : 0.0f;
+            p[0][(size_t) i] = lowPart;
+            p[1][(size_t) i] = was - lowPart - highPart;
+            p[2][(size_t) i] = highPart;
+        }
+
+        sames[(size_t) c] = same;
+    }
+
+    delayPos = (delayPos + numFrames) % linearLatency;
+}
+
 //==============================================================================
 bool isValid (const Compressor& c, double sampleRate)
 {
@@ -115,19 +260,14 @@ Compressor spaced (Compressor c, double sampleRate)
 void CompressorCore::prepare (int numChannels, double sampleRate)
 {
     rate = sampleRate;
-    first.assign ((size_t) juce::jmax (0, numChannels), {});
-    second.assign (first.size(), {});
-    lowAlign.assign (first.size(), {});
-    parts.assign (first.size(), {});
+    split.prepare (numChannels, rate);
     set (settings);
     reset();
 }
 
 void CompressorCore::reset() noexcept
 {
-    for (auto* group : { &first, &second, &lowAlign })
-        for (auto& c : *group)
-            c.reset();
+    split.reset();
 
     for (auto& c : cores)
         c.reset();
@@ -138,13 +278,7 @@ void CompressorCore::reset() noexcept
 void CompressorCore::set (const Compressor& c)
 {
     settings = c;
-
-    for (size_t ch = 0; ch < first.size(); ++ch)
-    {
-        first[ch].set (c.lowCrossover, rate);
-        second[ch].set (c.highCrossover, rate);
-        lowAlign[ch].set (c.highCrossover, rate);
-    }
+    split.set (c.lowCrossover, c.highCrossover, c.linearPhase);
 
     for (size_t b = 0; b < cores.size(); ++b)
         cores[b].set (c.bands[b], rate);
@@ -154,39 +288,39 @@ void CompressorCore::set (const Compressor& c)
 
 void CompressorCore::process (float* const* channels, int numChannels, int numFrames) noexcept
 {
-    const auto n = juce::jmin (numChannels, (int) first.size());
+    const auto n = juce::jmin (numChannels, split.getNumChannels());
 
-    for (int i = 0; i < numFrames; ++i)
+    for (int done = 0; done < numFrames && n > 0;)
     {
-        std::array<double, 3> loudest {};
+        const auto frames = juce::jmin (Split::chunk, numFrames - done);
+        std::array<const float*, 64> in {};
 
-        for (int ch = 0; ch < n; ++ch)
+        for (int ch = 0; ch < juce::jmin (n, 64); ++ch)
+            in[(size_t) ch] = channels[ch] + done;
+
+        split.run (in.data(), juce::jmin (n, 64), frames);
+
+        for (int i = 0; i < frames; ++i)
         {
-            // Low and the rest at the low crossover; the rest into middle and high at the high one;
-            // the low band turned as the high split turns the others, so the three add up flat.
-            double low = 0.0, rest = 0.0, middle = 0.0, high = 0.0;
-            first[(size_t) ch].split (channels[ch][i], low, rest);
-            second[(size_t) ch].split (rest, middle, high);
-            low = lowAlign[(size_t) ch].allPass (low);
-            parts[(size_t) ch] = { low, middle, high };
+            std::array<double, 3> loudest {};
+
+            for (int ch = 0; ch < n; ++ch)
+                for (size_t b = 0; b < 3; ++b)
+                    loudest[b] = juce::jmax (loudest[b], std::abs (split.band (ch, (int) b)[i]));
+
+            std::array<double, 3> factors {};
 
             for (size_t b = 0; b < 3; ++b)
-                loudest[b] = juce::jmax (loudest[b], std::abs (parts[(size_t) ch][b]));
+            {
+                factors[b] = cores[b].next (loudest[b]) * output;
+                reduction[b] = 20.0 * std::log10 (factors[b] / output) - settings.bands[b].makeupDb;
+            }
+
+            for (int ch = 0; ch < n; ++ch)
+                channels[ch][done + i] = (float) (split.band (ch, 0)[i] * factors[0] + split.band (ch, 1)[i] * factors[1] + split.band (ch, 2)[i] * factors[2]);
         }
 
-        std::array<double, 3> factors {};
-
-        for (size_t b = 0; b < 3; ++b)
-        {
-            factors[b] = cores[b].next (loudest[b]) * output;
-            reduction[b] = 20.0 * std::log10 (factors[b] / output) - settings.bands[b].makeupDb;
-        }
-
-        for (int ch = 0; ch < n; ++ch)
-        {
-            const auto& p = parts[(size_t) ch];
-            channels[ch][i] = (float) (p[0] * factors[0] + p[1] * factors[1] + p[2] * factors[2]);
-        }
+        done += frames;
     }
 }
 
@@ -249,6 +383,15 @@ Panel::Panel()
         addAndMakeVisible (l);
     }
 
+    linearPhase.setTooltip ("The band split as symmetric impulses: the same band levels with no phase turned, so the bands add back to the sound exactly "
+                            "as it was and its peaks are held; " + juce::String (Split::linearLatency) + " frames late when played live (181 ms at 48 kHz)");
+    linearPhase.onClick = [this]
+    {
+        if (onChange != nullptr)
+            onChange();
+    };
+    addAndMakeVisible (linearPhase);
+
     for (auto* text : rowNames)
     {
         auto* l = labels.add (new juce::Label ({}, text));
@@ -258,7 +401,7 @@ Panel::Panel()
     }
 
     setSettings (Compressor());
-    setSize (620, 270);
+    setSize (720, 270);
 }
 
 Compressor Panel::getSettings() const
@@ -267,6 +410,7 @@ Compressor Panel::getSettings() const
     c.lowCrossover = lowCrossover->getValue();
     c.highCrossover = highCrossover->getValue();
     c.outputDb = output->getValue();
+    c.linearPhase = linearPhase.getToggleState();
 
     for (size_t b = 0; b < 3; ++b)
         c.bands[b] = { bands[b][0]->getValue(), bands[b][1]->getValue(), Dynamics::Compressor().kneeDb, bands[b][2]->getValue(),
@@ -281,6 +425,7 @@ void Panel::setSettings (const Compressor& c)
     set (lowCrossover, c.lowCrossover);
     set (highCrossover, c.highCrossover);
     set (output, c.outputDb);
+    linearPhase.setToggleState (c.linearPhase, juce::dontSendNotification);
 
     for (size_t b = 0; b < 3; ++b)
     {
@@ -351,7 +496,7 @@ void Panel::resized()
 {
     auto r = getLocalBounds().reduced (6);
     auto top = r.removeFromTop (48);
-    const auto topWidth = top.getWidth() / 3;
+    const auto topWidth = top.getWidth() / 4;
 
     for (int i = 0; i < 3; ++i)
     {
@@ -359,6 +504,10 @@ void Panel::resized()
         labels[i]->setBounds (cell.removeFromTop (20));
         sliders[i]->setBounds (cell.removeFromTop (24));
     }
+
+    auto cell = top.reduced (4, 0);
+    cell.removeFromTop (20);
+    linearPhase.setBounds (cell.removeFromTop (24));
 
     r.removeFromTop (8);
     r.removeFromTop (34);   // the bands' names, painted
@@ -385,27 +534,21 @@ bool isValid (const DeEsser& d, double sampleRate)
 void DeEsserCore::prepare (int numChannels, double sampleRate)
 {
     rate = sampleRate;
-    crossovers.assign ((size_t) juce::jmax (0, numChannels), {});
-    parts.assign (crossovers.size(), {});
+    split.prepare (numChannels, rate);
     set (settings);
     reset();
 }
 
 void DeEsserCore::reset() noexcept
 {
-    for (auto& c : crossovers)
-        c.reset();
-
+    split.reset();
     gainDb = 0.0;
 }
 
 void DeEsserCore::set (const DeEsser& d)
 {
     settings = d;
-
-    for (auto& c : crossovers)
-        c.set (d.frequency, rate);
-
+    split.set (d.frequency, std::nullopt, d.linearPhase);
     attack = Dynamics::smoothingCoefficient (attackMs, rate);
     release = Dynamics::smoothingCoefficient (releaseMs, rate);
 }
@@ -417,33 +560,42 @@ void DeEsserCore::setListening (bool on) noexcept
 
 void DeEsserCore::process (float* const* channels, int numChannels, int numFrames) noexcept
 {
-    const auto n = juce::jmin (numChannels, (int) crossovers.size());
+    const auto n = juce::jmin (numChannels, juce::jmin (64, split.getNumChannels()));
 
-    for (int i = 0; i < numFrames; ++i)
+    for (int done = 0; done < numFrames && n > 0;)
     {
-        double level = 0.0;
+        const auto frames = juce::jmin (Split::chunk, numFrames - done);
+        std::array<const float*, 64> in {};
 
         for (int ch = 0; ch < n; ++ch)
+            in[(size_t) ch] = channels[ch] + done;
+
+        split.run (in.data(), n, frames);
+
+        for (int i = 0; i < frames; ++i)
         {
-            auto& p = parts[(size_t) ch];
-            crossovers[(size_t) ch].split (channels[ch][i], p[0], p[1]);
-            level = juce::jmax (level, std::abs (p[1]));
+            double level = 0.0;
+
+            for (int ch = 0; ch < n; ++ch)
+                level = juce::jmax (level, std::abs (split.band (ch, 1)[i]));
+
+            // Down by however far the band is over the threshold, up to the reduction.
+            const auto overDb = level > 0.0 ? 20.0 * std::log10 (level) - settings.thresholdDb : -1.0;
+            const auto target = -juce::jlimit (0.0, settings.maxReductionDb, overDb);
+            const auto coefficient = target < gainDb ? attack : release;
+            gainDb = target + coefficient * (gainDb - target);
+            const auto factor = std::pow (10.0, gainDb / 20.0);
+
+            for (int ch = 0; ch < n; ++ch)
+            {
+                const auto below = split.band (ch, 0)[i], above = split.band (ch, 1)[i];
+                const auto turned = settings.wholeSound ? below + above : above;   // the part being turned down
+                const auto kept = settings.wholeSound ? 0.0 : below;
+                channels[ch][done + i] = (float) (listening ? turned * (1.0 - factor) : kept + turned * factor);
+            }
         }
 
-        // Down by however far the band is over the threshold, up to the reduction.
-        const auto overDb = level > 0.0 ? 20.0 * std::log10 (level) - settings.thresholdDb : -1.0;
-        const auto target = -juce::jlimit (0.0, settings.maxReductionDb, overDb);
-        const auto coefficient = target < gainDb ? attack : release;
-        gainDb = target + coefficient * (gainDb - target);
-        const auto factor = std::pow (10.0, gainDb / 20.0);
-
-        for (int ch = 0; ch < n; ++ch)
-        {
-            const auto& p = parts[(size_t) ch];
-            const auto turned = settings.wholeSound ? p[0] + p[1] : p[1];   // the part being turned down
-            const auto kept = settings.wholeSound ? 0.0 : p[0];
-            channels[ch][i] = (float) (listening ? turned * (1.0 - factor) : kept + turned * factor);
-        }
+        done += frames;
     }
 }
 
@@ -484,28 +636,21 @@ Width spaced (Width w, double sampleRate)
 void WidthCore::prepare (int numChannels, double sampleRate)
 {
     rate = sampleRate;
-    channelsPrepared = numChannels;
+    channelsPrepared = juce::jmin (64, numChannels);
+    split.prepare (channelsPrepared, rate);
     set (settings);
     reset();
 }
 
 void WidthCore::reset() noexcept
 {
-    for (auto* group : { &first, &second, &lowAlign })
-        for (auto& c : *group)
-            c.reset();
+    split.reset();
 }
 
 void WidthCore::set (const Width& w)
 {
     settings = w;
-
-    for (size_t ch = 0; ch < 2; ++ch)
-    {
-        first[ch].set (w.lowCrossover, rate);
-        second[ch].set (w.highCrossover, rate);
-        lowAlign[ch].set (w.highCrossover, rate);
-    }
+    split.set (w.lowCrossover, w.highCrossover, w.linearPhase);
 
     for (size_t b = 0; b < 3; ++b)
         factors[b] = w.percent[b] / 100.0;
@@ -513,33 +658,48 @@ void WidthCore::set (const Width& w)
 
 void WidthCore::process (float* const* channels, int numChannels, int numFrames) noexcept
 {
-    if (juce::jmin (numChannels, channelsPrepared) < 2)
+    const auto n = juce::jmin (numChannels, channelsPrepared);
+
+    // In minimum phase a mono sound, and the channels past the first pair, pass as they are; in
+    // linear phase they go through the split too, so they come out late with the pair, bit for bit.
+    if (n <= 0 || (! settings.linearPhase && n < 2))
         return;
 
-    for (int i = 0; i < numFrames; ++i)
+    const auto worked = settings.linearPhase ? n : 2;
+
+    for (int done = 0; done < numFrames;)
     {
-        std::array<std::array<double, 3>, 2> parts {};
+        const auto frames = juce::jmin (Split::chunk, numFrames - done);
+        std::array<const float*, 64> in {};
 
-        for (size_t ch = 0; ch < 2; ++ch)
+        for (int ch = 0; ch < worked; ++ch)
+            in[(size_t) ch] = channels[ch] + done;
+
+        split.run (in.data(), worked, frames);
+
+        if (n >= 2)
         {
-            double low = 0.0, rest = 0.0, middle = 0.0, high = 0.0;
-            first[ch].split (channels[ch][i], low, rest);
-            second[ch].split (rest, middle, high);
-            low = lowAlign[ch].allPass (low);
-            parts[ch] = { low, middle, high };
+            for (int i = 0; i < frames; ++i)
+            {
+                double left = 0.0, right = 0.0;
+
+                for (int b = 0; b < 3; ++b)
+                {
+                    const auto l = split.band (0, b)[i], r = split.band (1, b)[i];
+                    const auto mid = (l + r) / 2.0, side = (l - r) / 2.0 * factors[(size_t) b];
+                    left += mid + side;
+                    right += mid - side;
+                }
+
+                channels[0][done + i] = (float) left;
+                channels[1][done + i] = (float) right;
+            }
         }
 
-        double left = 0.0, right = 0.0;
+        for (int ch = n >= 2 ? 2 : 0; ch < worked; ++ch)
+            juce::FloatVectorOperations::copy (channels[ch] + done, split.same (ch), frames);
 
-        for (size_t b = 0; b < 3; ++b)
-        {
-            const auto mid = (parts[0][b] + parts[1][b]) / 2.0, side = (parts[0][b] - parts[1][b]) / 2.0 * factors[b];
-            left += mid + side;
-            right += mid - side;
-        }
-
-        channels[0][i] = (float) left;
-        channels[1][i] = (float) right;
+        done += frames;
     }
 }
 

@@ -7805,8 +7805,10 @@ void MainComponent::showMultiband()
                                        "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), each band "
                                        "compressed on its own as the Compressor does (6 dB knee), and the bands added back up: at a ratio of 1 "
                                        "everywhere, every frequency keeps its level. The high crossover stays at least an octave above the low one. The "
-                                       "band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): "
-                                       "limit after this, not before.",
+                                       "band split is minimum phase to start: no delay, but it turns the phase, which can lift the peaks of a sound already "
+                                       "at its ceiling (6 dB on a limited master). Linear phase splits with symmetric impulses instead, so the bands add back "
+                                       "to the sound exactly as it was and its peaks hold, at the cost of 8,703 frames of delay when played live (181 ms at "
+                                       "48 kHz), as the linear-phase EQ.",
                                        juce::MessageBoxIconType::NoIcon, this);
     auto panel = std::make_shared<Multiband::Panel>();
     panel->setSettings (multibandSettings);
@@ -8886,6 +8888,7 @@ void MainComponent::showTransientShaper()
         t.lowCrossover = v.at ("lowCrossover");
         t.highCrossover = v.at ("highCrossover");
         t.outputDb = v.at ("output");
+        t.linearPhase = juce::roundToInt (v.at ("linearPhase")) == 1;
         const std::array<const char*, 3> ids { "low", "mid", "high" };
 
         for (size_t b = 0; b < 3; ++b)
@@ -8894,7 +8897,8 @@ void MainComponent::showTransientShaper()
         return t;
     };
     std::vector<EffectField> fields { { "lowCrossover", "Low crossover (Hz)", s.lowCrossover, 0, {}, 20, 10000, 1 },
-                                      { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 } };
+                                      { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 },
+                                      { "linearPhase", "Band split", s.linearPhase ? 1.0 : 0.0, 0, { "Minimum phase (no delay)", "Linear phase (peaks held)" } } };
     const std::array<const char*, 3> ids { "low", "mid", "high" }, names { "Lows", "Middle", "Highs" };
 
     for (size_t b = 0; b < 3; ++b)
@@ -8910,7 +8914,7 @@ void MainComponent::showTransientShaper()
                       "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), and in each band the attacks (the "
                       "first moments of a hit, where a fast envelope stands over a slow one) and the sustain (what rings on after, where the slow "
                       "stands over the fast) are turned up or down on their own, by up to 12 dB. A steady sound is left as it is. The high "
-                      "crossover stays at least an octave above the low one. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
+                      "crossover stays at least an octave above the low one. The band split is minimum phase to start: no delay, but it turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master). Linear phase splits with symmetric impulses instead, so the bands add back to the sound exactly as it was and its peaks hold, at the cost of 8,703 frames of delay when played live (181 ms at 48 kHz), as the linear-phase EQ.",
                       fields, BuiltInEffects::transientShaperId, PreviewOwner::transientShaper,
                       [toSettings, rate] (const EffectValues& v) { return TransientShaper::isValid (toSettings (v), rate); },
                       "A setting is out of range: crossovers from 20 Hz to 20 kHz (below half the rate), the high one at least an octave above the low; attack and sustain within 12 dB, output within 24 dB.",
@@ -8977,6 +8981,7 @@ void MainComponent::showExciter()
         e.lowCrossover = v.at ("lowCrossover");
         e.highCrossover = v.at ("highCrossover");
         e.outputDb = v.at ("output");
+        e.linearPhase = juce::roundToInt (v.at ("linearPhase")) == 1;
         const std::array<const char*, 3> ids { "low", "mid", "high" };
 
         for (size_t b = 0; b < 3; ++b)
@@ -8986,7 +8991,8 @@ void MainComponent::showExciter()
         return e;
     };
     std::vector<EffectField> fields { { "lowCrossover", "Low crossover (Hz)", s.lowCrossover, 0, {}, 20, 10000, 1 },
-                                      { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 } };
+                                      { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 },
+                                      { "linearPhase", "Band split", s.linearPhase ? 1.0 : 0.0, 0, { "Minimum phase (no delay)", "Linear phase (peaks held)" } } };
     const std::array<const char*, 3> ids { "low", "mid", "high" }, names { "Lows", "Middle", "Highs" };
 
     for (size_t b = 0; b < 3; ++b)
@@ -9004,7 +9010,7 @@ void MainComponent::showExciter()
                       "curve of its own and mixed back with the band as it was. Tube rounds the halves unevenly (even and odd harmonics), Tape rounds "
                       "them alike (odd harmonics), Transistor clips harder. The drive sets how far the band goes into the curve; the level stays "
                       "about where it was. The shaping runs at four times the rate, so what it makes above the audible band is filtered off rather "
-                      "than folded back. The high crossover stays at least an octave above the low one. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
+                      "than folded back. The high crossover stays at least an octave above the low one. The band split is minimum phase to start: no delay, but it turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master). Linear phase splits with symmetric impulses instead, so the bands add back to the sound exactly as it was and its peaks hold, at the cost of 8,703 frames of delay when played live (181 ms at 48 kHz), as the linear-phase EQ.",
                       fields, BuiltInEffects::exciterId, PreviewOwner::exciter,
                       [toSettings, rate] (const EffectValues& v) { return Exciter::isValid (toSettings (v), rate); },
                       "A setting is out of range: crossovers from 20 Hz to 20 kHz (below half the rate), the high one at least an octave above the low; drive 0 to 36 dB, mix 0 to 100 %, output within 24 dB.",
@@ -9030,15 +9036,16 @@ void MainComponent::showMultibandWidth()
     const auto& s = multibandWidthSettings;
     const auto toSettings = [] (const EffectValues& v)
     {
-        return Multiband::Width { v.at ("lowCrossover"), v.at ("highCrossover"), { v.at ("low"), v.at ("mid"), v.at ("high") } };
+        return Multiband::Width { v.at ("lowCrossover"), v.at ("highCrossover"), { v.at ("low"), v.at ("mid"), v.at ("high") }, juce::roundToInt (v.at ("linearPhase")) == 1 };
     };
     const auto rate = engine.document.getSampleRate();
 
     showEffectDialog ("Multiband Stereo Width",
                       "The sound is split into lows, middle and highs at the two crossovers (24 dB an octave), and each band's width set on its "
                       "own: 0 % makes the band mono (its side taken out: the low band at 0 % is a mono low end), 100 % leaves it, and up to 200 % "
-                      "doubles its side. What the channels share is never touched. The high crossover stays at least an octave above the low one. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
+                      "doubles its side. What the channels share is never touched. The high crossover stays at least an octave above the low one. The band split is minimum phase to start: no delay, but it turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master). Linear phase splits with symmetric impulses instead, so the bands add back to the sound exactly as it was and its peaks hold, at the cost of 8,703 frames of delay when played live (181 ms at 48 kHz), as the linear-phase EQ.",
                       { { "lowCrossover", "Low crossover (Hz)", s.lowCrossover, 0, {}, 20, 10000, 1 }, { "highCrossover", "High crossover (Hz)", s.highCrossover, 0, {}, 40, 20000, 1 },
+                        { "linearPhase", "Band split", s.linearPhase ? 1.0 : 0.0, 0, { "Minimum phase (no delay)", "Linear phase (peaks held)" } },
                         { "low", "Lows (%)", s.percent[0], 0, {}, 0, 200, 1 }, { "mid", "Middle (%)", s.percent[1], 0, {}, 0, 200, 1 },
                         { "high", "Highs (%)", s.percent[2], 0, {}, 0, 200, 1 } },
                       BuiltInEffects::multibandWidthId, PreviewOwner::multibandWidth,
@@ -9066,7 +9073,7 @@ void MainComponent::showDeEsser()
     const auto& s = deEsserSettings;
     const auto toSettings = [] (const EffectValues& v)
     {
-        return Multiband::DeEsser { v.at ("frequency"), v.at ("threshold"), v.at ("reduction"), juce::roundToInt (v.at ("mode")) == 1 };
+        return Multiband::DeEsser { v.at ("frequency"), v.at ("threshold"), v.at ("reduction"), juce::roundToInt (v.at ("mode")) == 1, juce::roundToInt (v.at ("linearPhase")) == 1 };
     };
     const auto rate = engine.document.getSampleRate();
 
@@ -9074,10 +9081,11 @@ void MainComponent::showDeEsser()
                       "Whenever the highs above the frequency are louder than the threshold, they are turned down by however far they are over, "
                       "up to the reduction, within a millisecond, coming back over 60 ms. Turn down the high band alone (the rest of the voice "
                       "untouched) or the whole sound. Frequency 1 to 16 kHz, threshold -60 to 0 dB, reduction 0 to 24 dB. "
-                      "Listen plays only what it takes out, to set the frequency and threshold by ear; OK always applies the result. The band split turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master): limit after this, not before.",
+                      "Listen plays only what it takes out, to set the frequency and threshold by ear; OK always applies the result. The band split is minimum phase to start: no delay, but it turns the phase, which can lift the peaks of a sound already at its ceiling (6 dB on a limited master). Linear phase splits with symmetric impulses instead, so the bands add back to the sound exactly as it was and its peaks hold, at the cost of 8,703 frames of delay when played live (181 ms at 48 kHz), as the linear-phase EQ.",
                       { { "frequency", "Frequency (Hz)", s.frequency, 0, {}, 1000, 16000, 50 }, { "threshold", "Threshold (dB)", s.thresholdDb, 1, {}, -60, 0, 0.5 },
                         { "reduction", "Reduction (dB)", s.maxReductionDb, 1, {}, 0, 24, 0.5 },
                         { "mode", "Turn down", s.wholeSound ? 1.0 : 0.0, 0, { "The high band", "The whole sound" } },
+                        { "linearPhase", "Band split", s.linearPhase ? 1.0 : 0.0, 0, { "Minimum phase (no delay)", "Linear phase (peaks held)" } },
                         { "listen", "Listen", 0.0, 0, { "To the result", "Only to what it takes out" } } },
                       BuiltInEffects::deEsserId, PreviewOwner::deEsser,
                       [toSettings, rate] (const EffectValues& v) { return Multiband::isValid (toSettings (v), rate); },

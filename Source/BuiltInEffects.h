@@ -524,7 +524,7 @@ namespace BuiltInEffects
         band's knee is 6 dB). Crossovers set closer than an octave, or past what the rate allows, are
         moved apart as the offline effect would refuse them. It runs a frame at a time with
         Multiband::CompressorCore, so over a whole file from its start it gives Multiband::compress's
-        samples. No latency. */
+        samples. No latency in minimum phase; the split's in linear phase, which it reports. */
     class MultibandProcessor final : public BuiltInEffect
     {
     public:
@@ -538,9 +538,11 @@ namespace BuiltInEffects
         void setSettings (const Multiband::Compressor&);
 
         /** The parameters, and settings as their values, in one order: the crossovers, the output, then
-            each band's threshold, ratio, attack, release and makeup. */
+            each band's threshold, ratio, attack, release and makeup; the values end with the
+            linear-phase switch (1 or 0), which is not among the sliders. */
         std::vector<juce::AudioParameterFloat*> parameterOrder() const;
         static std::vector<float> valuesOf (const Multiband::Compressor&);
+        juce::AudioParameterBool& linearPhaseParameter() noexcept       { return *linearPhase; }
 
         /** Each band's reduction at the end of the last block, safe to read from the window. */
         std::array<double, 3> getReductionDb() const noexcept;
@@ -557,6 +559,7 @@ namespace BuiltInEffects
         juce::AudioParameterFloat* lowCrossover = nullptr;
         juce::AudioParameterFloat* highCrossover = nullptr;
         juce::AudioParameterFloat* output = nullptr;
+        juce::AudioParameterBool* linearPhase = nullptr;
         struct BandParameters { juce::AudioParameterFloat *threshold, *ratio, *attack, *release, *makeup; };
         std::array<BandParameters, 3> bands {};
 
@@ -623,6 +626,7 @@ namespace BuiltInEffects
         juce::AudioParameterFloat* threshold = nullptr;
         juce::AudioParameterFloat* reduction = nullptr;
         juce::AudioParameterChoice* mode = nullptr;
+        juce::AudioParameterBool* linearPhase = nullptr;
 
     public:
         juce::AudioParameterBool* listen = nullptr;
@@ -640,7 +644,7 @@ namespace BuiltInEffects
         Effects > Multiband Stereo Width's ranges); crossovers set closer than an octave, or past
         what the rate allows, are moved apart as the offline effect would refuse them. It runs a
         frame at a time with Multiband::WidthCore, so over a whole file from its start it gives
-        Multiband::widen's samples. No latency. */
+        Multiband::widen's samples. No latency in minimum phase; the split's in linear phase, which it reports. */
     class MultibandWidthProcessor final : public BuiltInEffect
     {
     public:
@@ -659,8 +663,9 @@ namespace BuiltInEffects
     private:
         juce::AudioParameterFloat *lowCrossover = nullptr, *highCrossover = nullptr;
         std::array<juce::AudioParameterFloat*, 3> widths {};
+        juce::AudioParameterBool* linearPhase = nullptr;
         Multiband::WidthCore core;
-        std::array<float, 5> applied {};
+        std::array<float, 6> applied {};
         double rate = 48000.0;
         int channelsPrepared = 0;
 
@@ -688,6 +693,7 @@ namespace BuiltInEffects
 
     private:
         juce::AudioParameterFloat *lowCrossover = nullptr, *highCrossover = nullptr, *output = nullptr;
+        juce::AudioParameterBool* linearPhase = nullptr;
         struct BandParameters { juce::AudioParameterFloat *drive, *mix; juce::AudioParameterChoice* curve; };
         std::array<BandParameters, 3> bands {};
         std::vector<float> valuesOfParameters() const;
@@ -735,7 +741,7 @@ namespace BuiltInEffects
         parameters (over Effects > Transient Shaper's ranges); crossovers set too close or too high
         are moved apart as the offline effect would refuse them. It runs a frame at a time with
         TransientShaper::Core, so over a whole file from its start it gives TransientShaper::apply's
-        samples. No latency. */
+        samples. No latency in minimum phase; the split's in linear phase, which it reports. */
     class TransientShaperProcessor final : public BuiltInEffect
     {
     public:
@@ -754,6 +760,7 @@ namespace BuiltInEffects
         std::vector<float> valuesOfParameters() const;
 
         juce::AudioParameterFloat *lowCrossover = nullptr, *highCrossover = nullptr, *output = nullptr;
+        juce::AudioParameterBool* linearPhase = nullptr;
         std::array<std::pair<juce::AudioParameterFloat*, juce::AudioParameterFloat*>, 3> bands {};   // attack, sustain
         TransientShaper::Core core;
         std::vector<float> applied;

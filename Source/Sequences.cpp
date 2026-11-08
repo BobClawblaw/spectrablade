@@ -38,7 +38,7 @@ namespace
     {
         const char* id;
         const char* name;
-        std::vector<const char*> values;   // the settings it needs
+        std::vector<const char*> values;   // the settings it needs (an optional one, "method" or "linearPhase", is read as 0 when missing)
     };
 
     // In menu order. The names are the commands' undo names.
@@ -110,9 +110,10 @@ namespace
         return { get (v, "gain"), get (v, "ceiling"), get (v, "release"), get (v, "lookahead"), get (v, "peaks") > 0.5 };
     }
 
+    // "linearPhase" on the band-split steps is optional: 1 for the split in linear phase, else minimum phase.
     Multiband::Width widthOf (const Values& v)
     {
-        return { get (v, "lowCrossover"), get (v, "highCrossover"), { get (v, "low"), get (v, "mid"), get (v, "high") } };
+        return { get (v, "lowCrossover"), get (v, "highCrossover"), { get (v, "low"), get (v, "mid"), get (v, "high") }, get (v, "linearPhase") > 0.5 };
     }
 
     TransientShaper::Settings transientShaperOf (const Values& v)
@@ -121,6 +122,7 @@ namespace
         s.lowCrossover = get (v, "lowCrossover");
         s.highCrossover = get (v, "highCrossover");
         s.outputDb = get (v, "output");
+        s.linearPhase = get (v, "linearPhase") > 0.5;
         const std::array<const char*, 3> ids { "low", "mid", "high" };
 
         for (size_t b = 0; b < 3; ++b)
@@ -158,6 +160,7 @@ namespace
         s.lowCrossover = get (v, "lowCrossover");
         s.highCrossover = get (v, "highCrossover");
         s.outputDb = get (v, "output");
+        s.linearPhase = get (v, "linearPhase") > 0.5;
         const std::array<const char*, 3> ids { "low", "mid", "high" };
 
         for (size_t b = 0; b < 3; ++b)
@@ -172,7 +175,7 @@ namespace
 
     Multiband::DeEsser deEsserOf (const Values& v)
     {
-        return { get (v, "frequency"), get (v, "threshold"), get (v, "reduction"), juce::roundToInt (get (v, "mode")) == 1 };
+        return { get (v, "frequency"), get (v, "threshold"), get (v, "reduction"), juce::roundToInt (get (v, "mode")) == 1, get (v, "linearPhase") > 0.5 };
     }
 
     Modulation::Delay delayOf (const Values& v)
@@ -316,6 +319,10 @@ juce::String problem (const Step& step, double rate)
     if ((step.kind == "stretch" && (get (v, "percent") < TimeStretch::shortest * 100.0 || get (v, "percent") > TimeStretch::longest * 100.0))
         || (step.kind == "pitch" && std::abs (get (v, "semitones")) > TimeStretch::widestShift)
         || ((step.kind == "stretch" || step.kind == "pitch") && ! juce::exactlyEqual (get (v, "method"), 0.0) && ! juce::exactlyEqual (get (v, "method"), 1.0)))
+        return bad();
+
+    if ((step.kind == "deEsser" || step.kind == "multibandWidth" || step.kind == "exciter" || step.kind == "transientShaper")
+        && ! juce::exactlyEqual (get (v, "linearPhase"), 0.0) && ! juce::exactlyEqual (get (v, "linearPhase"), 1.0))
         return bad();
 
     if (step.kind == "deliverySpec" && ! Delivery::isValid (get (v, "target"), get (v, "tolerance"), get (v, "ceiling")))

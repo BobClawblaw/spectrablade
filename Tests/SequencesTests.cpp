@@ -109,8 +109,8 @@ void runSequencesTests (AudioEngine& engine)
     {
         const Dynamics::Compressor comp { -24.0, 3.0, 6.0, 10.0, 120.0, 2.0 };
         const Dynamics::Limiter lim { 3.0, -1.5, 40.0, 5.0, true };
-        const Multiband::DeEsser ess { 6000.0, -30.0, 9.0, true };
-        const Multiband::Width width { 120.0, 2500.0, { 0.0, 100.0, 140.0 } };
+        const Multiband::DeEsser ess { 6000.0, -30.0, 9.0, true, true };
+        const Multiband::Width width { 120.0, 2500.0, { 0.0, 100.0, 140.0 }, true };
         Exciter::Settings exc;
         exc.lowCrossover = 180.0;
         exc.highCrossover = 2800.0;
@@ -159,9 +159,9 @@ void runSequencesTests (AudioEngine& engine)
               Dynamics::compress (s, a, b, rate, comp) },
             { { "limiter", { { "gain", 3.0 }, { "ceiling", -1.5 }, { "release", 40.0 }, { "lookahead", 5.0 }, { "peaks", 1.0 } }, nullptr },
               Dynamics::limit (s, a, b, rate, lim) },
-            { { "deEsser", { { "frequency", 6000.0 }, { "threshold", -30.0 }, { "reduction", 9.0 }, { "mode", 1.0 } }, nullptr },
+            { { "deEsser", { { "frequency", 6000.0 }, { "threshold", -30.0 }, { "reduction", 9.0 }, { "mode", 1.0 }, { "linearPhase", 1.0 } }, nullptr },
               Multiband::deEss (s, a, b, rate, ess) },
-            { { "multibandWidth", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 } }, nullptr },
+            { { "multibandWidth", { { "lowCrossover", 120.0 }, { "highCrossover", 2500.0 }, { "low", 0.0 }, { "mid", 100.0 }, { "high", 140.0 }, { "linearPhase", 1.0 } }, nullptr },
               Multiband::widen (s, a, b, rate, width) },
             { { "exciter", { { "lowCrossover", 180.0 }, { "highCrossover", 2800.0 }, { "lowDrive", 6.0 }, { "lowCurve", 0.0 }, { "lowMix", 50.0 }, { "midDrive", 9.0 }, { "midCurve", 1.0 },
                              { "midMix", 40.0 }, { "highDrive", 12.0 }, { "highCurve", 2.0 }, { "highMix", 30.0 }, { "output", -1.0 } }, nullptr },

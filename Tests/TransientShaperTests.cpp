@@ -196,4 +196,66 @@ void runTransientShaperTests()
                "built-in transient shaper: played in blocks of 1, 7, 512 and 3,000 frames it gives the offline samples bit for bit; no latency; its state "
                "and presets restore every setting; a gain past 12 dB, crossovers under an octave apart and an empty range are refused");
     }
+
+    // In linear phase: with every gain at zero the hits come back as they were (the minimum-phase
+    // split lifts their peaks); live, in uneven blocks, the offline samples bit for bit, late by the
+    // split's latency, which it reports.
+    {
+        const auto in = hits();
+        const auto snap = AudioEdits::fromBuffer (juce::AudioBuffer<float> (in));
+        TransientShaper::Settings idle;
+        idle.lowCrossover = 150.0;
+        idle.highCrossover = 2500.0;
+        const auto turned = applied (in, idle);
+        idle.linearPhase = true;
+        const auto held = applied (in, idle);
+        auto worst = 0.0f;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                worst = juce::jmax (worst, std::abs (held.getSample (ch, i) - in.getSample (ch, i)));
+
+        const auto peakIn = in.getMagnitude (0, 48000), peakTurned = turned.getMagnitude (0, 48000), peakHeld = held.getMagnitude (0, 48000);
+        std::cout << "      idle shaper: peaks in " << peakIn << ", minimum phase " << peakTurned << ", linear phase " << peakHeld << " (off by at most " << worst << ")" << std::endl;
+
+        TransientShaper::Settings s;
+        s.lowCrossover = 150.0;
+        s.highCrossover = 2500.0;
+        s.bands = {{ { 4.0, -3.0 }, { 6.0, 2.0 }, { -2.0, 5.0 } }};
+        s.linearPhase = true;
+        constexpr auto latency = Multiband::Split::linearLatency;
+
+        BuiltInEffects::TransientShaperProcessor live;
+        live.setSettings (s);
+        live.setPlayConfigDetails (2, 2, rate, 512);
+        live.prepareToPlay (rate, 3000);
+        juce::AudioBuffer<float> played (2, 48000 + latency);
+        played.clear();
+
+        for (int ch = 0; ch < 2; ++ch)
+            played.copyFrom (ch, 0, in, ch, 0, 48000);
+
+        juce::MidiBuffer midi;
+        const int sizes[] = { 1, 7, 512, 3000 };
+
+        for (int pos = 0, k = 0; pos < played.getNumSamples(); ++k)
+        {
+            const auto n = juce::jmin (sizes[k % 4], played.getNumSamples() - pos);
+            juce::AudioBuffer<float> block (played.getArrayOfWritePointers(), 2, pos, n);
+            live.processBlock (block, midi);
+            pos += n;
+        }
+
+        const auto offline = applied (in, live.getSettings());
+        auto same = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                same = same && juce::exactlyEqual (played.getSample (ch, i + latency), offline.getSample (ch, i));
+
+        check (worst < 1.0e-5f && peakTurned > peakIn && same && live.getLatencySamples() == latency,
+               "built-in transient shaper in linear phase: at zero everywhere the hits come back within 1e-5 (the minimum-phase split lifts their "
+               "peak); played in blocks of 1, 7, 512 and 3,000 frames it gives the offline samples bit for bit, late by the "
+               + juce::String (latency) + " frames it reports");
+    }
 }

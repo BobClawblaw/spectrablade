@@ -233,4 +233,54 @@ void runExciterTests()
                "latency, which it reports; its state and presets restore every setting; a drive past 36 dB, crossovers under an octave apart and an "
                "empty range are refused, and spaced moves the crossovers apart");
     }
+
+    // In linear phase: live, in uneven blocks, the offline samples bit for bit, late by the oversampler's
+    // latency plus the split's, which it reports.
+    {
+        juce::Random r (9);
+        juce::AudioBuffer<float> in (2, 48000);
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                in.setSample (ch, i, (r.nextFloat() - 0.5f) * 0.6f);
+
+        Exciter::Settings s;
+        s.bands[0] = { 6.0, Exciter::Curve::tape, 60.0 };
+        s.bands[1] = { 12.0, Exciter::Curve::tube, 80.0 };
+        s.bands[2] = { 18.0, Exciter::Curve::transistor, 40.0 };
+        s.linearPhase = true;
+        constexpr auto latency = Exciter::Core::latency + Multiband::Split::linearLatency;
+
+        BuiltInEffects::ExciterProcessor live;
+        live.setSettings (s);
+        live.setPlayConfigDetails (2, 2, rate, 512);
+        live.prepareToPlay (rate, 3000);
+        juce::AudioBuffer<float> played (2, 48000 + latency);
+        played.clear();
+
+        for (int ch = 0; ch < 2; ++ch)
+            played.copyFrom (ch, 0, in, ch, 0, 48000);
+
+        juce::MidiBuffer midi;
+        const int sizes[] = { 1, 7, 512, 3000 };
+
+        for (int pos = 0, k = 0; pos < played.getNumSamples(); ++k)
+        {
+            const auto n = juce::jmin (sizes[k % 4], played.getNumSamples() - pos);
+            juce::AudioBuffer<float> block (played.getArrayOfWritePointers(), 2, pos, n);
+            live.processBlock (block, midi);
+            pos += n;
+        }
+
+        const auto offline = applied (in, live.getSettings());
+        auto same = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < 48000; ++i)
+                same = same && juce::exactlyEqual (played.getSample (ch, i + latency), offline.getSample (ch, i));
+
+        check (same && live.getLatencySamples() == latency && live.getSettings().linearPhase,
+               "built-in exciter in linear phase: played in blocks of 1, 7, 512 and 3,000 frames it gives the offline samples bit for bit, late by the "
+               + juce::String (latency) + " frames (the oversampler's 40 and the split's) it reports");
+    }
 }
