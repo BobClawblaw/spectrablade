@@ -130,7 +130,7 @@ namespace
         miss; it reaches back to the first forward miss before the core (forward prediction from clean
         audio fails where the click begins) and on to the last backward miss after it (backward
         prediction fails where it ends), so smooth click edges are caught as well. */
-    void detectBlock (const AudioSnapshot& snapshot, juce::int64 from, juce::int64 to, double threshold,
+    void detectBlock (const AudioSnapshot& snapshot, juce::int64 from, juce::int64 to, double threshold, bool voice,
                       juce::AudioBuffer<float>& window, std::vector<Gap>& raw)
     {
         const auto windowStart = from - blockSize / 2;
@@ -165,10 +165,21 @@ namespace
                 backward[(size_t) j] = std::abs (b);
             }
 
-            // Robust spread of the forward error over the block: median absolute value / 0.6745.
+            // Robust spread of the forward error over the block: median absolute value / 0.6745; for a
+            // voice, the 95th percentile / 1.96 where that is more (the same for a Gaussian error; more
+            // where the error is spiky of itself, as a voice's own pulses make it, which are not clicks).
             sorted.assign (forward.begin() + order, forward.begin() + order + count);
             std::nth_element (sorted.begin(), sorted.begin() + count / 2, sorted.end());
-            const auto limit = threshold * juce::jmax (minSigma, sorted[(size_t) count / 2] / 0.6745);
+            auto spread = sorted[(size_t) count / 2] / 0.6745;
+
+            if (voice)
+            {
+                const auto high = juce::jmin (count - 1, (int) (0.95 * count));
+                std::nth_element (sorted.begin(), sorted.begin() + high, sorted.end());
+                spread = juce::jmax (spread, sorted[(size_t) high] / 1.96);
+            }
+
+            const auto limit = threshold * juce::jmax (minSigma, spread);
             auto both = [&] (int j) { return forward[(size_t) j] > limit && backward[(size_t) j] > limit; };
 
             for (int j = order; j < order + count;)
@@ -285,7 +296,7 @@ std::optional<Result> repair (const AudioSnapshot& snapshot, juce::int64 start, 
 
     for (auto b = start; b < end; b += blockSize)
     {
-        detectBlock (snapshot, b, juce::jmin (end, b + blockSize), threshold, window, raw);
+        detectBlock (snapshot, b, juce::jmin (end, b + blockSize), threshold, settings.voice, window, raw);
 
         if (progress != nullptr && ! progress (0.85f * (float) ((double) (b - start) / (double) (end - start))))
             return std::nullopt;

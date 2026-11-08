@@ -7,7 +7,7 @@ namespace
 {
     constexpr int fftOrder = 12, size = 1 << fftOrder, hop = size / 4, bins = size / 2 + 1;
     constexpr double lowestPitch = 70.0, highestPitch = 400.0;
-    constexpr int harmonicsCounted = 12;
+    constexpr int harmonicsCounted = 12, pitchOrder = 12, pitchFrame = 1 << pitchOrder;
 
     std::vector<float> rootHann()
     {
@@ -27,91 +27,156 @@ bool isValid (const Settings& s)
 
 float thresholdFor (float sensitivity)
 {
-    return 0.85f - 0.25f * juce::jlimit (0.0f, 100.0f, sensitivity) / 100.0f;
+    return 0.75f - 0.3f * juce::jlimit (0.0f, 100.0f, sensitivity) / 100.0f;
 }
 
-Pitch pitchOf (const std::vector<float>& power, double sampleRate)
+Pitch pitchOf (const juce::AudioBuffer<float>& audio, int at, double sampleRate)
 {
-    const auto binHz = sampleRate / size;
-    const auto lowBin = (int) std::ceil (80.0 / binHz), highBin = juce::jmin ((int) power.size() - 1, (int) (4000.0 / binHz));
-    auto total = 0.0;
+    // The frame (the channels mixed, Hann-windowed, zero-padded to twice its length so the
+    // autocorrelation is the linear one) and its power spectrum.
+    static const juce::dsp::FFT fft (pitchOrder + 1);
+    static const auto window = [] { std::vector<float> w ((size_t) pitchFrame); for (int i = 0; i < pitchFrame; ++i) w[(size_t) i] = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / pitchFrame)); return w; }();
+    static const auto windowCorrelation = [] { std::vector<double> c ((size_t) pitchFrame); for (int lag = 0; lag < pitchFrame; ++lag) { auto sum = 0.0; for (int i = 0; i + lag < pitchFrame; ++i) sum += (double) window[(size_t) i] * window[(size_t) (i + lag)]; c[(size_t) lag] = sum; } return c; }();
+    constexpr int padded = 2 * pitchFrame, paddedBins = padded / 2 + 1;
+    std::vector<float> data ((size_t) (2 * padded), 0.0f);
+    const auto channels = audio.getNumChannels();
 
-    for (int k = lowBin; k <= highBin; ++k)
-        total += power[(size_t) k];
-
-    if (total <= 1.0e-12)
+    if (channels < 1 || sampleRate <= 0.0)
         return {};
 
-    // Candidates a sixteenth of an octave apart; each compares the power a bin within a quarter of
-    // itself round its first twelve harmonics (counted once a bin) with the power a bin in the gaps
-    // between them: the median of the gaps' own densities, so one tone in a gap doesn't count for
-    // all, and the gaps are the harmonics' own neighbours (a spectrum falling smoothly with
-    // frequency would read as harmonics against the quiet far above them otherwise).
-    std::vector<double> cumulative ((size_t) power.size() + 1, 0.0);
-
-    for (size_t k = 0; k < power.size(); ++k)
-        cumulative[k + 1] = cumulative[k] + power[k];
-
-    Pitch best;
-    std::vector<double> gapDensities;
-
-    for (auto f0 = lowestPitch; f0 <= highestPitch; f0 *= std::pow (2.0, 1.0 / 16.0))
+    for (int i = 0; i < pitchFrame; ++i)
     {
-        auto sum = 0.0;
-        auto counted = 0, found = 0, lastBin = -1;
-        std::vector<std::pair<double, int>> windows;   // each harmonic's power and bins
-        gapDensities.clear();
+        const auto index = at + i;
 
-        for (int h = 1; h <= harmonicsCounted; ++h)
-        {
-            const auto centre = h * f0;
-
-            if (centre > 4000.0)
-                break;
-
-            const auto from = juce::jmax (lowBin, (int) std::ceil ((centre - f0 / 4.0) / binHz)), to = juce::jmin (highBin, (int) ((centre + f0 / 4.0) / binHz));
-            auto here = 0.0;
-            auto width = 0;
-            const auto gapFrom = juce::jmax (lowBin, lastBin + 1), gapTo = juce::jmax (from, lastBin + 1) - 1;   // the gap before this window
-
-            if (gapTo >= gapFrom)
-                gapDensities.push_back ((cumulative[(size_t) gapTo + 1] - cumulative[(size_t) gapFrom]) / (gapTo - gapFrom + 1));
-
-            for (int k = juce::jmax (from, lastBin + 1); k <= to; ++k)
-            {
-                here += power[(size_t) k];
-                ++width;
-            }
-
-            lastBin = juce::jmax (lastBin, to);
-            sum += here;
-            counted += width;
-            windows.emplace_back (here, width);
-        }
-
-        if (counted == 0 || gapDensities.empty())
+        if (index < 0 || index >= audio.getNumSamples())
             continue;
 
-        std::sort (gapDensities.begin(), gapDensities.end());
-        const auto gapDensity = juce::jmax (1.0e-15, gapDensities[gapDensities.size() / 2]);
+        auto mix = 0.0f;
 
-        for (const auto& [here, width] : windows)
-            if (width > 0 && here / width > 4.0 * gapDensity)
-                ++found;
+        for (int ch = 0; ch < channels; ++ch)
+            mix += audio.getSample (ch, index);
 
-        // At least three harmonics, and two thirds of those looked for (a candidate an octave or
-        // more under the pitch finds only every other one); of candidates within 2 % the higher wins.
-        if (found < 3 || found * 3 < (int) windows.size() * 2)
-            continue;
-
-        const auto ratio = (sum / counted) / gapDensity;
-        const auto voicing = ratio / (1.0 + ratio);
-
-        if (voicing > 0.98 * best.voicing)
-            best = { f0, voicing };
+        data[(size_t) i] = mix / (float) channels * window[(size_t) i];
     }
 
-    return best;
+    fft.performRealOnlyForwardTransform (data.data(), true);
+    const auto binHz = sampleRate / padded;
+    std::vector<float> power ((size_t) paddedBins);
+
+    for (int k = 0; k < paddedBins; ++k)
+        power[(size_t) k] = data[(size_t) (2 * k)] * data[(size_t) (2 * k)] + data[(size_t) (2 * k + 1)] * data[(size_t) (2 * k + 1)];
+
+    // The autocorrelation of the frame's 100 Hz to 1.5 kHz (the pitch's first harmonics; under
+    // 100 Hz lies rumble, whose slow swings repeat by chance at a low voice's period), as the
+    // inverse transform of that band's power.
+    for (int k = 0; k < paddedBins; ++k)
+    {
+        const auto hz = k * binHz;
+        data[(size_t) (2 * k)] = hz >= 100.0 && hz <= 1500.0 ? power[(size_t) k] : 0.0f;
+        data[(size_t) (2 * k + 1)] = 0.0f;
+    }
+
+    fft.performRealOnlyInverseTransform (data.data());
+    const auto energy = (double) data[0];
+
+    if (energy <= 1.0e-12)
+        return {};
+
+    // How well the frame repeats at each lag from the highest pitch's period to the lowest's, the
+    // window's own taper taken out; the best, and the shortest lag whose own peak comes within 15 %
+    // of it (the period itself over its multiples, even where something between the harmonics
+    // turns over at the period and not at twice it), refined between the lags round it.
+    const auto shortest = juce::jmax (1, (int) (sampleRate / highestPitch)), longest = juce::jmin (pitchFrame - 2, (int) (sampleRate / lowestPitch));
+
+    if (longest <= shortest)
+        return {};
+
+    const auto correlationAt = [&] (int lag) { return juce::jlimit (-1.0, 1.0, (double) data[(size_t) lag] / energy / (windowCorrelation[(size_t) lag] / windowCorrelation[0])); };
+    std::vector<double> correlation ((size_t) (longest + 2), 0.0);
+
+    for (int lag = 1; lag <= longest + 1; ++lag)
+        correlation[(size_t) lag] = lag < pitchFrame ? correlationAt (lag) : 0.0;
+
+    // A repeat counts only past the first trough: something periodic falls away from lag 0 before
+    // it comes round again, where rumble or a hum's lows (which only fall away slowly) never do.
+    auto trough = 0;
+
+    while (trough <= longest && correlation[(size_t) trough + 1] > 0.3)
+        ++trough;
+
+    const auto first = juce::jmax (shortest, trough + 1);
+    auto best = 0.0;
+
+    for (int lag = first; lag <= longest; ++lag)
+        best = juce::jmax (best, correlation[(size_t) lag]);
+
+    if (best <= 0.0)
+        return {};
+
+    auto chosen = 0;
+
+    for (int lag = first; lag <= longest && chosen == 0; ++lag)
+        if (correlation[(size_t) lag] >= 0.85 * best && correlation[(size_t) lag] >= correlation[(size_t) lag - 1] && correlation[(size_t) lag] >= correlation[(size_t) lag + 1])
+            chosen = lag;
+
+    if (chosen == 0)
+        return {};
+
+    // A lone tone repeats just as well at half the period (its own, or a multiple of its own);
+    // a voice, whose odd harmonics turn over there, does not.
+    if (correlation[(size_t) (chosen / 2)] >= 0.9 * correlation[(size_t) chosen])
+        return {};
+
+    const auto left = correlation[(size_t) chosen - 1], middle = correlation[(size_t) chosen], right = correlation[(size_t) chosen + 1];
+    const auto curve = left - 2.0 * middle + right;
+    const auto offset = curve < 0.0 ? juce::jlimit (-0.5, 0.5, 0.5 * (left - right) / curve) : 0.0;
+    const auto period = chosen + offset;
+    const auto voicing = juce::jlimit (0.0, 1.0, middle - 0.25 * (left - right) * offset);
+    const auto frequency = sampleRate / period;
+
+    // A voice has harmonics: of the first twelve (under 4 kHz), each holding twice the power a bin
+    // of the gaps round them, or this is a lone tone or a chance repeat in noise.
+    const auto lowBin = (int) std::ceil (lowestPitch / binHz);
+    std::vector<std::pair<double, double>> windows;   // each harmonic's power a bin, and the gap's before it
+    auto lastBin = lowBin - 1;
+
+    for (int h = 1; h <= harmonicsCounted && h * frequency <= 4000.0; ++h)
+    {
+        const auto centre = h * frequency;
+        const auto from = juce::jmax (lastBin + 1, (int) std::ceil ((centre - frequency / 4.0) / binHz)), to = juce::jmin (paddedBins - 1, (int) ((centre + frequency / 4.0) / binHz));
+
+        if (to < from)
+            continue;
+
+        auto here = 0.0, gap = 0.0;
+
+        for (int k = from; k <= to; ++k)
+            here += power[(size_t) k];
+
+        for (int k = lastBin + 1; k < from; ++k)
+            gap += power[(size_t) k];
+
+        windows.emplace_back (here / (to - from + 1), from > lastBin + 1 ? gap / (from - lastBin - 1) : -1.0);
+        lastBin = to;
+    }
+
+    auto found = 0;
+
+    for (size_t i = 0; i < windows.size(); ++i)
+    {
+        // Over both the gaps either side (the one before, and the one before the next), so a
+        // spectrum falling through them, or a hump of narrow noise, is not a peak.
+        const auto before = windows[i].second, after = i + 1 < windows.size() ? windows[i + 1].second : -1.0;
+        const auto gap = juce::jmax (before, after);
+
+        if (gap >= 0.0 && windows[i].first > 2.0 * gap)
+            ++found;
+    }
+
+    if (found < 3)
+        return {};
+
+    return { frequency, voicing };
 }
 
 AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate, Settings settings,
@@ -150,6 +215,9 @@ AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce
     const auto minimumSpan = juce::jmax (1, (int) (1.5 * sampleRate / hop));   // frames the minimum is taken over
     auto gathered = 0;
     auto cancelled = false;
+    const auto holdFrames = juce::jmax (1, (int) std::lround (0.08 * sampleRate / hop));
+    Pitch held;
+    auto heldFor = 0;
 
     for (int step = 0; step < steps; ++step)
     {
@@ -197,8 +265,24 @@ AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce
         }
 
         // What to keep: the voiced harmonics and the highs over the background, or a fricative's band.
-        const auto pitch = pitchOf (power, sampleRate);
-        const auto voiced = pitch.voicing >= threshold;
+        // Voiced at the threshold, and staying so for 80 ms after while the voicing holds within
+        // 0.15 of it (a voice's breathier moments and its ends), at the last pitch clearly read.
+        auto pitch = pitchOf (in, pos, sampleRate);
+
+        if (pitch.voicing >= threshold)
+        {
+            held = pitch;
+            heldFor = 0;
+        }
+        else if (held.voicing > 0.0 && heldFor < holdFrames && pitch.voicing >= threshold - 0.15f)
+        {
+            ++heldFor;
+            pitch = held;
+        }
+        else
+            held = {};
+
+        const auto voiced = held.voicing > 0.0;
         auto highsPower = 0.0, highsBackground = 0.0, lowsPower = 0.0, lowsBackground = 0.0;
 
         for (int k = eightyHz; k <= eightK; ++k)
@@ -207,7 +291,8 @@ AudioDocument::Snapshot isolate (const AudioSnapshot& s, juce::int64 start, juce
             (k >= twoK ? highsBackground : lowsBackground) += background[(size_t) k];
         }
 
-        const auto fricative = ! voiced && highsPower > 4.0 * highsBackground && lowsPower < 4.0 * lowsBackground + 1.0e-12;
+        // A fricative: unvoiced, its highs (2 to 8 kHz) well over the background and over its lows.
+        const auto fricative = ! voiced && highsPower > 4.0 * highsBackground && highsPower > lowsPower;
         std::vector<char> keep ((size_t) bins, 0);
 
         if (voiced)

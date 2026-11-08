@@ -113,8 +113,9 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
             if (tracked)
             {
                 // The smoothed power and this sub-window's least; and whether the least has risen past
-                // twice the estimate in most bins from 100 Hz to 8 kHz (noise rising, which is broad,
-                // against speech starting, which raises its own bins).
+                // twice the estimate in most bins from 100 Hz to 8 kHz, through the whole of the last
+                // sub-window as well as this one so far (noise rising, which is broad and stays, against
+                // speech, which raises most bins too but not for that long).
                 auto risen = 0, counted = 0;
                 const auto lowBin = (int) (100.0 / (sampleRate / size)), highBin = juce::jmin (bins - 1, (int) (8000.0 / (sampleRate / size)));
 
@@ -131,7 +132,7 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& s, juce::int64 start, juce:
                     {
                         ++counted;
 
-                        if (current > 2.0f * t.noise[(size_t) b])
+                        if (current > 2.0f * t.noise[(size_t) b] && t.least[1][(size_t) b] > 2.0f * t.noise[(size_t) b])
                             ++risen;
                     }
                 }

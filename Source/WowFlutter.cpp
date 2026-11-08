@@ -33,29 +33,47 @@ namespace
         return peaks;
     }
 
-    /** The weighted median of values. */
-    double weightedMedian (std::vector<std::pair<double, double>> valuesAndWeights)
+    /** Low-passes values (at frameRate) to cutoffHz: two second-order Butterworth sections run
+        forwards and then back (zero phase), over the values extended by reflection at each end so
+        the filter settles before the values start. */
+    void smoothTo (std::vector<double>& values, double frameRate, double cutoffHz)
     {
-        if (valuesAndWeights.empty())
-            return 1.0;
+        const auto n = (int) values.size();
 
-        std::sort (valuesAndWeights.begin(), valuesAndWeights.end());
-        auto total = 0.0;
+        if (n < 3 || cutoffHz >= frameRate / 2.0)
+            return;
 
-        for (auto& [v, w] : valuesAndWeights)
-            total += w;
+        const auto pad = juce::jmin (n - 1, juce::jmax (8, (int) std::lround (2.0 * frameRate / cutoffHz)));
+        std::vector<double> x ((size_t) (n + 2 * pad));
 
-        auto sum = 0.0;
-
-        for (auto& [v, w] : valuesAndWeights)
+        for (int i = 0; i < n + 2 * pad; ++i)
         {
-            sum += w;
-
-            if (sum >= total / 2.0)
-                return v;
+            const auto j = i - pad;
+            x[(size_t) i] = values[(size_t) (j < 0 ? -j : j >= n ? 2 * (n - 1) - j : j)];
         }
 
-        return valuesAndWeights.back().first;
+        for (auto q : { 0.5412, 1.3066 })
+        {
+            const auto c = juce::dsp::IIR::Coefficients<double>::makeLowPass (frameRate, cutoffHz, q);
+            const auto* k = c->getRawCoefficients();   // b0 b1 b2 a1 a2 (a0 normalised)
+
+            for (auto pass = 0; pass < 2; ++pass)
+            {
+                auto x1 = x.front(), x2 = x.front(), y1 = x.front(), y2 = x.front();
+
+                for (int i = 0; i < (int) x.size(); ++i)
+                {
+                    const auto at = pass == 0 ? i : (int) x.size() - 1 - i;
+                    const auto x0 = x[(size_t) at];
+                    const auto y0 = k[0] * x0 + k[1] * x1 + k[2] * x2 - k[3] * y1 - k[4] * y2;
+                    x2 = x1; x1 = x0; y2 = y1; y1 = y0;
+                    x[(size_t) at] = y0;
+                }
+            }
+        }
+
+        for (int i = 0; i < n; ++i)
+            values[(size_t) i] = x[(size_t) (i + pad)];
     }
 }
 
@@ -85,15 +103,18 @@ Drift measure (const AudioSnapshot& s, juce::int64 start, juce::int64 end, doubl
     for (int i = 0; i < size; ++i)
         hann[(size_t) i] = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / size));
 
-    // Each frame's speed change against the frame before, from its peaks; the changes summed (in
-    // logs) into the speed curve.
+    // Each frame's peaks, each on a track: the peak within 3 % of it in the frame before continues
+    // that peak's track, any other begins one.
+    struct Tracked { int track; double logFrequency, power; };
+    std::vector<std::vector<Tracked>> tracked ((size_t) steps);
     std::vector<Peak> previous;
-    std::vector<double> logSpeed ((size_t) steps, 0.0);
+    std::vector<int> previousTracks;
+    auto tracks = 0;
     const auto binHz = sampleRate / size;
 
     for (int step = 0; step < steps; ++step)
     {
-        if (progress && (step % 16) == 0 && ! progress (0.8f * (float) step / (float) steps))
+        if (progress && (step % 16) == 0 && ! progress (0.6f * (float) step / (float) steps))
             return {};
 
         s.read (block, 0, start + (juce::int64) step * hop, size);
@@ -115,44 +136,145 @@ Drift measure (const AudioSnapshot& s, juce::int64 start, juce::int64 end, doubl
             power[(size_t) k] = data[(size_t) (2 * k)] * data[(size_t) (2 * k)] + data[(size_t) (2 * k + 1)] * data[(size_t) (2 * k + 1)];
 
         auto peaks = peaksOf (power, binHz);
-        std::vector<std::pair<double, double>> ratios;
+        std::vector<int> ids (peaks.size(), -1);
+        std::vector<char> claimed (previous.size(), 0);
+        auto& here = tracked[(size_t) step];
 
-        for (const auto& p : peaks)
+        for (size_t i = 0; i < peaks.size(); ++i)
         {
-            const Peak* nearest = nullptr;
+            auto nearest = -1;
 
-            for (const auto& q : previous)
-                if (std::abs (q.frequency - p.frequency) <= matchWithin * p.frequency && (nearest == nullptr || std::abs (q.frequency - p.frequency) < std::abs (nearest->frequency - p.frequency)))
-                    nearest = &q;
+            for (size_t j = 0; j < previous.size(); ++j)
+                if (! claimed[j] && std::abs (previous[j].frequency - peaks[i].frequency) <= matchWithin * peaks[i].frequency
+                    && (nearest < 0 || std::abs (previous[j].frequency - peaks[i].frequency) < std::abs (previous[(size_t) nearest].frequency - peaks[i].frequency)))
+                    nearest = (int) j;
 
-            if (nearest != nullptr && nearest->frequency > 0.0)
-                ratios.emplace_back (std::log (p.frequency / nearest->frequency), juce::jmin (p.power, nearest->power));
+            if (nearest >= 0)
+            {
+                claimed[(size_t) nearest] = 1;
+                ids[i] = previousTracks[(size_t) nearest];
+            }
+            else
+                ids[i] = tracks++;
+
+            here.push_back ({ ids[i], std::log (peaks[i].frequency), peaks[i].power });
         }
 
-        const auto change = ratios.size() >= 3 ? weightedMedian (ratios) : 0.0;
-        logSpeed[(size_t) step] = (step > 0 ? logSpeed[(size_t) step - 1] : 0.0) + change;
         previous = std::move (peaks);
+        previousTracks = std::move (ids);
     }
 
-    // Smoothed to the drift asked for (a moving average over half a period of the fastest, both
-    // ways), then centred on its mean, so the length stays.
+    // Each track's members in order (a track runs over consecutive frames).
+    std::vector<std::vector<std::pair<int, int>>> members ((size_t) tracks);   // frame, index in it
+
+    for (int step = 0; step < steps; ++step)
+        for (size_t i = 0; i < tracked[(size_t) step].size(); ++i)
+            members[(size_t) tracked[(size_t) step][i].track].emplace_back (step, (int) i);
+
+    // A peak's deviation: its log frequency less its track's median over the 3 s round it, where
+    // the track has run at least 0.3 s (a note held, not a passing transient). Each frame's speed
+    // is the power-weighted median of its peaks' deviations, taken only where the peaks on such
+    // tracks agree as a machine's speed makes them (four fifths of their weight within 0.3 % of
+    // the median) and three or more of those agreeing have held a second or longer (notes held
+    // under a voice, where a voice alone, whose harmonics also move together, holds few): where
+    // the partials disagree, or only a voice is moving, there is no reading, and the speed is left
+    // at 1. Read this way, nothing is summed from frame to frame, so an error stays in its own
+    // frame; and no reading goes past 3 %, as no machine's wow does.
     const auto frameRate = sampleRate / hop;
-    const auto reach = juce::jmax (0, (int) std::lround (frameRate / settings.fastestHz / 4.0));
-    std::vector<double> smoothed ((size_t) steps);
+    const auto reach = juce::jmax (1, (int) std::lround (1.5 * frameRate)), shortest = juce::jmax (2, (int) std::lround (0.3 * frameRate));
+    const auto held = juce::jmax (shortest, (int) std::lround (1.0 * frameRate));
+    std::vector<std::vector<double>> deviations ((size_t) steps);
+    std::vector<std::vector<char>> long_ ((size_t) steps);
 
-    for (int i = 0; i < steps; ++i)
+    for (int step = 0; step < steps; ++step)
     {
-        auto sum = 0.0;
-        auto n = 0;
+        deviations[(size_t) step].assign (tracked[(size_t) step].size(), std::numeric_limits<double>::quiet_NaN());
+        long_[(size_t) step].assign (tracked[(size_t) step].size(), 0);
+    }
 
-        for (int j = juce::jmax (0, i - reach); j <= juce::jmin (steps - 1, i + reach); ++j)
+    std::vector<double> window;
+
+    for (int t = 0; t < tracks; ++t)
+    {
+        const auto& m = members[(size_t) t];
+
+        if ((int) m.size() < shortest)
+            continue;
+
+        if (progress && (t % 256) == 0 && ! progress (0.6f + 0.2f * (float) t / (float) tracks))
+            return {};
+
+        for (int j = 0; j < (int) m.size(); ++j)
         {
-            sum += logSpeed[(size_t) j];
-            ++n;
+            // The 3 s round the member, slid along within the track at its ends so the span stays
+            // whole (a wow's periods balance over a whole span, not over a part of one).
+            const auto from = juce::jlimit (0, juce::jmax (0, (int) m.size() - 1 - 2 * reach), j - reach), to = juce::jmin ((int) m.size() - 1, from + 2 * reach);
+            window.clear();
+
+            for (int i = from; i <= to; ++i)
+                window.push_back (tracked[(size_t) m[(size_t) i].first][(size_t) m[(size_t) i].second].logFrequency);
+
+            std::nth_element (window.begin(), window.begin() + (long) window.size() / 2, window.end());
+            const auto reference = window[window.size() / 2];
+            deviations[(size_t) m[(size_t) j].first][(size_t) m[(size_t) j].second] = tracked[(size_t) m[(size_t) j].first][(size_t) m[(size_t) j].second].logFrequency - reference;
+            long_[(size_t) m[(size_t) j].first][(size_t) m[(size_t) j].second] = (int) m.size() >= held;
+        }
+    }
+
+    std::vector<double> logSpeed ((size_t) steps, 0.0);
+    struct Reading { double deviation, power; bool held; };
+    std::vector<Reading> readings;
+
+    for (int step = 0; step < steps; ++step)
+    {
+        readings.clear();
+
+        for (size_t i = 0; i < tracked[(size_t) step].size(); ++i)
+            if (! std::isnan (deviations[(size_t) step][i]))
+                readings.push_back ({ deviations[(size_t) step][i], tracked[(size_t) step][i].power, long_[(size_t) step][i] != 0 });
+
+        if (readings.size() < 3)
+            continue;
+
+        std::sort (readings.begin(), readings.end(), [] (const Reading& x, const Reading& y) { return x.deviation < y.deviation; });
+        auto total = 0.0;
+
+        for (const auto& r : readings)
+            total += r.power;
+
+        auto sum = 0.0;
+        auto middle = readings.front().deviation;
+
+        for (const auto& r : readings)
+        {
+            sum += r.power;
+
+            if (sum >= 0.5 * total)
+            {
+                middle = r.deviation;
+                break;
+            }
         }
 
-        smoothed[(size_t) i] = sum / n;
+        auto agreeing = 0.0;
+        auto heldAgreeing = 0;
+
+        for (const auto& r : readings)
+            if (std::abs (r.deviation - middle) <= 0.003)
+            {
+                agreeing += r.power;
+                heldAgreeing += r.held;
+            }
+
+        if (agreeing >= 0.8 * total && heldAgreeing >= 3)
+            logSpeed[(size_t) step] = juce::jlimit (-0.03, 0.03, middle);
     }
+
+    // Smoothed to the drift asked for (a fourth-order Butterworth low-pass at the fastest drift,
+    // run forwards and back so nothing shifts in time, over the curve extended by reflection at
+    // its ends), then centred on its mean, so the length stays.
+    std::vector<double> smoothed = logSpeed;
+    smoothTo (smoothed, frameRate, settings.fastestHz);
 
     auto mean = 0.0;
 

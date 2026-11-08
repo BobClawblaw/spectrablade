@@ -83,7 +83,7 @@ AudioDocument::Snapshot apply (const AudioSnapshot& s, juce::int64 start, juce::
                                                std::pow (10.0, settings.drumsDb / 20.0), std::pow (10.0, settings.restDb / 20.0) };
     const auto threshold = DialogueIsolation::thresholdFor (50.0f);
     const auto eightyHz = (int) std::ceil (80.0 / binHz), fourK = juce::jmin (bins - 1, (int) (4000.0 / binHz)), eightK = juce::jmin (bins - 1, (int) (8000.0 / binHz));
-    std::vector<float> acrossTime, acrossFrequency, power ((size_t) bins), voiceMask ((size_t) bins), bassMask ((size_t) bins);
+    std::vector<float> acrossTime, acrossFrequency, voiceMask ((size_t) bins), bassMask ((size_t) bins);
 
     for (int k = 0; k < bins; ++k)
     {
@@ -125,11 +125,8 @@ AudioDocument::Snapshot apply (const AudioSnapshot& s, juce::int64 start, juce::
     {
         const auto& f = frameRing[(size_t) (centre % ring)];
 
-        for (int k = 0; k < bins; ++k)
-            power[(size_t) k] = f.mixMagnitude[(size_t) k] * f.mixMagnitude[(size_t) k];
-
         // The voice: the harmonics of the pitch, and the highs, in a voiced frame of the mix.
-        const auto pitch = DialogueIsolation::pitchOf (power, sampleRate);
+        const auto pitch = DialogueIsolation::pitchOf (in, centre * hop, sampleRate);
         std::fill (voiceMask.begin(), voiceMask.end(), 0.0f);
 
         if (pitch.voicing >= threshold)

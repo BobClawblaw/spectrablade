@@ -7975,6 +7975,7 @@ void MainComponent::showMouthDeClick (bool crackle)
     const auto toSettings = [] (const EffectValues& v)
     {
         ClickRepair::Settings s;
+        s.voice = true;
         s.thresholdDb = (float) v.at ("threshold");
         s.maxLengthMs = (float) v.at ("length");
         return s;
@@ -8105,7 +8106,8 @@ void MainComponent::showAzimuth()
                       "The time offset between the two channels of a tape transfer (a head out of line with the tracks) found as it drifts and taken "
                       "out: measured over windows of two seconds, a second apart, as Automatic Phase Correction measures it, with unclear windows "
                       "filled from their neighbours and the readings smoothed; the channels are then moved by half the offset each, the late one "
-                      "earlier and the other later, by a fractional delay that follows the drift sample by sample.",
+                      "earlier and the other later, by a fractional delay that follows the drift sample by sample. For a transfer of a tape: on a "
+                      "recording made in stereo the readings follow whatever is loudest and move with it, which is not azimuth.",
                       { { "most", "Most offset looked for (ms)", s.mostMs, 1, {}, 0.5, 50, 0.1 }, { "amount", "Amount (%)", s.amountPercent, 0, {}, 0, 100, 1 } },
                       "spectrablade:azimuth", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { return Azimuth::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,
@@ -8417,10 +8419,11 @@ void MainComponent::showWowFlutter()
     const auto toSettings = [] (const EffectValues& v) { return WowFlutter::Settings { v.at ("fastest"), v.at ("amount") }; };
 
     showEffectDialog ("Wow and Flutter",
-                      "The pitch drift of a tape or a record found and taken out. The drift is read from the partials: what every partial does "
-                      "together is the machine's speed, what one voice does on its own (vibrato, a slide) is not. The speed curve is smoothed to "
-                      "what moves no faster than the fastest drift, and the audio is played back at its inverse, pitch and time together. The "
-                      "length is kept. Works on music with sustained notes; little can be read from speech or drums alone.",
+                      "The pitch drift of a tape or a record found and taken out. The drift is read from the partials, each against its own "
+                      "course: what every held note does together is the machine's speed, what one voice does on its own (vibrato, a slide) is "
+                      "not, and where they don't agree, or only a voice is moving, nothing is read. The speed curve is low-passed to what moves "
+                      "no faster than the fastest drift, and the audio is played back at its inverse, pitch and time together. The length is kept. "
+                      "Works on music with sustained notes; little can be read from speech or drums alone.",
                       { { "fastest", "Fastest drift (Hz)", s.fastestHz, 1, {}, 0.5, 20, 0.1 }, { "amount", "Amount (%)", s.amountPercent, 0, {}, 0, 100, 1 } },
                       "spectrablade:wow-flutter", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { return WowFlutter::isValid (toSettings (v)); }, "A setting is out of range.", nullptr, nullptr,

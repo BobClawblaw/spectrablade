@@ -74,23 +74,7 @@ void runDialogueIsolationTests()
     // The pitch finder: a 150 Hz buzz reads 150 Hz with high voicing, noise low voicing.
     {
         const auto buzz = scene (true, false), noise = scene (false, true);
-        juce::dsp::FFT fft (12);
-        const auto powerOf = [&fft] (const juce::AudioBuffer<float>& b, int at)
-        {
-            std::vector<float> data (8192, 0.0f);
-
-            for (int i = 0; i < 4096; ++i)
-                data[(size_t) i] = b.getSample (0, at + i) * (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / 4096));
-
-            fft.performRealOnlyForwardTransform (data.data(), true);
-            std::vector<float> p (2049);
-
-            for (int k = 0; k < 2049; ++k)
-                p[(size_t) k] = data[(size_t) (2 * k)] * data[(size_t) (2 * k)] + data[(size_t) (2 * k + 1)] * data[(size_t) (2 * k + 1)];
-
-            return p;
-        };
-        const auto voiced = DialogueIsolation::pitchOf (powerOf (buzz, 72000), rate), unvoiced = DialogueIsolation::pitchOf (powerOf (noise, 72000), rate);
+        const auto voiced = DialogueIsolation::pitchOf (buzz, 72000, rate), unvoiced = DialogueIsolation::pitchOf (noise, 72000, rate);
         std::cout << "      pitch: the buzz " << voiced.frequency << " Hz, voicing " << voiced.voicing << "; the background " << unvoiced.frequency << " Hz, voicing " << unvoiced.voicing << std::endl;
         check (std::abs (voiced.frequency - 150.0) < 150.0 * 0.045 && voiced.voicing > 0.8 && unvoiced.voicing < 0.55,
                "dialogue isolation: a 150 Hz buzz is found within a sixteenth of an octave with voicing over 0.8; noise with a tone has voicing under 0.55");

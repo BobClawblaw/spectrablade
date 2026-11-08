@@ -16,6 +16,7 @@ namespace ClickRepair
     {
         float thresholdDb = 18.0f;    // how far a prediction miss must stand above the background
         float maxLengthMs = 3.0f;     // longer events are left alone and counted as skipped
+        bool voice = false;           // speech: its own pulses are not clicks (the error's spread is read off its loudest twentieth)
     };
 
     struct Result

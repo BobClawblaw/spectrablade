@@ -128,39 +128,11 @@ Analysis analyse (const AudioSnapshot& s, juce::int64 start, juce::int64 end, do
     // Voicing every 20 ms: a block is voiced when the frame centred over it is.
     std::vector<char> voiced ((size_t) a.blocks, 0);
     const auto threshold = DialogueIsolation::thresholdFor (50.0f);
-    juce::dsp::FFT fft (fftOrder);
-    std::vector<float> data ((size_t) (2 * fftSize)), power ((size_t) (fftSize / 2 + 1));
-    std::vector<float> hann ((size_t) fftSize);
-
-    for (int i = 0; i < fftSize; ++i)
-        hann[(size_t) i] = (float) (0.5 - 0.5 * std::cos (juce::MathConstants<double>::twoPi * i / fftSize));
 
     for (int b = 0; b < a.blocks; b += 2)
     {
         const auto centre = b * block + block / 2;
-        std::fill (data.begin(), data.end(), 0.0f);
-
-        for (int i = 0; i < fftSize; ++i)
-        {
-            const auto at = centre - fftSize / 2 + i;
-
-            if (at < 0 || at >= frames)
-                continue;
-
-            auto mix = 0.0f;
-
-            for (int ch = 0; ch < channels; ++ch)
-                mix += whole.getSample (ch, at);
-
-            data[(size_t) i] = mix / (float) channels * hann[(size_t) i];
-        }
-
-        fft.performRealOnlyForwardTransform (data.data(), true);
-
-        for (size_t k = 0; k < power.size(); ++k)
-            power[k] = data[2 * k] * data[2 * k] + data[2 * k + 1] * data[2 * k + 1];
-
-        const auto v = DialogueIsolation::pitchOf (power, sampleRate).voicing >= threshold;
+        const auto v = DialogueIsolation::pitchOf (whole, centre - fftSize / 2, sampleRate).voicing >= threshold;
         voiced[(size_t) b] = v;
 
         if (b + 1 < a.blocks)

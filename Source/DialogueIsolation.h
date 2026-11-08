@@ -30,10 +30,13 @@ namespace DialogueIsolation
     /** The voicing threshold the sensitivity sets. */
     float thresholdFor (float sensitivity);
 
-    /** The pitch a frame of power spectrum holds (bins of a 4,096-point frame at this rate), in Hz,
-        and its voicing (0 to 1, as above; 0 Hz and 0 for nothing periodic enough). */
+    /** The pitch of the 4,096 frames of audio from `at` (the channels mixed; frames outside the
+        buffer count as silence), in Hz, and its voicing (0 to 1): how well the frame repeats at
+        that period, the frame's own taper taken out, so a steady voice reads near 1 and noise
+        under about 0.4. 0 Hz and 0 for nothing periodic enough, and for a lone tone or a chance
+        repeat in noise (fewer than three harmonics standing over the gaps between them). */
     struct Pitch { double frequency = 0.0; double voicing = 0.0; };
-    Pitch pitchOf (const std::vector<float>& power, double sampleRate);
+    Pitch pitchOf (const juce::AudioBuffer<float>& audio, int at, double sampleRate);
 
     /** Isolates speech over frames [start, end). progress gets 0..1 and returns false to cancel;
         then this returns nullptr. Nullptr too for settings that aren't valid or an empty range. */
