@@ -160,6 +160,17 @@ namespace
             k = e;
         }
 
+        // No faster than the fastest change: each gain held under a rise at that rate from the
+        // gains before and after it (forward, then back), so a swing takes its time and never
+        // goes above what was asked.
+        const auto slope = (double) s.speedDbPerSecond * stepSeconds;
+
+        for (int k = 1; k < count; ++k)
+            wanted[(size_t) k] = juce::jmin (wanted[(size_t) k], wanted[(size_t) k - 1] + slope);
+
+        for (int k = count - 2; k >= 0; --k)
+            wanted[(size_t) k] = juce::jmin (wanted[(size_t) k], wanted[(size_t) k + 1] + slope);
+
         // The ceiling: a step's gain, and its neighbours' (the gain between two steps' centres is
         // between theirs), must not take its peak above it. That limit is then taken over twice
         // the averaging span, so the two averaging passes can't lift a gain past any limit.
@@ -199,8 +210,9 @@ namespace
 bool isValid (const Settings& s)
 {
     return std::isfinite (s.targetLufs) && std::isfinite (s.maxBoostDb) && std::isfinite (s.maxCutDb) && std::isfinite (s.silenceLufs)
-           && s.targetLufs >= -40.0f && s.targetLufs <= -5.0f && s.maxBoostDb >= 0.0f && s.maxBoostDb <= 30.0f
-           && s.maxCutDb >= 0.0f && s.maxCutDb <= 30.0f && s.silenceLufs >= -80.0f && s.silenceLufs <= -20.0f;
+           && std::isfinite (s.speedDbPerSecond) && s.targetLufs >= -40.0f && s.targetLufs <= -5.0f && s.maxBoostDb >= 0.0f && s.maxBoostDb <= 30.0f
+           && s.maxCutDb >= 0.0f && s.maxCutDb <= 30.0f && s.silenceLufs >= -80.0f && s.silenceLufs <= -20.0f
+           && s.speedDbPerSecond >= 1.0f && s.speedDbPerSecond <= 30.0f;
 }
 
 std::optional<std::vector<float>> gains (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate,

@@ -5397,20 +5397,23 @@ void MainComponent::askToLevelSpeech()
     auto* settings = appProperties.getUserSettings();
     const auto toSettings = [] (const EffectValues& v)
     {
-        return Leveller::Settings { (float) v.at ("target"), (float) v.at ("boost"), (float) v.at ("cut"), (float) v.at ("silence") };
+        return Leveller::Settings { (float) v.at ("target"), (float) v.at ("boost"), (float) v.at ("cut"), (float) v.at ("silence"), (float) v.at ("speed") };
     };
 
     showEffectDialog ("Level Speech",
                       "Raises quiet passages and lowers loud ones towards the target, smoothly over about a second. Pauses "
                       "quieter than the silence threshold take the gain of the speech around them rather than being raised "
-                      "themselves, and no sample comes out above -1 dBFS.",
+                      "themselves, and no sample comes out above -1 dBFS. The fastest change holds the gain to that many dB a "
+                      "second (at 30 it moves as fast as the smoothing lets it, 5 to 13 dB a second on real speech, at pauses and "
+                      "changes of speaker): lower it if the levelling is heard to pump.",
                       { { "target", "Target (LUFS)", settings->getDoubleValue ("levelTarget", -20.0), 1, {}, -40.0, -5.0, 0.5 },
                         { "boost", "Largest boost (dB)", settings->getDoubleValue ("levelBoost", 12.0), 1, {}, 0.0, 30.0, 0.5 },
                         { "cut", "Largest cut (dB)", settings->getDoubleValue ("levelCut", 12.0), 1, {}, 0.0, 30.0, 0.5 },
-                        { "silence", "Silence below (LUFS)", settings->getDoubleValue ("levelSilence", -50.0), 1, {}, -80.0, -20.0, 1.0 } },
+                        { "silence", "Silence below (LUFS)", settings->getDoubleValue ("levelSilence", -50.0), 1, {}, -80.0, -20.0, 1.0 },
+                        { "speed", "Fastest change (dB/s)", settings->getDoubleValue ("levelSpeed", 30.0), 0, {}, 1.0, 30.0, 1.0 } },
                       "spectrablade:level-speech", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { return Leveller::isValid (toSettings (v)); },
-                      "The target must be from -40 to -5 LUFS, the boost and cut from 0 to 30 dB, and the silence threshold from -80 to -20 LUFS.",
+                      "The target must be from -40 to -5 LUFS, the boost and cut from 0 to 30 dB, the silence threshold from -80 to -20 LUFS, and the fastest change from 1 to 30 dB a second.",
                       nullptr, nullptr,
                       [this, settings] (const EffectValues& v)
                       {
@@ -5418,6 +5421,7 @@ void MainComponent::askToLevelSpeech()
                           settings->setValue ("levelBoost", v.at ("boost"));
                           settings->setValue ("levelCut", v.at ("cut"));
                           settings->setValue ("levelSilence", v.at ("silence"));
+                          settings->setValue ("levelSpeed", v.at ("speed"));
                           runStepInBackground ({ "levelSpeech", v, nullptr }, "Levelling speech...");
                       },
                       [this] (const EffectValues& v) { return previewOf ({ "levelSpeech", v, nullptr }); },

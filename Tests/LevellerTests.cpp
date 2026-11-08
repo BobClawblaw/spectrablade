@@ -146,6 +146,42 @@ namespace
                "level speech: passages at " + before.joinIntoString (", ") + " LUFS (" + juce::String (spreadBefore, 1)
                    + " LU apart) come out at " + after.joinIntoString (", ") + " LUFS, each within 1 LU of the -20 target");
 
+        // The fastest change: at 6 dB a second the gains rise at most 0.3 dB a step (50 ms), never
+        // over what they would be unlimited, and the quiet passage still gets near the target by
+        // its end (an 18 dB swing takes 3 s, and the gain starts down early for the next passage);
+        // at the largest setting the gains are those with no limit, bit for bit.
+        {
+            Leveller::Settings slow;
+            slow.speedDbPerSecond = 6.0f;
+            const auto free = Leveller::gains (*snapshot, 0, snapshot->getNumFrames(), rate, {});
+            const auto held = Leveller::gains (*snapshot, 0, snapshot->getNumFrames(), rate, slow);
+            auto steepest = 0.0f, over = 0.0f;
+            auto same = free.has_value() && held.has_value() && free->size() == held->size();
+
+            if (same)
+                for (size_t k = 0; k < held->size(); ++k)
+                {
+                    over = juce::jmax (over, (*held)[k] - (*free)[k]);
+
+                    if (k > 0)
+                        steepest = juce::jmax (steepest, (*held)[k] - (*held)[k - 1]);
+                }
+
+            Leveller::Settings top;
+            top.speedDbPerSecond = 30.0f;
+            const auto atTop = Leveller::gains (*snapshot, 0, snapshot->getNumFrames(), rate, top);
+            same = same && atTop.has_value() && *atTop == *free;
+            const auto slowed = Leveller::level (*snapshot, 0, snapshot->getNumFrames(), rate, slow);
+            const auto quietEnd = slowed != nullptr ? lufsOf (readAll (*slowed), spans[1].second - second / 2, spans[1].second) : 0.0;
+            std::cout << "      fastest change 6 dB/s: steepest rise " << steepest << " dB a step, over the free gains by " << over
+                      << " dB, the quiet passage's last half second at " << quietEnd << " LUFS" << std::endl;
+            check (same && steepest <= 0.3f + 1.0e-4f && over <= 1.0e-5f && std::abs (quietEnd - -20.0) <= 1.5,
+                   "level speech: with the fastest change at 6 dB a second the gains rise at most 0.3 dB a step (" + juce::String (steepest, 3)
+                       + "), never over the unlimited gains, and the quiet passage's last half second is within 1.5 LU of the target ("
+                       + juce::String (quietEnd, 1) + " LUFS: its 18 dB swing takes 3 s, and the gain starts down early for the next passage); "
+                       "at 30 dB a second the gains are the unlimited ones bit for bit");
+        }
+
         auto mirrored = out.getNumSamples() == in.getNumSamples();
 
         for (int i = 0; i < out.getNumSamples() && mirrored; ++i)
@@ -254,7 +290,11 @@ namespace
         const auto stopped = Leveller::level (*snapshot, 0, snapshot->getNumFrames(), rate, {}, [&] (float) { return ++calls < 2; });
         check (stopped == nullptr && calls == 2, "level speech: stopping part way gives nothing");
 
-        const auto refused = Leveller::level (*snapshot, 10, 10, rate, {}) == nullptr
+        Leveller::Settings tooSlow, tooFast;
+        tooSlow.speedDbPerSecond = 0.5f;
+        tooFast.speedDbPerSecond = 31.0f;
+        const auto speedRefused = ! Leveller::isValid (tooSlow) && ! Leveller::isValid (tooFast) && Leveller::isValid ({});
+        const auto refused = speedRefused && Leveller::level (*snapshot, 10, 10, rate, {}) == nullptr
                              && ! Leveller::isValid ({ -41.0f, 12.0f, 12.0f, -50.0f }) && ! Leveller::isValid ({ -4.0f, 12.0f, 12.0f, -50.0f })
                              && ! Leveller::isValid ({ -20.0f, 31.0f, 12.0f, -50.0f }) && ! Leveller::isValid ({ -20.0f, 12.0f, -1.0f, -50.0f })
                              && ! Leveller::isValid ({ -20.0f, 12.0f, 12.0f, -19.0f }) && ! Leveller::isValid ({ -20.0f, 12.0f, 12.0f, -81.0f })

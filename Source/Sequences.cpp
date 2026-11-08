@@ -38,7 +38,7 @@ namespace
     {
         const char* id;
         const char* name;
-        std::vector<const char*> values;   // the settings it needs (an optional one, "method" or "linearPhase", is read as 0 when missing)
+        std::vector<const char*> values;   // the settings it needs (an optional one, "method", "linearPhase" or "speed", takes its default when missing)
     };
 
     // In menu order. The names are the commands' undo names.
@@ -200,9 +200,15 @@ namespace
                  (float) get (v, "speed"), (float) get (v, "strength") };
     }
 
+    // "speed" (the fastest change, dB a second) is optional: a step without it moves as fast as the smoothing lets it.
     Leveller::Settings levellerOf (const Values& v)
     {
-        return { (float) get (v, "target"), (float) get (v, "boost"), (float) get (v, "cut"), (float) get (v, "silence") };
+        Leveller::Settings s { (float) get (v, "target"), (float) get (v, "boost"), (float) get (v, "cut"), (float) get (v, "silence") };
+
+        if (v.count ("speed") > 0)
+            s.speedDbPerSecond = (float) get (v, "speed");
+
+        return s;
     }
 
     RoomReverb::Settings reverbOf (const Values& v)
