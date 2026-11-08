@@ -148,10 +148,30 @@ namespace
                "after them " + juce::String (lowered (1.0), 1) + " dB lower, the bursts themselves within 0.5 dB ("
                    + juce::String (soundChange (1.0), 2) + " dB)");
 
-        check (lowered (2.0) > lowered (1.0) && lowered (1.0) > lowered (0.5) && std::abs (soundChange (2.0)) < 0.5,
-               "reduce reverb: the time set longer than the room's takes away more of its tail, shorter less (0.5 s: "
-                   + juce::String (lowered (0.5), 1) + " dB, 1 s: " + juce::String (lowered (1.0), 1) + " dB, 2 s: "
-                   + juce::String (lowered (2.0), 1) + " dB; the bursts within 0.5 dB at 2 s, " + juce::String (soundChange (2.0), 2) + ")");
+        // The room's time is measured, and a time set longer is taken as the measured one.
+        const auto measured = Dereverb::measure (*wet, 0, whole, rate).value_or (-1.0f);
+        const auto half = Dereverb::measure (*snapshotOf (inRoom (dry, 0.5)), 0, whole, rate).value_or (-1.0f);
+        const auto twice = Dereverb::measure (*snapshotOf (inRoom (dry, 2.0)), 0, whole, rate).value_or (-1.0f);
+        auto used = 0.0f;
+        Dereverb::reduce (*wet, 0, whole, rate, { 2.0f, 12.0f }, {}, &used);
+        std::cout << "      reverb measured: 1 s room " << measured << " s, 0.5 s room " << half << ", 2 s room " << twice << "; set 2 s, used "
+                  << used << " s; tail lowered 0.5 s " << lowered (0.5) << ", 1 s " << lowered (1.0) << ", 2 s " << lowered (2.0) << " dB" << std::endl;
+        check (measured > 0.75f && measured < 1.3f && half > 0.35f && half < 0.65f && twice > 1.4f && twice < 2.4f && juce::exactlyEqual (used, measured)
+                   && std::abs (lowered (2.0) - lowered (1.0)) < 0.5 && lowered (1.0) > lowered (0.5) && std::abs (soundChange (2.0)) < 0.5,
+               "reduce reverb: the room's time is measured (1 s room: " + juce::String (measured, 2) + " s; 0.5 s: " + juce::String (half, 2) + "; 2 s: "
+                   + juce::String (twice, 2) + "), a time set longer (2 s) is taken as the measured one (the tail lowered as at 1 s, "
+                   + juce::String (lowered (2.0), 1) + " against " + juce::String (lowered (1.0), 1) + " dB), shorter leaves more (0.5 s: "
+                   + juce::String (lowered (0.5), 1) + " dB); the bursts within 0.5 dB at 2 s");
+
+        // Dry: the bursts stop dead, so the recording measures as dry and even a long time leaves them alone.
+        const auto drySnap = snapshotOf (dry);
+        const auto dryMeasured = Dereverb::measure (*drySnap, 0, whole, rate).value_or (-1.0f);
+        auto dryUsed = 0.0f;
+        const auto dryOut = Dereverb::reduce (*drySnap, 0, whole, rate, { 1.5f, 12.0f }, {}, &dryUsed);
+        const auto dryChange = dryOut != nullptr ? levelOver (readAll (*dryOut), sounds (bursts)) - levelOver (readAll (*drySnap), sounds (bursts)) : 99.0;
+        check (dryMeasured >= 0.0f && dryMeasured < 0.15f && juce::exactlyEqual (dryUsed, 0.1f) && std::abs (dryChange) < 0.1,
+               "reduce reverb: dry bursts measure under 0.15 s (" + juce::String (dryMeasured, 3) + "), so with 1.5 s set the time used is 0.1 s and the "
+               "bursts move under 0.1 dB (" + juce::String (dryChange, 3) + ")");
 
         // The right channel was the left's negative: each channel is worked alone, and the
         // gains follow power, so it still is, sample for sample.

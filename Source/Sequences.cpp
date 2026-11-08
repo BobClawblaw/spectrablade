@@ -498,13 +498,19 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
     {
         if (end > start && get (v, "reduction") > 0.0)
         {
-            out.snapshot = Dereverb::reduce (s, start, end, rate, { (float) get (v, "time"), (float) get (v, "reduction") }, progress);
+            const auto set = (float) get (v, "time");
+            auto used = set;
+            out.snapshot = Dereverb::reduce (s, start, end, rate, { set, (float) get (v, "reduction") }, progress, &used);
 
             if (out.snapshot == nullptr)
             {
                 out.error = "Stopped.";
                 return out;
             }
+
+            if (used < set - 0.005f)
+                out.notes.add ("the recording's own sounds die away in about " + juce::String (used, 2) + " s, so the reverb time was taken as that, not "
+                               + juce::String (set, 2) + " s (a longer time would cut into the sounds themselves)");
         }
     }
     else if (k == "normalize")

@@ -83,8 +83,92 @@ int frameSize (double sampleRate)
     return 1 << orderFor (sampleRate);
 }
 
+std::optional<float> measure (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate,
+                              const std::function<bool (float)>& progress)
+{
+    constexpr std::array<std::pair<double, double>, 4> bands { { { 250.0, 500.0 }, { 500.0, 1000.0 }, { 1000.0, 2000.0 }, { 2000.0, 4000.0 } } };
+    constexpr double gateDb = 20.0, floorShare = 0.1;
+
+    const auto length = snapshot.getNumFrames();
+    const auto channels = snapshot.getNumChannels();
+    start = juce::jlimit ((juce::int64) 0, length, start);
+    end = juce::jlimit (start, length, end);
+
+    if (channels == 0 || sampleRate <= 0.0)
+        return std::nullopt;
+
+    Transform t (orderFor (sampleRate));
+    const auto size = t.size, hop = size / 4;
+    const auto delayFrames = juce::jmax (1, (int) std::lround (delaySeconds * sampleRate / hop));
+    const auto frames = (int) juce::jmax ((juce::int64) 0, (end - start - size) / hop + 1);
+
+    if (frames <= delayFrames)
+        return std::nullopt;
+
+    // Each frame's power in each band, the channels summed.
+    std::vector<std::array<double, 4>> power ((size_t) frames, std::array<double, 4> {});
+    juce::AudioBuffer<float> frame (channels, size);
+    std::array<std::pair<int, int>, 4> bins {};
+
+    for (size_t b = 0; b < bands.size(); ++b)
+        bins[b] = { (int) std::ceil (bands[b].first * size / sampleRate), juce::jmin (size / 2, (int) std::ceil (bands[b].second * size / sampleRate)) };
+
+    for (int k = 0; k < frames; ++k)
+    {
+        snapshot.read (frame, 0, start + (juce::int64) k * hop, size);
+
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            t.forward (frame.getReadPointer (ch));
+
+            for (size_t b = 0; b < bands.size(); ++b)
+                for (int bin = bins[b].first; bin < bins[b].second; ++bin)
+                    power[(size_t) k][b] += t.power (bin);
+        }
+
+        if (progress != nullptr && (k & 63) == 0 && ! progress ((float) k / (float) frames))
+            return std::nullopt;
+    }
+
+    // The fall over the delay from every frame that stood over the gate, in every band; the
+    // typical one is the room's decay.
+    std::vector<double> falls;
+
+    for (size_t b = 0; b < bands.size(); ++b)
+    {
+        std::vector<double> levels ((size_t) frames);
+        double loudest = 0.0;
+
+        for (int k = 0; k < frames; ++k)
+        {
+            levels[(size_t) k] = power[(size_t) k][b];
+            loudest = juce::jmax (loudest, levels[(size_t) k]);
+        }
+
+        const auto at = (size_t) std::floor (floorShare * (frames - 1));
+        std::nth_element (levels.begin(), levels.begin() + (long) at, levels.end());
+        const auto floor = juce::jmax (levels[at], loudest * 1.0e-12, 1.0e-30);
+        const auto gate = floor * std::pow (10.0, gateDb / 10.0);
+
+        for (int k = delayFrames; k < frames; ++k)
+        {
+            const auto before = power[(size_t) (k - delayFrames)][b], now = power[(size_t) k][b];
+
+            if (before >= gate && now < before)
+                falls.push_back (10.0 * std::log10 (before / juce::jmax (now, 1.0e-30)));
+        }
+    }
+
+    if (falls.empty())
+        return std::nullopt;
+
+    const auto middle = falls.begin() + (long) (falls.size() / 2);
+    std::nth_element (falls.begin(), middle, falls.end());
+    return (float) (60.0 * delayFrames * hop / sampleRate / juce::jmax (*middle, 1.0e-3));
+}
+
 AudioDocument::Snapshot reduce (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end, double sampleRate,
-                                Settings settings, const std::function<bool (float)>& progress)
+                                Settings settings, const std::function<bool (float)>& progress, float* reverbSecondsUsed)
 {
     const auto length = snapshot.getNumFrames();
     const auto channels = snapshot.getNumChannels();
@@ -93,6 +177,27 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& snapshot, juce::int64 start
 
     if (end <= start || channels == 0 || sampleRate <= 0.0 || ! isValid (settings))
         return nullptr;
+
+    // The room's own time caps the setting, so a sound that stops faster than the setting's tail
+    // would (a dry voice's syllables) isn't read as one.
+    auto stopped = false;
+    const auto measured = measure (snapshot, start, end, sampleRate, [&] (float p)
+    {
+        if (progress == nullptr || progress (0.2f * p))
+            return true;
+
+        stopped = true;
+        return false;
+    });
+
+    if (stopped)
+        return nullptr;
+
+    if (measured.has_value())
+        settings.reverbSeconds = juce::jmax (Settings::shortestReverb, juce::jmin (settings.reverbSeconds, *measured));
+
+    if (reverbSecondsUsed != nullptr)
+        *reverbSecondsUsed = settings.reverbSeconds;
 
     Transform t (orderFor (sampleRate));
     const auto size = t.size, hop = size / 4, bins = size / 2 + 1;
@@ -232,7 +337,7 @@ AudioDocument::Snapshot reduce (const AudioSnapshot& snapshot, juce::int64 start
             juce::FloatVectorOperations::clear (s + size - hop, hop);
         }
 
-        if (progress != nullptr && (frameIndex & 63) == 0 && ! progress ((float) ((double) frameIndex / (double) totalFrames)))
+        if (progress != nullptr && (frameIndex & 63) == 0 && ! progress (0.2f + 0.8f * (float) ((double) frameIndex / (double) totalFrames)))
             return nullptr;
     }
 

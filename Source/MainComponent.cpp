@@ -5635,8 +5635,10 @@ void MainComponent::askToReduceReverb()
 
     showEffectDialog ("Reduce Reverb",
                       "Lowers the room's reverberation after each sound by up to the reduction, keeping the sound itself and "
-                      "notes held steady. The reverb time is how long the room takes to die away: set it longer to take "
-                      "away more of the tail, shorter to leave more.",
+                      "notes held steady. The reverb time is how long the room takes to die away: set it shorter to leave more "
+                      "of the tail. The recording's own time is measured first (how its sounds typically fall over 80 ms after "
+                      "they stop), and a time set longer than that is taken as that: with a longer one, every sound that stops "
+                      "faster, a dry voice's syllables included, would read as a tail and be cut.",
                       { { "time", "Reverb time (s)", settings->getDoubleValue ("dereverbTime", 1.0), 2, {}, 0.1, 10.0, 0.05 },
                         { "reduction", "Reduction (dB)", settings->getDoubleValue ("dereverbReduction", 12.0), 1, {}, 0.0, 30.0, 0.5 } },
                       "spectrablade:reduce-reverb", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
