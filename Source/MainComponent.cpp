@@ -144,7 +144,7 @@ namespace
         cmdSurroundFoldDown, cmdSurroundOutputs, cmdSaveChannels, cmdNewFromChannels,
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
-        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance
+        cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither
     };
 
     /** Commands that work on the open file only, off while the session is showing. */
@@ -153,7 +153,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1327,6 +1327,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdMultiband:  info.setInfo ("Multiband Compressor...", "Compress the lows, the middle and the highs each on its own", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdDeEsser:    info.setInfo ("De-esser...", "Turn down harsh S sounds: the highs, whenever they get loud", "Effects", 0);
+        case cmdDither:     info.setInfo ("Dither...", "Round the audio to 16 or 24 bits with dither, the last step before saving at that depth", "Effects", 0); break;
         case cmdCaptureMatchReference: info.setInfo ("Capture Match Reference", "Learn the tone of the selection, to match other sounds to it", "Effects", 0); break;
         case cmdCaptureMatchReferenceFromFile: info.setInfo ("Capture Match Reference from File...", "Learn the tone of an audio file, to match sounds to it", "Effects", 0); break;
         case cmdMatchEq:
@@ -2033,6 +2034,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdExciter:    showExciter(); break;
         case cmdMaximizer:  showMaximizer(); break;
         case cmdTransientShaper: showTransientShaper(); break;
+        case cmdDither:     showDither(); break;
         case cmdCaptureMatchReference: captureMatchReference(); break;
         case cmdCaptureMatchReferenceFromFile: captureMatchReferenceFromFile(); break;
         case cmdMatchEq:    showMatchEq(); break;
@@ -2568,7 +2570,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
                 shapes.addItem (fadeShapeBaseId + (int) i, FadeShapes::displayName (FadeShapes::all[i]), true, FadeShapes::all[i] == fadeShape);
 
-            group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats });
+            group ("Level and Loudness", { cmdGain, cmdNormalize, cmdNormalizeRegions, cmdMatchLoudness, cmdMeetDeliverySpec, cmdLevelSpeech, 0, cmdLoudnessStats , 0, cmdDither });
             group ("Fades", { cmdFadeIn, cmdFadeOut, cmdFadeEdges, cmdFadeRegions, cmdGainRamp, 0 }, &shapes);
             group ("EQ", { cmdEqBand, cmdParametricEq, cmdDynamicEq, cmdGraphicEq10, cmdGraphicEq31, 0, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq });
             group ("Dynamics", { cmdCompressor, cmdLimiter, cmdMaximizer, cmdMultiband, cmdTransientShaper, cmdDeEsser, cmdNoiseGate });
@@ -7896,6 +7898,29 @@ void MainComponent::showDynamicEq()
         if (auto next = DynamicEq::apply (*engine.document.getSnapshot(), r.getStart(), r.getEnd(), fileRate, dynamicEqSettings))
             applyEdit (std::move (next), "Dynamic EQ", waveform.getSelection());
     }), true);
+}
+
+void MainComponent::showDither()
+{
+    const auto& s = ditherSettings;
+    const auto toSettings = [] (const EffectValues& v)
+    {
+        return Dither::Settings { juce::roundToInt (v.at ("bits")) == 1 ? 24 : 16, (Dither::Shaping) juce::jlimit (0, 2, juce::roundToInt (v.at ("shaping"))) };
+    };
+
+    showEffectDialog ("Dither",
+                      "The audio rounded to the depth with triangular dither, so the rounding's error is noise rather than distortion that follows "
+                      "the sound: the last step before saving at that depth, after every other change. Shaping moves the noise up where hearing "
+                      "is least sensitive: Light 12 dB an octave, Strong 18; shaped noise is louder in all but quieter below a few kilohertz.",
+                      { { "bits", "Depth", s.bits == 24 ? 1.0 : 0.0, 0, { "16 bits", "24 bits" } },
+                        { "shaping", "Noise shaping", (double) (int) s.shaping, 0, Dither::shapingNames() } },
+                      "spectrablade:dither", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      [this, toSettings] (const EffectValues& v)
+                      {
+                          ditherSettings = toSettings (v);
+                          runStep ({ "dither", v, nullptr });
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "dither", v, nullptr }); });
 }
 
 void MainComponent::captureMatchReference()

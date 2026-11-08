@@ -25,6 +25,7 @@
 #include "TransientShaper.h"
 #include "MatchEq.h"
 #include "TonalBalance.h"
+#include "Dither.h"
 #include "Modulation.h"
 #include "Reverb.h"
 #include "Convolver.h"
@@ -275,6 +276,8 @@ private:
     std::optional<MatchEq::Profile> matchReference;
     int matchReferenceCaptures = 0;   // counts captures, so a preview knows its reference
     MatchEq::Settings matchSettings;
+    Dither::Settings ditherSettings;
+    void showDither();
     void captureMatchReference();
     void captureMatchReferenceFromFile();
     void showMatchEq();

@@ -43,6 +43,7 @@
 #include "TransientShaperTests.h"
 #include "MatchEqTests.h"
 #include "TonalBalanceTests.h"
+#include "DitherTests.h"
 #include "BuiltInEffectsTests.h"
 #include "EffectPreviewTests.h"
 #include "NoiseTests.h"
@@ -573,6 +574,7 @@ int main (int argc, char* argv[])
         runTransientShaperTests();
         runMatchEqTests();
         runTonalBalanceTests();
+        runDitherTests();
         runDynamicsTests();
         runModulationTests();
         runReverbTests();

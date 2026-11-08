@@ -201,6 +201,11 @@ namespace
         t["spectrablade:stereo-width"] = {
             { "Mono", { { "width", 0.0 } } }, { "Narrower", { { "width", 70.0 } } },
             { "Wider", { { "width", 130.0 } } }, { "Extra wide", { { "width", 160.0 } } } };
+        t["spectrablade:dither"] = {
+            { "CD (16 bits, light shaping)", { { "bits", 0.0 }, { "shaping", 1.0 } } },
+            { "16 bits, flat", { { "bits", 0.0 }, { "shaping", 0.0 } } },
+            { "16 bits, strong shaping", { { "bits", 0.0 }, { "shaping", 2.0 } } },
+            { "24 bits", { { "bits", 1.0 }, { "shaping", 0.0 } } } };
         t["spectrablade:match-eq"] = {
             { "Natural (third-octave)", { { "amount", 100.0 }, { "smoothing", 4.0 }, { "most", 12.0 } } },
             { "Gentle nudge", { { "amount", 50.0 }, { "smoothing", 6.0 }, { "most", 6.0 } } },

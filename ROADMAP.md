@@ -2,21 +2,20 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric (with a linear-phase mode), dynamic, graphic and match EQ (the parametric and dynamic bands on the mid, the side, the left or the right), compressor, multiband compressor, true-peak limiter and maximizer, de-esser, multiband stereo width, exciter, transient shaper, noise reduction from a noise print, reduce reverb, click repair, hum removal, de-clip, repair, spectral attenuate/remove/heal, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs, a tonal balance panel.
+Mastering and repair: every job a full mastering suite and a full audio-repair suite do, built our own way (clean-room: the same jobs, with our own methods, names, presets and look; nothing taken from another product's code, presets or help). One milestone each, roughly in this order. Already here: parametric (with a linear-phase mode), dynamic, graphic and match EQ (the parametric and dynamic bands on the mid, the side, the left or the right), compressor, multiband compressor, true-peak limiter and maximizer, de-esser, multiband stereo width, exciter, transient shaper, noise reduction from a noise print, reduce reverb, click repair, hum removal, de-clip, repair, spectral attenuate/remove/heal, centre channel, phase correction, stretch and pitch, pitch correction, level speech, match loudness and delivery specs, dither, a tonal balance panel.
 
-1. **Dither and word length:** noise-shaped dither to 16 or 24 bits, as a last step.
-2. **Dialogue isolation:** speech kept and everything else lowered, with an amount for each.
-3. **Voice de-noise (adaptive):** noise tracked as it changes, with no noise print needed.
-4. **Mouth de-click, de-crackle and de-plosive.**
-5. **Breath control:** breaths found between words and lowered.
-6. **Wind, rustle and bleed reduction.**
-7. **Wow and flutter:** pitch drift from tape or vinyl found and taken out.
-8. **Spectral recovery:** the highs missing from band-limited audio (phone, low-rate MP3) rebuilt.
-9. **Music rebalance:** voice, bass, drums and the rest each turned up or down (source separation).
-10. **Ambience match:** the room tone of one part laid under another.
-11. **Dialogue contour:** the pitch of a phrase's ending reshaped.
-12. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
-13. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
+1. **Dialogue isolation:** speech kept and everything else lowered, with an amount for each.
+2. **Voice de-noise (adaptive):** noise tracked as it changes, with no noise print needed.
+3. **Mouth de-click, de-crackle and de-plosive.**
+4. **Breath control:** breaths found between words and lowered.
+5. **Wind, rustle and bleed reduction.**
+6. **Wow and flutter:** pitch drift from tape or vinyl found and taken out.
+7. **Spectral recovery:** the highs missing from band-limited audio (phone, low-rate MP3) rebuilt.
+8. **Music rebalance:** voice, bass, drums and the rest each turned up or down (source separation).
+9. **Ambience match:** the room tone of one part laid under another.
+10. **Dialogue contour:** the pitch of a phrase's ending reshaped.
+11. **Azimuth:** the time and phase offset between the channels of a tape transfer found and corrected (beyond phase correction).
+12. **Codec preview:** the sound heard as it will come back from MP3 or AAC at a bit rate.
 
 Sound Library: a browser for a large sound-effects library (100k to a million files and more), with drag and drop into the app and out of it.
 

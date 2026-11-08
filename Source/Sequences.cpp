@@ -15,6 +15,7 @@
 #include "Exciter.h"
 #include "Maximizer.h"
 #include "TransientShaper.h"
+#include "Dither.h"
 #include "OfflineRender.h"
 #include "Reverb.h"
 #include "SampleRateConverter.h"
@@ -60,6 +61,7 @@ namespace
             { "stereoWidth", "Stereo Width", { "width" } },
             { "multibandWidth", "Multiband Stereo Width", { "lowCrossover", "highCrossover", "low", "mid", "high" } },
             { "maximizer", "Maximizer", { "gain", "ceiling", "character", "emphasis" } },
+            { "dither", "Dither", { "bits", "shaping" } },
             { "transientShaper", "Transient Shaper", { "lowCrossover", "highCrossover", "lowAttack", "lowSustain", "midAttack", "midSustain", "highAttack", "highSustain", "output" } },
             { "exciter", "Exciter", { "lowCrossover", "highCrossover", "lowDrive", "lowCurve", "lowMix", "midDrive", "midCurve", "midMix", "highDrive", "highCurve", "highMix", "output" } },
             { "centre", "Centre Channel", { "keep", "low", "high", "reduction" } },
@@ -124,6 +126,11 @@ namespace
         }
 
         return s;
+    }
+
+    Dither::Settings ditherOf (const Values& v)
+    {
+        return { juce::roundToInt (get (v, "bits")) == 1 ? 24 : 16, (Dither::Shaping) juce::jlimit (0, 2, juce::roundToInt (get (v, "shaping"))) };
     }
 
     Maximizer::Settings maximizerOf (const Values& v)
@@ -313,6 +320,7 @@ juce::String problem (const Step& step, double rate)
         || (step.kind == "multibandWidth" && ! Multiband::isValid (widthOf (v), rate))
         || (step.kind == "exciter" && ! Exciter::isValid (exciterOf (v), rate))
         || (step.kind == "maximizer" && ! Maximizer::isValid (maximizerOf (v)))
+        || (step.kind == "dither" && (get (v, "bits") < 0.0 || get (v, "bits") > 1.0))
         || (step.kind == "transientShaper" && ! TransientShaper::isValid (transientShaperOf (v), rate))
         || ((step.kind == "chorus" || step.kind == "flanger") && ! Modulation::isValid (delayOf (v)))
         || (step.kind == "phaser" && ! Modulation::isValid (phaserOf (v)))
@@ -361,6 +369,7 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
     else if (k == "multibandWidth") out.snapshot = Multiband::widen (s, start, end, rate, widthOf (v));
     else if (k == "exciter")        out.snapshot = Exciter::apply (s, start, end, rate, exciterOf (v));
     else if (k == "maximizer")      out.snapshot = Maximizer::apply (s, start, end, rate, maximizerOf (v));
+    else if (k == "dither")         out.snapshot = Dither::apply (s, start, end, ditherOf (v));
     else if (k == "transientShaper") out.snapshot = TransientShaper::apply (s, start, end, rate, transientShaperOf (v));
     else if (k == "chorus" || k == "flanger") out.snapshot = Modulation::sweptDelay (s, start, end, rate, delayOf (v));
     else if (k == "phaser")         out.snapshot = Modulation::phaser (s, start, end, rate, phaserOf (v));
