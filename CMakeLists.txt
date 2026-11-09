@@ -123,6 +123,7 @@ target_sources(SpectraBlade PRIVATE
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
     Source/TimeStretch.cpp
+    Source/ExtremeStretch.cpp
     Source/PhaseVocoder.cpp
     Source/TrackTemplate.cpp
     Source/UndoHistory.cpp
@@ -276,6 +277,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/MatchEqTests.cpp
     Tests/TonalBalanceTests.cpp
     Tests/StatisticsTests.cpp
+    Tests/ExtremeStretchTests.cpp
     Tests/TimeFormatTests.cpp
     Tests/DitherTests.cpp
     Tests/DialogueIsolationTests.cpp
@@ -357,6 +359,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
     Source/TimeStretch.cpp
+    Source/ExtremeStretch.cpp
     Source/PhaseVocoder.cpp
     Source/TrackTemplate.cpp
     Source/UndoHistory.cpp

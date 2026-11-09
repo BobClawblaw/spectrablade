@@ -24,6 +24,7 @@
 #include "../Source/SampleRateConverter.h"
 #include "../Source/Sequences.h"
 #include "../Source/TimeStretch.h"
+#include "../Source/ExtremeStretch.h"
 #include "../Source/Dereverb.h"
 #include "../Source/Leveller.h"
 #include "../Source/CentreChannel.h"
@@ -185,6 +186,7 @@ void runSequencesTests (AudioEngine& engine)
               RoomReverb::apply (s, a, b, rate, rev) },
             { { "convertRate", { { "rate", 44100.0 } }, nullptr }, SampleRateConverter::convert (s, rate, 44100.0) },
             { { "stretch", { { "percent", 120.0 } }, nullptr }, TimeStretch::stretchRange (s, a, b, 1.2, rate) },
+            { { "extremeStretch", { { "factor", 4.0 }, { "window", 0.1 } }, nullptr }, ExtremeStretch::stretchRange (s, a, b, { 4.0, 0.1 }, rate) },
             { { "pitch", { { "semitones", -3.0 } }, nullptr }, TimeStretch::shiftRange (s, a, b, -3.0, rate) },
             { { "pitchCorrect", { { "key", 2.0 }, { "scale", 1.0 }, { "speed", 40.0 }, { "strength", 80.0 } }, nullptr },
               PitchCorrection::correct (s, a, b, rate, { 2, PitchCorrection::Scale::major, 40.0f, 80.0f }) },
@@ -260,8 +262,8 @@ void runSequencesTests (AudioEngine& engine)
             if (! covered.contains (k))
                 missing.add (k);
 
-        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 42,
-               "sequences: each of the 42 steps gives its command's own result bit for bit"
+        check (wrong.isEmpty() && missing.isEmpty() && Sequences::kinds().size() == 43,
+               "sequences: each of the 43 steps gives its command's own result bit for bit"
                    + (wrong.isEmpty() ? juce::String() : " (differs: " + wrong.joinIntoString (", ") + ")")
                    + (missing.isEmpty() ? juce::String() : " (not tried: " + missing.joinIntoString (", ") + ")"));
     }

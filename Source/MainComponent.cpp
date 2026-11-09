@@ -28,6 +28,7 @@
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
+#include "ExtremeStretch.h"
 #include "TrackTemplate.h"
 #include "SessionNotes.h"
 #include "UndoHistory.h"
@@ -149,6 +150,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
+        cmdExtremeStretch,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -162,7 +164,7 @@ namespace
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
-            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones || id == cmdPitchCorrection;
+            || id == cmdStretch || id == cmdExtremeStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones || id == cmdPitchCorrection;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -1462,6 +1464,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdPitch:      info.setInfo ("Shift Pitch...", "Make the selection, or the whole file, higher or lower, keeping its length", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdExtremeStretch: info.setInfo ("Extreme Stretch...", "Smear the selection, or the whole file, to many times its length: a pad that keeps the pitch and colour, not the timing", "Effects", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdRemoveDc:   info.setInfo ("Remove DC Offset", "Take each channel's average level out of the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
         case cmdBalance:    info.setInfo ("Balance...", "Move the stereo balance of the selection, or the whole file, left or right", "Effects", 0);
@@ -2225,6 +2229,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdReverse:    runStep ({ "reverse", {}, nullptr }); break;
         case cmdStretch:    askToStretch(); break;
         case cmdPitch:      askToShiftPitch(); break;
+        case cmdExtremeStretch: askToExtremeStretch(); break;
         case cmdReverseRegions:
         {
             auto skipped = 0;
@@ -2739,7 +2744,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Saturation", { cmdExciter });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
-            group ("Time and Pitch", { cmdDialogueContour, 0,  cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
+            group ("Time and Pitch", { cmdDialogueContour, 0,  cmdStretch, cmdExtremeStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
             group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdMultibandWidth, cmdCentreChannel, cmdPhaseCorrection, cmdAzimuth, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
                                             cmdMixToMono, cmdMakeStereo, 0, cmdInvert, cmdInvertLeft, cmdInvertRight });
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
@@ -5487,6 +5492,32 @@ void MainComponent::askToStretch()
                               runStepInBackground ({ "stretch", v, nullptr }, "Stretching...");
                       },
                       [this] (const EffectValues& v) { return previewOf ({ "stretch", v, nullptr }); },
+                      "Stretch");
+}
+
+void MainComponent::askToExtremeStretch()
+{
+    const auto range = selectionOrAll();
+    const auto seconds = (double) range.getLength() / engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v) { return ExtremeStretch::Settings { v.at ("factor"), v.at ("window") }; };
+
+    showEffectDialog ("Extreme Stretch", juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection") + " ("
+                                             + juce::String (seconds, 2) + " s) smeared to many times its length. Each window of the sound keeps "
+                                             "its pitch and colour and loses its timing, so a texture or a chord becomes a pad and attacks, words "
+                                             "and rhythm melt away. A longer window smears more smoothly and loses more of the movement; a "
+                                             "shorter one keeps more of it and sounds grainier. Markers in it keep their place in it.",
+                      { { "factor", "Stretch (times)", extremeFactor, 1, {}, ExtremeStretch::shortestFactor, ExtremeStretch::longestFactor, 1.0 },
+                        { "window", "Window (s)", extremeWindow, 2, {}, ExtremeStretch::shortestWindow, ExtremeStretch::longestWindow, 0.05 } },
+                      "spectrablade:extreme-stretch", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return ExtremeStretch::isValid (toSettings (v)); },
+                      "The stretch must be from 1 to 1000 times, and the window from 0.05 to 2 seconds.", nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          extremeFactor = v.at ("factor");
+                          extremeWindow = v.at ("window");
+                          runStepInBackground ({ "extremeStretch", v, nullptr }, "Stretching...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "extremeStretch", v, nullptr }); },
                       "Stretch");
 }
 

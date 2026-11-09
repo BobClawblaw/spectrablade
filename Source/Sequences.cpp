@@ -1,6 +1,7 @@
 #include "Sequences.h"
 #include "Delivery.h"
 #include "TimeStretch.h"
+#include "ExtremeStretch.h"
 #include "AudioEdits.h"
 #include "CentreChannel.h"
 #include "PhaseCorrection.h"
@@ -83,6 +84,7 @@ namespace
             { "dereverb", "Reduce Reverb", { "time", "reduction" } },
             { "levelSpeech", "Level Speech", { "target", "boost", "cut", "silence" } },
             { "stretch", "Stretch", { "percent" } },
+            { "extremeStretch", "Extreme Stretch", { "factor", "window" } },
             { "pitch", "Shift Pitch", { "semitones" } },
             { "pitchCorrect", "Pitch Correction", { "key", "scale", "speed", "strength" } },
             { "convertRate", "Convert Sample Rate", { "rate" } },
@@ -275,6 +277,9 @@ juce::String Step::name() const
     if (kind == "stretch")
         return "Stretch to " + juce::String (get (values, "percent"), 1) + "%" + method;
 
+    if (kind == "extremeStretch")
+        return "Extreme Stretch " + juce::String (get (values, "factor"), 1) + "x";
+
     if (kind == "pitch")
     {
         const auto semitones = get (values, "semitones");
@@ -320,6 +325,9 @@ juce::String problem (const Step& step, double rate)
         return "it has no rack.";
 
     if (step.kind == "convertRate" && (get (v, "rate") < 8000.0 || get (v, "rate") > 384000.0))
+        return bad();
+
+    if (step.kind == "extremeStretch" && ! ExtremeStretch::isValid ({ get (v, "factor"), get (v, "window") }))
         return bad();
 
     if ((step.kind == "stretch" && (get (v, "percent") < TimeStretch::shortest * 100.0 || get (v, "percent") > TimeStretch::longest * 100.0))
@@ -613,6 +621,23 @@ Result apply (const Step& step, const Snapshot& audio, juce::int64 start, juce::
                     out.notes.add ("the true-peak ceiling allowed " + juce::String (gain, 1) + " dB, so it is at "
                                    + Loudness::format (measured->integrated + gain, "LUFS"));
             }
+        }
+    }
+    else if (k == "extremeStretch")
+    {
+        if (end > start)
+        {
+            out.snapshot = ExtremeStretch::stretchRange (s, start, end, { get (v, "factor"), get (v, "window") }, rate, progress);
+
+            if (out.snapshot == nullptr)
+            {
+                out.error = "Stopped.";
+                return out;
+            }
+
+            const auto newEnd = end + out.snapshot->getNumFrames() - s.getNumFrames();
+            out.markers = MarkerEdits::afterStretch (markers, start, end, newEnd - start);
+            out.end = newEnd;
         }
     }
     else if (k == "stretch" || k == "pitch")

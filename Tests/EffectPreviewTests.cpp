@@ -279,7 +279,7 @@ namespace
         static const std::map<juce::String, juce::String> kinds {
             { "spectrablade:gain", "gain" }, { "spectrablade:normalize", "normalize" }, { "spectrablade:match-loudness", "matchLoudness" },
             { "spectrablade:level-speech", "levelSpeech" }, { "spectrablade:balance", "balance" }, { "spectrablade:stereo-width", "stereoWidth" },
-            { "spectrablade:centre-channel", "centre" }, { "spectrablade:reduce-reverb", "dereverb" }, { "spectrablade:stretch", "stretch" },
+            { "spectrablade:centre-channel", "centre" }, { "spectrablade:reduce-reverb", "dereverb" }, { "spectrablade:stretch", "stretch" }, { "spectrablade:extreme-stretch", "extremeStretch" },
             { "spectrablade:shift-pitch", "pitch" }, { "spectrablade:pitch-correction", "pitchCorrect" }, { "spectrablade:eq-band", "eqBand" },
             { "spectrablade:compressor", "compressor" }, { "spectrablade:limiter", "limiter" }, { "spectrablade:de-esser", "deEsser" },
             { "spectrablade:chorus", "chorus" }, { "spectrablade:flanger", "flanger" }, { "spectrablade:phaser", "phaser" },

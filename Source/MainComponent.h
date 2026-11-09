@@ -215,6 +215,7 @@ private:
     void runStepInBackground (const Sequences::Step&, const juce::String& busy);
     void askToStretch();
     void askToShiftPitch();
+    void askToExtremeStretch();
     void askToReduceReverb();
     void askForCentreChannel();
     void askForPhaseCorrection();
@@ -235,6 +236,7 @@ private:
     void saveMixIntoVideo();
     static juce::StringArray stretchMethods();   // the Method menu of Stretch and Shift Pitch
     double stretchPercent = 100.0, pitchSemitones = 0.0, stretchMethod = 0.0;   // as last asked (method: 0 Signalsmith, 1 SpectraBlade)
+    double extremeFactor = 8.0, extremeWindow = 0.25;                            // Extreme Stretch as last asked
     void recordStep (const Sequences::Step&);              // after the edit is applied
     void noticeUnrecordedEdits();
     void toggleSequenceRecording();
