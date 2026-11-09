@@ -4,12 +4,18 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.8: the first dogfood fix, a selection changed while looping**
+- `SpectraBlade-0.14.8.dmg` on the repository's Releases page, with its SHA-256: Milestone 344 below on top of 0.14.7. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1498 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.8, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for the milestone. Nothing in this release has been listened to; the fix was not tried by hand in the running app.
+
 **Milestone 344: A selection changed while looping keeps playing**
 - Dogfooding found the first one: lengthening the selection while it played looping went silent at the old end and the play stopped. The play's own stop stayed at the end the selection had when Play was pressed, while the loop followed the new one; now the stop moves with the loop (the player gained `setStopFrame`), and a play left outside the new selection (shortened behind it, or moved) starts the loop again from its start.
 - Measured by the tests: a loop of 5,000 to 6,000 frames lengthened to 8,000 while playing, with its stop moved, keeps sounding past the old stop and wraps at the new end; with the stop left where it was, it plays silence past the old end, as the app did. The whole suite passed; the app launched and quit cleanly.
 - Not tried by hand: dragging a selection's end during a looping play in the running app.
-
-## Released
 
 **Release 0.14.7: five more themes and the dialogs' words straightened**
 - `SpectraBlade-0.14.7.dmg` on the repository's Releases page, with its SHA-256: Milestone 343 below on top of 0.14.6. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
