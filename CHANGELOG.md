@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.9: the mode said, dialogs heard from the start, and a dogfooding log**
+- `SpectraBlade-0.14.9.dmg` on the repository's Releases page, with its SHA-256: Milestones 345 to 347 below on top of 0.14.8, and a new [dogfooding log](docs/DOGFOODING.md) of what use has found and what fixed it. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1498 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.9, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. Nothing in this release has been listened to; the parts of each milestone not tried by hand are listed with it below.
+
 **Milestone 347: The other four dialogs preview from the start too**
 - Milestone 346 turned Preview on for a dialog opened while the file plays, but only for the dialogs on the shared path; the Multiband Compressor, Dynamic EQ and Graphic EQ dialogs and the Parametric EQ window keep a "Preview on the selection" switch of their own, which stayed off. They now start the same way, through one `previewsFromStart` rule for all of them.
 - Measured by the tests: the whole suite passed; the app launched and quit cleanly.
@@ -18,8 +26,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - Dogfooding: moving Stereo Width's slider changed nothing heard. A dialog's Preview is off until it is ticked (or Space), so the play underneath went on unchanged; and a stereo file whose two channels are the same (a mono sound in a stereo file) has no difference between them for Stereo Width to scale, so it changed nothing and said nothing. Now an effect dialog opened while the file plays starts with Preview on, so its settings are heard as they settle, and Stereo Width looks at the selection first: when the channels are the same it says so in its text, the preview's status line and on Apply, instead of doing nothing.
 - Measured by the tests: the whole suite passed; the app launched and quit cleanly.
 - Not tried by hand: the preview coming on by itself, and the message, in the running app.
-
-## Released
 
 **Release 0.14.8: the first dogfood fix, a selection changed while looping**
 - `SpectraBlade-0.14.8.dmg` on the repository's Releases page, with its SHA-256: Milestone 344 below on top of 0.14.7. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
