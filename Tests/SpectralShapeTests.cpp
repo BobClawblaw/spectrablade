@@ -394,6 +394,77 @@ namespace
                "spectral tools: the brush is 3 to 60 pixels; with the box tool a plain drag in a spectrogram selects time, as before");
     }
 
+    /** How the lasso looks: while it is drawn, only its line so far (in white dashes) and no wash
+        inside; once the mouse goes up, the closed shape washed white with a dashed edge; and the
+        lasso tool's own pointer over a spectrogram, the crosshair still for the brush. */
+    void testLassoLook()
+    {
+        AudioEngine engine;
+        juce::AudioBuffer<float> silence (2, (int) (2 * rate));
+        silence.clear();
+        engine.document.reset (AudioEdits::fromBuffer (std::move (silence)), rate, {}, 24);
+        WaveformView view (engine);
+        view.setBounds (0, 0, 1000, 600);
+        view.setDisplay (WaveformView::Display::spectrogram);
+        view.zoomToFit();
+        view.setSpectralTool (WaveformView::SpectralTool::lasso);
+        const auto area = view.getWaveArea().toFloat();
+        const auto top = area.withHeight (area.getHeight() / 2.0f);
+        const auto at = [&top] (float fx, float fy) { return juce::Point<float> (top.getX() + top.getWidth() * fx, top.getY() + top.getHeight() * fy); };
+        const auto brightness = [] (const juce::Image& image, juce::Point<float> p) { return image.getPixelAt ((int) p.x, (int) p.y).getBrightness(); };
+
+        // The brightest and darkest pixel along a line, sampled every pixel.
+        const auto along = [&brightness] (const juce::Image& image, juce::Point<float> a, juce::Point<float> b)
+        {
+            float brightest = 0.0f, darkest = 1.0f;
+            const auto n = (int) a.getDistanceFrom (b);
+
+            for (int i = 0; i <= n; ++i)
+            {
+                const auto v = brightness (image, a + (b - a) * ((float) i / (float) juce::jmax (1, n)));
+                brightest = juce::jmax (brightest, v);
+                darkest = juce::jmin (darkest, v);
+            }
+
+            return std::pair (brightest, darkest);
+        };
+
+        // Three corners drawn, the fourth not yet. The lasso's time span becomes the selection as
+        // it is drawn, so what is inside the lasso is compared with a point under it, in the
+        // selection but outside the shape; the closing side slants so it is clear of the
+        // selection's edge.
+        const auto a = at (0.2f, 0.3f), b = at (0.6f, 0.3f), c = at (0.6f, 0.7f), d = at (0.25f, 0.7f);
+        const auto centre = at (0.45f, 0.4f), under = at (0.45f, 0.9f);   // the centre clear of the closing edge, which runs corner to corner
+        view.mouseDown (mouse (view, a, a));
+        view.mouseDrag (mouse (view, b, a));
+        view.mouseDrag (mouse (view, c, a));
+        const auto drawing = view.createComponentSnapshot (view.getLocalBounds());
+        const auto background = brightness (drawing, under);
+        const auto [lineBright, lineDark] = along (drawing, a + juce::Point<float> (6.0f, 0.0f), b - juce::Point<float> (6.0f, 0.0f));
+        const auto [closingBright, closingDark] = along (drawing, c + (a - c) * 0.1f, c + (a - c) * 0.9f);
+        check (juce::exactlyEqual (brightness (drawing, centre), background)
+                   && lineBright > 0.5f && lineDark < 0.2f && closingBright > 0.3f && closingBright < lineBright,
+               "lasso look: while it is drawn, no wash inside (centre " + juce::String (brightness (drawing, centre), 2) + " = under it "
+                   + juce::String (background, 2) + "), its line so far in dashes (brightest " + juce::String (lineBright, 2) + ", darkest "
+                   + juce::String (lineDark, 2) + ") and the edge that will close it dotted faintly (" + juce::String (closingBright, 2) + ")");
+
+        view.mouseDrag (mouse (view, d, a));
+        view.mouseUp (mouse (view, d, a));
+        const auto closed = view.createComponentSnapshot (view.getLocalBounds());
+        const auto [edgeBright, edgeDark] = along (closed, d + (a - d) * 0.1f, d + (a - d) * 0.9f);
+        check (brightness (closed, centre) > brightness (closed, under) + 0.1f && edgeBright > 0.5f && edgeDark < edgeBright - 0.3f,
+               "lasso look: released, the shape is washed inside (" + juce::String (brightness (closed, centre), 2) + " over " + juce::String (brightness (closed, under), 2)
+                   + ") with a dashed edge along the closing side (brightest " + juce::String (edgeBright, 2) + ", darkest " + juce::String (edgeDark, 2) + ")");
+
+        view.mouseMove (mouse (view, centre, centre));
+        const auto lassoPointer = view.getMouseCursor();
+        view.setSpectralTool (WaveformView::SpectralTool::brush);
+        view.mouseMove (mouse (view, centre, centre));
+        check (lassoPointer != juce::MouseCursor (juce::MouseCursor::CrosshairCursor) && lassoPointer != juce::MouseCursor (juce::MouseCursor::NormalCursor)
+                   && view.getMouseCursor() == juce::MouseCursor (juce::MouseCursor::CrosshairCursor),
+               "lasso look: the lasso has a pointer of its own over a spectrogram, and the brush keeps the crosshair");
+    }
+
     void testStrokeUndo()
     {
         AudioEngine engine;
@@ -475,6 +546,7 @@ void runSpectralShapeTests()
     testHeal();
     testHealThroughTone();
     testTools();
+    testLassoLook();
     testStrokeUndo();
     testSnap();
 }

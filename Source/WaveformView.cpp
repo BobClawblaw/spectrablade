@@ -18,9 +18,34 @@ namespace
     const juce::Colour markerColour (0xffff8a3d);
     const juce::Colour regionColour (0xff58a6ff);
 
+    /** The lasso tool's pointer: a loop of rope trailing down to the point that draws, marked
+        with a dot. Drawn at twice the size for Retina screens. */
+    juce::MouseCursor makeLassoCursor()
+    {
+        constexpr int size = 24, scale = 2;
+        juce::Image image (juce::Image::ARGB, size * scale, size * scale, true);
+        juce::Graphics g (image);
+        g.addTransform (juce::AffineTransform::scale ((float) scale));
+
+        juce::Path rope;
+        rope.addEllipse (9.0f, 3.0f, 12.0f, 8.0f);
+        rope.startNewSubPath (10.5f, 9.5f);
+        rope.quadraticTo (6.0f, 12.0f, 3.5f, 19.5f);
+
+        g.setColour (juce::Colours::black);
+        g.strokePath (rope, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (juce::Colours::white);
+        g.strokePath (rope, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (juce::Colours::black);
+        g.fillEllipse (1.5f, 17.5f, 4.0f, 4.0f);
+        g.setColour (juce::Colours::white);
+        g.fillEllipse (2.25f, 18.25f, 2.5f, 2.5f);
+
+        return juce::MouseCursor (image, 3, 19, (float) scale);
+    }
 }
 
-WaveformView::WaveformView (AudioEngine& e) : engine (e)
+WaveformView::WaveformView (AudioEngine& e) : engine (e), lassoPointer (makeLassoCursor())
 {
     addAndMakeVisible (scrollBar);
     scrollBar.addListener (this);
@@ -1092,11 +1117,14 @@ void WaveformView::mouseMove (const juce::MouseEvent& e)
         repaint();
     }
 
-    setMouseCursor (fadeHandleAt (e.position) >= 0 ? juce::MouseCursor::UpDownLeftRightResizeCursor
-                    : tool != SpectralTool::box && overSpectrum ? juce::MouseCursor::CrosshairCursor
-                    : dividerAt (e.position) >= 0 ? juce::MouseCursor::UpDownResizeCursor
-                    : markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor
-                                                 : juce::MouseCursor::NormalCursor);
+    if (tool == SpectralTool::lasso && overSpectrum && fadeHandleAt (e.position) < 0)
+        setMouseCursor (lassoPointer);
+    else
+        setMouseCursor (fadeHandleAt (e.position) >= 0 ? juce::MouseCursor::UpDownLeftRightResizeCursor
+                        : tool != SpectralTool::box && overSpectrum ? juce::MouseCursor::CrosshairCursor
+                        : dividerAt (e.position) >= 0 ? juce::MouseCursor::UpDownResizeCursor
+                        : markerAt (e.position) >= 0 ? juce::MouseCursor::DraggingHandCursor
+                                                     : juce::MouseCursor::NormalCursor);
 }
 
 void WaveformView::mouseDoubleClick (const juce::MouseEvent& e)
@@ -1432,8 +1460,21 @@ void WaveformView::drawShape (juce::Graphics& g)
         if (hasShape)
         {
             // Each stroke in its order: an adding stroke a white wash as strong as it selects, a
-            // taking stroke a dark one with a dashed edge, so what it cuts away reads as cut.
+            // taking stroke a dark one, so what it cuts away reads as cut; both edged in black and
+            // white dashes that show on any colour. A lasso being drawn is only its line so far,
+            // with the edge that will close it when the mouse goes up dotted faintly.
             const auto pixelsPerOctave = 1.0 / octavesPerPixel (spectrum);
+
+            const auto dashedEdge = [&g] (const juce::Path& edge)
+            {
+                g.setColour (juce::Colours::black.withAlpha (0.85f));
+                g.strokePath (edge, juce::PathStrokeType (1.0f));
+                const float dashes[] { 4.0f, 4.0f };
+                juce::Path dashed;
+                juce::PathStrokeType (1.0f).createDashedStroke (dashed, edge, dashes, 2);
+                g.setColour (juce::Colours::white);
+                g.fillPath (dashed);
+            };
 
             for (auto& stroke : shape.strokes)
             {
@@ -1446,6 +1487,20 @@ void WaveformView::drawShape (juce::Graphics& g)
 
                     for (size_t i = 1; i < stroke.lasso.size(); ++i)
                         p.lineTo (toScreen (stroke.lasso[i]));
+
+                    if (shapeLane >= 0 && &stroke == &shape.strokes.back() && stroke.dabs.empty())
+                    {
+                        dashedEdge (p);
+                        juce::Path closing;
+                        closing.startNewSubPath (toScreen (stroke.lasso.back()));
+                        closing.lineTo (toScreen (stroke.lasso.front()));
+                        const float dots[] { 1.5f, 3.5f };
+                        juce::Path dotted;
+                        juce::PathStrokeType (1.0f).createDashedStroke (dotted, closing, dots, 2);
+                        g.setColour (juce::Colours::white.withAlpha (0.6f));
+                        g.fillPath (dotted);
+                        continue;
+                    }
 
                     p.closeSubPath();
                     fill.addPath (p);
@@ -1462,19 +1517,7 @@ void WaveformView::drawShape (juce::Graphics& g)
                 fill.setUsingNonZeroWinding (true);
                 g.setColour (stroke.subtract ? juce::Colours::black.withAlpha (0.45f) : juce::Colours::white.withAlpha (0.22f * stroke.strength));
                 g.fillPath (fill);
-                g.setColour (juce::Colours::white.withAlpha (0.9f));
-
-                if (stroke.subtract)
-                {
-                    const float dashes[] { 4.0f, 3.0f };
-                    juce::Path dashed;
-                    juce::PathStrokeType (1.0f).createDashedStroke (dashed, outline, dashes, 2);
-                    g.fillPath (dashed);
-                }
-                else
-                {
-                    g.strokePath (outline, juce::PathStrokeType (1.0f));
-                }
+                dashedEdge (outline);
             }
         }
 

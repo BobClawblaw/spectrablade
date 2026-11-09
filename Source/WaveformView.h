@@ -182,6 +182,7 @@ private:
     int shapeLane = -1;                       // channel whose spectrogram a lasso or brush drag started in
     juce::uint32 strokeVersion = 0;           // the file's version when the last stroke was drawn
     juce::Point<float> lastDrawn, brushHover { -1.0f, -1.0f };
+    const juce::MouseCursor lassoPointer;         // the lasso tool's pointer over a spectrogram
     juce::Point<double> toShapePoint (juce::Point<float>, juce::Rectangle<int> spectrum) const;   // (frame, octave)
     double octavesPerPixel (juce::Rectangle<int> spectrum) const;
     void drawAt (juce::Point<float>, juce::Rectangle<int> spectrum);

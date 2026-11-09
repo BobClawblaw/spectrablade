@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 339: The lasso drawn as a line**
+- The lasso tool draws freehand, as it did, but now shows what it is doing: while the mouse is down only the line drawn so far is shown, in black and white dashes that read on any colour of spectrogram, with a faint dotted edge from the mouse back to the start to show where the shape will close when the mouse goes up. Before, the shape was closed and washed in from the first moment, so what was being traced was hard to see and the straight closing edge moved with the mouse. Once closed, the shape is washed white (dark for a stroke that takes away) and edged in the same dashes (a brush stroke is filled, as before). Over a spectrogram the lasso tool has a pointer of its own, a loop of rope with a dot at the point that draws; the brush keeps the crosshair and its circle.
+- Measured by the tests: with three corners of a lasso drawn and the mouse still down, the pixel at its centre is the spectrogram's own (no wash), the line so far has pixels brighter than 0.5 and darker than 0.2 along it (the dashes) and the closing edge is drawn fainter; released, the centre is washed by more than 0.1 over the selection under it and the closing side edged in dashes; the lasso's pointer over a spectrogram is neither the crosshair nor the arrow, and the brush's is the crosshair. The whole suite passed (1481 checks); the app launched and quit cleanly.
+- Not tried by hand: drawing with a mouse or trackpad in the running app.
 
 ## Released
 
