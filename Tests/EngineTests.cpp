@@ -90,6 +90,7 @@
 #include "PluginTests.h"
 #include "CommandAuditTests.h"
 #include "PlayheadTests.h"
+#include "StatisticsTests.h"
 #include "TestPlugins.h"
 #include "TestUtils.h"
 
@@ -608,6 +609,7 @@ int main (int argc, char* argv[])
         runTransientShaperTests();
         runMatchEqTests();
         runTonalBalanceTests();
+        runStatisticsTests();
         runDitherTests();
         runDialogueIsolationTests();
         runAdaptiveDenoiseTests();

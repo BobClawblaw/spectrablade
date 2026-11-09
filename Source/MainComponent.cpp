@@ -71,11 +71,11 @@ namespace
         const juce::String editor { "editor" }, rack { "rack" }, selection { "selection" }, mixer { "mixer" },
                            clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
                            history { "history" }, notes { "notes" }, files { "files" }, levels { "levels" },
-                                spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" }, tonalBalance { "tonalBalance" };
+                                spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" }, tonalBalance { "tonalBalance" }, statistics { "statistics" };
 
         juce::StringArray all()
         {
-            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch, tonalBalance };
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch, tonalBalance, statistics };
         }
     }
 
@@ -146,7 +146,7 @@ namespace
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
-        cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier,
+        cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -1590,6 +1590,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setTicked (dock->isShown (Panels::spectrum)); break;
         case cmdShowTonalBalance: info.setInfo ("Tonal Balance", "Show or hide the long-term spectrum of what goes to the outputs against a target range for a style", "Window", 0);
                             info.setTicked (dock->isShown (Panels::tonalBalance)); break;
+        case cmdShowStatistics: info.setInfo ("Amplitude Statistics", "Show or hide the numbers of the selection or the file: peaks, RMS, DC offset, bit depth and loudness", "Window", 0);
+                            info.setTicked (dock->isShown (Panels::statistics)); break;
         case cmdShowPhase:  info.setInfo ("Phase Meter", "Show or hide the goniometer and correlation of what goes to the outputs", "Window", 0);
                             info.setTicked (dock->isShown (Panels::phase)); break;
         case cmdMaximizeEditor:
@@ -2390,6 +2392,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShowSpectrum: dock->toggle (Panels::spectrum); break;
         case cmdShowPhase:  dock->toggle (Panels::phase); break;
         case cmdShowTonalBalance: dock->toggle (Panels::tonalBalance); break;
+        case cmdShowStatistics: dock->toggle (Panels::statistics); break;
         case cmdMaximizeEditor:
             if (dock->getMaximised().isEmpty())
                 dock->maximise (Panels::editor);
@@ -2773,7 +2776,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowTonalBalance, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowTonalBalance, cmdShowStatistics, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
 
             juce::PopupMenu workspaceMenu;
 
@@ -11512,6 +11515,43 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
     }
     else if (id == Panels::notes)
         made = std::make_unique<SessionNotes> (engine.session);
+    else if (id == Panels::statistics)
+    {
+        auto panel = std::make_unique<Statistics::Panel>();
+        panel->readSource = [this]() -> std::optional<Statistics::Panel::Source>
+        {
+            auto& doc = engine.document;
+
+            // In a session: the selected clip, under the time selection or all it plays.
+            if (multitrackMode)
+            {
+                const auto state = engine.session.getState();
+                const auto where = state->findClip (multitrack.getSelectedClip());
+
+                if (! where.has_value())
+                    return std::nullopt;
+
+                const auto& clip = state->tracks[(size_t) where->first].clips[(size_t) where->second];
+
+                if (clip.audio == nullptr)
+                    return std::nullopt;
+
+                const auto range = SessionEdits::pitchRange (clip, multitrack.getTimeSelection());
+                return Statistics::Panel::Source { clip.audio, range.getStart(), range.getEnd(), state->sampleRate };
+            }
+
+            if (! doc.hasAudio())
+                return std::nullopt;
+
+            const auto range = selectionOrAll();
+            return Statistics::Panel::Source { doc.getSnapshot(), range.getStart(), range.getEnd(), doc.getSampleRate() };
+        };
+        panel->formatTime = [this] (juce::int64 frame)
+        {
+            return TransportBar::SelectionPanel::format (frame, multitrackMode ? engine.session.getSampleRate() : engine.document.getSampleRate());
+        };
+        made = std::move (panel);
+    }
     else if (id == Panels::pitch)
     {
         auto panel = std::make_unique<PitchEditor>();
@@ -11613,6 +11653,7 @@ juce::String MainComponent::getTitle (const juce::String& id)
     if (id == Panels::spectrum)        return "Frequency Analysis";
     if (id == Panels::phase)           return "Phase Meter";
     if (id == Panels::tonalBalance)    return "Tonal Balance";
+    if (id == Panels::statistics)      return "Amplitude Statistics";
     if (id == Panels::video)           return "Video";
     if (id == Panels::pitch)           return "Pitch Editor";
     return id;
@@ -11647,6 +11688,7 @@ std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::Str
     if (id == Panels::levels)      return { {}, Dock::Side::bottom };
     if (id == Panels::video)       return { Panels::rack, Dock::Side::top };
     if (id == Panels::spectrum)    return { Panels::editor, Dock::Side::bottom };
+    if (id == Panels::statistics)  return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::phase)       return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,
                                             dock->getLayout().isDocked (Panels::spectrum) ? Dock::Side::right : Dock::Side::bottom };
     if (id == Panels::tonalBalance) return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,

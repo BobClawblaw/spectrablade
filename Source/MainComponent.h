@@ -25,6 +25,7 @@
 #include "TransientShaper.h"
 #include "MatchEq.h"
 #include "TonalBalance.h"
+#include "Statistics.h"
 #include "Dither.h"
 #include "DialogueIsolation.h"
 #include "AdaptiveDenoise.h"

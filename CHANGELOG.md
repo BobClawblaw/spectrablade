@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 337: Amplitude Statistics**
+- Window > Amplitude Statistics: a panel that measures the selection, or the whole file without one (in a session, the selected clip under the time selection or all it plays) when you click Scan, in the background with its progress shown, and lists for each channel the peak and where it is, the true peak, the samples at full scale (32767/32768 or beyond), the DC offset, the RMS of the whole, of the loudest and of the quietest 50 ms window with sound, the spread between those two as the dynamic range, and the bits the samples need (8, 16, 24 or 32-bit float); under them the integrated loudness, loudness range, maximum momentary and maximum short-term of all channels together, as Loudness measures them; and a histogram of the windows by their RMS, a column a dB from -100 to 0, one outline per channel. Copy puts the table on the clipboard as tab-separated text. The panel says what it measured, and when the audio or the selection has changed since, so you know to scan again. It docks under the editor by default.
+- Measured by the tests: a half-scale sine reads -6.02 dBFS with its peak at frame 12, RMS -9.03 dB, 40 windows in 2 s all alike (dynamic range 0.000 dB) and all in the -10 dB bin, needing 32 bits; a 16-bit square wave at full scale for 1 s, at a tenth for 0.5 s and then silent counts 48,000 samples at full scale, 16 bits, a loudest window of 0 dB and a quietest with sound of -20 dB (dynamic range 19.999 dB), 20, 10 and 10 windows in the 0 dB, -20 dB and silent bins, and a true peak of 2.1 dBTP from the oversampled overshoot; a constant 16-bit value reads a DC offset of 10 % and 16 bits; multiples of 1/128 read 8 bits and of 1/8,388,608 24; the loudness is bit-identical to Loudness::measure; the panel's scan finishes in the background and reports the range, a changed selection and an empty source. The whole suite passed (1459 checks); the app launched and quit cleanly.
+- Not tried by hand or listened to: the panel in the running app.
 
 ## Released
 
