@@ -146,7 +146,7 @@ namespace
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
-        cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings,
+        cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -156,7 +156,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdCodecPreview) || (id >= cmdNudgeStartEarlier && id <= cmdSelectZeroCrossings)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdCodecPreview) || (id >= cmdNudgeStartEarlier && id <= cmdBrushHeavier)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -1684,8 +1684,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                                                                                  : WaveformView::SpectralTool::brush;
             info.setInfo (id == cmdBoxTool ? "Box Selection" : id == cmdLassoTool ? "Lasso Selection" : "Brush Selection",
                           id == cmdBoxTool ? "Drag to select time; Option-drag in a spectrogram selects a box of time and frequency"
-                          : id == cmdLassoTool ? "Drag in a spectrogram to draw round what to select; Shift adds to it"
-                                               : "Drag in a spectrogram to paint over what to select; Shift adds to it", "Edit", 0);
+                          : id == cmdLassoTool ? "Drag in a spectrogram to draw round what to select; Shift adds to it, Option takes from it"
+                                               : "Drag in a spectrogram to paint over what to select; Shift adds to it, Option takes from it", "Edit", 0);
             info.addDefaultKeypress (id == cmdBoxTool ? 'e' : id == cmdLassoTool ? 'd' : 'p', 0);
             info.setTicked (waveform.getSpectralTool() == t);
             info.setActive (! multitrackMode);
@@ -1697,6 +1697,17 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.addDefaultKeypress (id == cmdBrushLarger ? ']' : '[', 0);
             info.setActive (! multitrackMode && waveform.getSpectralTool() == WaveformView::SpectralTool::brush);
             break;
+        case cmdBrushLighter:
+        case cmdBrushHeavier:
+        {
+            const auto strength = juce::roundToInt (waveform.getBrushStrength() * 100.0f);
+            info.setInfo (id == cmdBrushHeavier ? "Heavier Brush" : "Lighter Brush",
+                          juce::String ("Change how much the selection brush selects, in steps of 10 % (now ") + juce::String (strength)
+                              + " %): an effect on what only it painted applies by that much", "Edit", 0);
+            info.setActive (! multitrackMode && waveform.getSpectralTool() == WaveformView::SpectralTool::brush
+                            && (id == cmdBrushHeavier ? strength < 100 : strength > 10));
+            break;
+        }
 
         case cmdLoudnessStats: info.setInfo ("Loudness Statistics...", "Measure loudness (EBU R128) and true peak of the selection or file", "Effects", 0);
             info.setActive (hasAudio && backgroundJob == nullptr); break;
@@ -2562,6 +2573,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdBrushTool:  waveform.setSpectralTool (WaveformView::SpectralTool::brush); commands.commandStatusChanged(); break;
         case cmdBrushLarger: waveform.setBrushRadius (waveform.getBrushRadius() * 1.25f); break;
         case cmdBrushSmaller: waveform.setBrushRadius (waveform.getBrushRadius() / 1.25f); break;
+        case cmdBrushLighter: waveform.setBrushStrength (waveform.getBrushStrength() - WaveformView::brushStrengthStep); commands.commandStatusChanged(); break;
+        case cmdBrushHeavier: waveform.setBrushStrength (waveform.getBrushStrength() + WaveformView::brushStrengthStep); commands.commandStatusChanged(); break;
         case cmdLoudnessStats: showLoudness(); break;
         case cmdMatchLoudness: askForLoudnessTarget(); break;
         case cmdMeetDeliverySpec: askForDeliverySpec(); break;
@@ -2660,7 +2673,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
-        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectionToZero, cmdSelectZeroCrossings, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectionToZero, cmdSelectZeroCrossings, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdBrushLighter, cmdBrushHeavier, 0, cmdConvertRate }); break;
         case 2:
         {
             // Grouped by what they do, so the menu stays short.
@@ -6753,8 +6766,9 @@ void MainComponent::healSpectral()
     if (shape.isEmpty() && ! sel.isEmpty() && ! band.isEmpty())
     {
         const auto lo = std::log2 (juce::jmax (1.0, band.getStart())), hi = std::log2 (band.getEnd());
-        shape.lassos.push_back ({ { (double) sel.getStart(), lo }, { (double) sel.getEnd(), lo },
-                                  { (double) sel.getEnd(), hi }, { (double) sel.getStart(), hi } });
+        SpectralEdit::Stroke outline;
+        outline.lasso = { { (double) sel.getStart(), lo }, { (double) sel.getEnd(), lo }, { (double) sel.getEnd(), hi }, { (double) sel.getStart(), hi } };
+        shape.strokes.push_back (std::move (outline));
     }
 
     if (shape.isEmpty())

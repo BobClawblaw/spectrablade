@@ -160,20 +160,12 @@ namespace
     }
 }
 
-bool Shape::isEmpty() const noexcept
-{
-    return std::none_of (lassos.begin(), lassos.end(), [] (auto& l) { return l.size() >= 3; }) && dabs.empty();
-}
-
-std::vector<juce::Range<double>> Shape::octavesAt (double frame) const
+std::vector<juce::Range<double>> Stroke::octavesAt (double frame) const
 {
     std::vector<juce::Range<double>> ranges;
 
-    for (auto& lasso : lassos)
+    if (lasso.size() >= 3)
     {
-        if (lasso.size() < 3)
-            continue;
-
         // Where an upright line at this frame crosses the outline: inside between pairs of crossings.
         std::vector<double> crossings;
 
@@ -205,18 +197,96 @@ std::vector<juce::Range<double>> Shape::octavesAt (double frame) const
     return merged (std::move (ranges));
 }
 
-bool Shape::contains (double frame, double frequency) const
+bool Shape::isEmpty() const noexcept
+{
+    return std::none_of (strokes.begin(), strokes.end(), [] (auto& s) { return ! s.subtract && ! s.isEmpty(); });
+}
+
+std::vector<std::pair<juce::Range<double>, float>> Shape::weightsAt (double frame) const
+{
+    // The weight over the octaves as steps: each holds from its octave to the next step's, and
+    // there is nothing before the first. Each stroke's ranges change the steps inside them.
+    struct Step { double octave; float weight; };
+    std::vector<Step> steps;
+
+    const auto weightBefore = [&steps] (double octave)
+    {
+        float w = 0.0f;
+
+        for (auto& s : steps)
+        {
+            if (s.octave > octave)
+                break;
+
+            w = s.weight;
+        }
+
+        return w;
+    };
+
+    const auto cut = [&] (double octave)
+    {
+        const auto it = std::lower_bound (steps.begin(), steps.end(), octave, [] (const Step& s, double o) { return s.octave < o; });
+
+        if (it == steps.end() || ! juce::exactlyEqual (it->octave, octave))
+            steps.insert (it, { octave, weightBefore (octave) });
+    };
+
+    for (auto& stroke : strokes)
+    {
+        if (stroke.isEmpty())
+            continue;
+
+        for (auto r : stroke.octavesAt (frame))
+        {
+            if (r.isEmpty())
+                continue;
+
+            cut (r.getStart());
+            cut (r.getEnd());
+
+            for (auto& s : steps)
+                if (s.octave >= r.getStart() && s.octave < r.getEnd())
+                    s.weight = stroke.subtract ? juce::jmin (s.weight, 1.0f - stroke.strength) : juce::jmax (s.weight, stroke.strength);
+        }
+    }
+
+    std::vector<std::pair<juce::Range<double>, float>> out;
+
+    for (size_t i = 0; i + 1 < steps.size(); ++i)
+        if (steps[i].weight > 0.0f && steps[i + 1].octave > steps[i].octave)
+        {
+            if (! out.empty() && out.back().first.getEnd() >= steps[i].octave && juce::exactlyEqual (out.back().second, steps[i].weight))
+                out.back().first.setEnd (steps[i + 1].octave);
+            else
+                out.push_back ({ { steps[i].octave, steps[i + 1].octave }, steps[i].weight });
+        }
+
+    return out;
+}
+
+std::vector<juce::Range<double>> Shape::octavesAt (double frame) const
+{
+    std::vector<juce::Range<double>> ranges;
+
+    for (auto& [r, w] : weightsAt (frame))
+        ranges.push_back (r);
+
+    return merged (std::move (ranges));
+}
+
+float Shape::weightAt (double frame, double frequency) const
 {
     if (frequency <= 0.0)
-        return false;
+        return 0.0f;
 
     const auto octave = std::log2 (frequency);
 
-    for (auto r : octavesAt (frame))
+    for (auto& [r, w] : weightsAt (frame))
         if (r.getStart() <= octave && octave < r.getEnd())
-            return true;
+            return w;
 
-    return false;
+    return 0.0f;
 }
 
 juce::Range<double> Shape::frames() const
@@ -224,13 +294,18 @@ juce::Range<double> Shape::frames() const
     std::optional<juce::Range<double>> span;
     const auto add = [&span] (juce::Range<double> r) { span = span ? span->getUnionWith (r) : r; };
 
-    for (auto& lasso : lassos)
-        if (lasso.size() >= 3)
-            for (auto p : lasso)
+    for (auto& stroke : strokes)
+    {
+        if (stroke.subtract || stroke.isEmpty())
+            continue;
+
+        if (stroke.lasso.size() >= 3)
+            for (auto p : stroke.lasso)
                 add ({ p.x, p.x });
 
-    for (auto& d : dabs)
-        add ({ d.frame - d.frameRadius, d.frame + d.frameRadius });
+        for (auto& d : stroke.dabs)
+            add ({ d.frame - d.frameRadius, d.frame + d.frameRadius });
+    }
 
     return span.value_or (juce::Range<double>());
 }
@@ -240,13 +315,18 @@ juce::Range<double> Shape::frequencies() const
     std::optional<juce::Range<double>> span;
     const auto add = [&span] (juce::Range<double> r) { span = span ? span->getUnionWith (r) : r; };
 
-    for (auto& lasso : lassos)
-        if (lasso.size() >= 3)
-            for (auto p : lasso)
+    for (auto& stroke : strokes)
+    {
+        if (stroke.subtract || stroke.isEmpty())
+            continue;
+
+        if (stroke.lasso.size() >= 3)
+            for (auto p : stroke.lasso)
                 add ({ p.y, p.y });
 
-    for (auto& d : dabs)
-        add ({ d.octave - d.octaveRadius, d.octave + d.octaveRadius });
+        for (auto& d : stroke.dabs)
+            add ({ d.octave - d.octaveRadius, d.octave + d.octaveRadius });
+    }
 
     return span ? juce::Range<double> (std::exp2 (span->getStart()), std::exp2 (span->getEnd())) : juce::Range<double>();
 }
@@ -281,30 +361,26 @@ Mask maskFor (const Shape& shape, double sampleRate, juce::int64 numFrames)
     for (auto k = first; k <= last; ++k)
     {
         const auto centre = (double) (k * shapeHop);
-        std::vector<juce::Range<double>> inside;
+        auto& row = rows[(size_t) (k - mask.firstFrame)];
 
         for (int o = -shapeSize / 2; o <= shapeSize / 2; o += step)
         {
             const auto t = centre + o;
 
-            if (t >= (double) from && t <= (double) to)
-                for (auto r : shape.octavesAt (t))
-                    inside.push_back (r);
-        }
+            if (t < (double) from || t > (double) to)
+                continue;
 
-        inside = merged (std::move (inside));
-        auto& row = rows[(size_t) (k - mask.firstFrame)];
+            // Each bin takes the most the shape weighs over it in the window; a shape narrower
+            // than a bin still takes the bin nearest it.
+            for (auto& [r, w] : shape.weightsAt (t))
+            {
+                for (int b = 1; b < bins; ++b)
+                    if (binOctave[(size_t) b] >= r.getStart() && binOctave[(size_t) b] <= r.getEnd())
+                        row[(size_t) b] = juce::jmax (row[(size_t) b], w);
 
-        for (auto r : inside)
-            for (int b = 1; b < bins; ++b)
-                if (binOctave[(size_t) b] >= r.getStart() && binOctave[(size_t) b] <= r.getEnd())
-                    row[(size_t) b] = 1.0f;
-
-        // A shape narrower than a bin still takes the bin nearest it.
-        for (auto r : inside)
-        {
-            const auto b = juce::jlimit (1, bins - 1, (int) std::round (std::exp2 (0.5 * (r.getStart() + r.getEnd())) / binHz));
-            row[(size_t) b] = 1.0f;
+                const auto b = juce::jlimit (1, bins - 1, (int) std::round (std::exp2 (0.5 * (r.getStart() + r.getEnd())) / binHz));
+                row[(size_t) b] = juce::jmax (row[(size_t) b], w);
+            }
         }
     }
 

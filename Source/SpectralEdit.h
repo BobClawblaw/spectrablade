@@ -19,27 +19,53 @@ namespace SpectralEdit
     AudioDocument::Snapshot changeOutsideBand (const AudioSnapshot&, juce::int64 start, juce::int64 end,
                                                juce::Range<double> band, double sampleRate, float gainDb);
 
-    /** A drawn selection of time and frequency: lassos (closed outlines) and brush dabs, together.
-        Points are (document frame, octave), the octave being log2 of the frequency in Hz, as the
-        spectrogram is drawn on a log scale: a line straight on screen is straight here too. */
+    /** A drawn selection of time and frequency: strokes of the lasso (closed outlines) and the
+        brush (dabs), in the order they were drawn. Points are (document frame, octave), the octave
+        being log2 of the frequency in Hz, as the spectrogram is drawn on a log scale: a line
+        straight on screen is straight here too.
+
+        Each stroke adds to what was drawn before it, or (drawn with Option) takes from it. A
+        brush stroke has a strength, 0 to 1: how much it selects, so an effect on the shape applies
+        by that much where only it was painted; a lasso selects fully. Where strokes overlap, the
+        weight is what the last stroke leaves: an add raises it to its strength at the least, a
+        take lowers it to one minus its strength at the most. */
     struct Dab
     {
         double frame = 0.0, octave = 0.0;
         double frameRadius = 0.0, octaveRadius = 0.0;   // an ellipse, round on screen at the zoom it was drawn at
     };
 
+    struct Stroke
+    {
+        std::vector<juce::Point<double>> lasso;   // a closed outline (three points or more), or empty for a brush stroke
+        std::vector<Dab> dabs;                    // the brush's dabs
+        float strength = 1.0f;                    // how much a brush stroke selects; a lasso's is 1
+        bool subtract = false;                    // takes from what was drawn before it
+
+        bool isEmpty() const noexcept             { return lasso.size() < 3 && dabs.empty(); }
+
+        /** The octave ranges this stroke alone covers at a frame, merged and in order. */
+        std::vector<juce::Range<double>> octavesAt (double frame) const;
+    };
+
     struct Shape
     {
-        std::vector<std::vector<juce::Point<double>>> lassos;
-        std::vector<Dab> dabs;
+        std::vector<Stroke> strokes;
 
+        /** Nothing added: no adding stroke with an outline or a dab (strokes that only take are
+            nothing on their own). */
         bool isEmpty() const noexcept;
 
-        /** The octave ranges inside the shape at a frame, merged and in order. */
-        std::vector<juce::Range<double>> octavesAt (double frame) const;
-        bool contains (double frame, double frequency) const;
+        /** The weight at a frame over the octaves: ranges in order, each with the weight there
+            (above 0); between them there is nothing. */
+        std::vector<std::pair<juce::Range<double>, float>> weightsAt (double frame) const;
 
-        /** The frames the shape spans, and its frequency range in Hz. */
+        /** The octave ranges with any weight at a frame, merged and in order. */
+        std::vector<juce::Range<double>> octavesAt (double frame) const;
+        float weightAt (double frame, double frequency) const;
+        bool contains (double frame, double frequency) const      { return weightAt (frame, frequency) > 0.0f; }
+
+        /** The frames the adding strokes span, and their frequency range in Hz. */
         juce::Range<double> frames() const;
         juce::Range<double> frequencies() const;
     };
@@ -49,9 +75,10 @@ namespace SpectralEdit
     constexpr int shapeSize = 2048;
     constexpr int shapeHop = shapeSize / 4;
 
-    /** How much each frame and bin is in the shape, 0 to 1: a frame counts as in where its
-        window's middle half meets the shape, and the edges then fade out over about a frame and
-        two bins so the edit doesn't ring. Rows are frames firstFrame onwards, each shapeSize / 2 + 1 bins. */
+    /** How much each frame and bin is in the shape, 0 to 1 (the strokes' weights): a frame counts
+        as in where its window's middle half meets the shape, and the edges then fade out over about
+        a frame and two bins so the edit doesn't ring. Rows are frames firstFrame onwards, each
+        shapeSize / 2 + 1 bins. */
     struct Mask
     {
         juce::int64 firstFrame = 0;

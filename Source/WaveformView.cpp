@@ -875,8 +875,9 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // Option-drag in a spectrogram selects a box of time and frequency.
-    if (e.mods.isAltDown())
+    // Option-drag in a spectrogram selects a box of time and frequency (with the box tool; with
+    // the lasso or brush it draws a stroke that takes from the drawing).
+    if (e.mods.isAltDown() && tool == SpectralTool::box)
     {
         const auto channels = engine.document.getNumChannels();
         const auto area = getWaveArea();
@@ -900,7 +901,7 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
     bandLane = -1;
     band = {};
 
-    // The lasso and brush draw in a spectrogram; Shift adds to what is drawn.
+    // The lasso and brush draw in a spectrogram; Shift adds to what is drawn, Option takes from it.
     if (tool != SpectralTool::box)
     {
         int channel = -1;
@@ -908,11 +909,15 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
 
         if (channel >= 0)
         {
-            if (! e.mods.isShiftDown())
+            const auto subtracting = e.mods.isAltDown() && ! shape.isEmpty();
+
+            if (! e.mods.isShiftDown() && ! subtracting)
                 shape = {};
 
-            if (tool == SpectralTool::lasso)
-                shape.lassos.emplace_back();
+            SpectralEdit::Stroke stroke;
+            stroke.strength = tool == SpectralTool::brush ? brushStrength : 1.0f;
+            stroke.subtract = subtracting;
+            shape.strokes.push_back (std::move (stroke));
 
             dragAnchor = xToFrame (e.position.x);
             shapeLane = channel;
@@ -1028,7 +1033,7 @@ void WaveformView::mouseUp (const juce::MouseEvent&)
     if (shapeLane >= 0)
     {
         shapeLane = -1;
-        std::erase_if (shape.lassos, [] (auto& l) { return l.size() < 3; });
+        std::erase_if (shape.strokes, [] (auto& s) { return s.isEmpty(); });
 
         if (shape.isEmpty())
             setCursor (dragAnchor);
@@ -1287,6 +1292,12 @@ void WaveformView::setBrushRadius (float r)
     repaint();
 }
 
+void WaveformView::setBrushStrength (float s)
+{
+    brushStrength = juce::jlimit (minBrushStrength, 1.0f, std::round (s / brushStrengthStep) * brushStrengthStep);
+    repaint();
+}
+
 juce::Rectangle<int> WaveformView::spectrumAt (juce::Point<float> p, int& channel) const
 {
     const auto channels = engine.document.getNumChannels();
@@ -1321,23 +1332,25 @@ juce::Point<double> WaveformView::toShapePoint (juce::Point<float> p, juce::Rect
 
 void WaveformView::drawAt (juce::Point<float> p, juce::Rectangle<int> spectrum)
 {
+    if (shape.strokes.empty())
+        shape.strokes.push_back ({});
+
+    auto& stroke = shape.strokes.back();
+
     if (tool == SpectralTool::lasso)
     {
-        if (shape.lassos.empty())
-            shape.lassos.emplace_back();
-
         if (lastDrawn.x < 0.0f || p.getDistanceFrom (lastDrawn) >= 2.0f)
         {
-            shape.lassos.back().push_back (toShapePoint (p, spectrum));
+            stroke.lasso.push_back (toShapePoint (p, spectrum));
             lastDrawn = p;
         }
     }
     else if (tool == SpectralTool::brush)
     {
-        const auto dab = [this, spectrum] (juce::Point<float> at)
+        const auto dab = [this, spectrum, &stroke] (juce::Point<float> at)
         {
             const auto c = toShapePoint (at, spectrum);
-            shape.dabs.push_back ({ c.x, c.y, (double) brushRadius * framesPerPixel, (double) brushRadius * octavesPerPixel (spectrum) });
+            stroke.dabs.push_back ({ c.x, c.y, (double) brushRadius * framesPerPixel, (double) brushRadius * octavesPerPixel (spectrum) });
         };
 
         // Dabs a third of the radius apart along the stroke, so it paints a smooth band.
@@ -1388,7 +1401,7 @@ void WaveformView::drawShape (juce::Graphics& g)
     const auto channels = engine.document.getNumChannels();
     const auto rate = engine.document.getSampleRate();
     const auto wave = getWaveArea();
-    const auto hasShape = std::any_of (shape.lassos.begin(), shape.lassos.end(), [] (auto& l) { return l.size() >= 2; }) || ! shape.dabs.empty();
+    const auto hasShape = std::any_of (shape.strokes.begin(), shape.strokes.end(), [] (auto& s) { return s.lasso.size() >= 2 || ! s.dabs.empty(); });
 
     for (int ch = 0; ch < channels; ++ch)
     {
@@ -1407,44 +1420,61 @@ void WaveformView::drawShape (juce::Graphics& g)
 
         if (hasShape)
         {
-            juce::Path fill, outline;
-
-            for (auto& lasso : shape.lassos)
-            {
-                if (lasso.size() < 2)
-                    continue;
-
-                juce::Path p;
-                p.startNewSubPath (toScreen (lasso.front()));
-
-                for (size_t i = 1; i < lasso.size(); ++i)
-                    p.lineTo (toScreen (lasso[i]));
-
-                p.closeSubPath();
-                fill.addPath (p);
-                outline.addPath (p);
-            }
-
+            // Each stroke in its order: an adding stroke a white wash as strong as it selects, a
+            // taking stroke a dark one with a dashed edge, so what it cuts away reads as cut.
             const auto pixelsPerOctave = 1.0 / octavesPerPixel (spectrum);
 
-            for (auto& d : shape.dabs)
+            for (auto& stroke : shape.strokes)
             {
-                const auto c = toScreen ({ d.frame, d.octave });
-                const auto rx = (float) (d.frameRadius / framesPerPixel), ry = (float) (d.octaveRadius * pixelsPerOctave);
-                fill.addEllipse (c.x - rx, c.y - ry, 2.0f * rx, 2.0f * ry);
-            }
+                juce::Path fill, outline;
 
-            fill.setUsingNonZeroWinding (true);
-            g.setColour (juce::Colours::white.withAlpha (0.22f));
-            g.fillPath (fill);
-            g.setColour (juce::Colours::white.withAlpha (0.9f));
-            g.strokePath (outline, juce::PathStrokeType (1.0f));
+                if (stroke.lasso.size() >= 2)
+                {
+                    juce::Path p;
+                    p.startNewSubPath (toScreen (stroke.lasso.front()));
+
+                    for (size_t i = 1; i < stroke.lasso.size(); ++i)
+                        p.lineTo (toScreen (stroke.lasso[i]));
+
+                    p.closeSubPath();
+                    fill.addPath (p);
+                    outline.addPath (p);
+                }
+
+                for (auto& d : stroke.dabs)
+                {
+                    const auto c = toScreen ({ d.frame, d.octave });
+                    const auto rx = (float) (d.frameRadius / framesPerPixel), ry = (float) (d.octaveRadius * pixelsPerOctave);
+                    fill.addEllipse (c.x - rx, c.y - ry, 2.0f * rx, 2.0f * ry);
+                }
+
+                fill.setUsingNonZeroWinding (true);
+                g.setColour (stroke.subtract ? juce::Colours::black.withAlpha (0.45f) : juce::Colours::white.withAlpha (0.22f * stroke.strength));
+                g.fillPath (fill);
+                g.setColour (juce::Colours::white.withAlpha (0.9f));
+
+                if (stroke.subtract)
+                {
+                    const float dashes[] { 4.0f, 3.0f };
+                    juce::Path dashed;
+                    juce::PathStrokeType (1.0f).createDashedStroke (dashed, outline, dashes, 2);
+                    g.fillPath (dashed);
+                }
+                else
+                {
+                    g.strokePath (outline, juce::PathStrokeType (1.0f));
+                }
+            }
         }
 
         if (tool == SpectralTool::brush && brushHover.x >= 0.0f && spectrum.toFloat().contains (brushHover))
         {
+            // The brush: its size, filled as strongly as it selects.
+            const auto circle = juce::Rectangle<float> (2.0f * brushRadius, 2.0f * brushRadius).withCentre (brushHover);
+            g.setColour (juce::Colours::white.withAlpha (0.3f * brushStrength));
+            g.fillEllipse (circle);
             g.setColour (juce::Colours::white.withAlpha (0.8f));
-            g.drawEllipse (juce::Rectangle<float> (2.0f * brushRadius, 2.0f * brushRadius).withCentre (brushHover), 1.0f);
+            g.drawEllipse (circle, 1.0f);
         }
     }
 }

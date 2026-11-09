@@ -55,21 +55,32 @@ namespace
     double powerDb (double ratio)   { return 10.0 * std::log10 (juce::jmax (ratio, 1.0e-24)); }
     juce::String r (double v, int places = 1)   { return juce::String (v, places); }
 
-    /** A rectangle as a lasso, frames by Hz. */
+    /** A rectangle as a lasso stroke, frames by Hz. */
+    SpectralEdit::Stroke outline (double fromFrame, double toFrame, double loHz, double hiHz, bool subtract = false)
+    {
+        SpectralEdit::Stroke s;
+        s.lasso = { { fromFrame, std::log2 (loHz) }, { toFrame, std::log2 (loHz) }, { toFrame, std::log2 (hiHz) }, { fromFrame, std::log2 (hiHz) } };
+        s.subtract = subtract;
+        return s;
+    }
+
     Shape box (double fromFrame, double toFrame, double loHz, double hiHz)
     {
         Shape s;
-        s.lassos.push_back ({ { fromFrame, std::log2 (loHz) }, { toFrame, std::log2 (loHz) },
-                              { toFrame, std::log2 (hiHz) }, { fromFrame, std::log2 (hiHz) } });
+        s.strokes.push_back (outline (fromFrame, toFrame, loHz, hiHz));
         return s;
     }
 
     void testGeometry()
     {
         Shape s;
-        s.lassos.push_back ({ { 0.0, 8.0 }, { 1000.0, 8.0 }, { 500.0, 12.0 } });   // a triangle, 256 Hz to 4 kHz at its tip
+        SpectralEdit::Stroke triangle;
+        triangle.lasso = { { 0.0, 8.0 }, { 1000.0, 8.0 }, { 500.0, 12.0 } };   // 256 Hz to 4 kHz at its tip
+        s.strokes.push_back (triangle);
         const auto mid = s.octavesAt (500.0), quarter = s.octavesAt (250.0);
-        s.dabs.push_back ({ 2000.0, 10.0, 100.0, 0.5 });
+        SpectralEdit::Stroke dab;
+        dab.dabs.push_back ({ 2000.0, 10.0, 100.0, 0.5 });
+        s.strokes.push_back (dab);
         const auto frames = s.frames();
         const auto band = s.frequencies();
 
@@ -83,9 +94,35 @@ namespace
                "with their span in time and frequency");
 
         Shape thin;
-        thin.lassos.push_back ({ { 0.0, 8.0 }, { 10.0, 9.0 } });
-        check (thin.isEmpty() && SpectralEdit::maskFor (thin, rate, 48000).rows.empty() && Shape {}.isEmpty(),
-               "shapes: an outline of fewer than three points is no shape, and has no mask");
+        SpectralEdit::Stroke two;
+        two.lasso = { { 0.0, 8.0 }, { 10.0, 9.0 } };
+        thin.strokes.push_back (two);
+        Shape taken;
+        taken.strokes.push_back (outline (0.0, 100.0, 100.0, 200.0, true));
+        check (thin.isEmpty() && SpectralEdit::maskFor (thin, rate, 48000).rows.empty() && Shape {}.isEmpty() && taken.isEmpty(),
+               "shapes: an outline of fewer than three points is no shape, and has no mask; a stroke that only takes is nothing on its own");
+
+        // Taking from a drawing, and the brush's strength: a box over 1 to 2 kHz for frames 0 to
+        // 1000, a box taken out of its middle (1.2 to 1.5 kHz, frames 200 to 400), a half-strength
+        // brush over 3 kHz, and a half-strength take over the box's upper part.
+        Shape drawn = box (0.0, 1000.0, 1000.0, 2000.0);
+        drawn.strokes.push_back (outline (200.0, 400.0, 1200.0, 1500.0, true));
+        const auto gap = drawn.octavesAt (300.0), whole = drawn.octavesAt (600.0);
+        SpectralEdit::Stroke half;
+        half.strength = 0.5f;
+        half.dabs.push_back ({ 600.0, std::log2 (3000.0), 50.0, 0.2 });
+        drawn.strokes.push_back (half);
+        auto lighten = outline (0.0, 1000.0, 1700.0, 2000.0, true);
+        lighten.strength = 0.5f;
+        drawn.strokes.push_back (lighten);
+        check (gap.size() == 2 && std::abs (gap[0].getStart() - std::log2 (1000.0)) < 1.0e-9 && std::abs (gap[0].getEnd() - std::log2 (1200.0)) < 1.0e-9
+                   && std::abs (gap[1].getStart() - std::log2 (1500.0)) < 1.0e-9 && std::abs (gap[1].getEnd() - std::log2 (2000.0)) < 1.0e-9
+                   && whole.size() == 1 && ! drawn.contains (300.0, 1300.0) && drawn.contains (600.0, 1300.0) && drawn.contains (300.0, 1100.0)
+                   && juce::exactlyEqual (drawn.weightAt (600.0, 3000.0), 0.5f) && juce::exactlyEqual (drawn.weightAt (600.0, 1100.0), 1.0f)
+                   && juce::exactlyEqual (drawn.weightAt (600.0, 1800.0), 0.5f) && juce::exactlyEqual (drawn.frames().getEnd(), 1000.0)
+                   && std::abs (drawn.frequencies().getEnd() - 3000.0 * std::exp2 (0.2)) < 1.0e-6,
+               "shapes: a stroke drawn with Option takes its part out of the drawing (the box's middle gone at frame 300, whole at 600), "
+               "a half-strength brush weighs a half, a half-strength take lowers a full part to a half, and the span is the adding strokes'");
     }
 
     void testCut()
@@ -143,9 +180,27 @@ namespace
                    + r (-besideGone, 0) + " dB on both channels, and leaves every sample more than " + juce::String (reach) + " from the shape bit for bit");
 
         Shape brush;
+        brush.strokes.push_back ({});
 
         for (double f = from; f <= to; f += 2400.0)
-            brush.dabs.push_back ({ f, std::log2 (4000.0), 2400.0, 0.3 });
+            brush.strokes.front().dabs.push_back ({ f, std::log2 (4000.0), 2400.0, 0.3 });
+
+        // A box over the 4 kHz tone from 0.5 s to 2.8 s with 1.3 s to 2.1 s taken back out: gone each side, kept in the middle.
+        auto taken = box (0.5 * rate, 2.8 * rate, 3000.0, 5500.0);
+        taken.strokes.push_back (outline (1.3 * rate, 2.1 * rate, 3000.0, 5500.0, true));
+        const auto afterTake = readAll (*SpectralEdit::changeShape (*source, taken, rate, -std::numeric_limits<float>::infinity()));
+        const auto level = [&] (const juce::AudioBuffer<float>& a, double seconds) { return db (amplitude (a, 0, 4000.0, (int) (seconds * rate), span) / amplitude (b, 0, 4000.0, (int) (seconds * rate), span)); };
+        const auto goneBefore = level (afterTake, 0.6), keptMiddle = level (afterTake, 1.4), goneAfter = level (afterTake, 2.15);
+        check (goneBefore < -60.0 && std::abs (keptMiddle) < 0.01 && goneAfter < -60.0,
+               "shapes: a box over 0.5 s to 2.8 s with 1.3 s to 2.1 s taken back out of it removes the tone before (" + r (-goneBefore, 0) + " dB) and after ("
+                   + r (-goneAfter, 0) + " dB) and leaves the middle within " + r (std::abs (keptMiddle), 3) + " dB");
+
+        // A half-strength brush removing: half the tone goes (-6.02 dB).
+        auto halfBrush = brush;
+        halfBrush.strokes.front().strength = 0.5f;
+        const auto halved = readAll (*SpectralEdit::changeShape (*source, halfBrush, rate, -std::numeric_limits<float>::infinity()));
+        const auto halfDown = db (amplitude (halved, 0, 4000.0, inside, span) / amplitude (b, 0, 4000.0, inside, span));
+        check (std::abs (halfDown - -6.02) < 0.1, "shapes: removing with a brush at half strength takes the tone down " + r (-halfDown, 2) + " dB (half)");
 
         const auto brushed = readAll (*SpectralEdit::changeShape (*source, brush, rate, -12.0f));
         const auto down = db (amplitude (brushed, 0, 4000.0, inside, span) / amplitude (b, 0, 4000.0, inside, span));
@@ -290,16 +345,22 @@ namespace
         const auto& shape = view.getSpectralShape();
         const auto centre = at (0.35f, 0.5f), outside = at (0.6f, 0.5f), above = at (0.35f, 0.1f);
         const auto sel = view.getSelection();
-        check (shape.lassos.size() == 1 && shape.lassos[0].size() >= 3 && shape.contains (frameAt (centre.x), hzAt (centre.y))
+        check (shape.strokes.size() == 1 && shape.strokes[0].lasso.size() >= 3 && shape.contains (frameAt (centre.x), hzAt (centre.y))
                    && ! shape.contains (frameAt (outside.x), hzAt (outside.y)) && ! shape.contains (frameAt (above.x), hzAt (above.y))
                    && std::abs ((double) sel.getStart() - frameAt (at (0.2f, 0.0f).x)) < 200.0 && std::abs ((double) sel.getEnd() - frameAt (at (0.5f, 0.0f).x)) < 200.0,
                "spectral tools: a lasso drawn in a spectrogram holds what is inside it and not beside or above it, and selects the time it spans");
 
         drag (view, { at (0.7f, 0.2f), at (0.9f, 0.2f), at (0.8f, 0.4f) }, juce::ModifierKeys (juce::ModifierKeys::shiftModifier));
-        const auto two = view.getSpectralShape().lassos.size() == 2 && view.getSelection().getEnd() > sel.getEnd();
+        const auto two = view.getSpectralShape().strokes.size() == 2 && view.getSelection().getEnd() > sel.getEnd();
+        drag (view, { at (0.3f, 0.4f), at (0.45f, 0.4f), at (0.45f, 0.6f), at (0.3f, 0.6f) }, juce::ModifierKeys (juce::ModifierKeys::altModifier));
+        const auto& withTake = view.getSpectralShape();
+        const auto taken = withTake.strokes.size() == 3 && withTake.strokes.back().subtract && ! withTake.contains (frameAt (at (0.38f, 0.5f).x), hzAt (at (0.38f, 0.5f).y))
+                           && withTake.contains (frameAt (at (0.25f, 0.5f).x), hzAt (at (0.25f, 0.5f).y))
+                           && view.getSelection().getEnd() > sel.getEnd();
         drag (view, { at (0.1f, 0.5f) });
-        check (two && view.getSpectralShape().isEmpty() && view.getSelection().isEmpty(),
-               "spectral tools: Shift adds a second lasso and widens the selection; a click without drawing clears both");
+        check (two && taken && view.getSpectralShape().isEmpty() && view.getSelection().isEmpty(),
+               "spectral tools: Shift adds a second lasso and widens the selection, Option draws one that takes from the drawing (its middle no longer "
+               "selected, the rest still, the time selection kept); a click without drawing clears both");
 
         view.setSpectralTool (WaveformView::SpectralTool::brush);
         view.setBrushRadius (12.0f);
@@ -308,18 +369,19 @@ namespace
         const auto mid = at (0.3f, 0.5f), off = at (0.3f, 0.5f) + juce::Point<float> (0.0f, 20.0f);
         const auto fpp = view.getVisibleFrames().getLength() / area.getWidth();
         const auto span = view.getSelection();
-        check (brushed.dabs.size() >= 40 && brushed.contains (frameAt (mid.x), hzAt (mid.y)) && brushed.contains (frameAt (mid.x), hzAt (mid.y + 10.0f))
+        const auto dabCount = brushed.strokes.size() == 1 ? brushed.strokes.front().dabs.size() : (size_t) 0;
+        check (dabCount >= 40 && brushed.contains (frameAt (mid.x), hzAt (mid.y)) && brushed.contains (frameAt (mid.x), hzAt (mid.y + 10.0f))
                    && ! brushed.contains (frameAt (off.x), hzAt (off.y))
                    && std::abs ((double) span.getStart() - (frameAt (at (0.2f, 0.0f).x) - 12.0 * fpp)) < 2.0 * fpp
                    && std::abs ((double) span.getEnd() - (frameAt (at (0.4f, 0.0f).x) + 12.0 * fpp)) < 2.0 * fpp,
-               "spectral tools: the brush paints a band as wide as its circle along the stroke (" + juce::String ((int) brushed.dabs.size())
+               "spectral tools: the brush paints a band as wide as its circle along the stroke (" + juce::String ((int) dabCount)
                    + " dabs), selecting the time it covers");
 
         const auto place = view.getPlace();
         view.setSelection ({ 0, 100 });
         const auto cleared = view.getSpectralShape().isEmpty();
         view.setPlace (place);
-        check (cleared && view.getSpectralShape().dabs.size() == brushed.dabs.size() && view.getSelection() == span,
+        check (cleared && view.getSpectralShape().strokes.size() == 1 && view.getSpectralShape().strokes.front().dabs.size() == dabCount && view.getSelection() == span,
                "spectral tools: choosing another selection clears the drawing, and the file's kept place brings it back");
 
         view.setBrushRadius (500.0f);

@@ -50,8 +50,9 @@ public:
     juce::Range<double> getSpectralBand() const         { return band; }
 
     /** What a drag in a spectrogram does: the box tool selects time (Option-drag a box of time and
-        frequency), the lasso draws an outline, the brush paints. The drawing is the selection:
-        its span in time is the time selection, and any other change of selection clears it. */
+        frequency), the lasso draws an outline, the brush paints; Shift adds a stroke to the drawing,
+        Option draws a stroke that takes from it. The drawing is the selection: its span in time is
+        the time selection, and any other change of selection clears it. */
     enum class SpectralTool { box, lasso, brush };
     void setSpectralTool (SpectralTool);
     SpectralTool getSpectralTool() const                { return tool; }
@@ -60,6 +61,11 @@ public:
     void setBrushRadius (float);
     float getBrushRadius() const                        { return brushRadius; }
     static constexpr float minBrushRadius = 3.0f, maxBrushRadius = 60.0f;
+
+    /** How much the brush selects, 0.1 to 1 (1 to start): a stroke's strength (SpectralEdit::Stroke). */
+    void setBrushStrength (float);
+    float getBrushStrength() const                      { return brushStrength; }
+    static constexpr float minBrushStrength = 0.1f, brushStrengthStep = 0.1f;
 
     const SpectralEdit::Shape& getSpectralShape() const { return shape; }
 
@@ -167,7 +173,7 @@ private:
     juce::Range<double> band;
     SpectralTool tool = SpectralTool::box;
     SpectralEdit::Shape shape;
-    float brushRadius = 12.0f;
+    float brushRadius = 12.0f, brushStrength = 1.0f;
     int shapeLane = -1;                       // channel whose spectrogram a lasso or brush drag started in
     juce::Point<float> lastDrawn, brushHover { -1.0f, -1.0f };
     juce::Point<double> toShapePoint (juce::Point<float>, juce::Rectangle<int> spectrum) const;   // (frame, octave)
