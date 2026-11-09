@@ -315,7 +315,7 @@ Matched matchLoudness (const AudioSnapshot& s, juce::int64 start, juce::int64 en
             break;
 
         // What a dB of gain gained last time (1 before any limiting), never taken under a quarter.
-        const auto gained = m.gainDb != lastGain ? juce::jlimit (0.25, 1.0, (r->integrated - lastLoudness) / (m.gainDb - lastGain)) : 1.0;
+        const auto gained = ! juce::exactlyEqual (m.gainDb, lastGain) ? juce::jlimit (0.25, 1.0, (r->integrated - lastLoudness) / (m.gainDb - lastGain)) : 1.0;
         lastGain = m.gainDb;
         lastLoudness = r->integrated;
         m.gainDb = juce::jmin (48.0, m.gainDb + shortfall / gained);

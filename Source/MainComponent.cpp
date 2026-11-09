@@ -423,7 +423,12 @@ public:
 
     ~PluginEditorWindow() override
     {
-        // The editor must be deleted before the plug-in instance.
+        // The editor must be deleted before the plug-in instance, and the plug-in told it has
+        // gone: otherwise it keeps the editor as its active one and refuses to make another, and
+        // the next window for it falls back to the generic parameter list.
+        if (auto* editor = dynamic_cast<juce::AudioProcessorEditor*> (getContentComponent()))
+            processor.editorBeingDeleted (editor);
+
         clearContentComponent();
     }
 

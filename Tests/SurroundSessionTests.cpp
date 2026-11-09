@@ -612,9 +612,9 @@ namespace
                "5.1 track: six-channel audio brought onto a new track in a 5.1 master makes it a 5.1 track; stereo audio, or a stereo master, doesn't");
 
         auto edits = s;
-        auto& b2 = edits.addBus();
-        auto& f2 = edits.addFolder();
-        const auto refused = ! SessionEdits::setTrackFiveOne (edits, b2.id, true) && ! SessionEdits::setTrackFiveOne (edits, f2.id, true)
+        const auto newBusId = edits.addBus().id;   // ids, not references: the next addition moves the tracks
+        const auto newFolderId = edits.addFolder().id;
+        const auto refused = ! SessionEdits::setTrackFiveOne (edits, newBusId, true) && ! SessionEdits::setTrackFiveOne (edits, newFolderId, true)
                              && ! SessionEdits::setTrackFiveOne (edits, id, true)
                              && SessionEdits::setTrackFiveOne (edits, id, false) && ! edits.tracks[0].fiveOne;
         auto frozen = s;
@@ -1403,13 +1403,13 @@ namespace
                "5.1 one); in a stereo master, neither");
 
         auto edits = s;
-        auto& b2 = edits.addBus();
-        auto& f2 = edits.addFolder();
+        const auto busId = edits.addBus().id;      // ids, not references: the next addition moves the tracks
+        const auto folderId = edits.addFolder().id;
         const auto changed = ! SessionEdits::setTrackChannels (edits, id, 8) && ! SessionEdits::setTrackChannels (edits, id, 4)
                              && SessionEdits::setTrackChannels (edits, id, 6) && edits.tracks[0].fiveOne && ! edits.tracks[0].sevenOne
                              && SessionEdits::setTrackChannels (edits, id, 8) && edits.tracks[0].sevenOne && ! edits.tracks[0].fiveOne
                              && SessionEdits::setTrackChannels (edits, id, 2) && ! edits.tracks[0].isWide()
-                             && ! SessionEdits::setTrackChannels (edits, b2.id, 8) && ! SessionEdits::setTrackChannels (edits, f2.id, 8);
+                             && ! SessionEdits::setTrackChannels (edits, busId, 8) && ! SessionEdits::setTrackChannels (edits, folderId, 8);
         check (changed, "7.1 track edits: stereo, 5.1 and 7.1 in turn (never both wide kinds), other counts, buses and folders refused");
 
         const juce::TemporaryFile temp (".sbsession");

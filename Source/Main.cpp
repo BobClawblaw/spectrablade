@@ -28,6 +28,13 @@ public:
                                                                getApplicationName() + " " + getApplicationVersion()));
         juce::Logger::setCurrentLogger (logger.get());
 
+        // A crash writes where it happened to the log, under the lines that led up to it, so a
+        // report can carry both.
+        juce::SystemStats::setApplicationCrashHandler ([] (void*)
+        {
+            juce::Logger::writeToLog ("Crashed. The stack:\n" + juce::SystemStats::getStackBacktrace());
+        });
+
         juce::LookAndFeel::setDefaultLookAndFeel (&theme);
 
         mainWindow = std::make_unique<MainWindow> (getApplicationName());

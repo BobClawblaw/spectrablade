@@ -198,7 +198,18 @@ void runBuiltInEffectsTests (AudioEngine& engine)
         shownEq.gainParameter (2).removeListener (&listener);
         check (editor != nullptr && panelToEq && untouched && eqToPanel,
                "built-in parametric eq window: the EQ panel; its controls set that band's parameters, each move one gesture, and leave the other bands; a band changed from outside shows on the panel");
+
+        // A host deleting the editor tells the processor, as the plug-in windows do: it holds the
+        // editor as its active one until then, and makes another once told.
+        const auto wasActive = shownEq.getActiveEditor() == made.get();
+        shownEq.editorBeingDeleted (made.get());
+        const auto letGo = shownEq.getActiveEditor() == nullptr;
         made.reset();
+        std::unique_ptr<juce::AudioProcessorEditor> again (shownEq.createEditorAndMakeActive());
+        check (wasActive && letGo && dynamic_cast<BuiltInEffects::ParametricEqEditor*> (again.get()) != nullptr,
+               "built-in parametric eq window: the processor holds the editor as active until told it has gone, then makes another");
+        shownEq.editorBeingDeleted (again.get());
+        again.reset();
     }
 
     // The compressor, live, against the offline one: noise stepping between -30 and -6 dB.

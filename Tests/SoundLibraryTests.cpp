@@ -270,6 +270,34 @@ namespace
                "sound library window: with no folders it scans nothing and says to add one; a missing folder is refused, saying why; an "
                "added one is scanned on its own thread and its 10 sounds listed (\"" + view.getSummary() + "\")");
 
+        // The folder tree keeps what is open through a rebuild (a scan's end rebuilds it, items and all).
+        {
+            juce::TreeView* folders = nullptr;
+
+            for (auto* c : view.getChildren())
+                if (auto* t = dynamic_cast<juce::TreeView*> (c); t != nullptr && t->isVisible())
+                    folders = t;
+
+            auto* item = folders != nullptr && folders->getRootItem() != nullptr ? folders->getRootItem()->getSubItem (1) : nullptr;   // the library, after All Folders
+            const auto itemName = item != nullptr ? item->getUniqueName() : juce::String();
+            const auto hadFolder = item != nullptr && itemName == library.getFullPathName() && ! item->isOpen();
+
+            if (item != nullptr)
+                item->setOpen (true);
+
+            const auto subFolders = item != nullptr ? item->getNumSubItems() : 0;
+            view.rescan();   // the rebuild at its end deletes the items: item is not used past here
+            const auto rescanned = TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("0 added, 0 updated"); }, 20000);
+            auto* after = folders != nullptr && folders->getRootItem() != nullptr ? folders->getRootItem()->getSubItem (1) : nullptr;
+            const juce::String why = juce::String (view.getPane() == SoundLibraryView::Pane::folders ? "folders pane, " : "categories pane, ")
+                                     + (folders != nullptr ? "tree found, " : "no tree, ") + (itemName.isNotEmpty() ? "item " + itemName.quoted() + ", " : "no item, ")
+                                     + (hadFolder ? "closed at first, " : "not the library closed, ") + (rescanned ? "rescanned, " : "not rescanned, ")
+                                     + (after == nullptr ? "nothing after" : after->isOpen() ? "open after" : "closed after");
+            check (view.getPane() == SoundLibraryView::Pane::folders && hadFolder && subFolders > 0 && rescanned && after != nullptr && after->isOpen(),
+                   "sound library window: the folder tree lists the library closed, opens into its " + juce::String (subFolders)
+                       + " folders, and is still open after the rescan rebuilds it (" + why + ")");
+        }
+
         // The bar beside the pane on the left sizes it: dragged to x = 300 the pane is 297 wide and
         // the change is reported when the bar is let go; 0 puts the default back.
         {

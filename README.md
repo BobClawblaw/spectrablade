@@ -39,11 +39,12 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 | AAC (.m4a) | Yes | File > Export as MP3 or AAC: 96 to 320 kbps average (the macOS encoder) |
 | Apple Lossless (.m4a), CAF and the other types macOS reads | Yes | Apple Lossless through ffmpeg |
 | Ogg Vorbis | Yes | No |
-| Opus, WavPack, AC-3 | Through ffmpeg | File > Export with ffmpeg |
+| Opus | Yes, with tags | File > Export with ffmpeg |
+| WavPack, AC-3 | Through ffmpeg | File > Export with ffmpeg |
 | WMA, E-AC-3, Monkey's Audio, TTA, MKA, MP2, AMR, DTS | Through ffmpeg | No |
 | The sound of a video (MP4, M4V, MOV, MKV, WebM, AVI) | Through ffmpeg: its first audio stream | No |
 
-File > File Info shows and changes the title, artist, album, genre, year, track and comment, a front cover (a JPEG or PNG image of up to 8 MB: Choose Image... or Remove), and the broadcast-wave (BWF) details. WAV keeps all of them; AIFF (an ID3 chunk), FLAC (Vorbis comments and a picture block), MP3 (ID3v2) and AAC (.m4a) keep the tags and the cover, and the ffmpeg exports the tags. They are read from WAV, AIFF, MP3, MPEG-4, FLAC and Ogg files (Ogg files' covers aside).
+File > File Info shows and changes the title, artist, album, genre, year, track and comment, a front cover (a JPEG or PNG image of up to 8 MB: Choose Image... or Remove), and the broadcast-wave (BWF) details. WAV keeps all of them; AIFF (an ID3 chunk), FLAC (Vorbis comments and a picture block), MP3 (ID3v2) and AAC (.m4a) keep the tags and the cover, and the ffmpeg exports the tags. They are read from WAV, AIFF, MP3, MPEG-4, FLAC, Ogg Vorbis and Opus files (the Ogg files' covers aside).
 
 MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz is written at 44.1 or 48 kHz. Both keep the audio's exact length and start, through the encoder-delay information players read.
 
@@ -148,6 +149,10 @@ To check a disk image's app on its own, mount it and point the tests at it:
 ```
 
 They cover editing and undo bit for bit, every effect, file formats, plug-in scanning and hosting, the audio device, recording, the multitrack mixer, automation, mixdown, the interface driven by the mouse and the command table (every command described, in a menu and with a key of its own, checked by a Python script the suite runs); [docs/TESTING.md](docs/TESTING.md) lists what each part checks, and how to run the opt-in plug-in sweep.
+
+## Reporting a problem
+
+Please open an [issue](https://github.com/BobClawblaw/spectrablade/issues) with the version (SpectraBlade > About SpectraBlade), what you did, what happened and what you expected, and the kind of file if one was involved. The app keeps a log at `~/Library/Logs/SpectraBlade/SpectraBlade.log`: the audio device it opened, plug-in scans, every error it showed, and, if it crashed, the stack it crashed on. Attach it, and the matching report from `~/Library/Logs/DiagnosticReports` after a crash.
 
 ## Licence
 

@@ -150,6 +150,7 @@ private:
     struct Root final : public juce::TreeViewItem
     {
         bool mightContainSubItems() override            { return true; }
+        juce::String getUniqueName() const override     { return "root"; }   // so the tree's openness can be saved and restored
     };
 
     SoundLibraryView& view;
@@ -304,6 +305,7 @@ private:
     struct Root final : public juce::TreeViewItem
     {
         bool mightContainSubItems() override            { return true; }
+        juce::String getUniqueName() const override     { return "root"; }   // so the tree's openness can be saved and restored
     };
 
     SoundLibraryView& view;

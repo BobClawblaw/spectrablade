@@ -553,7 +553,13 @@ namespace
             seconds[way] = (juce::Time::getMillisecondCounterHiRes() - began) / 1000.0;
         }
 
-        check (seconds[0] < 0.5 && seconds[1] < 1.0,
+        // A Debug build is several times slower; it gets the room, so the suite can run under it.
+       #if JUCE_DEBUG
+        const auto room = 4.0;
+       #else
+        const auto room = 1.0;
+       #endif
+        check (seconds[0] < 0.5 * room && seconds[1] < 1.0 * room,
                "scrubbing a session with effects: a second of scrubbing 16 tracks, each through an EQ and a compressor, at four "
                "times normal speed takes " + juce::String (seconds[0] * 1000.0, 1) + " ms forward and "
                + juce::String (seconds[1] * 1000.0, 1) + " ms back (the effects warmed up again for each block's window)");

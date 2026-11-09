@@ -196,7 +196,7 @@ namespace
         tabs.mouseDown (press (tabs, tabs.getCloseBounds (2).getCentre()));
         tabs.mouseUp (press (tabs, first.getCentre()));   // released away from the ×: nothing closes
         check (chosen == std::vector<int> { 0 } && closed == std::vector<int> { 1 },
-               "file tabs: clicking a tab shows its file, and its × closes it only when released over it");
+               "file tabs: clicking a tab shows its file, and its close mark closes it only when released over it");
 
         tabs.setSize (150, FileTabs::height);
         const auto squeezed = tabs.getTabBounds (0).getWidth() == 50 && tabs.getTabBounds (2).getRight() == 150;

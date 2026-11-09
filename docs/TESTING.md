@@ -300,6 +300,24 @@ The player only ever plays silence, so the tests make no sound. The live input t
 ./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --live-input
 ```
 
+## Under the debugger and the sanitizers
+
+The suite is also run as a Debug build, which turns on JUCE's assertions and leak detector, and as a build with the Address and Undefined Behaviour Sanitizers, which catch reads past a buffer, uses of freed memory and undefined arithmetic that a Release build passes over in silence. Each is its own build folder:
+
+```bash
+cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build build-debug --target SpectraBladeTests
+./build-debug/SpectraBladeTests_artefacts/Debug/SpectraBladeTests --app build-debug/SpectraBlade_artefacts/Debug/SpectraBlade.app/Contents/MacOS/SpectraBlade
+
+F="-fsanitize=address,undefined -fno-omit-frame-pointer"
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_C_FLAGS="$F" -DCMAKE_CXX_FLAGS="$F" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+cmake --build build-asan --target SpectraBladeTests
+ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1 ./build-asan/SpectraBladeTests_artefacts/RelWithDebInfo/SpectraBladeTests --app build-asan/SpectraBlade_artefacts/RelWithDebInfo/SpectraBlade.app/Contents/MacOS/SpectraBlade 2>&1 | tee asan.log
+grep "runtime error\|ERROR: AddressSanitizer" asan.log
+```
+
+Both pass. Under the sanitizers the only reports are shifts of negative or too-large values inside the LAME encoder and JUCE's bundled JPEG library, which are theirs; none is in SpectraBlade's code. Under Debug the one timing check a Debug build can't meet (scrubbing speed) is given four times the room, and these assertions remain, none ours: JUCE's Opus reader building a tag from UTF-8 bytes as if ASCII (our tags are read from the file itself, so nothing shows), a Label grabbing focus in a mixer that is not on screen in the test, and the VST3 host's checks on kHs Gain.
+
 ## The plug-in sweep
 
 The plug-in sweep is opt-in too: it scans every plug-in on the machine the way Scan for Plug-ins does, which takes a while with a large collection, and some commercial plug-ins open licence windows while it runs. It writes a report of what works and why the rest don't:
