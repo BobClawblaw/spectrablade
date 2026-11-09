@@ -4,12 +4,18 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.10: F5 for the Sound Library**
+- `SpectraBlade-0.14.10.dmg` on the repository's Releases page, with its SHA-256: Milestone 348 below on top of 0.14.9. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1498 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.10, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for the milestone. Nothing in this release has been listened to; the key was not tried by hand in the running app.
+
 **Milestone 348: F5 shows and hides the Sound Library**
 - Asked for while dogfooding: Window > Sound Library has the key F5, and the command now hides the window when it is showing (ticked in the menu) and shows it otherwise, so one key opens and closes it. On a Mac keyboard whose top row works the media keys, that is fn-F5 unless System Settings > Keyboard has the F keys as standard function keys.
 - Measured by the tests: the command audit counts 81 default keys, no two commands on one; the whole suite passed; the app launched and quit cleanly.
 - Not tried by hand: the key in the running app.
-
-## Released
 
 **Release 0.14.9: the mode said, dialogs heard from the start, and a dogfooding log**
 - `SpectraBlade-0.14.9.dmg` on the repository's Releases page, with its SHA-256: Milestones 345 to 347 below on top of 0.14.8, and a new [dogfooding log](docs/DOGFOODING.md) of what use has found and what fixed it. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
