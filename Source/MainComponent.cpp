@@ -11018,8 +11018,18 @@ void MainComponent::startRenderedPreview (const EffectPreview::Request& request,
         player.setLoop (loop.getStart(), loop.getEnd());
         playingLoop = loop;
 
+        // A preview loops until the dialog ends it: the play's own stop (the selection's end when
+        // Play was pressed) would stop it where the rendered audio runs past that, and a play
+        // outside the loop would never come round to it.
         if (! player.isPlaying())
             player.play (loop.getStart(), -1);
+        else
+        {
+            player.setStopFrame (-1);
+
+            if (! loop.contains (player.getPositionFrames()))
+                player.setPositionFrames (loop.getStart());
+        }
 
         if (status != nullptr)
             status (r.note.isNotEmpty() ? r.note : ! generates && shortened ? "Playing the first " + juce::String ((int) EffectPreview::longestSeconds) + " s" : juce::String());

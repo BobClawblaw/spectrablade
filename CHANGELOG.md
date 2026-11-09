@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 351: A preview started during play loops**
+- Dogfooding: with an effect dialog open and its preview on while the file was already playing, the play did not loop; it ran to the selection's end and stopped, or ran on past the selection. The rendered preview set its loop but left the play's own stop point where Play had put it (the selection's end), so an effect whose result runs past that (a stretch, an echo, a reverb) was stopped there by the editor; and it never moved a playhead that was outside the loop into it, so the loop never came round. A preview started while playing now clears the stop (a preview loops until the dialog ends it) and brings the playhead into the loop when it is outside, as a preview started from a stop and the Bypass switch already did.
+- Measured by the tests: the whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: the preview looping in the running app.
+
 **Milestone 350: A new effect's window opens at once**
 - Dogfooding: an effect added to the rack, or to a track through its FX menu, sat in its slot until Edit was clicked. Now its window opens in front as soon as the effect is in, in the rack (`RackView::addEffect`) and on a track (`MultitrackView::addTrackEffect`) alike; Edit brings a window back as before.
 - Measured by the tests: added through the rack view, the second of two effects asks for its window as slot 1 as soon as it is in; added through a track, the track's new effect does the same. The whole suite passed; the app launched and quit cleanly.
