@@ -13,9 +13,9 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
-**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon).
+**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon). Newer pre-releases, made for trying out on the way to 1.0, are on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
 
-**Status:** 0.14.7, on the way to 1.0. See the [changelog](CHANGELOG.md) for what each version holds, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
+**Status:** 0.14.7, a pre-release for dogfooding: feature work has stopped, and the releases from here to 1.0.0 fix what real use turns up. See the [changelog](CHANGELOG.md) for what each version holds, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
 ## Features
 
@@ -84,7 +84,7 @@ The audio in all of them was generated for the screenshots.
 
 ## Download and install
 
-The newest build is always at [Releases > Latest](https://github.com/BobClawblaw/spectrablade/releases/latest), and every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page, as `SpectraBlade-<version>.dmg`, with a `.sha256` beside each. They are built for Apple silicon and need macOS 13 or later. There is no Intel build (releases up to 0.14.0 were universal, but their Intel half was never tried).
+The newest build marked for everyone is at [Releases > Latest](https://github.com/BobClawblaw/spectrablade/releases/latest); pre-releases (newer, for trying out) and every other build are on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page, as `SpectraBlade-<version>.dmg`, with a `.sha256` beside each. They are built for Apple silicon and need macOS 13 or later. There is no Intel build (releases up to 0.14.0 were universal, but their Intel half was never tried).
 
 Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications; the licence is beside it as `LICENSE.txt`. The app is signed ad hoc, not with a Developer ID, so macOS blocks it the first time: open it once, then choose Open Anyway under System Settings > Privacy & Security. After that it opens normally. macOS asks for microphone access the first time you choose a recording input.
 
