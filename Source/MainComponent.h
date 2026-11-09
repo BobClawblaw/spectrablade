@@ -526,7 +526,7 @@ private:
     juce::ApplicationCommandManager commands;
     AudioClip clipboard;
 
-    juce::TextButton multitrackButton { "Multitrack" };
+    juce::TextButton editorButton { "Editor" }, multitrackButton { "Multitrack" };   // a two-part switch, lit on the side in use
     juce::TextButton openButton { "Open..." }, pluginsButton { "Plug-ins..." }, audioButton { "Audio Settings..." };
     std::unique_ptr<TransportBar::Bar> transportBar;   // made once the commands are registered
     TransportBar::SelectionPanel selectionPanel;

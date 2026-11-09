@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 345: The mode is said, not only lit**
+- Dogfooding: the single Multitrack button only tinted when pressed, and nothing said which mode was in use or which a click would go to. It is now a two-part switch, Editor | Multitrack, lit on the side in use with the other side where a click goes, and the status line under the editor starts with "Editing file" or "Multitrack session" before the name.
+- Measured by the tests: the whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: the switch on a real screen in each theme.
 
 ## Released
 

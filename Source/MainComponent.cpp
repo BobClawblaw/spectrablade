@@ -778,12 +778,18 @@ MainComponent::MainComponent()
     engine.document.addChangeListener (this);
     engine.session.addChangeListener (this);
 
-    for (auto* b : { &multitrackButton, &openButton, &pluginsButton, &audioButton })
+    for (auto* b : { &editorButton, &multitrackButton, &openButton, &pluginsButton, &audioButton })
         addAndMakeVisible (b);
 
-    multitrackButton.setTooltip ("Switch between the file and the multitrack session (Cmd+4)");
+    // The mode switch: the side in use is lit, the other is where a click goes.
+    editorButton.setTooltip ("Edit the file; the lit side is the mode in use (Cmd+4 switches)");
+    multitrackButton.setTooltip ("Work in the multitrack session; the lit side is the mode in use (Cmd+4 switches)");
+    editorButton.setConnectedEdges (juce::Button::ConnectedOnRight);
+    multitrackButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    Theme::follow (editorButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
     Theme::follow (multitrackButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
-    multitrackButton.onClick = [this] { setMultitrack (! multitrackMode); };
+    editorButton.onClick = [this] { setMultitrack (false); };
+    multitrackButton.onClick = [this] { setMultitrack (true); };
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
     pluginsButton.onClick  = [this] { showPluginList(); };
@@ -1237,7 +1243,8 @@ void MainComponent::resized()
 
     // Top: the mode and Open, the transport with the time and zoom in the middle, then the setup buttons.
     auto toolbar = r.removeFromTop (30);
-    multitrackButton.setBounds (toolbar.removeFromLeft (96).reduced (0, 2));
+    editorButton.setBounds (toolbar.removeFromLeft (64).reduced (0, 2));
+    multitrackButton.setBounds (toolbar.removeFromLeft (86).reduced (0, 2));
     toolbar.removeFromLeft (6);
     openButton.setBounds (toolbar.removeFromLeft (76).reduced (0, 2));
     audioButton.setBounds (toolbar.removeFromRight (124).reduced (0, 2));
@@ -2996,6 +3003,7 @@ void MainComponent::stopTransport()
 
 void MainComponent::refreshTitle()
 {
+    editorButton.setToggleState (! multitrackMode, juce::dontSendNotification);
     multitrackButton.setToggleState (multitrackMode, juce::dontSendNotification);
 
     if (multitrackMode)
@@ -3003,7 +3011,7 @@ void MainComponent::refreshTitle()
         auto& session = engine.session;
         const auto state = session.getState();
         const auto name = session.getFile() == juce::File() ? juce::String ("Untitled Session") : session.getFile().getFileName();
-        fileLabel.setText (name + "  |  " + juce::String (state->sampleRate / 1000.0, 1) + " kHz, "
+        fileLabel.setText ("Multitrack session: " + name + "  |  " + juce::String (state->sampleRate / 1000.0, 1) + " kHz, "
                                + juce::String ((int) state->tracks.size()) + (state->tracks.size() == 1 ? " track" : " tracks"),
                            juce::dontSendNotification);
 
@@ -3015,7 +3023,7 @@ void MainComponent::refreshTitle()
 
     auto& doc = engine.document;
     const auto name = doc.getFile() == juce::File() ? juce::String ("Untitled") : doc.getFile().getFileName();
-    fileLabel.setText (doc.hasAudio() ? name + "  |  " + juce::String (doc.getSampleRate() / 1000.0, 1) + " kHz, "
+    fileLabel.setText (doc.hasAudio() ? "Editing file: " + name + "  |  " + juce::String (doc.getSampleRate() / 1000.0, 1) + " kHz, "
                                           + juce::String (doc.getNumChannels()) + " ch, "
                                           + (doc.getSourceBitDepth() == 32 ? juce::String ("32-bit float")
                                                                             : juce::String (doc.getSourceBitDepth()) + "-bit")
