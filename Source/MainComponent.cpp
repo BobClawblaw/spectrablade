@@ -5254,6 +5254,8 @@ void MainComponent::showSoundLibrary()
             return end >= 0;
         };
         soundLibrary->getView().setAudioDevice (&engine.deviceManager);
+        soundLibrary->getView().setPaneWidth (appProperties.getUserSettings()->getIntValue ("libraryPaneWidth", 0));
+        soundLibrary->getView().onPaneWidthChanged = [this] (int width) { appProperties.getUserSettings()->setValue ("libraryPaneWidth", width); };
         rememberPlace (*soundLibrary, "Sound Library");
     }
 

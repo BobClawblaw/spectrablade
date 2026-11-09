@@ -249,6 +249,8 @@ EffectDialog::EffectDialog (Options o) : options (std::move (o))
     };
 
     status.setColour (juce::Label::textColourId, findColour (juce::Label::textColourId).withAlpha (0.7f));
+    status.setFont (juce::FontOptions (12.0f));   // small enough for two lines in its row (a finding can be long)
+    status.setMinimumHorizontalScale (1.0f);
     addAndMakeVisible (status);
 
     applyButton.setButtonText (options.applyText);

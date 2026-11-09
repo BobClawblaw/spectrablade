@@ -270,6 +270,33 @@ namespace
                "sound library window: with no folders it scans nothing and says to add one; a missing folder is refused, saying why; an "
                "added one is scanned on its own thread and its 10 sounds listed (\"" + view.getSummary() + "\")");
 
+        // The bar beside the pane on the left sizes it: dragged to x = 300 the pane is 297 wide and
+        // the change is reported when the bar is let go; 0 puts the default back.
+        {
+            DividerBar* bar = nullptr;
+
+            for (auto* c : view.getChildren())
+                if (auto* d = dynamic_cast<DividerBar*> (c))
+                    bar = d;
+
+            const auto defaultX = bar != nullptr ? bar->getX() : -1;
+            auto reported = -1;
+            view.onPaneWidthChanged = [&reported] (int w) { reported = w; };
+
+            if (bar != nullptr)
+            {
+                const juce::Point<float> at ((float) (300 - bar->getX()), 10.0f);
+                bar->mouseDrag (mouseAt (*bar, at, { 3.0f, 10.0f }));
+                bar->mouseUp (mouseAt (*bar, at, { 3.0f, 10.0f }));
+            }
+
+            const auto dragged = bar != nullptr && bar->getX() == 297 && view.getPaneWidth() == 297 && reported == 297;
+            view.setPaneWidth (0);
+            check (dragged && bar != nullptr && bar->getX() == defaultX && defaultX == 200,
+                   "sound library window: the bar beside the folders is dragged to size the pane (to x = 300 makes it 297 wide, reported when let go), "
+                   "and 0 puts the default (a fifth of a 1000 px window) back");
+        }
+
         view.setSearch ("creak");
         const auto oneRow = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::name) == "DOORWood_Creak Old Barn_JD_SFX"
                             && view.getText (0, SoundLibraryView::length) == "0.50 s" && view.getText (0, SoundLibraryView::rate) == "48 kHz"

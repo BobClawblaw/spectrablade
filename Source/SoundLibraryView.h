@@ -2,6 +2,7 @@
 
 #include "SoundLibrary.h"
 #include "SoundLibraryPreview.h"
+#include "WindowPlaces.h"
 
 /** The Sound Library window's contents: the folders you choose to scan (Add Folder..., and the
     Folders menu to rescan, remove or show one), a search box, and the sounds found, a page at a
@@ -61,8 +62,13 @@ public:
     /** Shows only the sounds in a folder or deeper, as choosing it By Folder does; none: all. */
     void showFolder (const juce::File&);
 
-    /** The pane on the left: By Folder or By Category, as its buttons choose. */
+    /** The pane on the left: By Folder or By Category, as its buttons choose. The bar beside it
+        is dragged to size it; the width asked for (0: a fifth of the window, 170 to 280) is kept
+        within what the window allows. */
     enum class Pane { folders, categories };
+    void setPaneWidth (int);
+    int getPaneWidth() const                            { return paneWidth; }
+    std::function<void (int)> onPaneWidthChanged;        // the bar let go after a drag
     void showPane (Pane);
     Pane getPane() const;
 
@@ -213,6 +219,8 @@ private:
     std::unique_ptr<Categories> categories;
     std::unique_ptr<Folders> folderTree;
     juce::TextButton byFolderButton { "By Folder" }, byCategoryButton { "By Category" };
+    DividerBar divider;
+    int paneWidth = 0;
     juce::Label summary;
     SoundLibraryPreview preview;
     juce::AudioSourcePlayer previewPlayer;

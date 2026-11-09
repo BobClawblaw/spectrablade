@@ -331,6 +331,7 @@ void WaveformView::setDisplay (Display d)
 void WaveformView::drawFrequencyScale (juce::Graphics& g, juce::Rectangle<int> spectrum, double sampleRate)
 {
     g.setFont (10.0f);
+    auto lastLabel = -100.0f;   // where the last label was drawn: a label too near it is left out (its tick stays)
 
     for (auto f : { 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0, 20000.0 })
     {
@@ -344,6 +345,11 @@ void WaveformView::drawFrequencyScale (juce::Graphics& g, juce::Rectangle<int> s
 
         g.setColour (juce::Colours::white.withAlpha (0.25f));
         g.drawHorizontalLine ((int) y, (float) spectrum.getX(), (float) spectrum.getX() + 6.0f);
+
+        if (std::abs (y - lastLabel) < 12.0f)
+            continue;
+
+        lastLabel = y;
         g.setColour (juce::Colours::white.withAlpha (0.7f));
         g.drawText (f >= 1000.0 ? juce::String (f / 1000.0, 0) + "k" : juce::String ((int) f),
                     juce::Rectangle<float> ((float) spectrum.getX() + 8.0f, y - 6.0f, 40.0f, 12.0f),

@@ -245,14 +245,50 @@ private:
                 count = isAll() ? owner.view.total : owner.view.index.countWithin (folder);
 
             const auto top = getParentItem() == &owner.root;
-            const auto label = isAll() ? juce::String ("All Folders") : top ? folder.getFullPathName() : folder.getFileName();
+            const auto label = isAll() ? juce::String ("All Folders") : folder.getFileName();
 
             if (isSelected())
                 g.fillAll (Theme::selection);
 
-            g.setFont (13.0f);
-            g.setColour (count > 0 || isAll() ? Theme::text : Theme::dimText);
-            g.drawText (label, 4, 0, width - 64, height, top && ! isAll() ? juce::Justification::centredRight : juce::Justification::centredLeft, true);
+            const juce::Font font (juce::FontOptions (13.0f));
+            g.setFont (font);
+            const auto nameColour = count > 0 || isAll() ? Theme::text : Theme::dimText;
+            auto x = 4;
+            const auto room = width - 64;
+
+            if (top && ! isAll())
+            {
+                // A watched folder: where it is, dimmed, before its name; cut from its start (the
+                // part nearest the name is the telling part) when the room is short, and dropped
+                // when none of it fits. The tooltip holds the whole path.
+                auto where = folder.getParentDirectory().getFullPathName();
+
+                if (! where.endsWithChar ('/'))
+                    where += "/";
+
+                const auto nameWidth = (int) std::ceil (juce::GlyphArrangement::getStringWidth (font, label));
+                const auto whereRoom = room - nameWidth - 2;
+                auto cut = false;
+
+                while (where.isNotEmpty() && juce::GlyphArrangement::getStringWidth (font, (cut ? juce::String (juce::CharPointer_UTF8 ("\xe2\x80\xa6")) : juce::String()) + where) > (float) whereRoom)
+                {
+                    const auto slash = where.indexOfChar (1, '/');
+                    where = slash > 0 ? where.substring (slash) : juce::String();
+                    cut = true;
+                }
+
+                if (where.isNotEmpty())
+                {
+                    const auto shown = (cut ? juce::String (juce::CharPointer_UTF8 ("\xe2\x80\xa6")) : juce::String()) + where;
+                    const auto shownWidth = (int) std::ceil (juce::GlyphArrangement::getStringWidth (font, shown));
+                    g.setColour (Theme::dimText);
+                    g.drawText (shown, x, 0, shownWidth, height, juce::Justification::centredLeft, false);
+                    x += shownWidth;
+                }
+            }
+
+            g.setColour (nameColour);
+            g.drawText (label, x, 0, juce::jmax (0, room + 4 - x), height, juce::Justification::centredLeft, true);
             g.setColour (Theme::dimText);
             g.drawText (juce::String (count), width - 60, 0, 54, height, juce::Justification::centredRight);
         }
@@ -339,6 +375,10 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
     byFolderButton.setToggleState (true, juce::dontSendNotification);
     byFolderButton.onClick = [this] { if (byFolderButton.getToggleState()) showPane (Pane::folders); };
     byCategoryButton.onClick = [this] { if (byCategoryButton.getToggleState()) showPane (Pane::categories); };
+
+    divider.onDrag = [this] (int x) { paneWidth = juce::jmax (120, x - 3); resized(); };
+    divider.onDragEnd = [this] { if (onPaneWidthChanged != nullptr) onPaneWidthChanged (paneWidth); };
+    addAndMakeVisible (divider);
 
     Theme::follow (summary, juce::Label::textColourId, Theme::dimText);
     addAndMakeVisible (summary);
@@ -731,6 +771,12 @@ SoundLibrary::Query SoundLibraryView::query (int offset, int limit) const
     q.tag = filterTag;
     q.within = filterWithin;
     return q;
+}
+
+void SoundLibraryView::setPaneWidth (int width)
+{
+    paneWidth = juce::jmax (0, width);
+    resized();
 }
 
 void SoundLibraryView::showFolder (const juce::File& folder)
@@ -1223,7 +1269,9 @@ void SoundLibraryView::resized()
     tagChoice.setBounds (filters.removeFromLeft (220));
     summary.setBounds (r.removeFromBottom (24).reduced (4, 0));
     preview.setBounds (r.removeFromBottom (juce::jlimit (110, 220, r.getHeight() / 3)));
-    auto left = r.removeFromLeft (juce::jlimit (170, 280, r.getWidth() / 5));
+    const auto widest = juce::jmax (120, r.getWidth() - 320);
+    auto left = r.removeFromLeft (juce::jlimit (120, widest, paneWidth > 0 ? paneWidth : juce::jlimit (170, 280, r.getWidth() / 5)));
+    divider.setBounds (r.removeFromLeft (6));
     auto tabs = left.removeFromTop (26).reduced (4, 2);
     byFolderButton.setBounds (tabs.removeFromLeft (tabs.getWidth() / 2));
     byCategoryButton.setBounds (tabs);
