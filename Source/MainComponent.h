@@ -587,6 +587,18 @@ private:
     bool loopPlayback = false;                 // the option: a selection or time range plays over and over
     juce::Range<juce::int64> playingLoop;      // the loop playing now (empty: none)
 
+    /** Play with a box, lasso or brush selection in the spectrogram plays only what is inside it:
+        the audio with everything else over the selection taken out (SpectralEdit::changeOutsideBand
+        or changeOutsideShape), processed in the background, then played in place of the document
+        (DocumentSource::setStandIn) until playback stops, the selection moves, the document changes
+        or a preview starts. Files only. */
+    void playInsideSpectral (juce::Range<juce::int64>);
+    void stopPlayingInside();
+    AudioDocument::Snapshot insideAudio;        // what plays in place of the document, while set
+    juce::Range<juce::int64> insideRange;       // the selection it was made for
+    juce::uint32 insideVersion = 0;             // the document's version it was made from
+    bool insidePending = false;                 // being processed: plays once it is done
+
     /** The selection (file) or time range (session) that plays when Play is pressed. */
     juce::Range<juce::int64> playRange() const;
 

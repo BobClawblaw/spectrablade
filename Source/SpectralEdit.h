@@ -13,6 +13,12 @@ namespace SpectralEdit
     AudioDocument::Snapshot changeBand (const AudioSnapshot&, juce::int64 start, juce::int64 end,
                                         juce::Range<double> band, double sampleRate, float gainDb);
 
+    /** Changes the level of everything outside band (Hz) over frames [start, end) of every channel
+        by gainDb (-inf removes it, leaving the band alone), with the same tapered edges as
+        changeBand: what plays when a box is selected in the spectrogram. */
+    AudioDocument::Snapshot changeOutsideBand (const AudioSnapshot&, juce::int64 start, juce::int64 end,
+                                               juce::Range<double> band, double sampleRate, float gainDb);
+
     /** A drawn selection of time and frequency: lassos (closed outlines) and brush dabs, together.
         Points are (document frame, octave), the octave being log2 of the frequency in Hz, as the
         spectrogram is drawn on a log scale: a line straight on screen is straight here too. */
@@ -56,6 +62,11 @@ namespace SpectralEdit
 
     /** Changes the level inside the shape, on every channel, by gainDb (-inf removes it). */
     AudioDocument::Snapshot changeShape (const AudioSnapshot&, const Shape&, double sampleRate, float gainDb);
+
+    /** Changes the level of everything outside the shape by gainDb (-inf removes it, leaving the
+        shape alone) over the frames the shape's mask spans (its span in time with its fades either
+        side); beyond them the audio is left as it was. What plays when a drawing is selected. */
+    AudioDocument::Snapshot changeOutsideShape (const AudioSnapshot&, const Shape&, double sampleRate, float gainDb);
 
     /** Heals the shape from what surrounds it: in each frequency bin, the level across the shape
         is drawn evenly (in dB) from the level just before it to the level just after it (the

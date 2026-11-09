@@ -126,6 +126,22 @@ namespace
                    "leaves a 500 Hz tone beside it within " + r (std::abs (kept), 3) + " dB and the 4 kHz tone before it within "
                    + r (std::abs (earlier), 3) + " dB, and every sample more than " + juce::String (reach) + " from the shape bit for bit");
 
+        // What plays with the lasso selected: everything outside it over its span removed.
+        const auto only = readAll (*SpectralEdit::changeOutsideShape (*source, box (from, to, 3000.0, 5500.0), rate, -std::numeric_limits<float>::infinity()));
+        const auto toneKept = db (amplitude (only, 0, 4000.0, inside, span) / amplitude (b, 0, 4000.0, inside, span));
+        const auto besideGone = db (amplitude (only, 0, 500.0, inside, span) / amplitude (b, 0, 500.0, inside, span));
+        const auto besideGoneRight = db (amplitude (only, 1, 500.0, inside, span) / amplitude (b, 1, 500.0, inside, span));
+        bool onlyUntouched = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < b.getNumSamples(); ++i)
+                if (i < from - reach || i >= to + reach)
+                    onlyUntouched = onlyUntouched && juce::exactlyEqual (only.getSample (ch, i), b.getSample (ch, i));
+
+        check (std::abs (toneKept) < 0.05 && besideGone < -60.0 && besideGoneRight < -60.0 && onlyUntouched,
+               "shapes: keeping only the lasso leaves the 4 kHz tone within " + r (std::abs (toneKept), 3) + " dB, takes the 500 Hz tone beside it down "
+                   + r (-besideGone, 0) + " dB on both channels, and leaves every sample more than " + juce::String (reach) + " from the shape bit for bit");
+
         Shape brush;
 
         for (double f = from; f <= to; f += 2400.0)
@@ -315,6 +331,7 @@ namespace
                    && view.getSpectralShape().isEmpty() && view.getSelection().getLength() > 0 && view.getSpectralBand().isEmpty(),
                "spectral tools: the brush is 3 to 60 pixels; with the box tool a plain drag in a spectrogram selects time, as before");
     }
+
 }
 
 void runSpectralShapeTests()

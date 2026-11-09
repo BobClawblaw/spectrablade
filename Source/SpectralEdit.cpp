@@ -16,108 +16,124 @@ namespace
         x = juce::jlimit (0.0, 1.0, x);
         return x * x * (3.0 - 2.0 * x);
     }
+
+    /** changeBand, or changeOutsideBand when outside is set: the same frames, the gain on the
+        other side of the band's edges. */
+    AudioDocument::Snapshot processBand (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end,
+                                         juce::Range<double> band, double sampleRate, float gainDb, bool outside)
+    {
+        const auto length = snapshot.getNumFrames();
+        start = juce::jlimit ((juce::int64) 0, length, start);
+        end = juce::jlimit (start, length, end);
+
+        if (end <= start || band.isEmpty())
+            return nullptr;
+
+        // Work on the selection plus two frames of context each side, so every replaced sample has
+        // full window overlap; outside the selection the gain is one and the audio comes back as it was.
+        const auto workStart = start - 2 * size;
+        auto workLength = (int) (end - start) + 4 * size;
+        workLength += (hop - (workLength - size) % hop) % hop;
+
+        juce::AudioBuffer<float> work (snapshot.getNumChannels(), workLength);
+        snapshot.read (work, 0, workStart, workLength);
+        juce::AudioBuffer<float> out (snapshot.getNumChannels(), workLength);
+        out.clear();
+
+        juce::dsp::FFT fft (fftOrder);
+        std::vector<float> window ((size_t) size), data ((size_t) size * 2);
+
+        for (int i = 0; i < size; ++i)
+            window[(size_t) i] = (float) std::sqrt (0.5 * (1.0 - std::cos (juce::MathConstants<double>::twoPi * i / size)));
+
+        // The windows multiply to a periodic Hann; at 75% overlap those sum to 2. The FFT pair's own
+        // scale is measured rather than assumed.
+        data.assign (data.size(), 0.0f);
+        data[0] = 1.0f;
+        fft.performRealOnlyForwardTransform (data.data(), true);
+        fft.performRealOnlyInverseTransform (data.data());
+        const auto roundTrip = data[0];
+        const auto scale = 1.0f / (2.0f * roundTrip);
+
+        // Gain per bin: the target inside the band (or, for outside, everywhere but the band),
+        // tapering to one over a few bins at the band's edges.
+        const auto gain = juce::Decibels::decibelsToGain (gainDb, -300.0f);
+        const auto binHz = sampleRate / size;
+        std::vector<double> bandWeight ((size_t) size / 2 + 1);
+
+        for (int b = 0; b <= size / 2; ++b)
+        {
+            const auto bin = b * binHz;
+            const auto below = (band.getStart() - bin) / binHz, above = (bin - band.getEnd()) / binHz;
+            const auto inside = 1.0 - smoothStep (juce::jmax (below, above) / edgeBins);
+            bandWeight[(size_t) b] = outside ? 1.0 - inside : inside;
+        }
+
+        for (int ch = 0; ch < work.getNumChannels(); ++ch)
+        {
+            const auto* in = work.getReadPointer (ch);
+            auto* dest = out.getWritePointer (ch);
+
+            for (int p = 0; p + size <= workLength; p += hop)
+            {
+                // Time weight from where the frame's centre falls: full inside the selection,
+                // easing out over one hop either side.
+                const auto centre = (double) (workStart + p + size / 2);
+                const auto timeWeight = smoothStep (juce::jmin (centre - ((double) start - hop), ((double) end + hop) - centre) / (2.0 * hop));
+
+                for (int i = 0; i < size; ++i)
+                    data[(size_t) i] = in[p + i] * window[(size_t) i];
+
+                std::fill (data.begin() + size, data.end(), 0.0f);
+
+                if (timeWeight > 0.0)
+                {
+                    fft.performRealOnlyForwardTransform (data.data(), true);
+
+                    for (int b = 0; b <= size / 2; ++b)
+                    {
+                        const auto g = (float) (1.0 + ((double) gain - 1.0) * timeWeight * bandWeight[(size_t) b]);
+                        data[(size_t) (2 * b)] *= g;
+                        data[(size_t) (2 * b + 1)] *= g;
+                    }
+
+                    fft.performRealOnlyInverseTransform (data.data());
+                }
+                else
+                {
+                    // Nothing changes in this frame: skip the transform pair, keeping its gain.
+                    for (int i = 0; i < size; ++i)
+                        data[(size_t) i] *= roundTrip;
+                }
+
+                for (int i = 0; i < size; ++i)
+                    dest[p + i] += data[(size_t) i] * window[(size_t) i] * scale;
+            }
+        }
+
+        // Replace the selection plus one frame each side (inside the file) with the result.
+        const auto replaceStart = juce::jmax ((juce::int64) 0, start - size);
+        const auto replaceEnd = juce::jmin (length, end + size);
+        juce::AudioBuffer<float> result (out.getNumChannels(), (int) (replaceEnd - replaceStart));
+
+        for (int ch = 0; ch < out.getNumChannels(); ++ch)
+            result.copyFrom (ch, 0, out, ch, (int) (replaceStart - workStart), result.getNumSamples());
+
+        AudioClip clip { snapshot.getNumChannels(), sampleRate, AudioEdits::fromBuffer (std::move (result))->getSegments() };
+        return AudioEdits::replaceWithClip (snapshot, replaceStart, replaceEnd, clip);
+    }
 }
 
 AudioDocument::Snapshot changeBand (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end,
                                     juce::Range<double> band, double sampleRate, float gainDb)
 {
-    const auto length = snapshot.getNumFrames();
-    start = juce::jlimit ((juce::int64) 0, length, start);
-    end = juce::jlimit (start, length, end);
+    return processBand (snapshot, start, end, band, sampleRate, gainDb, false);
+}
 
-    if (end <= start || band.isEmpty())
-        return nullptr;
-
-    // Work on the selection plus two frames of context each side, so every replaced sample has
-    // full window overlap; outside the selection the gain is one and the audio comes back as it was.
-    const auto workStart = start - 2 * size;
-    auto workLength = (int) (end - start) + 4 * size;
-    workLength += (hop - (workLength - size) % hop) % hop;
-
-    juce::AudioBuffer<float> work (snapshot.getNumChannels(), workLength);
-    snapshot.read (work, 0, workStart, workLength);
-    juce::AudioBuffer<float> out (snapshot.getNumChannels(), workLength);
-    out.clear();
-
-    juce::dsp::FFT fft (fftOrder);
-    std::vector<float> window ((size_t) size), data ((size_t) size * 2);
-
-    for (int i = 0; i < size; ++i)
-        window[(size_t) i] = (float) std::sqrt (0.5 * (1.0 - std::cos (juce::MathConstants<double>::twoPi * i / size)));
-
-    // The windows multiply to a periodic Hann; at 75% overlap those sum to 2. The FFT pair's own
-    // scale is measured rather than assumed.
-    data.assign (data.size(), 0.0f);
-    data[0] = 1.0f;
-    fft.performRealOnlyForwardTransform (data.data(), true);
-    fft.performRealOnlyInverseTransform (data.data());
-    const auto roundTrip = data[0];
-    const auto scale = 1.0f / (2.0f * roundTrip);
-
-    // Gain per bin: the target inside the band, tapering to one over a few bins outside it.
-    const auto gain = juce::Decibels::decibelsToGain (gainDb, -300.0f);
-    const auto binHz = sampleRate / size;
-    std::vector<double> bandWeight ((size_t) size / 2 + 1);
-
-    for (int b = 0; b <= size / 2; ++b)
-    {
-        const auto bin = b * binHz;
-        const auto below = (band.getStart() - bin) / binHz, above = (bin - band.getEnd()) / binHz;
-        bandWeight[(size_t) b] = 1.0 - smoothStep (juce::jmax (below, above) / edgeBins);
-    }
-
-    for (int ch = 0; ch < work.getNumChannels(); ++ch)
-    {
-        const auto* in = work.getReadPointer (ch);
-        auto* dest = out.getWritePointer (ch);
-
-        for (int p = 0; p + size <= workLength; p += hop)
-        {
-            // Time weight from where the frame's centre falls: full inside the selection,
-            // easing out over one hop either side.
-            const auto centre = (double) (workStart + p + size / 2);
-            const auto timeWeight = smoothStep (juce::jmin (centre - ((double) start - hop), ((double) end + hop) - centre) / (2.0 * hop));
-
-            for (int i = 0; i < size; ++i)
-                data[(size_t) i] = in[p + i] * window[(size_t) i];
-
-            std::fill (data.begin() + size, data.end(), 0.0f);
-
-            if (timeWeight > 0.0)
-            {
-                fft.performRealOnlyForwardTransform (data.data(), true);
-
-                for (int b = 0; b <= size / 2; ++b)
-                {
-                    const auto g = (float) (1.0 + ((double) gain - 1.0) * timeWeight * bandWeight[(size_t) b]);
-                    data[(size_t) (2 * b)] *= g;
-                    data[(size_t) (2 * b + 1)] *= g;
-                }
-
-                fft.performRealOnlyInverseTransform (data.data());
-            }
-            else
-            {
-                // Nothing changes in this frame: skip the transform pair, keeping its gain.
-                for (int i = 0; i < size; ++i)
-                    data[(size_t) i] *= roundTrip;
-            }
-
-            for (int i = 0; i < size; ++i)
-                dest[p + i] += data[(size_t) i] * window[(size_t) i] * scale;
-        }
-    }
-
-    // Replace the selection plus one frame each side (inside the file) with the result.
-    const auto replaceStart = juce::jmax ((juce::int64) 0, start - size);
-    const auto replaceEnd = juce::jmin (length, end + size);
-    juce::AudioBuffer<float> result (out.getNumChannels(), (int) (replaceEnd - replaceStart));
-
-    for (int ch = 0; ch < out.getNumChannels(); ++ch)
-        result.copyFrom (ch, 0, out, ch, (int) (replaceStart - workStart), result.getNumSamples());
-
-    AudioClip clip { snapshot.getNumChannels(), sampleRate, AudioEdits::fromBuffer (std::move (result))->getSegments() };
-    return AudioEdits::replaceWithClip (snapshot, replaceStart, replaceEnd, clip);
+AudioDocument::Snapshot changeOutsideBand (const AudioSnapshot& snapshot, juce::int64 start, juce::int64 end,
+                                           juce::Range<double> band, double sampleRate, float gainDb)
+{
+    return processBand (snapshot, start, end, band, sampleRate, gainDb, true);
 }
 
 // Drawn shapes ----------------------------------------------------------------------------------
@@ -350,10 +366,12 @@ namespace
     constexpr int refFrames = 4;   // frames each side that healing takes the level from
 
     /** Runs the masked frames through the transform: op changes the spectra (frames first - margin
-        onwards, JUCE's interleaved real/imaginary layout) where the mask has weight, and the audio
-        under the masked frames is put back from them. */
+        onwards, JUCE's interleaved real/imaginary layout) where the mask has weight (or in every
+        frame of the mask's span, with everyFrame), and the audio under the masked frames is put
+        back from them. */
     AudioDocument::Snapshot processMasked (const AudioSnapshot& snapshot, const Mask& mask, double sampleRate,
-                                           const std::function<void (std::vector<std::vector<float>>&, juce::int64 firstSpectrum)>& op)
+                                           const std::function<void (std::vector<std::vector<float>>&, juce::int64 firstSpectrum)>& op,
+                                           bool everyFrame = false)
     {
         if (mask.rows.empty())
             return nullptr;
@@ -384,10 +402,13 @@ namespace
         const auto roundTrip = probe[0];
         const auto scale = 1.0f / (2.0f * roundTrip);
 
-        const auto masked = [&mask, first, last] (juce::int64 k)
+        const auto masked = [&mask, first, last, everyFrame] (juce::int64 k)
         {
             if (k < first || k > last)
                 return false;
+
+            if (everyFrame)
+                return true;
 
             const auto& row = mask.rows[(size_t) (k - first)];
             return std::any_of (row.begin(), row.end(), [] (float w) { return w > 0.0f; });
@@ -472,6 +493,32 @@ AudioDocument::Snapshot changeShape (const AudioSnapshot& snapshot, const Shape&
                     spectra[i][(size_t) (2 * b + 1)] *= g;
                 }
     });
+}
+
+AudioDocument::Snapshot changeOutsideShape (const AudioSnapshot& snapshot, const Shape& shape, double sampleRate, float gainDb)
+{
+    const auto mask = maskFor (shape, sampleRate, snapshot.getNumFrames());
+    const auto gain = (double) juce::Decibels::decibelsToGain (gainDb, -300.0f);
+    const auto first = mask.firstFrame, last = mask.firstFrame + (juce::int64) mask.rows.size() - 1;
+
+    return processMasked (snapshot, mask, sampleRate, [&] (std::vector<std::vector<float>>& spectra, juce::int64 k0)
+    {
+        for (size_t i = 0; i < spectra.size(); ++i)
+        {
+            const auto k = k0 + (juce::int64) i;
+
+            if (k < first || k > last)
+                continue;   // beyond the shape's span: left as it is
+
+            for (int b = 0; b <= shapeSize / 2; ++b)
+            {
+                // The target where the mask has no weight, one where it is full.
+                const auto g = (float) (gain + (1.0 - gain) * weightAt (mask, k, b));
+                spectra[i][(size_t) (2 * b)] *= g;
+                spectra[i][(size_t) (2 * b + 1)] *= g;
+            }
+        }
+    }, true);
 }
 
 AudioDocument::Snapshot heal (const AudioSnapshot& snapshot, const Shape& shape, double sampleRate)

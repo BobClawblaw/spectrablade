@@ -1506,7 +1506,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdApplyRack:  info.setInfo ("Apply Effects Rack", "Render the rack's effects into the audio", "Effects", 0);
                             info.addDefaultKeypress ('r', cmd); info.setActive (hasAudio && engine.getNumRackSlots() > 0); break;
 
-        case cmdPlayPause:  info.setInfo ("Play/Pause", "Play the selection, or from the cursor", "Transport", 0);
+        case cmdPlayPause:  info.setInfo ("Play/Pause", "Play the selection (with a box, lasso or brush selection in the spectrogram, only what is inside it), or from the cursor", "Transport", 0);
                             info.addDefaultKeypress (juce::KeyPress::spaceKey, 0); info.setActive (hasAudio); break;
         case cmdLoopPlayback: info.setInfo ("Loop Playback", "Play the selection or time range over and over", "Transport", 0);
                             info.addDefaultKeypress ('l', cmd); info.setTicked (loopPlayback); break;
@@ -2810,6 +2810,11 @@ void MainComponent::timerCallback()
     auto& player = engine.getPlayer();
     auto& recorder = engine.getRecorder();
     keepRecoveryCopy();
+
+    if ((insideAudio != nullptr || insidePending)
+        && ((insideAudio != nullptr && ! player.isPlaying()) || multitrackMode || engine.document.getVersion() != insideVersion || playRange() != insideRange))
+        stopPlayingInside();
+
     updatePlaybackLoop();
 
     updateInputs();
@@ -10571,6 +10576,14 @@ void MainComponent::togglePlay()
     if (player.isPlaying())
     {
         player.pause();
+        stopPlayingInside();
+        return;
+    }
+
+    if (insidePending)
+    {
+        // Play again while the inside of a spectral selection is still being processed: don't.
+        stopPlayingInside();
         return;
     }
 
@@ -10581,12 +10594,72 @@ void MainComponent::togglePlay()
     const auto length = multitrackMode ? engine.session.getState()->getLength() : engine.document.getNumFrames();
 
     if (! range.isEmpty())
+    {
+        // A spectral selection plays only what is inside it, once that is processed.
+        if (! multitrackMode && previewOwner == PreviewOwner::none
+            && (! waveform.getSpectralShape().isEmpty() || ! waveform.getSpectralBand().isEmpty()))
+        {
+            playInsideSpectral (range);
+            return;
+        }
+
         player.play (range.getStart(), range.getEnd());
+    }
     else
+    {
         player.play (cursor >= length ? 0 : cursor, -1);
+    }
 
     playingLoop = {};
     updatePlaybackLoop();
+}
+
+void MainComponent::playInsideSpectral (juce::Range<juce::int64> range)
+{
+    auto& doc = engine.document;
+    insideRange = range;
+    insideVersion = doc.getVersion();
+    insidePending = true;
+
+    const EffectPreview::Request request { "inside",
+        [shape = waveform.getSpectralShape(), band = waveform.getSpectralBand(), sel = range]
+        (const AudioDocument::Snapshot& audio, juce::int64 start, juce::int64 end, double sampleRate, const std::function<bool (float)>&)
+        {
+            constexpr auto gone = -std::numeric_limits<float>::infinity();
+            return EffectPreview::Rendered { ! shape.isEmpty() ? SpectralEdit::changeOutsideShape (*audio, shape, sampleRate, gone)
+                                                                : SpectralEdit::changeOutsideBand (*audio, sel.getStart(), sel.getEnd(), band, sampleRate, gone),
+                                             start, end, {} };
+        }, true };
+
+    effectPreview.render (request, doc.getSnapshot(), range, doc.getSampleRate(), [this, range] (const EffectPreview::Rendered& r)
+    {
+        if (! insidePending || range != insideRange || engine.document.getVersion() != insideVersion || previewOwner != PreviewOwner::none || multitrackMode)
+            return;
+
+        insidePending = false;
+        insideAudio = r.snapshot;   // null (nothing to take out): the document plays as it is
+        auto& player = engine.getPlayer();
+        player.setStandIn (insideAudio);
+        player.play (range.getStart(), range.getEnd());
+        playingLoop = {};
+        updatePlaybackLoop();
+    });
+}
+
+void MainComponent::stopPlayingInside()
+{
+    if (insidePending && previewOwner == PreviewOwner::none)
+        effectPreview.cancel();
+
+    insidePending = false;
+
+    if (insideAudio != nullptr)
+    {
+        insideAudio = nullptr;
+
+        if (previewOwner == PreviewOwner::none)
+            engine.getPlayer().setStandIn (nullptr);
+    }
 }
 
 juce::Range<juce::int64> MainComponent::playRange() const
@@ -10620,6 +10693,8 @@ void MainComponent::startPreview (PreviewOwner owner, std::unique_ptr<juce::Audi
     if (multitrackMode || isRecording() || ! engine.document.hasAudio() || owner == PreviewOwner::none || owner == PreviewOwner::rendered)
         return;
 
+    stopPlayingInside();
+
     if (previewOwner == PreviewOwner::rendered)
         stopPreview();
 
@@ -10651,6 +10726,8 @@ void MainComponent::startRenderedPreview (const EffectPreview::Request& request,
 
     if (multitrackMode || isRecording() || ! doc.hasAudio())
         return;
+
+    stopPlayingInside();
 
     if (previewOwner != PreviewOwner::rendered)
     {

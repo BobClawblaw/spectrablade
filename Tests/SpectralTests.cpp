@@ -112,6 +112,28 @@ namespace
         const auto drop = Spectrogram::measurePeakDb (input, 0, mid, rate, high) - Spectrogram::measurePeakDb (attenuated, 0, mid, rate, high);
         check (std::abs (drop - 12.0f) < 0.05f, "spectral: attenuating by 12 dB lowers the tone by " + db (drop));
     }
+
+    void testKeepBand()
+    {
+        // What plays with a box selected: everything outside 3-8 kHz over 1 s to 3 s removed, so
+        // the 5 kHz tone stays, the 1 kHz tone goes, and the audio before the selection is untouched.
+        const auto input = twoTones();
+        const auto source = AudioEdits::fromBuffer (juce::AudioBuffer<float> (input));
+        const juce::int64 start = 48000, end = 144000;
+        const auto kept = readAll (*SpectralEdit::changeOutsideBand (*source, start, end, { 3000.0, 8000.0 }, rate, -std::numeric_limits<float>::infinity()));
+        const auto mid = 96000;
+        const auto five = Spectrogram::measurePeakDb (kept, 0, mid, rate, high);
+        const auto one = Spectrogram::measurePeakDb (kept, 0, mid, rate, low);
+        bool untouched = true;
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < (int) start - 4096; ++i)
+                untouched = untouched && kept.getSample (ch, i) == input.getSample (ch, i);
+
+        check (std::abs (five - -12.04f) < 0.05f && one < -100.0f && untouched,
+               "spectral: keeping only 3-8 kHz leaves the 5 kHz tone at " + db (five) + ", takes the 1 kHz tone outside the band down to " + db (one)
+                   + (one <= Spectrogram::floorDb ? " (the analysis floor)" : "") + ", and leaves the audio before the selection untouched");
+    }
 }
 
 void runSpectralTests()
@@ -119,4 +141,5 @@ void runSpectralTests()
     testCalibration();
     testIdentity();
     testRemoveAndAttenuate();
+    testKeepBand();
 }
