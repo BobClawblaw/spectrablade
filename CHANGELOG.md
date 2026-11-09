@@ -9,6 +9,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - Measured by the tests: the whole suite passed; the app launched and quit cleanly.
 - Not tried by hand: the switch on a real screen in each theme.
 
+**Milestone 346: An effect dialog opened while playing previews at once, and Stereo Width says when there is nothing to widen**
+- Dogfooding: moving Stereo Width's slider changed nothing heard. A dialog's Preview is off until it is ticked (or Space), so the play underneath went on unchanged; and a stereo file whose two channels are the same (a mono sound in a stereo file) has no difference between them for Stereo Width to scale, so it changed nothing and said nothing. Now an effect dialog opened while the file plays starts with Preview on, so its settings are heard as they settle, and Stereo Width looks at the selection first: when the channels are the same it says so in its text, the preview's status line and on Apply, instead of doing nothing.
+- Measured by the tests: the whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: the preview coming on by itself, and the message, in the running app.
+
 ## Released
 
 **Release 0.14.8: the first dogfood fix, a selection changed while looping**

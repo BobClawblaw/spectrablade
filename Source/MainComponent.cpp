@@ -7519,10 +7519,31 @@ void MainComponent::showBalance()
 
 void MainComponent::showStereoWidth()
 {
-    showEffectDialog ("Stereo Width", "0 % makes it mono, 100 % leaves it as it is, and up to 200 % widens it, "
-                                      "by scaling the difference between the channels.",
+    // Two channels the same over the range have no difference to scale: say so rather than do nothing.
+    const auto alike = [this]
+    {
+        const auto r = selectionOrAll();
+        const auto snapshot = engine.document.getSnapshot();
+        juce::AudioBuffer<float> block (2, 65536);
+
+        for (auto at = r.getStart(); at < r.getEnd(); at += block.getNumSamples())
+        {
+            const auto n = (int) juce::jmin ((juce::int64) block.getNumSamples(), r.getEnd() - at);
+            snapshot->read (block, 0, at, n);
+
+            if (std::memcmp (block.getReadPointer (0), block.getReadPointer (1), (size_t) n * sizeof (float)) != 0)
+                return false;
+        }
+
+        return true;
+    }();
+
+    showEffectDialog ("Stereo Width", juce::String ("0 % makes it mono, 100 % leaves it as it is, and up to 200 % widens it, "
+                                                    "by scaling the difference between the channels.")
+                                          + (alike ? " The two channels here are the same, so there is no difference to scale: nothing would change." : ""),
                       { { "width", "Width (%)", (double) stereoWidthPercent, 0, {}, 0.0, 200.0, 1.0 } },
-                      "spectrablade:stereo-width", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      "spectrablade:stereo-width", PreviewOwner::none, [alike] (const EffectValues&) { return ! alike; },
+                      "The two channels are the same here (a mono sound in a stereo file), so there is no stereo width to change.", nullptr, nullptr,
                       [this] (const EffectValues& v)
                       {
                           stereoWidthPercent = juce::roundToInt (v.at ("width"));
@@ -9449,6 +9470,11 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
         previewEnded = {};
         stopPreview();
     };
+
+    // Opened while the file plays, the dialog previews from the start, so its settings are heard
+    // as they move (Preview off, the play underneath would go on unchanged).
+    if (! multitrackMode && ! isRecording() && previewOwner == PreviewOwner::none && engine.getPlayer().isPlaying())
+        dialog->setPreviewOn (true, juce::sendNotification);
 
     EffectDialog::show (std::move (dialog), title, this);
 }
