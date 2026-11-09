@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.2: twenty-five commands back in the menus, playing only what is inside a spectral selection, nudging the selection, and selecting at zero crossings**
+- `SpectraBlade-0.14.2.dmg` on the repository's Releases page, with its SHA-256: Milestones 328 to 330 below on top of 0.14.1. Anyone on 0.14.0 or 0.14.1 should take this one: those two left every command added since the Sound Library window (the Dynamic EQ on through Codec Preview) out of the menus. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1412 checks) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.2, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. Nothing in this release has been listened to; the parts of each milestone not tried by hand are listed with it below.
+
 **Milestone 330: Nudging the selection, and selecting at zero crossings**
 - Edit > Nudge Selection Start Earlier (Shift-Left), Start Later (Command-Shift-Right), End Earlier (Command-Shift-Left) and End Later (Shift-Right) move one end of the selection by a pixel's worth of time at the current zoom (a frame at the least): Shift and an arrow grow the selection that way, Command-Shift and an arrow shrink it from that side. An end stops at the file's ends and a frame short of the other end; a frequency band selected with the box stays.
 - Edit > Select at Zero Crossings, an option kept in the settings (off to start): every end of a selection made with the mouse (a click, both ends of a drag as it is dragged, a Shift-click's) lands on the nearest zero crossing of the channels' sum within 5 ms, and a nudged end goes on to the next zero crossing the way it moved, so each nudge steps from crossing to crossing when the view is zoomed in close. The drawings (lasso and brush) are not snapped. Selection to Zero Crossings still moves an existing selection's ends once.
@@ -19,9 +27,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - Every command added since the Sound Library window (milestone 280), from the Dynamic EQ (milestone 297) on, was missing from the menus and from the Keyboard Shortcuts window, in 0.14.0 and 0.14.1 too: the loop that registers the commands stopped at the Sound Library's, and a command the manager does not know is left out of a menu without a word. Back are Dynamic EQ, Multiband Stereo Width, Exciter, Maximizer, Transient Shaper, Capture Match Reference (from the selection and from a file), Match EQ, the Tonal Balance panel, Dither, Dialogue Isolation, Adaptive Noise Reduction, Mouth De-click, De-crackle, De-plosive, Breath Control, Wind, Rustle and Bleed, Wow and Flutter, Spectral Recovery, Rebalance, Capture Ambience, Ambience Match, Dialogue Contour, Azimuth and Codec Preview. The loop now runs to a sentinel at the end of the command list, so a command added after it cannot be missed again.
 - Measured by the tests: none cover the menus (the main window is not in the test build); every command id was checked by script to have a description. The whole suite passed (1407 checks); the app launched and quit cleanly.
 - Not tried by hand: the menus themselves in the running app.
-
-
-## Released
 
 **Release 0.14.1: Apple silicon only, a low voice's pitch, effects that say when they find nothing, and the Sound Library's folders pane**
 - `SpectraBlade-0.14.1.dmg` on the repository's Releases page, with its SHA-256: Milestones 324 to 327 below on top of 0.14.0. Built for Apple silicon only (the first release without an Intel half), signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
