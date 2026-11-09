@@ -4153,6 +4153,14 @@ void MainComponent::exportStems (const juce::File& folder, juce::Range<juce::int
                                                                       : juce::String ("Session");
     struct Stem
     {
+        // Move only: MSVC's std::map isn't nothrow-movable, so without this a growing vector
+        // would try to copy the plug-in states.
+        Stem() = default;
+        Stem (Stem&&) = default;
+        Stem& operator= (Stem&&) = default;
+        Stem (const Stem&) = delete;
+        Stem& operator= (const Stem&) = delete;
+
         std::shared_ptr<const SessionState> alone;
         std::map<juce::uint32, std::unique_ptr<juce::XmlElement>> effects;   // of each track and bus in it
         juce::File file;

@@ -45,7 +45,12 @@ target_include_directories(SpectraBladeLame PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_include_directories(SpectraBladeLame SYSTEM PUBLIC "${spectrablade_lame_src}/include")
 target_compile_definitions(SpectraBladeLame PRIVATE HAVE_CONFIG_H=1)
 # LAME's own code, compiled as it is: its warnings are not ours to fix.
-target_compile_options(SpectraBladeLame PRIVATE -w -Wno-implicit-function-declaration)
+if(MSVC)
+    target_compile_options(SpectraBladeLame PRIVATE /w)
+    target_compile_definitions(SpectraBladeLame PRIVATE _CRT_SECURE_NO_WARNINGS)
+else()
+    target_compile_options(SpectraBladeLame PRIVATE -w -Wno-implicit-function-declaration)
+endif()
 set_target_properties(SpectraBladeLame PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
 
 # Signalsmith Stretch (time stretching and pitch shifting) and the Signalsmith Linear FFTs it uses,
@@ -80,9 +85,44 @@ endif()
 
 # The headers include "signalsmith-linear/stft.h": a folder of that name pointing at Linear.
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/signalsmith-include")
-file(CREATE_LINK "${spectrablade_linear_src}" "${CMAKE_BINARY_DIR}/signalsmith-include/signalsmith-linear" SYMBOLIC)
+# Windows only makes symbolic links with Developer Mode or as administrator, so it gets a copy.
+if(WIN32)
+    file(COPY "${spectrablade_linear_src}/" DESTINATION "${CMAKE_BINARY_DIR}/signalsmith-include/signalsmith-linear")
+else()
+    file(CREATE_LINK "${spectrablade_linear_src}" "${CMAKE_BINARY_DIR}/signalsmith-include/signalsmith-linear" SYMBOLIC)
+endif()
 add_library(SpectraBladeStretch INTERFACE)
 target_include_directories(SpectraBladeStretch SYSTEM INTERFACE "${spectrablade_stretch_src}" "${CMAKE_BINARY_DIR}/signalsmith-include")
+
+# SQLite for the Sound Library: macOS and Linux have it as a system library; on Windows the
+# amalgamation of a pinned release is built in. Use a local copy of it with -DSPECTRABLADE_SQLITE_DIR.
+add_library(SpectraBladeSqlite INTERFACE)
+
+if(WIN32)
+    set(SPECTRABLADE_SQLITE_DIR "" CACHE PATH "Local SQLite 3.50.4 amalgamation (optional)")
+
+    if(SPECTRABLADE_SQLITE_DIR)
+        set(spectrablade_sqlite_src "${SPECTRABLADE_SQLITE_DIR}")
+    else()
+        include(FetchContent)
+        FetchContent_Declare(sqlite
+            URL      https://sqlite.org/2025/sqlite-amalgamation-3500400.zip
+            URL_HASH SHA256=1d3049dd0f830a025a53105fc79fd2ab9431aea99e137809d064d8ee8356b032
+            DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        FetchContent_MakeAvailable(sqlite)
+        set(spectrablade_sqlite_src "${sqlite_SOURCE_DIR}")
+    endif()
+
+    add_library(SpectraBladeSqliteLib STATIC "${spectrablade_sqlite_src}/sqlite3.c")
+    target_include_directories(SpectraBladeSqliteLib SYSTEM PUBLIC "${spectrablade_sqlite_src}")
+    target_compile_definitions(SpectraBladeSqliteLib PRIVATE SQLITE_THREADSAFE=1 SQLITE_OMIT_LOAD_EXTENSION)
+    if(MSVC)
+        target_compile_options(SpectraBladeSqliteLib PRIVATE /w)
+    endif()
+    target_link_libraries(SpectraBladeSqlite INTERFACE SpectraBladeSqliteLib)
+else()
+    target_link_libraries(SpectraBladeSqlite INTERFACE sqlite3)
+endif()
 
 juce_add_gui_app(SpectraBlade
     PRODUCT_NAME                 "SpectraBlade"
@@ -246,7 +286,7 @@ target_link_libraries(SpectraBlade PRIVATE
     juce::juce_audio_processors
     juce::juce_dsp
     juce::juce_video
-    sqlite3
+    SpectraBladeSqlite
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
@@ -454,13 +494,28 @@ target_sources(SpectraBladeTests PRIVATE
     Source/RackView.cpp
     Source/MultitrackView.cpp)
 # Plug-in bundles that misbehave on purpose, for the scan tests (see Tests/TestBundle.cpp).
+# On Windows each is a .vst3 DLL; the generator expression keeps multi-config builds from adding a
+# configuration folder. IntelOnlyBundle there is a bundle folder holding only 32-bit (x86-win) code.
 foreach(bundle IntelOnlyBundle HangingBundle CrashingBundle)
     add_library(${bundle} MODULE Tests/TestBundle.cpp)
-    set_target_properties(${bundle} PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION vst3
-                          LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/TestBundles")
+
+    if(APPLE)
+        set_target_properties(${bundle} PROPERTIES BUNDLE TRUE BUNDLE_EXTENSION vst3
+                              LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/TestBundles")
+    else()
+        set_target_properties(${bundle} PROPERTIES PREFIX "" SUFFIX ".vst3"
+                              LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/TestBundles>")
+    endif()
+
     add_dependencies(SpectraBladeTests ${bundle})
 endforeach()
-set_target_properties(IntelOnlyBundle PROPERTIES OSX_ARCHITECTURES x86_64)
+
+if(APPLE)
+    set_target_properties(IntelOnlyBundle PROPERTIES OSX_ARCHITECTURES x86_64)
+elseif(WIN32)
+    set_target_properties(IntelOnlyBundle PROPERTIES
+        LIBRARY_OUTPUT_DIRECTORY "$<1:${CMAKE_BINARY_DIR}/TestBundles/IntelOnlyBundle.vst3/Contents/x86-win>")
+endif()
 target_compile_definitions(HangingBundle PRIVATE TEST_BUNDLE_HANGS=1)
 target_compile_definitions(CrashingBundle PRIVATE TEST_BUNDLE_CRASHES=1)
 target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_TEST_BUNDLES="${CMAKE_BINARY_DIR}/TestBundles")
@@ -478,6 +533,6 @@ target_link_libraries(SpectraBladeTests PRIVATE
     juce::juce_audio_processors
     juce::juce_dsp
     juce::juce_video
-    sqlite3
+    SpectraBladeSqlite
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

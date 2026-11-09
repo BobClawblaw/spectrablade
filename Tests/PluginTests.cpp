@@ -48,7 +48,13 @@ namespace
     int countWorkers()
     {
         juce::ChildProcess pgrep;
+       #if JUCE_WINDOWS
+        pgrep.start (juce::StringArray { "powershell", "-NoProfile", "-Command",
+                                         juce::String ("Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*")
+                                             + scannerProcessUID + "*' -and $_.Name -ne 'powershell.exe' } | ForEach-Object ProcessId" });
+       #else
         pgrep.start (juce::StringArray { "/usr/bin/pgrep", "-f", scannerProcessUID });
+       #endif
         auto pids = juce::StringArray::fromLines (pgrep.readAllProcessOutput());
         pids.removeEmptyStrings();
         return pids.size();
@@ -114,6 +120,12 @@ namespace
                 const auto intelOnly = scanner.findPluginTypesFor (*vst3, results, bundles.getChildFile ("IntelOnlyBundle.vst3").getFullPathName());
                 check (! intelOnly && log.find ("IntelOnlyBundle").contains ("no code for Apple silicon"),
                        "plug-in scan: a VST3 built only for Intel is reported as having no code for Apple silicon");
+               #elif JUCE_WINDOWS
+                results.clear();
+                const auto only32 = scanner.findPluginTypesFor (*vst3, results, bundles.getChildFile ("IntelOnlyBundle.vst3").getFullPathName());
+                check (! only32 && log.find ("IntelOnlyBundle").contains ("no 64-bit code"),
+                       "plug-in scan: a VST3 built only for 32-bit Windows is reported as having no 64-bit code ("
+                           + log.find ("IntelOnlyBundle") + ")");
                #endif
 
                 results.clear();

@@ -1,5 +1,7 @@
 #include "AacWriter.h"
 
+#if defined (__APPLE__)
+
 #include <AudioToolbox/AudioToolbox.h>
 
 #include <algorithm>
@@ -131,3 +133,16 @@ std::string write (const char* path, double inputRate, double outputRate, unsign
     return {};
 }
 }
+
+#else
+
+namespace AacWriter
+{
+// No system AAC encoder is wired up on this platform yet.
+std::string write (const char*, double, double, unsigned, int, double, const Pull&)
+{
+    return "AAC export is not available on this platform yet.";
+}
+}
+
+#endif
