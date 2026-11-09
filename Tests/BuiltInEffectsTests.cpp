@@ -2,6 +2,8 @@
 #include "../Source/AudioEngine.h"
 #include "../Source/BuiltInEffects.h"
 #include "../Source/TrackEffects.h"
+#include "../Source/RackView.h"
+#include "../Source/MultitrackView.h"
 #include "TestUtils.h"
 #include "BuiltInEffectsTests.h"
 
@@ -401,6 +403,34 @@ void runBuiltInEffectsTests (AudioEngine& engine)
                    && through && std::abs (conv.getTailLengthSeconds() - 4000.0 / rate) < 1.0e-12,
                "built-in convolution reverb: reports 512 frames of latency and, that late, gives Convolver's samples bit for bit; its state keeps the impulse's "
                "samples and name and the mix exactly; with no impulse the sound passes through 512 frames late; its tail is the impulse's length");
+    }
+
+    // Added through the rack view, the new effect asks for its window at once; through a track's
+    // FX menu, the same for the track's new effect.
+    {
+        engine.clearRack();
+        RackView rackView (engine);
+        auto edited = -1, done = 0;
+        rackView.onEditSlot = [&] (int slot) { edited = slot; ++done; };
+        rackView.addEffect (descriptions[0]);
+        runUntil ([&] { return done > 0; }, 10000);
+        rackView.addEffect (descriptions[0]);
+        runUntil ([&] { return done > 1; }, 10000);
+        check (done == 2 && edited == 1 && engine.getNumRackSlots() == 2,
+               "a new rack effect asks for its window as soon as it is in (the second added, slot 1)");
+
+        SessionState session;
+        session.sampleRate = rate;
+        const auto trackId = session.addTrack().id;
+        engine.session.reset (session, {});
+        MultitrackView view (engine);
+        juce::AudioPluginInstance* opened = nullptr;
+        view.onEditPlugin = [&] (juce::AudioPluginInstance& p) { opened = &p; };
+        view.addTrackEffect (trackId, descriptions[0]);
+        runUntil ([&] { return opened != nullptr; }, 10000);
+        check (opened != nullptr && opened == engine.getTrackEffects().getPlugin (trackId, 0),
+               "a new track effect asks for its window as soon as it is in");
+        engine.session.reset ({}, {});
     }
 
     // In the master rack: added by description, set, saved and restored with its bands.

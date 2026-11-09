@@ -49,6 +49,11 @@ public:
     /** Asks for a track effect's editor window. */
     std::function<void (juce::AudioPluginInstance&)> onEditPlugin;
 
+    /** Adds an effect at the end of a track's chain (as its FX menu does) and, once it is in, asks
+        for its window through onEditPlugin, so a new effect is in front without a click on Edit.
+        A failure to load is shown. */
+    void addTrackEffect (juce::uint32 trackId, const juce::PluginDescription&);
+
     juce::int64 getCursor() const noexcept        { return cursor; }
     void setCursor (juce::int64 frame);
 

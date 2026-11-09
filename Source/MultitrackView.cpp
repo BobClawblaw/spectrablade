@@ -1250,13 +1250,30 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
             if (! juce::isPositiveAndBelow (chosen, types.size()))
                 return;
 
-            const auto name = types[chosen].name;
-            engine.addTrackPlugin (trackId, types[chosen], [name] (const juce::String& error)
-            {
-                if (error.isNotEmpty())
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Could not load " + name, error);
-            });
+            addTrackEffect (trackId, types[chosen]);
         });
+}
+
+void MultitrackView::addTrackEffect (juce::uint32 trackId, const juce::PluginDescription& description)
+{
+    const auto name = description.name;
+
+    engine.addTrackPlugin (trackId, description, [this, trackId, name, safe = juce::Component::SafePointer<MultitrackView> (this)] (const juce::String& error)
+    {
+        if (error.isNotEmpty())
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Could not load " + name, error);
+            return;
+        }
+
+        if (safe == nullptr || onEditPlugin == nullptr)
+            return;
+
+        const auto& effects = engine.getTrackEffects();
+
+        if (auto* plugin = effects.getPlugin (trackId, effects.getNumSlots (trackId) - 1))
+            onEditPlugin (*plugin);
+    });
 }
 
 void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
