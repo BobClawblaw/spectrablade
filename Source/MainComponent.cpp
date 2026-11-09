@@ -1,4 +1,5 @@
 #include "MainComponent.h"
+#include "Platform.h"
 #include "Navigation.h"
 #include "Restoration.h"
 #include "CentreChannel.h"
@@ -229,14 +230,14 @@ static KeyShortcuts::KeySet auditionStyleKeys()
 
     KeyShortcuts::KeySet set;
     set.name = "Audition-Style Keys";
-    set.about = "The keys Adobe Audition's defaults give these commands, from Adobe's published list (a partial one) and, where it "
+    set.about = Platform::keys ("The keys Adobe Audition's defaults give these commands, from Adobe's published list (a partial one) and, where it "
                 "says nothing, keys two cheat sheets agree on. 1 switches between the file and the multitrack session; = and - zoom; "
                 "Option-Cmd-Left and Right go to markers; Option-comma and Option-period nudge; Shift-T converts the sample rate. "
                 "Space, Home, End, M, Shift-P, Cmd-K, Cmd-T and S already match, as do Cmd-Left and Right (going to clip and selection "
                 "edges) and Shift-R (repeating the last effect, its dialog opening again).\n\n"
                 "Not carried over: Cmd-R stays Apply Effects Rack; vertical zoom keeps SpectraBlade's keys (Option-Cmd-= and minus), "
                 "Audition's not having been checked; and, for want of a matching command, editing one channel (Up, Down), the spectral "
-                "display's scale and resolution, nudging clips between tracks, and Return to Start on Stop (Shift-X).";
+                "display's scale and resolution, nudging clips between tracks, and Return to Start on Stop (Shift-X).");
     set.keys = { { cmdPlayPause, juce::KeyPress (juce::KeyPress::spaceKey) },
                  { cmdGoToStart, juce::KeyPress (juce::KeyPress::homeKey) },
                  { cmdGoToEnd, juce::KeyPress (juce::KeyPress::endKey) },
@@ -467,7 +468,7 @@ private:
             list.getOptionsButton().setVisible (false);
             addAndMakeVisible (list);
 
-            scanButton.setTooltip ("Find new VST3 and Audio Unit plug-ins, and check each one loads and plays");
+            scanButton.setTooltip ("Find new " + Platform::pluginFormats() + " plug-ins, and check each one loads and plays");
             retryButton.setTooltip ("Check the plug-ins marked not working again");
             removeButton.setTooltip ("Remove the selected plug-ins from the list");
             scanButton.onClick = [this] { start (false); };
@@ -774,7 +775,7 @@ MainComponent::MainComponent()
     for (auto* b : { &multitrackButton, &openButton, &pluginsButton, &audioButton })
         addAndMakeVisible (b);
 
-    multitrackButton.setTooltip ("Switch between the file and the multitrack session (Cmd+4)");
+    multitrackButton.setTooltip (Platform::keys ("Switch between the file and the multitrack session (Cmd+4)"));
     Theme::follow (multitrackButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
     multitrackButton.onClick = [this] { setMultitrack (! multitrackMode); };
 
@@ -1016,8 +1017,13 @@ void MainComponent::startOpeningDevice()
     std::shared_ptr<const juce::XmlElement> saved (appProperties.getUserSettings()->getXmlValue (audioDeviceKey));
     const auto name = saved != nullptr ? saved->getStringAttribute ("audioOutputDeviceName") : juce::String();
     loading->begin ("device", name.isNotEmpty() ? "Opening " + name : juce::String ("Opening the audio device"),
+                   #if JUCE_WINDOWS
+                    "The audio device isn't answering. If other apps can't play sound either, the Windows Audio service has stopped: "
+                    "restarting the interface, or the service (Windows Audio, in Services), clears it. "
+                   #else
                     "The audio device isn't answering. If other apps can't play sound either, the Mac's audio service has stopped: "
                     "restarting the interface, or the service (sudo killall coreaudiod in Terminal), clears it. "
+                   #endif
                     "Continue to use SpectraBlade now; the device opens when it answers.");
 
     std::thread ([safe = juce::Component::SafePointer<MainComponent> (this), saved]
@@ -1702,9 +1708,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             const auto t = id == cmdBoxTool ? WaveformView::SpectralTool::box : id == cmdLassoTool ? WaveformView::SpectralTool::lasso
                                                                                                  : WaveformView::SpectralTool::brush;
             info.setInfo (id == cmdBoxTool ? "Box Selection" : id == cmdLassoTool ? "Lasso Selection" : "Brush Selection",
-                          id == cmdBoxTool ? "Drag to select time; Option-drag in a spectrogram selects a box of time and frequency"
-                          : id == cmdLassoTool ? "Drag in a spectrogram to draw round what to select; Shift adds to it, Option takes from it"
-                                               : "Drag in a spectrogram to paint over what to select; Shift adds to it, Option takes from it", "Edit", 0);
+                          Platform::keys (id == cmdBoxTool ? "Drag to select time; Option-drag in a spectrogram selects a box of time and frequency"
+                                          : id == cmdLassoTool ? "Drag in a spectrogram to draw round what to select; Shift adds to it, Option takes from it"
+                                                               : "Drag in a spectrogram to paint over what to select; Shift adds to it, Option takes from it"),
+                          "Edit", 0);
             info.addDefaultKeypress (id == cmdBoxTool ? 'e' : id == cmdLassoTool ? 'd' : 'p', 0);
             info.setTicked (waveform.getSpectralTool() == t);
             info.setActive (! multitrackMode);
@@ -2675,7 +2682,12 @@ bool MainComponent::perform (const InvocationInfo& info)
 
 juce::StringArray MainComponent::getMenuBarNames()
 {
+   #if JUCE_MAC
     return { "File", "Edit", "Effects", "View", "Multitrack", "Transport", "Markers", "Window" };
+   #else
+    // No application menu here: About goes in a Help menu, and Exit at the end of File.
+    return { "File", "Edit", "Effects", "View", "Multitrack", "Transport", "Markers", "Window", "Help" };
+   #endif
 }
 
 juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
@@ -2808,8 +2820,20 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             menu.addSubMenu ("Workspace", workspaceMenu);
             break;
         }
+       #if ! JUCE_MAC
+        case 8: add ({ cmdAbout }); break;
+       #endif
         default: break;
     }
+
+   #if ! JUCE_MAC
+    // Quitting is in the Mac's application menu; elsewhere it ends the File menu.
+    if (index == 0)
+    {
+        menu.addSeparator();
+        menu.addItem ("Exit", [] { juce::JUCEApplication::getInstance()->systemRequestedQuit(); });
+    }
+   #endif
 
     return menu;
 }
@@ -5381,7 +5405,7 @@ void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes
     box->addButton ("OK", 0, juce::KeyPress (juce::KeyPress::returnKey));
 
     if (firstWritten != juce::File())
-        box->addButton ("Show in Finder", 1);
+        box->addButton (Platform::showInFileManager(), 1);
 
     box->enterModalState (true, juce::ModalCallbackFunction::create ([text, firstWritten] (int result)
     {

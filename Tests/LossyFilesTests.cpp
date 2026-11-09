@@ -1,4 +1,5 @@
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/LossyFiles.h"
 #include "../Source/AudioEdits.h"
 #include "TestUtils.h"
@@ -98,7 +99,7 @@ void runLossyFilesTests()
     using namespace LossyFiles;
 
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
 
     juce::TemporaryFile folderTemp;
     const auto folder = folderTemp.getFile();
@@ -196,6 +197,14 @@ void runLossyFilesTests()
         const auto error = write (*snapshot, rate, file, c.settings);
         const auto noiseError = write (*noiseSnapshot, rate, noisy, c.settings);
         const auto d = decode (file, formats);
+
+        if (d.audio.getNumSamples() == 0)
+        {
+            check (false, "lossy files: " + juce::String (c.name) + " is written and reads back ("
+                              + (error.isNotEmpty() ? error : juce::String ("it couldn't be read")) + ")");
+            continue;
+        }
+
         const auto lag = delayOf (original, d.audio);
         const auto low = juce::jmin (snr (original, d.audio, 0, lag, rate), snr (original, d.audio, 1, lag, rate));
         const auto gain = gainOf (original, d.audio, lag);

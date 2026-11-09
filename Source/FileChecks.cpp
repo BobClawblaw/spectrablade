@@ -1,4 +1,5 @@
 #include "FileChecks.h"
+#include "AudioFileIO.h"
 
 struct FileChecks::Shared
 {
@@ -81,7 +82,7 @@ AudioFileIO::Loaded readIfThere (const juce::File& file)
         return {};
 
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     return AudioFileIO::load (file, formats);
 }
 

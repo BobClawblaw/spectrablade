@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
 #include "../Source/BuiltInEffects.h"
@@ -343,7 +344,7 @@ void runSidechainTests()
         auto dir = juce::File::createTempFile ("sidechain");
         dir.createDirectory();
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         auto noClips = s;
 
         for (auto& t : noClips.tracks)

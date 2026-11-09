@@ -1,4 +1,6 @@
 #include "SoundLibraryView.h"
+#include "AudioFileIO.h"
+#include "Platform.h"
 #include "Theme.h"
 #include "SoundCategories.h"
 #include "SoundMetadata.h"
@@ -15,7 +17,7 @@ class SoundLibraryView::Scanner final : private juce::Thread
 public:
     explicit Scanner (const juce::File& db) : juce::Thread ("Sound Library scan"), database (db)
     {
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
     }
 
     ~Scanner() override                     { stopThread (10000); }
@@ -235,7 +237,7 @@ private:
                 return;
 
             juce::PopupMenu menu;
-            menu.addItem ("Show in Finder", folder.exists(), false, [f = folder] { f.revealToUser(); });
+            menu.addItem (Platform::showInFileManager(), folder.exists(), false, [f = folder] { f.revealToUser(); });
             menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (owner).withMousePosition());
         }
 
@@ -1236,7 +1238,7 @@ void SoundLibraryView::showFoldersMenu()
     for (int i = 0; i < folders.size(); ++i)
     {
         juce::PopupMenu sub;
-        sub.addItem (1000 + i, "Show in Finder");
+        sub.addItem (1000 + i, Platform::showInFileManager());
         sub.addItem (2000 + i, "Remove from the Sound Library", ! scanner->busy());
         menu.addSubMenu (folders[i].getFullPathName(), sub);
     }

@@ -1,3 +1,13 @@
+// Before JUCE's headers: COM, for asking Windows' audio system from a thread of our own.
+#if defined (_WIN32)
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h>
+ #include <objbase.h>
+#endif
+
 #include "AudioEngine.h"
 #include "RackCopy.h"
 #include "Surround.h"
@@ -805,7 +815,7 @@ double AudioEngine::getOutputSampleRate() const
 //==============================================================================
 AudioEngine::AudioEngine()
 {
-    formatManager.registerBasicFormats();
+    AudioFileIO::registerFormats (formatManager);
     juce::addDefaultFormatsToManager (pluginFormatManager);
     pluginFormatManager.addFormat (BuiltInEffects::createFormat());
     trackEffects.prepare (session.getSampleRate());
@@ -881,9 +891,32 @@ const juce::XmlElement* AudioEngine::namingADevice (const juce::XmlElement* save
 
 juce::String AudioEngine::probeDevice (const juce::XmlElement* savedState)
 {
+   #if JUCE_WINDOWS
+    // WASAPI is COM, which each thread that uses it starts for itself. Declared first, so it ends
+    // after the device objects below are gone.
+    struct ComForThisThread
+    {
+        ComForThisThread() : started (SUCCEEDED (CoInitializeEx (nullptr, COINIT_MULTITHREADED))) {}
+        ~ComForThisThread() { if (started) CoUninitialize(); }
+        const bool started;
+    } com;
+   #endif
+
     std::unique_ptr<juce::AudioIODeviceType> type;
    #if JUCE_MAC
     type.reset (juce::AudioIODeviceType::createAudioIODeviceType_CoreAudio());
+   #elif JUCE_WINDOWS
+    // The type the saved setup used, or Windows Audio (shared mode), which the device manager opens first.
+    const auto typeName = savedState != nullptr ? savedState->getStringAttribute ("deviceType") : juce::String();
+
+    if (typeName == "DirectSound")
+        type.reset (juce::AudioIODeviceType::createAudioIODeviceType_DirectSound());
+    else if (typeName == "Windows Audio (Exclusive Mode)")
+        type.reset (juce::AudioIODeviceType::createAudioIODeviceType_WASAPI (juce::WASAPIDeviceMode::exclusive));
+    else if (typeName == "Windows Audio (Low Latency Mode)")
+        type.reset (juce::AudioIODeviceType::createAudioIODeviceType_WASAPI (juce::WASAPIDeviceMode::sharedLowLatency));
+    else if (typeName.isEmpty() || typeName == "Windows Audio")
+        type.reset (juce::AudioIODeviceType::createAudioIODeviceType_WASAPI (juce::WASAPIDeviceMode::shared));
    #endif
 
     if (type == nullptr)

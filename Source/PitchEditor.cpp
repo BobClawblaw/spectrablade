@@ -1,4 +1,5 @@
 #include "PitchEditor.h"
+#include "Platform.h"
 #include "Theme.h"
 
 namespace
@@ -118,7 +119,7 @@ void PitchEditor::analyse()
     lowNote = std::floor (lowest) - 4.0;
     highNote = std::ceil (highest) + 4.0;
     status.setText (juce::String ((int) notes.size()) + (notes.size() == 1 ? " note" : " notes")
-                        + ". Drag a note up or down (Option: in cents) or sideways in time; double-click to snap it, Cmd-click to split it, right-click to join.",
+                        + Platform::keys (". Drag a note up or down (Option: in cents) or sideways in time; double-click to snap it, Cmd-click to split it, right-click to join."),
                     juce::dontSendNotification);
     refreshButtons();
     repaint();

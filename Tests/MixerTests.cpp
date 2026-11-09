@@ -1809,7 +1809,7 @@ namespace
                 for (int ch = 0; ch < 2; ++ch)
                     b.setSample (ch, i, (float) (i % 100) / 200.0f);
             juce::AudioFormatManager formats;
-            formats.registerBasicFormats();
+            AudioFileIO::registerFormats (formats);
             AudioFileIO::save (*AudioEdits::fromBuffer (std::move (b)), 44100.0, wav.getFile(), 32, formats);
         }
         const auto real = BackgroundLoad::readIfThere (wav.getFile());
@@ -1877,10 +1877,12 @@ namespace
         SessionEdits::setClipMuted (s, quoted, true);
 
         const auto csv = ClipList::toCsv (s);
-        const juce::String expected ("Track,Name,Start (s),End (s),Length (s),File,Locked,Muted,Start (frames),Length (frames)\r\n"
+        // The paths as this system writes them (on Windows, "/takes" is on the current drive).
+        const auto takes = juce::File ("/takes/kick.wav").getParentDirectory().getFullPathName() + juce::File::getSeparatorString();
+        const auto expected = juce::String ("Track,Name,Start (s),End (s),Length (s),File,Locked,Muted,Start (frames),Length (frames)\r\n"
                                      "\"Drums, room\",snare,1.000000,1.125000,0.125000,/takes/snare.wav,,,48000,6000\r\n"
                                      "Bass,\"riff \"\"A\"\"\",1.000000,1.250000,0.250000,\"/takes/riff \"\"A\"\".wav\",yes,yes,48000,12000\r\n"
-                                     "\"Drums, room\",kick,2.000000,2.500000,0.500000,/takes/kick.wav,,,96000,24000\r\n");
+                                     "\"Drums, room\",kick,2.000000,2.500000,0.500000,/takes/kick.wav,,,96000,24000\r\n").replace ("/takes/", takes);
         check (csv == expected && ClipList::toCsv ({}).upToFirstOccurrenceOf ("\r\n", false, false).startsWith ("Track,Name"),
                "clip list as CSV: a header, clips in the list's order with seconds and frames, locked and muted, and fields quoted where needed"
                    + juce::String (csv == expected ? "" : "\n" + csv));

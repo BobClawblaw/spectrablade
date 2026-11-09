@@ -1,4 +1,5 @@
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/SessionMixer.h"
 #include "TestUtils.h"
 #include "DuckingTests.h"
@@ -185,7 +186,7 @@ namespace
         auto dir = juce::File::createTempFile ("ducking");
         dir.createDirectory();
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         auto noClips = session();
         SessionEdits::setDucking (noClips, noClips.tracks[0].id, { noClips.tracks[1].id, -18.0f, -30.0f, 25.0f, 800.0f });
 

@@ -327,7 +327,8 @@ juce::Array<juce::File> collect (const juce::Array<juce::File>& chosen, juce::Au
 
     const auto isAudio = [&extensions] (const juce::File& f)
     {
-        return f.existsAsFile() && ! f.isHidden() && extensions.contains (f.getFileExtension().trimCharactersAtStart (".").toLowerCase());
+        // Dot files count as hidden everywhere, as on the Mac: on Windows they're the Mac's "._" leftovers on shared drives.
+        return f.existsAsFile() && ! f.isHidden() && ! f.getFileName().startsWithChar ('.') && extensions.contains (f.getFileExtension().trimCharactersAtStart (".").toLowerCase());
     };
 
     juce::Array<juce::File> files;

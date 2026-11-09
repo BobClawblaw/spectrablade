@@ -2,6 +2,7 @@
 #include "Surround.h"
 #include "AudioEdits.h"
 #include "Ffmpeg.h"
+#include "GaplessMp3.h"
 
 namespace AudioFileIO
 {
@@ -199,6 +200,30 @@ juce::String saveRange (const AudioSnapshot& snapshot, double sampleRate, juce::
                         int bitDepth, juce::AudioFormatManager& formats, const Markers& markers, const FileInfo& info)
 {
     return save (*AudioEdits::crop (snapshot, start, end), sampleRate, target, bitDepth, formats, MarkerEdits::afterCrop (markers, start, end), info);
+}
+
+void registerFormats (juce::AudioFormatManager& formats)
+{
+   #if JUCE_MAC
+    formats.registerBasicFormats();   // Core Audio's MP3 reader leaves out the encoder's delay and padding itself
+   #else
+    // registerBasicFormats' list, with MP3 read gaplessly (a format can only be registered once).
+    formats.registerFormat (new juce::WavAudioFormat(), true);
+    formats.registerFormat (new juce::AiffAudioFormat(), false);
+   #if JUCE_USE_FLAC
+    formats.registerFormat (new juce::FlacAudioFormat(), false);
+   #endif
+   #if JUCE_USE_OGGVORBIS
+    formats.registerFormat (new juce::OggVorbisAudioFormat(), false);
+   #endif
+   #if JUCE_USE_OPUS
+    formats.registerFormat (new juce::OpusAudioFormat(), false);
+   #endif
+    formats.registerFormat (new GaplessMp3Format(), false);
+   #if JUCE_USE_WINDOWS_MEDIA_FORMAT
+    formats.registerFormat (new juce::WindowsMediaAudioFormat(), false);
+   #endif
+   #endif
 }
 
 juce::Array<juce::File> filesIn (const juce::String& commandLine)

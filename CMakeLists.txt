@@ -115,7 +115,8 @@ if(WIN32)
 
     add_library(SpectraBladeSqliteLib STATIC "${spectrablade_sqlite_src}/sqlite3.c")
     target_include_directories(SpectraBladeSqliteLib SYSTEM PUBLIC "${spectrablade_sqlite_src}")
-    target_compile_definitions(SpectraBladeSqliteLib PRIVATE SQLITE_THREADSAFE=1 SQLITE_OMIT_LOAD_EXTENSION)
+    # FTS5 for the Sound Library's word search, as the system SQLite on macOS has it.
+    target_compile_definitions(SpectraBladeSqliteLib PRIVATE SQLITE_THREADSAFE=1 SQLITE_ENABLE_FTS5 SQLITE_OMIT_LOAD_EXTENSION)
     if(MSVC)
         target_compile_options(SpectraBladeSqliteLib PRIVATE /w)
     endif()
@@ -159,6 +160,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Project.cpp
     Source/PictureMap.cpp
     Source/AudioFileIO.cpp
+    Source/GaplessMp3.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
@@ -393,6 +395,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Project.cpp
     Source/PictureMap.cpp
     Source/AudioFileIO.cpp
+    Source/GaplessMp3.cpp
     Source/OfflineRender.cpp
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp

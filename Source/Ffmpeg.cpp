@@ -51,12 +51,30 @@ namespace
 
 juce::File find()
 {
+   #if JUCE_WINDOWS
+    const auto env = [] (const char* name) { return juce::SystemStats::getEnvironmentVariable (name, {}); };
+    juce::StringArray folders;
+    folders.addTokens (env ("PATH"), ";", "\"");
+    folders.add (env ("LOCALAPPDATA") + "/Microsoft/WinGet/Links");
+    folders.add (env ("USERPROFILE") + "/scoop/shims");
+    folders.add (env ("ProgramData") + "/chocolatey/bin");
+    const juce::String program ("ffmpeg.exe");
+   #else
     juce::StringArray folders { "/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin" };
     folders.addTokens (juce::SystemStats::getEnvironmentVariable ("PATH", {}), ":", {});
+    const juce::String program ("ffmpeg");
+   #endif
 
-    for (const auto& folder : folders)
-        if (const auto f = juce::File (folder).getChildFile ("ffmpeg"); folder.startsWithChar ('/') && f.existsAsFile())
+    for (auto folder : folders)
+    {
+        folder = folder.trim().unquoted();
+
+        if (! juce::File::isAbsolutePath (folder))
+            continue;
+
+        if (const auto f = juce::File (folder).getChildFile (program); f.existsAsFile())
             return f;
+    }
 
     return {};
 }
@@ -64,7 +82,11 @@ juce::File find()
 const juce::StringArray& importExtensions()
 {
     static const juce::StringArray extensions { "opus", "wma", "aac", "ac3", "eac3", "wv", "ape", "tta", "mka", "mp2", "amr", "dts",
-                                                "mp4", "m4v", "m4b", "mov", "mkv", "webm", "avi" };
+                                                "mp4", "m4v", "m4b", "mov", "mkv", "webm", "avi",
+                                               #if ! JUCE_MAC
+                                                "aifc", "m4a", "caf",   // Core Audio reads these on the Mac
+                                               #endif
+                                              };
     return extensions;
 }
 
@@ -73,8 +95,17 @@ juce::String decode (const juce::File& ffmpeg, const juce::File& source, const j
     // The tags go into the WAV's INFO chunk. Ogg files (Opus among them) keep them on the audio stream
     // rather than on the file.
     const auto tagsFrom = source.hasFileExtension ("opus;ogg;oga;spx") ? "0:s:a:0" : "0";
-    return run (ffmpeg, { "-i", source.getFullPathName(), "-map", "0:a:0", "-map_metadata", tagsFrom, "-vn", "-c:a", "pcm_f32le", "-rf64", "auto",
-                          "-f", "wav", wav.getFullPathName() }, keepGoing);
+    juce::StringArray arguments { "-i", source.getFullPathName(), "-map", "0:a:0", "-map_metadata", tagsFrom, "-vn" };
+
+   #if ! JUCE_MAC
+    // AC-3 starts 256 frames late, which Core Audio leaves out on the Mac (keeping whole 1,536-frame
+    // blocks) and ffmpeg doesn't: the same here, so a file reads alike on every system.
+    if (source.hasFileExtension ("ac3;eac3"))
+        arguments.addArray ({ "-af", "atrim=start_sample=256,apad=pad_len=256" });
+   #endif
+
+    arguments.addArray ({ "-c:a", "pcm_f32le", "-rf64", "auto", "-f", "wav", wav.getFullPathName() });
+    return run (ffmpeg, arguments, keepGoing);
 }
 
 const std::vector<Target>& targets()
@@ -119,6 +150,13 @@ juce::String makePreview (const juce::File& ffmpeg, const juce::File& video, con
     juce::TemporaryFile temp (target);
     juce::String error;
 
+   #if JUCE_WINDOWS
+    // Windows Media Video, which DirectShow plays without anything installed (it can't play H.264 in MP4).
+    // A key frame every 12 frames, for following the playhead.
+    error = run (ffmpeg, { "-i", video.getFullPathName(), "-map", "0:v:0", "-an", "-sn", "-dn",
+                           "-vf", "scale='min(1280,iw)':-2", "-pix_fmt", "yuv420p", "-g", "12", "-c:v", "wmv2", "-b:v", "6M",
+                           "-f", "asf", temp.getFile().getFullPathName() }, keepGoing);
+   #else
     for (const auto* encoder : { "libx264", "h264_videotoolbox" })
     {
         juce::StringArray arguments { "-i", video.getFullPathName(), "-map", "0:v:0", "-an", "-sn", "-dn",
@@ -135,6 +173,7 @@ juce::String makePreview (const juce::File& ffmpeg, const juce::File& video, con
         if (error.isEmpty() || error == "Stopped.")
             break;
     }
+   #endif
 
     if (error.isNotEmpty())
         return error;

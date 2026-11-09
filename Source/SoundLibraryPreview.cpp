@@ -1,4 +1,5 @@
 #include "SoundLibraryPreview.h"
+#include "AudioFileIO.h"
 #include "Surround.h"
 #include "Theme.h"
 
@@ -6,7 +7,7 @@ using Player = SoundLibraryPreview::Player;
 
 Player::Player()
 {
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     readAhead.startThread (juce::Thread::Priority::normal);
 }
 
@@ -208,7 +209,7 @@ void Player::Source::getNextAudioBlock (const juce::AudioSourceChannelInfo& info
 juce::File SoundLibraryPreview::writePart (const juce::File& sound, juce::Range<juce::int64> part, const juce::File& folder)
 {
     juce::AudioFormatManager fm;
-    fm.registerBasicFormats();
+    AudioFileIO::registerFormats (fm);
     std::unique_ptr<juce::AudioFormatReader> reader (fm.createReaderFor (sound));
 
     if (reader == nullptr)
@@ -256,7 +257,7 @@ juce::File SoundLibraryPreview::writePart (const juce::File& sound, juce::Range<
 
 SoundLibraryPreview::SoundLibraryPreview (const juce::File& parts) : partsFolder (parts)
 {
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     thumbnail.addChangeListener (this);
 
     playButton.onClick = [this] { togglePlay(); };

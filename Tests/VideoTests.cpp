@@ -65,7 +65,7 @@ namespace
                "120000 to 216000 for its 2 s");
 
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         juce::TemporaryFile folderTemp;
         const auto folder = folderTemp.getFile();
         const auto moved = folder.getChildFile ("Moved");
@@ -270,7 +270,7 @@ void runVideoTests()
     }
 
     const auto ffmpeg = Ffmpeg::find();
-    const auto ffprobe = ffmpeg.getSiblingFile ("ffprobe");
+    const auto ffprobe = ffmpeg.getSiblingFile ("ffprobe" + ffmpeg.getFileExtension());   // ffprobe.exe on Windows
 
     if (ffmpeg == juce::File() || ! ffprobe.existsAsFile())
     {
@@ -279,7 +279,7 @@ void runVideoTests()
     }
 
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     juce::TemporaryFile folderTemp;
     const auto folder = folderTemp.getFile();
     folder.createDirectory();
@@ -467,10 +467,25 @@ void runVideoTests()
     {
         Video::Panel panel;
         panel.setSize (400, 320);
+
+       #if JUCE_WINDOWS
+        // DirectShow draws into a window of its own inside the panel's, so the panel has to be on the
+        // screen (in the app it is in the main window).
+        panel.setVisible (true);
+        panel.addToDesktop (juce::ComponentPeer::windowIsTemporary);
+       #endif
         auto audio = 1.0;
         auto playing = false;
         panel.readPlayhead = [&] { return std::optional<Video::Panel::Playhead> ({ audio, playing, false }); };
 
+        // DirectShow, which plays video on Windows, has no MP4 or QuickTime reader: only AVI is shown as it is there.
+       #if JUCE_WINDOWS
+        const juce::StringArray previewed { "mp4", "m4v", "mov", "mkv", "webm" };
+        const juce::String expectedShown ("mp4 (preview),m4v (preview),mov (preview),mkv (preview),webm (preview),avi");
+       #else
+        const juce::StringArray previewed { "mkv", "webm" };
+        const juce::String expectedShown ("mp4,m4v,mov,mkv (preview),webm (preview),avi");
+       #endif
         juce::StringArray shown, refused;
         auto refusalSaid = true, previewsOk = true;
         juce::String previewSeen;   // a preview that wasn't right: its length and size
@@ -505,7 +520,7 @@ void runVideoTests()
         // Shown again: the preview kept is used, not made again.
         juce::Array<juce::int64> timesAgain;
 
-        for (auto e : { "mkv", "webm" })
+        for (auto e : previewed)
             if (made.count (e) > 0)
             {
                 panel.setFile ({});
@@ -521,7 +536,11 @@ void runVideoTests()
         auto* p = panel.getPlayer();
         TestUtils::runUntil ([p] { return p == nullptr || (std::abs (p->getVideoDuration() - 2.0) < 0.05 && ! p->getVideoNativeSize().isEmpty()); }, 5000);
         const auto opened = p != nullptr && panel.isReady() && std::abs (p->getVideoDuration() - 2.0) < 0.05
-                            && p->getVideoNativeSize() == juce::Rectangle<int> (320, 240) && p->getAudioVolume() == 0.0f;
+                            && p->getVideoNativeSize() == juce::Rectangle<int> (320, 240)
+                            && (p->getAudioVolume() == 0.0f || panel.isShowingPreview());   // a preview has no sound to turn down
+        const auto openedSeen = p == nullptr ? juce::String ("opened (no player)")
+                                             : "opened (" + juce::String (p->getVideoDuration(), 3) + " s, " + p->getVideoNativeSize().toString()
+                                                   + ", volume " + juce::String (p->getAudioVolume(), 2) + ")";
 
         audio = 1.24;
         panel.update();
@@ -555,9 +574,9 @@ void runVideoTests()
         // Named when they fail, so a failure on a busy machine says which part.
         juce::StringArray failed;
 
-        for (auto [ok, part] : std::initializer_list<std::pair<bool, juce::String>> { { shown.joinIntoString (",") == "mp4,m4v,mov,mkv (preview),webm (preview),avi" && refused.isEmpty(), "shown" },
+        for (auto [ok, part] : std::initializer_list<std::pair<bool, juce::String>> { { shown.joinIntoString (",") == expectedShown && refused.isEmpty(), "shown" },
                                  { refusalSaid, "refusal" }, { previewsOk, previewSeen.isEmpty() ? juce::String ("previews") : "previews (" + previewSeen.trimEnd() + ")" },
-                                 { previewTimes == timesAgain && previewTimes.size() == 2, "previews kept" }, { opened, "opened" },
+                                 { previewTimes == timesAgain && previewTimes.size() == previewed.size(), "previews kept" }, { opened, openedSeen },
                                  { std::abs (stoppedAt - 1.24) < 0.001, "stopped" }, { wasPlaying, "playing" },
                                  { drift <= Video::driftAllowed, "drift" }, { stoppedAgain, "stopped again" }, { none, "none" } })
             if (! ok)

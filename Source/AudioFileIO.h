@@ -6,7 +6,16 @@ namespace AudioFileIO
 {
     /** The audio file types Finder offers to open with the app: keep in step with DOCUMENT_EXTENSIONS
         in CMakeLists.txt, which also names sessions (.sbsession). */
+   #if JUCE_MAC
     inline const juce::StringArray openedFromFinder { "wav", "aif", "aiff", "aifc", "flac", "ogg", "mp3", "m4a", "caf" };
+   #else
+    // AIFC, M4A and CAF are read by Core Audio on the Mac; elsewhere they open through ffmpeg (Ffmpeg::importExtensions).
+    inline const juce::StringArray openedFromFinder { "wav", "aif", "aiff", "flac", "ogg", "mp3" };
+   #endif
+
+    /** Registers the audio formats the app reads and writes: JUCE's, with MP3 read gaplessly where
+        Core Audio doesn't (GaplessMp3Format). Use this rather than registerBasicFormats. */
+    void registerFormats (juce::AudioFormatManager&);
 
     /** The files in a command line or an open-files request: each token, quoted or not, naming an
         existing file by its full path. Anything else (options, missing files) is left out. */

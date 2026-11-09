@@ -5,6 +5,7 @@
 #include "../Source/PitchCorrection.h"
 #include "../Source/AudioEdits.h"
 #include "../Source/PitchEditor.h"
+#include "../Source/Platform.h"
 #include "../Source/Session.h"
 #include "TestUtils.h"
 #include "PitchCorrectionTests.h"
@@ -517,7 +518,7 @@ namespace
                             && juce::exactlyEqual (editor.getNotes()[1].pitch, b3.pitch);
         const auto offNotes = editor.menuAt ({ 5.0f, 5.0f }).getNumItems() == 0;
 
-        check (afterSplit == 5 && halves > 0 && offered && joined && offNotes && editor.getStatus().contains ("Cmd-click to split"),
+        check (afterSplit == 5 && halves > 0 && offered && joined && offNotes && editor.getStatus().contains (Platform::keys ("Cmd-click to split")),
                "pitch editor, splitting and joining: Cmd-clicking a note splits it where it is clicked (4 notes become 5); right-clicking "
                "a half offers Split Here and Join with Previous Note, which makes them one again; off the notes, no menu");
     }
