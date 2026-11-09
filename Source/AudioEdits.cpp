@@ -949,6 +949,75 @@ juce::Range<juce::int64> resizeSelection (juce::Range<juce::int64> range, juce::
     return range.withLength (length);
 }
 
+juce::Range<juce::int64> nudgeSelection (juce::Range<juce::int64> r, juce::int64 total, bool start, bool later, juce::int64 step)
+{
+    if (r.isEmpty() || step <= 0)
+        return r;
+
+    const auto by = later ? step : -step;
+
+    if (start)
+        return { juce::jlimit ((juce::int64) 0, r.getEnd() - 1, r.getStart() + by), r.getEnd() };
+
+    return { r.getStart(), juce::jlimit (r.getStart() + 1, total, r.getEnd() + by) };
+}
+
+juce::int64 zeroCrossingNear (Snapshot s, juce::int64 frame, juce::int64 within)
+{
+    if (s == nullptr)
+        return frame;
+
+    SessionClip whole;
+    whole.audio = std::move (s);
+    whole.length = whole.audio->getNumFrames();
+    return SessionEdits::zeroCrossingNear (whole, frame, within);
+}
+
+juce::int64 zeroCrossingFrom (Snapshot s, juce::int64 frame, bool later, juce::int64 within)
+{
+    if (s == nullptr || within <= 0)
+        return frame;
+
+    // Frames whose sample and the one before it exist, from frame on the way asked.
+    const auto total = s->getNumFrames();
+    const auto first = juce::jmax ((juce::int64) 1, later ? frame : frame - within);
+    const auto last = juce::jmin (total - 1, later ? frame + within : frame);
+
+    if (last < first)
+        return frame;
+
+    const auto count = (int) (last - first + 2);
+    juce::AudioBuffer<float> b (s->getNumChannels(), count);
+    s->read (b, 0, first - 1, count);
+    std::vector<float> sum ((size_t) count, 0.0f);
+
+    for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        for (int i = 0; i < count; ++i)
+            sum[(size_t) i] += b.getSample (ch, i);
+
+    // Index i holds frame first - 1 + i; a crossing is a zero, or a change of sign from the frame before.
+    const auto crossing = [&sum] (int i)
+    {
+        const auto before = sum[(size_t) i - 1], at = sum[(size_t) i];
+        return juce::exactlyEqual (at, 0.0f) || (before < 0.0f) != (at < 0.0f);
+    };
+
+    if (later)
+    {
+        for (int i = 1; i < count; ++i)
+            if (crossing (i))
+                return first + i - 1;
+    }
+    else
+    {
+        for (int i = count - 1; i >= 1; --i)
+            if (crossing (i))
+                return first + i - 1;
+    }
+
+    return frame;
+}
+
 juce::Range<juce::int64> toZeroCrossings (Snapshot s, juce::Range<juce::int64> range, juce::int64 within)
 {
     if (s == nullptr || range.isEmpty())

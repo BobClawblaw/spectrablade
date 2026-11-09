@@ -300,6 +300,17 @@ namespace
         check (AudioEdits::toZeroCrossings (squareSnap, { 110, 390 }, 20) == R (100, 400) && AudioEdits::toZeroCrossings (squareSnap, { 120, 425 }, 20) == R (100, 425)
                    && AudioEdits::toZeroCrossings (squareSnap, { 5, 5 }, 20) == R (5, 5),
                "selection to zero crossings: each end to the nearest crossing in reach, one with none in reach left; an empty one stays");
+        check (AudioEdits::nudgeSelection ({ 100, 300 }, 1000, true, false, 10) == R (90, 300) && AudioEdits::nudgeSelection ({ 100, 300 }, 1000, true, true, 10) == R (110, 300)
+                   && AudioEdits::nudgeSelection ({ 100, 300 }, 1000, false, false, 10) == R (100, 290) && AudioEdits::nudgeSelection ({ 100, 300 }, 1000, false, true, 10) == R (100, 310)
+                   && AudioEdits::nudgeSelection ({ 5, 300 }, 1000, true, false, 10) == R (0, 300) && AudioEdits::nudgeSelection ({ 100, 995 }, 1000, false, true, 10) == R (100, 1000)
+                   && AudioEdits::nudgeSelection ({ 100, 105 }, 1000, true, true, 10) == R (104, 105) && AudioEdits::nudgeSelection ({ 100, 105 }, 1000, false, false, 10) == R (100, 101)
+                   && AudioEdits::nudgeSelection ({ 5, 5 }, 1000, true, true, 10) == R (5, 5),
+               "nudge selection: either end by the step, stopping at the file's ends and a frame short of the other end; an empty one stays");
+        check (AudioEdits::zeroCrossingFrom (squareSnap, 110, true, 60) == 150 && AudioEdits::zeroCrossingFrom (squareSnap, 110, false, 60) == 100
+                   && AudioEdits::zeroCrossingFrom (squareSnap, 150, true, 60) == 150 && AudioEdits::zeroCrossingFrom (squareSnap, 110, true, 20) == 110
+                   && AudioEdits::zeroCrossingFrom (squareSnap, 999, true, 60) == 999
+                   && AudioEdits::zeroCrossingNear (squareSnap, 110, 20) == 100 && AudioEdits::zeroCrossingNear (squareSnap, 130, 10) == 130,
+               "zero crossing from a frame: the first one on the way asked, the frame itself when it is one or none is in reach, none past the end; the nearest one in reach");
         auto snapped = Markers { { 110, 0, "A" }, { 425, 0, "B" }, { 210, 180, "R" }, { 150, 0, "On" }, { 2000, 0, "Past" } };
         const auto snappedCount = AudioEdits::markersToZeroCrossings (squareSnap, snapped, 20);
         juce::StringArray snappedText;

@@ -177,6 +177,20 @@ namespace AudioEdits
         from the same start; the same range when it is empty. */
     juce::Range<juce::int64> resizeSelection (juce::Range<juce::int64>, juce::int64 total, bool longer);
 
+    /** A selection with one end moved: its start (or its end) later or earlier by `step` frames,
+        kept inside [0, total] and a frame short of its other end at the least; the same range
+        when it is empty. */
+    juce::Range<juce::int64> nudgeSelection (juce::Range<juce::int64>, juce::int64 total, bool start, bool later, juce::int64 step);
+
+    /** The nearest zero crossing of the channels' sum to frame at most `within` frames away, or
+        frame itself when there is none: where an end of a selection made with the mouse lands
+        with Select at Zero Crossings on. */
+    juce::int64 zeroCrossingNear (Snapshot, juce::int64 frame, juce::int64 within);
+
+    /** The first zero crossing at frame or after it (later) or at it or before it, at most `within`
+        frames away, or frame itself when there is none: where a nudged end lands. */
+    juce::int64 zeroCrossingFrom (Snapshot, juce::int64 frame, bool later, juce::int64 within);
+
     /** The range with each end moved to the nearest zero crossing of the channels' sum at most
         `within` frames away (as a session's Cut at Zero Crossings finds them); an end with none
         nearby stays, and the range is kept from turning inside out. */

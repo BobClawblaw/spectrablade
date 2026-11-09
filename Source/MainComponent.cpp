@@ -50,6 +50,7 @@ namespace
     constexpr const char* snappingKey     = "snapping";
     constexpr const char* crossfadingKey  = "crossfading";
     constexpr const char* zeroCrossingsKey = "zeroCrossings";
+    constexpr const char* selectZeroCrossingsKey = "selectZeroCrossings";
     constexpr const char* prerollKey      = "preroll";
     constexpr const char* postrollKey     = "postroll";
     constexpr const char* laneHeightKey   = "laneHeight";
@@ -145,6 +146,7 @@ namespace
         cmdShowVideo, cmdAttachVideo, cmdSaveIntoVideo, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory,
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
+        cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -154,7 +156,7 @@ namespace
         return (id >= cmdCut && id <= cmdApplyRack) || id == cmdZoomSelection
             || (id >= cmdAddMarker && id <= cmdConvertRate) || (id >= cmdSpectralAttenuate && id <= cmdClickRepair)
             || (id >= cmdRemoveDc && id <= cmdSaveRegions) || (id >= cmdFindClipping && id <= cmdShortenPauses)
-            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdCodecPreview)
+            || (id >= cmdStepSelectionLater && id <= cmdSavePieces) || id == cmdMarkersToZero || (id >= cmdGainRamp && id <= cmdGraphicEq31) || id == cmdReverseRegions || id == cmdMultiband || id == cmdDeEsser || id == cmdDynamicEq || id == cmdMultibandWidth || id == cmdExciter || id == cmdMaximizer || id == cmdTransientShaper || (id >= cmdCaptureMatchReference && id <= cmdMatchEq) || id == cmdDither || id == cmdDialogueIsolation || id == cmdAdaptiveDenoise || (id >= cmdMouthDeClick && id <= cmdCodecPreview) || (id >= cmdNudgeStartEarlier && id <= cmdSelectZeroCrossings)
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
@@ -860,6 +862,11 @@ MainComponent::MainComponent()
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
     multitrack.setCrossfading (settings->getBoolValue (crossfadingKey, true));
     multitrack.setFindingZeroCrossings (settings->getBoolValue (zeroCrossingsKey, false));
+    selectZeroCrossings = settings->getBoolValue (selectZeroCrossingsKey, false);
+    waveform.snapSelectionFrame = [this] (juce::int64 frame)
+    {
+        return selectZeroCrossings ? AudioEdits::zeroCrossingNear (engine.document.getSnapshot(), frame, zeroCrossingReach()) : frame;
+    };
     loopPlayback = settings->getBoolValue (loopPlaybackKey, false);
     editorPanel->setTabsWanted (settings->getBoolValue (fileTabsKey, false));
     multitrack.setLaneHeight (settings->getIntValue (laneHeightKey, MultitrackView::trackHeight));
@@ -1531,6 +1538,20 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (! waveform.getSelection().isEmpty()); break;
         case cmdSelectionToZero: info.setInfo ("Selection to Zero Crossings", "Move both ends of the selection to the nearest zero crossings, up to 5 ms away", "Edit", 0);
                             info.setActive (! waveform.getSelection().isEmpty()); break;
+        case cmdNudgeStartEarlier: case cmdNudgeStartLater: case cmdNudgeEndEarlier: case cmdNudgeEndLater:
+        {
+            const auto start = id == cmdNudgeStartEarlier || id == cmdNudgeStartLater;
+            const auto later = id == cmdNudgeStartLater || id == cmdNudgeEndLater;
+            info.setInfo (juce::String ("Nudge Selection ") + (start ? "Start" : "End") + (later ? " Later" : " Earlier"),
+                          juce::String ("Move the selection's ") + (start ? "start" : "end") + (later ? " later" : " earlier")
+                              + " by a pixel's worth of time at this zoom (on to the next zero crossing, with Select at Zero Crossings on)", "Edit", 0);
+            // Shift and an arrow grow the selection that way; with Command too, they shrink it from that side.
+            info.addDefaultKeypress (later ? juce::KeyPress::rightKey : juce::KeyPress::leftKey, start == later ? cmd | shift : shift);
+            info.setActive (! waveform.getSelection().isEmpty());
+            break;
+        }
+        case cmdSelectZeroCrossings: info.setInfo ("Select at Zero Crossings", "Land the ends of a selection made with the mouse, and a nudged end, on the nearest zero crossing, up to 5 ms away", "Edit", 0);
+                            info.setTicked (selectZeroCrossings); break;
         case cmdDoubleSelection: case cmdHalveSelection:
             info.setInfo (id == cmdDoubleSelection ? "Double Selection" : "Halve Selection",
                           id == cmdDoubleSelection ? "Make the selection twice as long, from its start" : "Make the selection half as long, from its start", "Edit", 0);
@@ -2249,8 +2270,16 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdCrossfadeLoop: showCrossfadeLoop(); break;
         case cmdRepeatSelection: showRepeatSelection(); break;
         case cmdSelectionToZero:
-            waveform.setSelection (AudioEdits::toZeroCrossings (engine.document.getSnapshot(), waveform.getSelection(),
-                                                                (juce::int64) std::llround (MultitrackView::zeroCrossingReach * engine.document.getSampleRate())));
+            waveform.setSelection (AudioEdits::toZeroCrossings (engine.document.getSnapshot(), waveform.getSelection(), zeroCrossingReach()));
+            break;
+        case cmdNudgeStartEarlier: case cmdNudgeStartLater: case cmdNudgeEndEarlier: case cmdNudgeEndLater:
+            nudgeSelection (info.commandID == cmdNudgeStartEarlier || info.commandID == cmdNudgeStartLater,
+                            info.commandID == cmdNudgeStartLater || info.commandID == cmdNudgeEndLater);
+            break;
+        case cmdSelectZeroCrossings:
+            selectZeroCrossings = ! selectZeroCrossings;
+            appProperties.getUserSettings()->setValue (selectZeroCrossingsKey, selectZeroCrossings);
+            commands.commandStatusChanged();
             break;
         case cmdDoubleSelection: case cmdHalveSelection:
             waveform.setSelection (AudioEdits::resizeSelection (waveform.getSelection(), engine.document.getNumFrames(), info.commandID == cmdDoubleSelection));
@@ -2631,7 +2660,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
-        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdSelectionToZero, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
+        case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectionToZero, cmdSelectZeroCrossings, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, 0, cmdConvertRate }); break;
         case 2:
         {
             // Grouped by what they do, so the menu stays short.
@@ -10665,6 +10694,33 @@ void MainComponent::stopPlayingInside()
 juce::Range<juce::int64> MainComponent::playRange() const
 {
     return multitrackMode ? multitrack.getTimeSelection() : waveform.getSelection();
+}
+
+juce::int64 MainComponent::zeroCrossingReach() const
+{
+    return (juce::int64) std::llround (MultitrackView::zeroCrossingReach * engine.document.getSampleRate());
+}
+
+void MainComponent::nudgeSelection (bool start, bool later)
+{
+    const auto sel = waveform.getSelection();
+
+    if (multitrackMode || sel.isEmpty())
+        return;
+
+    // A pixel's worth of time at this zoom, a frame at the least.
+    const auto step = juce::jmax ((juce::int64) 1, (juce::int64) std::llround (waveform.getVisibleFrames().getLength() / juce::jmax (1, waveform.getWidth())));
+    auto r = AudioEdits::nudgeSelection (sel, engine.document.getNumFrames(), start, later, step);
+
+    if (selectZeroCrossings)
+    {
+        // On to the next crossing the way it moved, stopping a frame short of the other end.
+        const auto moved = AudioEdits::zeroCrossingFrom (engine.document.getSnapshot(), start ? r.getStart() : r.getEnd(), later, zeroCrossingReach());
+        r = start ? juce::Range<juce::int64> (juce::jmin (moved, r.getEnd() - 1), r.getEnd())
+                  : juce::Range<juce::int64> (r.getStart(), juce::jmax (moved, r.getStart() + 1));
+    }
+
+    waveform.setSelection (r);
 }
 
 void MainComponent::updatePlaybackLoop()

@@ -889,7 +889,7 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
             {
                 bandLane = ch;
                 bandAnchor = Spectrogram::yToFrequency (e.position.y - (float) spectrum.getY(), engine.document.getSampleRate(), spectrum.getHeight());
-                dragAnchor = xToFrame (e.position.x);
+                dragAnchor = snapped (xToFrame (e.position.x));
                 band = {};
                 setCursor (dragAnchor);
                 return;
@@ -924,7 +924,7 @@ void WaveformView::mouseDown (const juce::MouseEvent& e)
 
     shape = {};
 
-    const auto frame = xToFrame (e.position.x);
+    const auto frame = snapped (xToFrame (e.position.x));
 
     if (e.mods.isShiftDown())
     {
@@ -1002,7 +1002,7 @@ void WaveformView::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
-    const auto frame = xToFrame (e.position.x);
+    const auto frame = snapped (xToFrame (e.position.x));
 
     if (bandLane >= 0)
     {

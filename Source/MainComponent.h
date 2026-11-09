@@ -599,6 +599,14 @@ private:
     juce::uint32 insideVersion = 0;             // the document's version it was made from
     bool insidePending = false;                 // being processed: plays once it is done
 
+    /** Nudging the selection: its start or its end, later or earlier, by a pixel's worth of time at
+        this zoom (a frame at the least), and on to the next zero crossing that way with Select at
+        Zero Crossings on, which also lands the ends of a selection made with the mouse on the
+        nearest crossing (waveform.snapSelectionFrame). */
+    void nudgeSelection (bool start, bool later);
+    juce::int64 zeroCrossingReach() const;      // 5 ms, in the file's frames
+    bool selectZeroCrossings = false;           // the option, kept in the settings
+
     /** The selection (file) or time range (session) that plays when Play is pressed. */
     juce::Range<juce::int64> playRange() const;
 

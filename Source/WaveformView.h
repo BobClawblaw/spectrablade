@@ -27,6 +27,11 @@ public:
     std::function<void()> onSelectionChanged;
     std::function<void()> onContextMenu;   // a right-click on the audio; the selection stays as it was
 
+    /** Where an end of the selection put by the mouse lands (a click, the two ends of a drag, a
+        Shift-click's): the nearest zero crossing, say. Not for the drawings. nullptr: where the
+        mouse is. */
+    std::function<juce::int64 (juce::int64)> snapSelectionFrame;
+
     enum class Display { waveform, spectrogram, both };
     void setDisplay (Display);
     Display getDisplay() const                          { return display; }
@@ -143,6 +148,7 @@ private:
     void showMarkerMenu (int index);
     double frameToX (juce::int64 frame) const;
     juce::int64 xToFrame (float x) const;
+    juce::int64 snapped (juce::int64 frame) const    { return snapSelectionFrame != nullptr ? snapSelectionFrame (frame) : frame; }
     void setView (double startFrame, double framesPerPixel);
     void zoomAround (float x, double factor);
     void invalidateWaveform();

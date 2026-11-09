@@ -332,6 +332,39 @@ namespace
                "spectral tools: the brush is 3 to 60 pixels; with the box tool a plain drag in a spectrogram selects time, as before");
     }
 
+    void testSnap()
+    {
+        // A 100-frame square wave crosses zero at every 50th frame: with the view asked to snap,
+        // a selection dragged in the waveform lands both ends on crossings near where the mouse was.
+        AudioEngine engine;
+        juce::AudioBuffer<float> square (2, (int) (2 * rate));
+
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < square.getNumSamples(); ++i)
+                square.setSample (ch, i, (i / 50) % 2 == 0 ? 0.5f : -0.5f);
+
+        engine.document.reset (AudioEdits::fromBuffer (std::move (square)), rate, {}, 24);
+        WaveformView view (engine);
+        view.setBounds (0, 0, 1000, 400);
+        view.setDisplay (WaveformView::Display::waveform);
+        view.zoomToFit();
+        const auto area = view.getWaveArea().toFloat();
+        const auto y = area.getCentreY();
+        const auto frameAt = [&view, &area] (float x) { return view.getVisibleFrames().getStart() + (double) (x - area.getX()) / area.getWidth() * view.getVisibleFrames().getLength(); };
+
+        drag (view, { { 101.0f, y }, { 503.0f, y } });
+        const auto plain = view.getSelection();
+        view.snapSelectionFrame = [&engine] (juce::int64 frame) { return AudioEdits::zeroCrossingNear (engine.document.getSnapshot(), frame, 60); };
+        drag (view, { { 101.0f, y }, { 503.0f, y } });
+        const auto snapped = view.getSelection();
+        view.snapSelectionFrame = nullptr;
+
+        check (! plain.isEmpty() && snapped.getStart() % 50 == 0 && snapped.getEnd() % 50 == 0
+                   && std::abs ((double) snapped.getStart() - frameAt (101.0f)) < 200.0 && std::abs ((double) snapped.getEnd() - frameAt (503.0f)) < 200.0
+                   && std::abs (snapped.getStart() - plain.getStart()) <= 60 && std::abs (snapped.getEnd() - plain.getEnd()) <= 60,
+               "snapping: a selection dragged with the view asked to snap lands both ends on zero crossings (" + juce::String (snapped.getStart()) + " and "
+                   + juce::String (snapped.getEnd()) + ", from " + juce::String (plain.getStart()) + " and " + juce::String (plain.getEnd()) + " without)");
+    }
 }
 
 void runSpectralShapeTests()
@@ -341,4 +374,5 @@ void runSpectralShapeTests()
     testHeal();
     testHealThroughTone();
     testTools();
+    testSnap();
 }

@@ -123,6 +123,7 @@ What they check:
 - Step selection: by its own length, stopping at the ends.
 - Double and halve selection: from its start, to the end or down to one frame.
 - Selection to zero crossings: each end to the nearest crossing in reach, others left.
+- Nudge selection: either end by the step, stopping at the file's ends and a frame short of the other end; the first zero crossing from a frame on the way asked, and the nearest in reach.
 - Crossfade loop: the end blended into the audio before the start, bad lengths refused.
 - Repeat selection: copies right after the range, bit for bit, empty requests refused.
 - Paste to fill: the clipboard repeated over the range, the last copy cut short.
@@ -254,7 +255,7 @@ What they check:
 - Remove Hum: the hum and its harmonics taken out while a tone beside them is kept, from the first frame, on a selection only, at 50 and 60 Hz, and the limits.
 - Repair Clipping: a clipped sine rebuilt close to the true one with the rest left bit for bit, the peak kept, clipping found at any level, unclipped sines left, long flat stretches counted.
 - Generators: each wave's level and fundamental, the sawtooth's aliasing, a sweep's frequency over time, each noise's level, slope, channel independence and peaks, and putting generated audio in.
-- Spectral drawings: lasso and brush geometry, removing and lowering inside a drawing with the rest left bit for bit, keeping only what is inside it (what plays with a drawing selected), healing a burst, a click and noise over a tone, healing time, and drawing with the tools in the view.
+- Spectral drawings: lasso and brush geometry, removing and lowering inside a drawing with the rest left bit for bit, keeping only what is inside it (what plays with a drawing selected), healing a burst, a click and noise over a tone, healing time, drawing with the tools in the view, and a selection dragged with the view asked to snap landing on zero crossings.
 - Track outputs: a track played into a bus, against sums made by hand, with mute, solo and plug-in latency; the edits, deleting the bus, freezing, session files and templates.
 - Bus into bus: a bus played into another against sums made by hand, in either list order, with mute, solo and plug-in latency along the chain; loops of two and three buses refused; deleting, session files and bus templates.
 - 5.1 surround files: channel names, the fold-down against the arithmetic (and through Make Stereo, Mix to Mono, a sequence step and a batch), the WAV speaker mask, FLAC, saving channels apart and putting them back, the 5.1 file order, the player folded down or to separate outputs in long blocks, and the outputs the engine connects on the interface.
