@@ -4,7 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 328: Twenty-five commands back in the menus**
+- Every command added since the Sound Library window (milestone 280), from the Dynamic EQ (milestone 297) on, was missing from the menus and from the Keyboard Shortcuts window, in 0.14.0 and 0.14.1 too: the loop that registers the commands stopped at the Sound Library's, and a command the manager does not know is left out of a menu without a word. Back are Dynamic EQ, Multiband Stereo Width, Exciter, Maximizer, Transient Shaper, Capture Match Reference (from the selection and from a file), Match EQ, the Tonal Balance panel, Dither, Dialogue Isolation, Adaptive Noise Reduction, Mouth De-click, De-crackle, De-plosive, Breath Control, Wind, Rustle and Bleed, Wow and Flutter, Spectral Recovery, Rebalance, Capture Ambience, Ambience Match, Dialogue Contour, Azimuth and Codec Preview. The loop now runs to a sentinel at the end of the command list, so a command added after it cannot be missed again.
+- Measured by the tests: none cover the menus (the main window is not in the test build); every command id was checked by script to have a description. The whole suite passed (1407 checks); the app launched and quit cleanly.
+- Not tried by hand: the menus themselves in the running app.
+
 
 ## Released
 
