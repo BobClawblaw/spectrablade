@@ -259,6 +259,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/MarkerTests.cpp
     Tests/ConverterTests.cpp
     Tests/SpectralTests.cpp
+    Tests/CommandAuditTests.cpp
     Tests/LoudnessTests.cpp
     Tests/SoundLibraryTests.cpp
     Tests/EqTests.cpp
@@ -461,6 +462,7 @@ get_target_property(spectrablade_defs SpectraBlade COMPILE_DEFINITIONS)
 target_compile_definitions(SpectraBladeTests PRIVATE ${spectrablade_defs} JUCE_MODAL_LOOPS_PERMITTED=1)
 add_dependencies(SpectraBladeTests SpectraBlade)
 target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_APP_EXECUTABLE="$<TARGET_FILE:SpectraBlade>")
+target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 target_link_libraries(SpectraBladeTests PRIVATE
     SpectraBladeArt
     SpectraBladeLame

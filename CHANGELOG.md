@@ -4,7 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 331: The command table audited by the tests**
+- Twenty-five commands went missing from the menus for two releases (milestone 328) because nothing checked the menus: the main window is not in the test build, and the look passes rendered panels, not menus. Now `Scripts/check_commands.py` reads the command table out of `Source/MainComponent.cpp` and the suite runs it: every command in the enum (up to the sentinel the registration loop runs to) must have a `case` in describeCommand (a name and a description) and one in perform, must be reachable from a menu (the menu bar, the app menu or another addCommandItem; a command that needs no menu item is listed in the script with the reason, and none is yet), and no two commands may claim the same default key (JUCE's key map gives a key to one command only, so a clash makes a command lose its key silently; a key written as `a ? b : c` counts both ways). The script found one thing: Stop was in no menu (it was only the transport bar's button), and it is now in the Transport menu after Play/Pause. The suite needs `python3`, which comes with the command-line tools it already needs.
+- Measured by the tests: 298 commands, each described, performed and in a menu; 78 default keys, no two commands on one. Faults injected by hand into a copy of the source were each found: a command renamed out of its two cases, a command left out of the Edit menu, and a Command-O given to Stop as well as Open. The whole suite passed (1414 checks); the app launched and quit cleanly.
+- Not tried by hand: the Transport menu's Stop in the running app.
+
 
 ## Released
 

@@ -7,6 +7,7 @@ SpectraBlade's checks are one console program, built with the app, that runs aga
 ```
 
 What they check:
+- The command table, read from the main window's source by `Scripts/check_commands.py` (the window is not in the test build; the check needs `python3`): every command described, performed and in a menu, and no default key claimed by two commands.
 - Editing and undo, bit for bit: cut and paste, crops across many segments, and peak tables against a brute-force scan.
 - The effects, file round trips (float exact; integer formats within the dither and rounding bound), the playback source, and offline rendering through Apple's AUDelay.
 - Out-of-process scanning, using the built app (or the one named with `--app`) as the worker: Apple's AUDelay plus the first 8 VST3 bundles installed.

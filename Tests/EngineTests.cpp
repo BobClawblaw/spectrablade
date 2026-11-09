@@ -88,6 +88,7 @@
 #include "BounceTests.h"
 #include "AuditionTests.h"
 #include "PluginTests.h"
+#include "CommandAuditTests.h"
 #include "TestUtils.h"
 
 namespace
@@ -574,6 +575,7 @@ int main (int argc, char* argv[])
         runRecorderTests();
         runMarkerTests (engine);
         runConverterTests();
+        runCommandAuditTests();
         runSpectralTests();
         runLoudnessTests();
         runSoundLibraryTests();
