@@ -93,6 +93,7 @@ Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a larg
 ## Getting started
 
 - **Open a file:** File > Open (Cmd-O), drop it on the window, or click one of the recent files listed in the empty editor. Tick Preview in the open panel to hear files as you select them.
+- **Start a file:** File > New File (Cmd-N) makes a file of silence at a chosen sample rate (the interface's to start with), channels (mono, stereo, 5.1 or 7.1), bit depth and length (0.1 to 3,600 s), to record, paste or generate into. It opens beside the files open, named Untitled until Save As.
 - **Look at it:** View > Waveform (Cmd-1), Spectrogram (Cmd-2), or Waveform and Spectrogram (Cmd-3); in the last, drag the line between the two to size them.
 - **Zoom:** the strip under the editor has zoom out, in and Fit, and the vertical zoom ("Level 1x") with its own buttons: zoom in vertically (Option-Cmd-=, or Option-scroll) to see quiet audio, up to 64x, with the level the lane's edges stand for shown at its top left. The same strip shows the cursor, selection and view times; click the cursor's for Go to Time, the selection's for Set Selection.
 - **Fade in and out:** drag the small handle at the waveform's top-left corner to the right for a fade in, or the one at the top-right to the left for a fade out; drag up or down as you go to bend the curve. Drag again to adjust it while it is still the last edit; double-click a handle to remove its fade.

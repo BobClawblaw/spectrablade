@@ -146,6 +146,8 @@ private:
     void paste (PasteMode);
     void pasteClip (const AudioClip&, PasteMode);
     void chooseSampleRate();
+    void askToNewFile();   // File > New File...: a file of silence at a chosen rate, channels, bit depth and length
+    void newFile (double sampleRate, int channels, int bitDepth, double seconds);
     void convertSampleRate (double newRate);
     void deleteSelection();
     void cropToSelection();
@@ -367,6 +369,8 @@ private:
     void showPanRamp();
     void showStereoWidth();
     int stereoWidthPercent = 50;
+    int newFileRate = 0, newFileChannels = 2, newFileDepth = 24;   // New File's last choices (rate 0: the interface's)
+    double newFileSeconds = 10.0;
     float rampFromDb = 0.0f, rampToDb = -6.0f;
     void showCropMargins();
     void showMoveMarkers();

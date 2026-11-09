@@ -8,6 +8,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 
 | Command | Keys |
 |---|---|
+| New File... | `Cmd-N` |
 | Open... | `Cmd-O` |
 | Save | `Cmd-S` |
 | Save As... | `Shift-Cmd-S` |

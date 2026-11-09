@@ -776,7 +776,7 @@ void WaveformView::drawEmpty (juce::Graphics& g, juce::Rectangle<int> area)
     auto block = area.withSizeKeepingCentre (juce::jmin (area.getWidth() - 40, 560), 30 + listHeight);
     g.setColour (Theme::dimText);
     g.setFont (juce::FontOptions (16.0f));
-    g.drawText ("Drop an audio file here, or use File > Open", block.removeFromTop (30), juce::Justification::centred);
+    g.drawText ("Drop an audio file here, use File > Open, or start one with File > New File", block.removeFromTop (30), juce::Justification::centred);
 
     if (! recent.isEmpty())
     {

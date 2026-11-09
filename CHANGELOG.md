@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 349: File > New File**
+- Dogfooding: there was no way to start a file. The only paths to a new one were Record with no file open, which took the interface's rate and the input's channels, and Paste. File > New File... (Cmd-N) now makes a file of silence at a chosen sample rate (the interface's to start with), channels (mono, stereo, 5.1 or 7.1), bit depth (16, 24 or 32-bit float) and length (0.1 to 3,600 s), to record, paste or generate into. It opens beside the files open as an opened file does, named Untitled until Save As, and the empty editor's text says so. The silence comes from one small block of zeros used over and over (`AudioEdits::blank`), so an hour of 7.1 at 192 kHz costs nothing until it is written into.
+- Measured by the tests: a blank of 200,000 frames reads as silence from four segments of one block; a new stereo file of 10 s at 44.1 kHz for 16-bit opens beside a file already open, with its frames, channels, rate and bit depth, no file, not dirty, named Untitled, and closes back to the other. The command audit counts 311 commands and 82 default keys; the whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: the dialog in the running app.
 
 ## Released
 

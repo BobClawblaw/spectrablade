@@ -150,7 +150,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
-        cmdExtremeStretch,
+        cmdExtremeStretch, cmdNewFile,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -1781,6 +1781,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdMultitrack: info.setInfo ("Multitrack Session", "Show the multitrack session instead of the file", "View", 0);
                             info.addDefaultKeypress ('4', cmd); info.setTicked (multitrackMode); break;
+        case cmdNewFile:    info.setInfo ("New File...", "Start a new file: silence of a chosen length at a chosen sample rate, channels and bit depth, to record, paste or generate into", "File", 0);
+                            info.addDefaultKeypress ('n', cmd); info.setActive (! isRecording()); break;
         case cmdNewSession: info.setInfo ("New Session", "Start an empty multitrack session", "File", 0);
                             info.addDefaultKeypress ('n', cmd | shift); break;
         case cmdOpenSession: info.setInfo ("Open Session...", "Open a multitrack session", "File", 0);
@@ -2450,6 +2452,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShowSpectrogram: setMultitrack (false); setDisplay (WaveformView::Display::spectrogram); break;
         case cmdShowBoth:   setMultitrack (false); setDisplay (WaveformView::Display::both); break;
         case cmdMultitrack: setMultitrack (! multitrackMode); break;
+        case cmdNewFile:    askToNewFile(); break;
         case cmdNewSession: confirmDiscardSession ([this] { newSession(); }); break;
         case cmdOpenSession: confirmDiscardSession ([this] { chooseSession(); }); break;
         case cmdImportToSession: chooseFilesForSession(); break;
@@ -2737,7 +2740,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     switch (index)
     {
         case 0:
-            add ({ cmdOpen });
+            add ({ cmdNewFile, cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
             add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectionToZero, cmdSelectZeroCrossings, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdBrushLighter, cmdBrushHeavier, 0, cmdConvertRate }); break;
@@ -11084,6 +11087,78 @@ std::optional<EffectPreview::Request> MainComponent::previewOf (const Sequences:
 juce::AudioPluginInstance* MainComponent::previewEffectOf (PreviewOwner owner) const
 {
     return owner != PreviewOwner::none && owner == previewOwner ? engine.getPreviewEffect() : nullptr;
+}
+
+void MainComponent::askToNewFile()
+{
+    if (isRecording())
+        return;
+
+    const juce::Array<int> rates { 8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000 };
+    const juce::Array<int> channelCounts { 1, 2, 6, 8 }, depths { 16, 24, 32 };
+    constexpr double shortest = 0.1, longest = 3600.0;
+
+    auto* box = new juce::AlertWindow ("New File", "A new file of silence to record, paste or generate into. It opens beside the files open, "
+                                                   "unsaved until Save As. Length " + juce::String (shortest, 1) + " to 3,600 s.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    juce::StringArray rateNames, channelNames { "Mono", "Stereo", "5.1 (6 channels)", "7.1 (8 channels)" }, depthNames { "16-bit", "24-bit", "32-bit float" };
+
+    for (auto r : rates)
+        rateNames.add (juce::String (r) + " Hz");
+
+    // The interface's rate to start with, as a recording would take it.
+    auto rate = newFileRate;
+
+    if (rate == 0)
+        if (auto* device = engine.deviceManager.getCurrentAudioDevice())
+            rate = (int) std::llround (device->getCurrentSampleRate());
+
+    box->addComboBox ("rate", rateNames, "Sample rate");
+    box->addComboBox ("channels", channelNames, "Channels");
+    box->addComboBox ("depth", depthNames, "Bit depth");
+    box->addTextEditor ("seconds", juce::String (newFileSeconds, 1), "Length (s)");
+    box->getComboBoxComponent ("rate")->setSelectedItemIndex (juce::jmax (0, rates.indexOf (rates.contains (rate) ? rate : 48000)));
+    box->getComboBoxComponent ("channels")->setSelectedItemIndex (juce::jmax (0, channelCounts.indexOf (newFileChannels)));
+    box->getComboBoxComponent ("depth")->setSelectedItemIndex (juce::jmax (0, depths.indexOf (newFileDepth)));
+    box->addButton ("Create", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, rates, channelCounts, depths] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto seconds = box->getTextEditorContents ("seconds").getDoubleValue();
+
+        if (! (seconds >= shortest && seconds <= longest))
+        {
+            juce::MessageManager::callAsync ([] { showError ("New File", "The length must be from 0.1 to 3,600 s."); });
+            return;
+        }
+
+        newFileRate = rates[box->getComboBoxComponent ("rate")->getSelectedItemIndex()];
+        newFileChannels = channelCounts[box->getComboBoxComponent ("channels")->getSelectedItemIndex()];
+        newFileDepth = depths[box->getComboBoxComponent ("depth")->getSelectedItemIndex()];
+        newFileSeconds = seconds;
+        newFile (newFileRate, newFileChannels, newFileDepth, seconds);
+    }), true);
+}
+
+void MainComponent::newFile (double sampleRate, int channels, int bitDepth, double seconds)
+{
+    if (isRecording())
+        return;
+
+    // Beside the files open, as an opened file goes; the editor starts at the file's start.
+    stopPreview();
+    openFiles.prepareForAnother (waveform.getPlace());
+    engine.newDocument (channels, sampleRate, bitDepth, (juce::int64) std::llround (seconds * sampleRate));
+    setMultitrack (false);
+    waveform.setPlace ({});
+    waveform.zoomToFit();
+    refreshTitle();
+    timerCallback();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::chooseSampleRate()

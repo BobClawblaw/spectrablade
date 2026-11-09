@@ -370,6 +370,10 @@ public:
         its error, or empty on success. */
     juce::String adoptFile (const juce::File& file, AudioFileIO::Loaded);
 
+    /** A new, unsaved file of `frames` frames of silence takes the document's place: `channels`
+        channels at `sampleRate`, to be saved at `bitDepth` (16, 24 or 32 for float). */
+    void newDocument (int channels, double sampleRate, int bitDepth, juce::int64 frames);
+
     /** Brings another document into the editor in place of the open one, which goes into
         `other` (switching between open files). Playback pauses. */
     void swapDocument (AudioDocument& other);
