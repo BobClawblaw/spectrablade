@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 348: F5 shows and hides the Sound Library**
+- Asked for while dogfooding: Window > Sound Library has the key F5, and the command now hides the window when it is showing (ticked in the menu) and shows it otherwise, so one key opens and closes it. On a Mac keyboard whose top row works the media keys, that is fn-F5 unless System Settings > Keyboard has the F keys as standard function keys.
+- Measured by the tests: the command audit counts 81 default keys, no two commands on one; the whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: the key in the running app.
 
 ## Released
 

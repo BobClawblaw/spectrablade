@@ -126,6 +126,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Command | Keys |
 |---|---|
 | Effects Rack | `Option-Cmd-E` |
+| Sound Library (show, or hide when it is showing) | `F5` |
 | Audio Settings... | `Cmd-,` |
 | Maximize Editor, or Restore All Panels | `Shift-Cmd-F` |
 

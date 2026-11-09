@@ -202,6 +202,7 @@ private:
     void runBatch (const juce::Array<juce::File>&, const Batch::Settings&);
     /** Shows the Sound Library window (making it the first time), or brings it to the front. */
     void showSoundLibrary();
+    void toggleSoundLibrary();   // Window > Sound Library (F5): shown, or hidden when it is showing
     std::unique_ptr<SoundLibraryWindow> soundLibrary;
 
     void showBatchReport (const std::vector<Batch::Outcome>&, const juce::File& deliveryReport = {});

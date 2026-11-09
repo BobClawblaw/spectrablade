@@ -1642,8 +1642,9 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (openFiles.size() > 1 && ! isRecording()); break;
         case cmdShowSelectionPanel: info.setInfo ("Selection/View", "Show or hide the panel with the selection's and the view's start, end and length", "Window", 0);
                             info.setTicked (dock->isShown (Panels::selection)); break;
-        case cmdShowSoundLibrary: info.setInfo ("Sound Library", "Show the Sound Library: the sounds in the folders you choose, to search, "
-                                                                 "and drag into the multitrack view, the editor or other apps", "Window", 0); break;
+        case cmdShowSoundLibrary: info.setInfo ("Sound Library", "Show or hide the Sound Library: the sounds in the folders you choose, to search, "
+                                                                 "and drag into the multitrack view, the editor or other apps", "Window", 0);
+                            info.addDefaultKeypress (juce::KeyPress::F5Key, 0); info.setTicked (soundLibrary != nullptr && soundLibrary->isVisible()); break;
         case cmdSaveWorkspace: info.setInfo ("Save Workspace As...", "Keep the panels as they are now as a workspace of your own", "Window", 0); break;
         case cmdResetWorkspace: info.setInfo ("Reset Workspace", "Put the current workspace's panels back as it was saved", "Window", 0); break;
         case cmdDeleteWorkspace: info.setInfo ("Delete Workspace...", "Delete the current workspace (the built-in ones can't be deleted)", "Window", 0);
@@ -2439,7 +2440,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNextFile:   switchToFile ((openFiles.getActiveIndex() + 1) % openFiles.size()); break;
         case cmdPreviousFile: switchToFile ((openFiles.getActiveIndex() + openFiles.size() - 1) % openFiles.size()); break;
         case cmdShowSelectionPanel: dock->toggle (Panels::selection); break;
-        case cmdShowSoundLibrary: showSoundLibrary(); break;
+        case cmdShowSoundLibrary: toggleSoundLibrary(); break;
         case cmdSaveWorkspace: askToSaveWorkspace(); break;
         case cmdResetWorkspace: resetWorkspace(); break;
         case cmdDeleteWorkspace: askToDeleteWorkspace(); break;
@@ -5377,6 +5378,19 @@ void MainComponent::showSoundLibrary()
 
     soundLibrary->setVisible (true);
     soundLibrary->toFront (true);
+}
+
+void MainComponent::toggleSoundLibrary()
+{
+    if (soundLibrary != nullptr && soundLibrary->isVisible())
+    {
+        soundLibrary->setVisible (false);
+        commands.commandStatusChanged();
+        return;
+    }
+
+    showSoundLibrary();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes, const juce::File& deliveryReport)
