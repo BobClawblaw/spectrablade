@@ -51,6 +51,7 @@ What they check:
 - Recovery copies: writing, finding, clearing, and a recovered session needing saving.
 - Fade shapes: their levels, the mix, the menu step and the session file.
 - Loop playback in the file player, sample for sample.
+- The heard frame: the player's position less the latency of the effects after it (the start while they fill, the pass before round a loop), the silence it plays on past the end so they empty before the transport stops, and the graph telling the player a preview effect's latency as it joins and leaves.
 - Keyboard shortcuts: storing changes and restoring them over the defaults.
 - Freezing a track: the mix bit for bit, refused edits, the session file, collecting, and the lane.
 - Clip groups: the edits, the session file, and selecting and dragging a group in the view.

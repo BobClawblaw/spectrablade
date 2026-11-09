@@ -2886,7 +2886,7 @@ void MainComponent::timerCallback()
             }
         }
 
-        const auto pos = player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor();
+        const auto pos = player.isPlaying() ? player.getHeardFrame() : multitrack.getCursor();
         transportBar->update (player.isPlaying(), isRecording(), loopPlayback, (isRecording() ? "REC " : "") + formatTime (pos, rate));
         const auto visible = multitrack.getVisibleFrames();
         selectionPanel.set (multitrack.getTimeSelection(), { (juce::int64) juce::jmax (0.0, visible.getStart()), (juce::int64) visible.getEnd() }, rate);
@@ -2920,7 +2920,7 @@ void MainComponent::timerCallback()
     }
     else
     {
-        const auto pos = player.isPlaying() ? player.getPositionFrames() : waveform.getCursor();
+        const auto pos = player.isPlaying() ? player.getHeardFrame() : waveform.getCursor();
         transportBar->update (player.isPlaying(), false, loopPlayback, insidePending ? juce::String ("Processing...") : formatTime (pos, rate));
     }
 
@@ -6802,7 +6802,7 @@ void MainComponent::addMarker()
     Marker m;
 
     if (player.isPlaying())
-        m.start = juce::jlimit ((juce::int64) 0, doc.getNumFrames(), player.getPositionFrames());
+        m.start = juce::jlimit ((juce::int64) 0, doc.getNumFrames(), player.getHeardFrame());
     else if (! sel.isEmpty())
         m = { sel.getStart(), sel.getLength(), {} };
     else
@@ -11558,7 +11558,7 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
 
                 auto& player = engine.getPlayer();
                 const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session;
-                const auto at = Video::sessionPicture ((double) (playing ? player.getPositionFrames() : multitrack.getCursor()) / rate, state->videoStart);
+                const auto at = Video::sessionPicture ((double) (playing ? player.getHeardFrame() : multitrack.getCursor()) / rate, state->videoStart);
                 return Video::Panel::Playhead { at.picture, playing && ! at.blank, at.blank };
             }
 
@@ -11569,7 +11569,7 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
 
             auto& player = engine.getPlayer();
             const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::document;
-            const auto sound = (double) (playing ? player.getPositionFrames() : waveform.getCursor()) / rate;
+            const auto sound = (double) (playing ? player.getHeardFrame() : waveform.getCursor()) / rate;
             const auto picture = engine.document.getPictureMap().pictureAt (sound);
             return Video::Panel::Playhead { picture.value_or (0.0), playing, ! picture.has_value() };
         };

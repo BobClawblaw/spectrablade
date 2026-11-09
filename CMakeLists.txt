@@ -260,6 +260,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/ConverterTests.cpp
     Tests/SpectralTests.cpp
     Tests/CommandAuditTests.cpp
+    Tests/PlayheadTests.cpp
     Tests/LoudnessTests.cpp
     Tests/SoundLibraryTests.cpp
     Tests/EqTests.cpp

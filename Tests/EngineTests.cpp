@@ -89,6 +89,8 @@
 #include "AuditionTests.h"
 #include "PluginTests.h"
 #include "CommandAuditTests.h"
+#include "PlayheadTests.h"
+#include "TestPlugins.h"
 #include "TestUtils.h"
 
 namespace
@@ -252,6 +254,23 @@ namespace
 
     /** Arms the device's first two inputs and records a second while the document plays,
         checking the real device's callback order gives an anchor. */
+    void testOutputLatency (AudioEngine& engine)
+    {
+        // With the device open the graph is prepared: a preview effect with 64 frames of latency is
+        // reported to the player as it joins the chain, and taken back when it leaves.
+        if (engine.deviceManager.getCurrentAudioDevice() == nullptr)
+            return;
+
+        auto& player = engine.getPlayer();
+        engine.setPreviewEffect (std::make_unique<TestPlugins::DelayPlugin> (64, 1.0f));
+        runUntil ([&] { return player.getOutputLatency() == 64; }, 5000);
+        const auto told = player.getOutputLatency() == 64 && engine.getOutputLatency() == 64;
+        engine.setPreviewEffect (nullptr);
+        runUntil ([&] { return player.getOutputLatency() == 0; }, 5000);
+        check (told && player.getOutputLatency() == 0 && engine.getOutputLatency() == 0,
+               "output latency: a preview effect's 64 frames reach the player through the graph, and go when it is cleared");
+    }
+
     void testLiveInput (AudioEngine& engine)
     {
         auto* device = engine.deviceManager.getCurrentAudioDevice();
@@ -576,6 +595,7 @@ int main (int argc, char* argv[])
         runMarkerTests (engine);
         runConverterTests();
         runCommandAuditTests();
+        runPlayheadTests();
         runSpectralTests();
         runLoudnessTests();
         runSoundLibraryTests();
@@ -661,6 +681,7 @@ int main (int argc, char* argv[])
         testPluginMenu (found);
 
         testDevice (engine);
+        testOutputLatency (engine);
         runSurroundDeviceTests (engine);
         runMasterRackDeviceTests (engine);
         if (liveInput)

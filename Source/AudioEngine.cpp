@@ -13,7 +13,7 @@ juce::int64 DocumentSource::getTotalLength() const
 {
     const auto frames = document.getSnapshot()->getNumFrames();
     const juce::SpinLock::ScopedLockType lock (standInLock);
-    return standIn != nullptr ? juce::jmax (frames, standIn->getNumFrames()) : frames;
+    return (standIn != nullptr ? juce::jmax (frames, standIn->getNumFrames()) : frames) + tail.load();
 }
 
 void DocumentSource::setStandIn (AudioDocument::Snapshot s)
@@ -482,6 +482,7 @@ void DocumentPlayerProcessor::resetSource()
     // rate to the device's, so the interface keeps its own rate. A session plays the mix and what
     // goes out of each interface pair; a document, the mix alone.
     sourceRate = modeRate();
+    updateTail();
     transport.setSource (mode == Mode::session ? static_cast<juce::PositionableAudioSource*> (&sessionSource) : &source,
                          0, nullptr, sourceRate, mode == Mode::session || separateOutputs >= 0 ? clickChannel : 2);
     transport.setPosition (0.0);
@@ -510,11 +511,55 @@ void DocumentPlayerProcessor::setPositionFrames (juce::int64 frame)
 {
     transport.setPosition ((double) frame / modeRate());
     playedFrame = frame;
+    playStart = frame;
+}
+
+void DocumentPlayerProcessor::setOutputLatency (int deviceFrames)
+{
+    outputLatency = juce::jmax (0, deviceFrames);
+    updateTail();
+}
+
+juce::int64 DocumentPlayerProcessor::latencyFrames() const
+{
+    const auto latency = (juce::int64) outputLatency.load();
+    return deviceRate > 0.0 && sourceRate > 0.0 ? (juce::int64) std::llround ((double) latency * sourceRate / deviceRate) : latency;
+}
+
+void DocumentPlayerProcessor::updateTail()
+{
+    const auto tail = latencyFrames();
+    source.setTail (tail);
+    sessionSource.setTail (tail);
+}
+
+juce::int64 DocumentPlayerProcessor::getHeardFrame() const
+{
+    const auto start = playStart.load();
+
+    // Frames played since the start, in the source's frames (the played frame counts the device's).
+    auto elapsed = playedFrame.load() - start;
+
+    if (deviceRate > 0.0 && sourceRate > 0.0)
+        elapsed = (juce::int64) std::llround ((double) elapsed * sourceRate / deviceRate);
+
+    // While the effects fill with the first frames, what sounds is from before the start.
+    const auto heard = juce::jmax ((juce::int64) 0, elapsed - latencyFrames());
+    auto frame = start + heard;
+
+    // Round the loop, as the source plays it (from its end back to its start, once it gets there).
+    const auto [from, to] = mode == Mode::session ? sessionSource.getLoop() : source.getLoop();
+
+    if (to > from && start < to && frame >= to)
+        frame = from + (frame - from) % (to - from);
+
+    return frame;
 }
 
 void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
 {
     deviceRate = sampleRate;
+    updateTail();
     monitorInput.setSize (2 * SessionMixer::Live::maxTracks, juce::jmax (8192, 4 * blockSize));
     monitorFrames = 0;
     transport.prepareToPlay (blockSize, sampleRate);
@@ -770,6 +815,7 @@ AudioEngine::AudioEngine()
         return pluginFormatManager.createPluginInstance (d, session.getSampleRate(), TrackEffects::maxBlock, error);
     };
 
+    graph.addListener (this);
     auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session, trackEffects);
     player = playerProcessor.get();
     playerNode = graph.addNode (std::move (playerProcessor));
@@ -789,6 +835,7 @@ AudioEngine::AudioEngine()
 AudioEngine::~AudioEngine()
 {
     *alive = false;
+    graph.removeListener (this);
     document.removeChangeListener (this);
     session.removeChangeListener (this);
     deviceManager.removeChangeListener (this);
@@ -1087,6 +1134,14 @@ void AudioEngine::setMonitoredTracks (const std::vector<std::pair<juce::uint32, 
             monitored.push_back ({ trackId, r->getMappedInput().first, r->getMappedInput().second });
 
     player->setMonitoredTracks (monitored);
+}
+
+void AudioEngine::audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails& details)
+{
+    // The graph has rebuilt its chain (an effect added, removed or changed its latency): the player
+    // shows the heard frame that much behind, and plays on that much past the end.
+    if (details.latencyChanged && player != nullptr)
+        player->setOutputLatency (graph.getLatencySamples());
 }
 
 int AudioEngine::getRoundTripLatency() const

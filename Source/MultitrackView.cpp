@@ -151,13 +151,13 @@ public:
 
         if (view.isAutomationPassUnderWay (trackId, p))
         {
-            view.continueAutomationPass (player.getPositionFrames(), value);
+            view.continueAutomationPass (player.getHeardFrame(), value);
             return true;
         }
 
         if (view.isWritingAutomation() && playing)
         {
-            view.startAutomationPass (trackId, p, player.getPositionFrames(), value);
+            view.startAutomationPass (trackId, p, player.getHeardFrame(), value);
             return true;
         }
 
@@ -893,7 +893,7 @@ MultitrackView::MultitrackView (AudioEngine& e) : engine (e)
     {
         auto& player = engine.getPlayer();
         const auto playing = player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session;
-        effectParameterTouched (touch, playing ? std::optional<juce::int64> (player.getPositionFrames()) : std::nullopt);
+        effectParameterTouched (touch, playing ? std::optional<juce::int64> (player.getHeardFrame()) : std::nullopt);
     });
     addAndMakeVisible (headerArea);
     addAndMakeVisible (hScroll);
@@ -1340,7 +1340,7 @@ void MultitrackView::timerCallback()
 juce::int64 MultitrackView::controlFrame() const
 {
     auto& player = engine.getPlayer();
-    return player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session ? player.getPositionFrames() : cursor;
+    return player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session ? player.getHeardFrame() : cursor;
 }
 
 void MultitrackView::setWritingAutomation (bool on)
@@ -2462,7 +2462,7 @@ void MultitrackView::paint (juce::Graphics& g)
         if (player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session)
         {
             g.setColour (playColour);
-            g.drawVerticalLine ((int) xForFrame (player.getPositionFrames()), (float) area.getY(), (float) area.getBottom());
+            g.drawVerticalLine ((int) xForFrame (player.getHeardFrame()), (float) area.getY(), (float) area.getBottom());
         }
     }
 
@@ -2598,7 +2598,7 @@ void MultitrackView::addMarker()
 
     // While the session plays (or records), what is playing; otherwise the time range or the cursor.
     if (player.isPlaying() && player.getMode() == DocumentPlayerProcessor::Mode::session)
-        m.start = juce::jmax ((juce::int64) 0, player.getPositionFrames());
+        m.start = juce::jmax ((juce::int64) 0, player.getHeardFrame());
     else if (! timeSelection.isEmpty())
         m = { timeSelection.getStart(), timeSelection.getLength(), {} };
     else

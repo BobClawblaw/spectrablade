@@ -20,6 +20,11 @@ public:
 
     /** Plays [start, end) over and over once it gets there (end <= start: no loop). */
     void setLoop (juce::int64 start, juce::int64 end)         { loopStart = start; loopEnd = end; }
+    std::pair<juce::int64, juce::int64> getLoop() const noexcept { return { loopStart.load(), loopEnd.load() }; }
+
+    /** Frames of silence played on past the end, so effects after the player with latency empty
+        out (DocumentPlayerProcessor::setOutputLatency). */
+    void setTail (juce::int64 frames)                         { tail = frames; }
 
     /** A file with more than two channels: -1 folds 5.1 down to the first two channels (others play
         their first two); otherwise its channels after the first two go to the buffer's channels from
@@ -51,7 +56,7 @@ private:
     juce::uint32 takenStandIn = 0;         // audio thread: the stand-in version taken
     AudioDocument::Snapshot heldStandIn;   // audio thread's own reference to it
     AudioDocument::Snapshot played;        // audio thread: what this block plays
-    std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
+    std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 }, tail { 0 };
     std::atomic<int> separateFirst { -1 };
     juce::AudioBuffer<float> wide;         // a file past stereo is read through this
 
@@ -74,6 +79,9 @@ public:
 
     /** Plays [start, end) over and over once it gets there (end <= start: no loop). */
     void setLoop (juce::int64 start, juce::int64 end)         { loopStart = start; loopEnd = end; }
+
+    /** Frames of silence played on past the end (see DocumentSource::setTail). */
+    void setTail (juce::int64 frames)                         { tail = frames; }
 
     /** Input monitoring, on the audio thread before each block: this cycle's input, its channels
         going to the tracks the layout says (none: off). It is kept in order, so however the
@@ -118,7 +126,7 @@ public:
     void setNextReadPosition (juce::int64 frame) override    { position = frame; }
     juce::int64 getNextReadPosition() const override         { return position; }
     /** The session's length, or the stop frame when that is later (recording past the end). */
-    juce::int64 getTotalLength() const override              { return juce::jmax (session.getState()->getLength(), stopFrame.load()); }
+    juce::int64 getTotalLength() const override              { return juce::jmax (session.getState()->getLength(), stopFrame.load()) + tail.load(); }
     bool isLooping() const override                           { return false; }
 
 private:
@@ -131,7 +139,7 @@ private:
     juce::int64 scrubFrom = 0, scrubTo = -1;    // scrubTo < scrubFrom: none, the effects to be primed
     const SessionState* scrubState = nullptr;   // the state it was rendered from
     juce::int64 nextFrame = -1;            // where the last block ended; anything else is a jump
-    std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 };
+    std::atomic<juce::int64> position { 0 }, stopFrame { -1 }, loopStart { 0 }, loopEnd { 0 }, tail { 0 };
     std::atomic<int> surroundChannel { -1 };
 
     // Input monitoring (audio thread): a FIFO of input frames, and a block taken from it.
@@ -186,6 +194,18 @@ public:
     juce::int64 getPositionFrames() const;
     void setPositionFrames (juce::int64);
     juce::int64 getStopFrame() const noexcept     { return stopAt; }
+
+    /** How late the sound leaves after the player, in device frames: the latency of the effects it
+        plays through (the preview and the rack), set by the engine as the graph reports it. The
+        sources then play silence on that much past the end, so the effects empty out before the
+        transport stops. */
+    void setOutputLatency (int deviceFrames);
+    int getOutputLatency() const noexcept         { return outputLatency.load(); }
+
+    /** The document or session frame sounding now: the frames played since play() began (round the
+        loop, like the played frame) less the output latency; the start itself while the effects
+        are still filling. What the playhead and the transport's time show. */
+    juce::int64 getHeardFrame() const;
 
     /** The metronome: while the session plays, a click on each beat of its tempo (accented on the
         first beat of each bar) goes out on the player's second output, Click (channels 2 and 3),
@@ -253,6 +273,8 @@ public:
 
 private:
     double modeRate() const;
+    juce::int64 latencyFrames() const;   // the output latency in the source's frames
+    void updateTail();
 
     AudioDocument& document;
     Session& session;
@@ -271,7 +293,8 @@ private:
     juce::int64 stopAt = -1;
     int separateOutputs = -1;   // see setSeparateOutputs
     double sourceRate = 0.0;
-    std::atomic<juce::int64> playedFrame { 0 };
+    std::atomic<juce::int64> playedFrame { 0 }, playStart { 0 };   // playStart: where play() or a seek began
+    std::atomic<int> outputLatency { 0 };
     juce::TimeSliceThread auditionThread { "Audition" };
     std::unique_ptr<juce::AudioFormatReaderSource> auditionSource;   // before the transport playing it
     juce::AudioTransportSource auditioner;
@@ -306,7 +329,8 @@ private:
     All public methods must be called on the message thread.
 */
 class AudioEngine final : public juce::ChangeBroadcaster,
-                          private juce::ChangeListener
+                          private juce::ChangeListener,
+                          private juce::AudioProcessorListener
 {
 public:
     AudioEngine();
@@ -425,6 +449,10 @@ public:
         recorder: device output and input latency (each including a buffer) plus the rack's latency. */
     int getRoundTripLatency() const;
 
+    /** The latency of the chain after the player (the preview effect and the rack), in device
+        frames, as the graph reports it; the player is told it as it changes (its heard frame). */
+    int getOutputLatency() const                  { return graph.getLatencySamples(); }
+
     //==============================================================================
     int getNumRackSlots() const                   { return (int) rack.size(); }
     juce::AudioPluginInstance* getRackPlugin (int index) const;
@@ -496,6 +524,8 @@ private:
     using Node = juce::AudioProcessorGraph::Node;
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override {}
+    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override;
     void rebuildConnections();
     juce::String deviceSignature() const;   // the device in use, its rate, block size and channels
     juce::String lastDeviceSignature;       // as of the last change handled

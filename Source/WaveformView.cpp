@@ -1265,8 +1265,9 @@ void WaveformView::timerCallback()
     if (! player.isPlaying())
         return;
 
-    // Stop at the end of a played range, and keep the playhead on screen.
-    const auto pos = player.getPositionFrames();
+    // Stop at the end of a played range (once its last frames have come through the effects), and
+    // keep the playhead on screen.
+    const auto pos = player.getHeardFrame();
 
     if (player.getStopFrame() >= 0 && pos >= player.getStopFrame())
         player.pause();
