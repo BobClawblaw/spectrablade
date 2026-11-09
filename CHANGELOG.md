@@ -4,15 +4,20 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.7: five more themes and the dialogs' words straightened**
+- `SpectraBlade-0.14.7.dmg` on the repository's Releases page, with its SHA-256: Milestone 343 below on top of 0.14.6. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1496 checks, the nine themes' contrast and the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.7, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. Nothing in this release has been listened to or clicked through; the parts of each milestone not tried by hand are listed with it below.
+
 **Milestone 343: Five more themes, the dialogs' words straightened, and a page of each theme**
 - View > Theme has five more: Slate (a cool blue-grey, the waveform a pale blue), Charcoal (neutral greys, a soft green waveform) and Midnight (a deep navy, a sky-blue waveform) among the dark themes, Paper (a warm off-white, a deep green waveform) and Fog (a cool grey-blue, a deep blue waveform) among the light, the menu now in three groups: dark, light, High Contrast. Each takes the four accents and the waveform colours like the others.
 - Every effect dialog's text was read side by side and made to match: units in the labels are the same everywhere ("At least (s)" was "(seconds)"), choices are in sentence case ("Keep the peak level"), the ranges listed at the end of a description read the same way ("Gain -48 to +48 dB, Q 0.05 to 50"), percentages in prose take a space before the sign as most already did, thousands take a comma (1,000 ms, 1,000 Hz, 1,000 times), and every limits message starts "must be from".
 - The test program can draw a page of the main panels in every theme (`--theme-sweep <folder>`): the editor with a lasso in hand and its strip, a session, the statistics, the tonal balance and the marker list, with anything left unpainted in red. The nine pages were looked at: every panel follows its theme, nothing is unpainted or hard to read.
 - Measured by the tests: the theme test's contrast rules (body text 7:1 on every surface, secondary text 4.5:1, the accent, cursor, waveform, danger and edges standing out) hold on all nine themes with all four accents, and the six waveform colours on all nine canvases. The whole suite passed (1496 checks); the app launched and quit cleanly.
 - Not tried by hand: the new themes on a real screen, and the dialogs' new wording in the running app.
-
-
-## Released
 
 **Release 0.14.6: the lasso drawn as a line, a tool strip, the suite under the debugger and the sanitizers, and Extreme Stretch**
 - `SpectraBlade-0.14.6.dmg` on the repository's Releases page, with its SHA-256: Milestones 339 to 342 below on top of 0.14.5. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
