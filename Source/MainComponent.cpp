@@ -2674,6 +2674,26 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         }
     };
 
+    // A submenu of commands grouped by what they do, so a long menu stays short (the Effects menu's
+    // Fades group carries the Fade Shape submenu too).
+    const auto group = [this, &menu] (const juce::String& name, std::initializer_list<int> ids, const juce::PopupMenu* fadeShapes = nullptr)
+    {
+        juce::PopupMenu sub;
+
+        for (auto id : ids)
+        {
+            if (id == 0)
+                sub.addSeparator();
+            else
+                sub.addCommandItem (&commands, id);
+        }
+
+        if (fadeShapes != nullptr)
+            sub.addSubMenu ("Fade Shape", *fadeShapes, ! multitrackMode);
+
+        menu.addSubMenu (name, sub);
+    };
+
     switch (index)
     {
         case 0:
@@ -2683,25 +2703,6 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectionToZero, cmdSelectZeroCrossings, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdBrushLighter, cmdBrushHeavier, 0, cmdConvertRate }); break;
         case 2:
         {
-            // Grouped by what they do, so the menu stays short.
-            const auto group = [this, &menu] (const juce::String& name, std::initializer_list<int> ids, const juce::PopupMenu* extra = nullptr)
-            {
-                juce::PopupMenu sub;
-
-                for (auto id : ids)
-                {
-                    if (id == 0)
-                        sub.addSeparator();
-                    else
-                        sub.addCommandItem (&commands, id);
-                }
-
-                if (extra != nullptr)
-                    sub.addSubMenu ("Fade Shape", *extra, ! multitrackMode);
-
-                menu.addSubMenu (name, sub);
-            };
-
             juce::PopupMenu shapes;
 
             for (size_t i = 0; i < FadeShapes::all.size(); ++i)
@@ -2754,7 +2755,19 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             menu.addSubMenu ("Theme", themeMenu);
             break;
         }
-        case 4: add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0, cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack, cmdTrackAbove, cmdTrackBelow, cmdUnsoloAll, cmdUnmuteAll, 0, cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines, cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize, 0, cmdClearRange, cmdDeleteTime, cmdInsertTime, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime, 0, cmdSnapping, cmdZeroCrossings, cmdCrossfade, cmdWriteAutomation, cmdLoopRecording, cmdInputMonitoring, 0, cmdMetronome, cmdCountIn, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, 0, cmdSurroundMaster, cmdSevenOneMaster, 0, cmdBounceTrack, cmdFreezeTrack, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions }); break;
+        case 4:
+            // The panels and Import at the top; the rest in groups by what they do.
+            add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0 });
+            group ("Tracks", { cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, 0, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack,
+                               0, cmdTrackAbove, cmdTrackBelow, 0, cmdUnsoloAll, cmdUnmuteAll });
+            group ("Clips", { cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, 0, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines });
+            group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
+            group ("Time Range", { cmdClearRange, cmdDeleteTime, cmdInsertTime, 0, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime });
+            group ("Editing and Recording", { cmdSnapping, cmdZeroCrossings, cmdCrossfade, 0, cmdWriteAutomation, cmdInputMonitoring, cmdLoopRecording });
+            group ("Tempo", { cmdMetronome, cmdCountIn, 0, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats });
+            group ("Surround", { cmdSurroundMaster, cmdSevenOneMaster });
+            group ("Render and Export", { cmdBounceTrack, cmdFreezeTrack, 0, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions });
+            break;
         case 5: add ({ cmdPlayPause, cmdStop, cmdLoopPlayback, cmdLoopRegion, cmdRecord, cmdRecordingOptions, 0, cmdGoToStart, cmdGoToEnd, cmdPreviousEdge, cmdNextEdge, cmdGoToTime, 0, cmdSurroundFoldDown, cmdSurroundOutputs }); break;
         case 6: add ({ cmdAddMarker, cmdRegionFromClips, cmdRegionsOverClips, cmdMarkersAtIntervals, cmdMarkersAtSilences, cmdRegionsOverSounds, cmdMarkClipping, cmdRegionsFromMarkers, cmdFitRegions, cmdRenameMarkers, 0, cmdPreviousMarker, cmdNextMarker, cmdSelectBetweenMarkers, cmdSelectRegion, cmdPreviousRegion, cmdNextRegion, cmdMarkersToZero, 0, cmdMoveMarkersInSelection, cmdDeleteMarkersInSelection, cmdDeleteAllMarkers }); break;
         case 7:
