@@ -47,6 +47,76 @@ namespace
         return p;
     }
 
+    /** A cool blue-grey dark theme: the window a slate, the audio on a shade darker. */
+    Palette slate()
+    {
+        auto p = dark();
+        p.name = "Slate";
+        p.inset = c (0xff1b1f26); p.base = c (0xff262b33); p.surface = c (0xff2c323b); p.raised = c (0xff353c46);
+        p.hover = c (0xff414955); p.line = c (0xff48515c); p.lineStrong = c (0xff6a7482);
+        p.textStrong = c (0xffffffff); p.text = c (0xffe4e9ef); p.dimText = c (0xffa3adb9); p.faintText = c (0xff7f8a97);
+        p.danger = c (0xffef5b5f); p.clipOff = c (0xff4a2a2e);
+        p.canvas = c (0xff222730); p.lane = c (0xff262b34); p.laneAlternate = c (0xff2a3039);
+        p.waveform = c (0xff7fb9e8);
+        return p;
+    }
+
+    /** A neutral charcoal dark theme, warm greys with no tint, the waveform a soft green. */
+    Palette charcoal()
+    {
+        auto p = dark();
+        p.name = "Charcoal";
+        p.inset = c (0xff171717); p.base = c (0xff232323); p.surface = c (0xff2a2a2a); p.raised = c (0xff343434);
+        p.hover = c (0xff404040); p.line = c (0xff454545); p.lineStrong = c (0xff666666);
+        p.textStrong = c (0xffffffff); p.text = c (0xffe6e4e0); p.dimText = c (0xffa9a59e); p.faintText = c (0xff827e77);
+        p.danger = c (0xffef5b5f); p.clipOff = c (0xff472626);
+        p.canvas = c (0xff1e1e1e); p.lane = c (0xff222222); p.laneAlternate = c (0xff262626);
+        p.waveform = c (0xff8fcf6a);
+        return p;
+    }
+
+    /** A deep navy dark theme, the waveform sky blue. */
+    Palette midnight()
+    {
+        auto p = dark();
+        p.name = "Midnight";
+        p.inset = c (0xff080c16); p.base = c (0xff0f1626); p.surface = c (0xff141c2e); p.raised = c (0xff1b2538);
+        p.hover = c (0xff243049); p.line = c (0xff2a3650); p.lineStrong = c (0xff465677);
+        p.textStrong = c (0xffffffff); p.text = c (0xffdbe3f0); p.dimText = c (0xff93a1b8); p.faintText = c (0xff6f7d94);
+        p.danger = c (0xffef5b5f); p.clipOff = c (0xff3a2030);
+        p.canvas = c (0xff0c1220); p.lane = c (0xff101828); p.laneAlternate = c (0xff141d30);
+        p.waveform = c (0xff5fb3ff);
+        return p;
+    }
+
+    /** A warm off-white light theme, like paper, the waveform a deep green. */
+    Palette paper()
+    {
+        auto p = light();
+        p.name = "Paper";
+        p.inset = c (0xfffffdf8); p.base = c (0xffefeae0); p.surface = c (0xfff8f5ee); p.raised = c (0xffe5dfd2);
+        p.hover = c (0xffd9d2c2); p.line = c (0xffcdc5b4); p.lineStrong = c (0xff9c9381);
+        p.textStrong = c (0xff1f1b17); p.text = c (0xff2e2822); p.dimText = c (0xff5c5347); p.faintText = c (0xff7f7668);
+        p.clipOff = c (0xffefd3cc);
+        p.canvas = c (0xfffbf9f4); p.lane = c (0xfff5f2eb); p.laneAlternate = c (0xffefebe2);
+        p.waveform = c (0xff2a7a4f);
+        return p;
+    }
+
+    /** A cool light grey-blue theme, like fog, the waveform a deep blue. */
+    Palette fog()
+    {
+        auto p = light();
+        p.name = "Fog";
+        p.inset = c (0xffffffff); p.base = c (0xffe3e7ed); p.surface = c (0xffeff2f6); p.raised = c (0xffd7dde5);
+        p.hover = c (0xffc9d1db); p.line = c (0xffb9c2cd); p.lineStrong = c (0xff8792a0);
+        p.textStrong = c (0xff121820); p.text = c (0xff1e2630); p.dimText = c (0xff4f5a68); p.faintText = c (0xff75808e);
+        p.clipOff = c (0xffefd0d4);
+        p.canvas = c (0xfff4f6f9); p.lane = c (0xffeef1f5); p.laneAlternate = c (0xffe7ebf0);
+        p.waveform = c (0xff1f66b8);
+        return p;
+    }
+
     Palette highContrast()
     {
         Palette p;
@@ -105,7 +175,7 @@ namespace
 
 juce::StringArray themeNames()
 {
-    return { "Dark", "Darker", "Light", "High Contrast" };
+    return { "Dark", "Darker", "Slate", "Charcoal", "Midnight", "Light", "Paper", "Fog", "High Contrast" };
 }
 
 juce::StringArray waveformNames()
@@ -130,7 +200,8 @@ juce::StringArray accentNames()
 
 Palette make (const juce::String& theme, const juce::String& accentName, const juce::String& waveformName)
 {
-    auto p = theme == "Darker" ? darker() : theme == "Light" ? light() : theme == "High Contrast" ? highContrast() : dark();
+    auto p = theme == "Darker" ? darker() : theme == "Slate" ? slate() : theme == "Charcoal" ? charcoal() : theme == "Midnight" ? midnight()
+           : theme == "Light" ? light() : theme == "Paper" ? paper() : theme == "Fog" ? fog() : theme == "High Contrast" ? highContrast() : dark();
     const auto* tones = &accents[0];
 
     for (auto& a : accents)

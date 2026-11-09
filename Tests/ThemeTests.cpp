@@ -57,7 +57,7 @@ namespace
                 fail ("button edges", Theme::contrast (p.lineStrong, p.raised), 1.5);
             }
 
-        check (failures.isEmpty(), "theme: in all 4 themes with all 4 accents, body text reads at 7:1 or better (least "
+        check (failures.isEmpty(), "theme: in all " + juce::String (Theme::themeNames().size()) + " themes with all 4 accents, body text reads at 7:1 or better (least "
                                        + juce::String (leastBody, 1) + "), secondary text at 4.5:1 (least " + juce::String (leastDim, 1)
                                        + "), and the accent, cursor, waveform and edges stand out" + (failures.isEmpty() ? juce::String() : ": " + failures.joinIntoString ("; ")));
 
@@ -88,7 +88,7 @@ namespace
             }
 
         check (failures.isEmpty() && Theme::waveformNames().size() == 6 && Theme::waveformNames()[0] == "Theme",
-               "theme: each of the 6 waveform colours stands out at 3:1 or better on the canvas and lanes of all 4 themes (least "
+               "theme: each of the 6 waveform colours stands out at 3:1 or better on the canvas and lanes of all " + juce::String (Theme::themeNames().size()) + " themes (least "
                    + juce::String (least, 1) + ")" + (failures.isEmpty() ? juce::String() : ": " + failures.joinIntoString ("; ")));
 
         const auto own = Theme::make ("Light", "Teal");

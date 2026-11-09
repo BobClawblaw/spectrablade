@@ -4,7 +4,8 @@
 
 /** SpectraBlade's look: every colour, size and corner of the interface in one place, and the
     look-and-feel that draws the standard controls with them. The colours come from the theme in
-    use (Dark, Darker, Light or High Contrast) and its accent; switching either repaints the app.
+    use (Dark, Darker, Slate, Charcoal, Midnight, Light, Paper, Fog or High Contrast) and its accent;
+    switching either repaints the app.
     Colours that carry meaning in the audio itself (the spectrogram's scale, track, marker and
     automation colours) are the same in every theme. */
 namespace Theme

@@ -2763,8 +2763,14 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             juce::PopupMenu themeMenu;
             const auto themes = Theme::themeNames(), accents = Theme::accentNames();
 
+            // The dark themes, then the light ones, then High Contrast, a line between each group.
             for (int i = 0; i < themes.size(); ++i)
+            {
+                if (themes[i] == "Light" || themes[i] == "High Contrast")
+                    themeMenu.addSeparator();
+
                 themeMenu.addItem (themeBaseId + i, themes[i], true, themes[i] == Theme::current().name);
+            }
 
             themeMenu.addSeparator();
             themeMenu.addSectionHeader ("Accent");
@@ -3571,7 +3577,7 @@ void MainComponent::showTempoDialog (bool atCursor)
 
             if (tempo < 20.0 || tempo > 400.0 || beats < 1 || beats > 16)
             {
-                showError ("Tempo", "The tempo must be 20 to 400 beats a minute, with 1 to 16 beats in a bar.");
+                showError ("Tempo", "The tempo must be from 20 to 400 beats a minute, with 1 to 16 beats in a bar.");
                 return;
             }
 
@@ -3933,7 +3939,7 @@ void MainComponent::askToStretchSelectedClip()
             return;
 
         if (ratio < TimeStretch::shortest || ratio > TimeStretch::longest)
-            showError ("Stretch Clip", "The length must be from 50% to 200% of what it is now.");
+            showError ("Stretch Clip", "The length must be from 50 % to 200 % of what it is now.");
         else if (std::abs (ratio - 1.0) > 1.0e-9)
             processSelectedClip ("Stretch Clip", "Stretched", [ratio, rate = engine.session.getSampleRate()] (const SessionClip& c, const auto& progress)
             {
@@ -5510,7 +5516,7 @@ void MainComponent::askToExtremeStretch()
                         { "window", "Window (s)", extremeWindow, 2, {}, ExtremeStretch::shortestWindow, ExtremeStretch::longestWindow, 0.05 } },
                       "spectrablade:extreme-stretch", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { return ExtremeStretch::isValid (toSettings (v)); },
-                      "The stretch must be from 1 to 1000 times, and the window from 0.05 to 2 seconds.", nullptr, nullptr,
+                      "The stretch must be from 1 to 1,000 times, and the window from 0.05 to 2 seconds.", nullptr, nullptr,
                       [this] (const EffectValues& v)
                       {
                           extremeFactor = v.at ("factor");
@@ -5696,7 +5702,7 @@ void MainComponent::askForPitchCorrection()
     auto* settings = appProperties.getUserSettings();
 
     showEffectDialog ("Pitch Correction",
-                      "For one voice or instrument at a time: finds its pitch every 5 ms (60 to 1000 Hz) and moves it to the "
+                      "For one voice or instrument at a time: finds its pitch every 5 ms (60 to 1,000 Hz) and moves it to the "
                       "nearest note of the scale (A = 440 Hz), keeping its length. The speed is how long a correction takes "
                       "to settle: 0 moves it at once, slower keeps more of the slides and vibrato. Breaths, consonants and "
                       "noise are left as they are.",
@@ -6996,7 +7002,7 @@ void MainComponent::showGenerateTone()
     showEffectDialog ("Generate Tone", "Puts a tone in at the cursor, or the start of the selection, the same on every channel, moving "
                                        "what follows on. An end frequency unlike the start sweeps evenly in octaves from one to the other. "
                                        "The level is the peak, from -96 to 0 dBFS; the ends fade over the time given (0 for none, up to "
-                                       "1000 ms). Length up to ten minutes.",
+                                       "1,000 ms). Length up to ten minutes.",
                       { { "wave", "Wave", (double) toneWave, 0, { "Sine", "Square", "Triangle", "Sawtooth" } },
                         { "frequency", "Frequency (Hz)", toneHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 }, { "end", "End frequency (Hz)", toneEndHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 },
                         { "level", "Level (dBFS peak)", toneLevelDb, 1, {}, -96, 0, 0.5 }, { "length", "Length (s)", toneSeconds, 3, {}, 0.001, 600, 0.1 },
@@ -7181,7 +7187,7 @@ void MainComponent::askForSilence (const juce::String& title, std::function<void
 
     showEffectDialog (title, "Silence is every channel at or below the level for at least the time.",
                       { { "level", "Level (dB)", (double) silenceThresholdDb, 1, {}, -120.0, 0.0, 1.0 },
-                        { "length", "At least (seconds)", silenceMinSeconds, 3, {}, 0.001, 600.0, 0.05 } },
+                        { "length", "At least (s)", silenceMinSeconds, 3, {}, 0.001, 600.0, 0.05 } },
                       "spectrablade:silence", PreviewOwner::none,
                       [framesOf] (const EffectValues& v) { return framesOf (v) > 0; }, "The time must be at least one frame.", nullptr, nullptr,
                       [this, found, framesOf] (const EffectValues& v)
@@ -7712,7 +7718,7 @@ void MainComponent::showRemoveHum()
 
     showEffectDialog ("Remove Hum", "Takes out mains hum: a narrow notch at the mains frequency and at each of its harmonics up to the "
                                     "number given, each as wide in hertz as the first (the mains frequency divided by the narrowness: "
-                                    "1.7 Hz at 50 Hz and 30). Harmonics from 1 to 40; narrowness from 5 (wide) to 200 (narrow).",
+                                    "1.7 Hz at 50 Hz and 30). Harmonics 1 to 40, narrowness 5 (wide) to 200 (narrow).",
                       { { "mains", "Mains", humIs60 ? 1.0 : 0.0, 0, { "50 Hz", "60 Hz" } },
                         { "harmonics", "Harmonics", (double) humHarmonics, 0, {}, 1, 40, 1 }, { "q", "Narrowness (Q)", humQ, 0, {}, 5, 200, 1 } },
                       "spectrablade:remove-hum", PreviewOwner::none,
@@ -7754,13 +7760,13 @@ void MainComponent::showDeclip()
 
     showEffectDialog ("Repair Clipping", "Finds clipped peaks, two or more samples in a row held level at or above the share of each "
                                          "channel's peak given, and rebuilds each as the curve that best fits the samples on either side. "
-                                         "Rebuilt peaks rise above the clipped level; Keep the Peak Level lowers the selection so they "
+                                         "Rebuilt peaks rise above the clipped level; Keep the peak level lowers the selection so they "
                                          "reach it, and no higher. Clipping longer than 5 ms is left as it is.",
                       { { "threshold", "Clipped at or above (% of the peak)", declipThreshold * 100.0, 1, {}, 50, 100, 0.5 },
-                        { "keep", "Keep the Peak Level", declipKeepPeak ? 0.0 : 1.0, 0, { "Yes", "No" } } },
+                        { "keep", "Keep the peak level", declipKeepPeak ? 0.0 : 1.0, 0, { "Yes", "No" } } },
                       "spectrablade:declip", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { const auto d = toSettings (v); return d.threshold >= 0.5 && d.threshold <= 1.0; },
-                      "The share of the peak must be from 50 to 100%.",
+                      "The share of the peak must be from 50 to 100 %.",
                       nullptr, nullptr,
                       [this, toSettings, rate] (const EffectValues& v)
                       {
@@ -7805,7 +7811,7 @@ void MainComponent::showEqBand()
 
     showEffectDialog ("EQ Band", "A bell boosts or cuts around the frequency (a higher Q is narrower); a shelf boosts or cuts "
                                  "everything below or above it, half as much at the frequency; a high-pass or low-pass removes what is "
-                                 "below or above it, 3 dB down at the frequency with a Q of 0.71. Gain from -48 to +48 dB; Q from 0.05 to 50.",
+                                 "below or above it, 3 dB down at the frequency with a Q of 0.71. Gain -48 to +48 dB, Q 0.05 to 50.",
                       { { "type", "Type", (double) eqBandType, 0, { "Bell", "Low Shelf", "High Shelf", "High-Pass", "Low-Pass" } },
                         { "frequency", "Frequency (Hz)", eqBandHz, 1, {}, 20, juce::jmin (20000.0, nyquist - 1.0), 1 }, { "gain", "Gain (dB)", eqBandGainDb, 1, {}, -48, 48, 0.5 }, { "q", "Q", eqBandQ, 2, {}, 0.05, 50, 0.05 } },
                       "spectrablade:eq-band", PreviewOwner::none,
@@ -10182,7 +10188,7 @@ void MainComponent::applyNormalize()
         fields.push_back ({ "apart", "Channels", normalizeChannelsApart ? 1.0 : 0.0, 0, { "All together", "Each on its own" } });
 
     showEffectDialog ("Normalize", "Raises or lowers the selection, or the whole file, so its highest peak reaches the level; with "
-                                   "Each on Its Own, each channel's peak does.",
+                                   "Each on its own, each channel's peak does.",
                       fields, "spectrablade:normalize", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
                       [this, toStep] (const EffectValues& v)
                       {

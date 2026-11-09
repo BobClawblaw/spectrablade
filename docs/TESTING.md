@@ -301,6 +301,14 @@ The player only ever plays silence, so the tests make no sound. The live input t
 ./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --live-input
 ```
 
+## A page of each theme
+
+```bash
+./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --theme-sweep themes
+```
+
+draws the editor (waveform and spectrogram, a selection, markers, the lasso in hand), its strip, a session with two clips, the Amplitude Statistics, the Tonal Balance and the marker list in every theme, one `themes/<theme>.png` each, to look at after a change to a theme or a panel. Anything a component leaves unpainted shows red. The theme test checks the contrast rules on every theme and accent without looking; this is for the eye.
+
 ## Under the debugger and the sanitizers
 
 The suite is also run as a Debug build, which turns on JUCE's assertions and leak detector, and as a build with the Address and Undefined Behaviour Sanitizers, which catch reads past a buffer, uses of freed memory and undefined arithmetic that a Release build passes over in silence. Each is its own build folder:

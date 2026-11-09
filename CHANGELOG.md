@@ -4,7 +4,13 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 343: Five more themes, the dialogs' words straightened, and a page of each theme**
+- View > Theme has five more: Slate (a cool blue-grey, the waveform a pale blue), Charcoal (neutral greys, a soft green waveform) and Midnight (a deep navy, a sky-blue waveform) among the dark themes, Paper (a warm off-white, a deep green waveform) and Fog (a cool grey-blue, a deep blue waveform) among the light, the menu now in three groups: dark, light, High Contrast. Each takes the four accents and the waveform colours like the others.
+- Every effect dialog's text was read side by side and made to match: units in the labels are the same everywhere ("At least (s)" was "(seconds)"), choices are in sentence case ("Keep the peak level"), the ranges listed at the end of a description read the same way ("Gain -48 to +48 dB, Q 0.05 to 50"), percentages in prose take a space before the sign as most already did, thousands take a comma (1,000 ms, 1,000 Hz, 1,000 times), and every limits message starts "must be from".
+- The test program can draw a page of the main panels in every theme (`--theme-sweep <folder>`): the editor with a lasso in hand and its strip, a session, the statistics, the tonal balance and the marker list, with anything left unpainted in red. The nine pages were looked at: every panel follows its theme, nothing is unpainted or hard to read.
+- Measured by the tests: the theme test's contrast rules (body text 7:1 on every surface, secondary text 4.5:1, the accent, cursor, waveform, danger and edges standing out) hold on all nine themes with all four accents, and the six waveform colours on all nine canvases. The whole suite passed (1496 checks); the app launched and quit cleanly.
+- Not tried by hand: the new themes on a real screen, and the dialogs' new wording in the running app.
+
 
 ## Released
 
