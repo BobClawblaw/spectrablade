@@ -25,6 +25,10 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Paste Mix | `Shift-Cmd-V` |
 | Delete | `Delete` or `Forward Delete` |
 | Select All | `Cmd-A` |
+| Step Selection Earlier, Step Selection Later | `Option-Shift-Left`, `Option-Shift-Right` |
+| Double Selection, Halve Selection | `Option-Shift-Up`, `Option-Shift-Down` |
+| Nudge Selection End Earlier, Nudge Selection End Later | `Shift-Left`, `Shift-Right` |
+| Nudge Selection Start Earlier, Nudge Selection Start Later | `Shift-Cmd-Left`, `Shift-Cmd-Right` |
 | Crop to Selection | `Cmd-T` |
 | Select Next Clip | `Tab` |
 | Select Previous Clip | `Shift-Tab` |

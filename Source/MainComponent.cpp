@@ -1545,8 +1545,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo (juce::String ("Nudge Selection ") + (start ? "Start" : "End") + (later ? " Later" : " Earlier"),
                           juce::String ("Move the selection's ") + (start ? "start" : "end") + (later ? " later" : " earlier")
                               + " by a pixel's worth of time at this zoom (on to the next zero crossing, with Select at Zero Crossings on)", "Edit", 0);
-            // Shift and an arrow grow the selection that way; with Command too, they shrink it from that side.
-            info.addDefaultKeypress (later ? juce::KeyPress::rightKey : juce::KeyPress::leftKey, start == later ? cmd | shift : shift);
+            // Shift and an arrow move the end that way; with Command too, the start.
+            info.addDefaultKeypress (later ? juce::KeyPress::rightKey : juce::KeyPress::leftKey, start ? cmd | shift : shift);
             info.setActive (! waveform.getSelection().isEmpty());
             break;
         }
@@ -2901,7 +2901,7 @@ void MainComponent::timerCallback()
     else
     {
         const auto pos = player.isPlaying() ? player.getPositionFrames() : waveform.getCursor();
-        transportBar->update (player.isPlaying(), false, loopPlayback, formatTime (pos, rate));
+        transportBar->update (player.isPlaying(), false, loopPlayback, insidePending ? juce::String ("Processing...") : formatTime (pos, rate));
     }
 
     // The view as far as the file goes; nothing to show without audio.

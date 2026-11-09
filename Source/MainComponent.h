@@ -591,7 +591,8 @@ private:
         the audio with everything else over the selection taken out (SpectralEdit::changeOutsideBand
         or changeOutsideShape), processed in the background, then played in place of the document
         (DocumentSource::setStandIn) until playback stops, the selection moves, the document changes
-        or a preview starts. Files only. */
+        or a preview starts; the transport shows "Processing..." in place of the time meanwhile.
+        Files only. */
     void playInsideSpectral (juce::Range<juce::int64>);
     void stopPlayingInside();
     AudioDocument::Snapshot insideAudio;        // what plays in place of the document, while set
