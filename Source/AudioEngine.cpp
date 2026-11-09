@@ -495,9 +495,7 @@ void DocumentPlayerProcessor::resetSource()
 void DocumentPlayerProcessor::play (juce::int64 startFrame, juce::int64 stopFrame)
 {
     transport.stop();
-    stopAt = stopFrame;
-    source.setStopFrame (stopFrame);
-    sessionSource.setStopFrame (stopFrame);
+    setStopFrame (stopFrame);
     setPositionFrames (startFrame);
     transport.start();
 }

@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 344: A selection changed while looping keeps playing**
+- Dogfooding found the first one: lengthening the selection while it played looping went silent at the old end and the play stopped. The play's own stop stayed at the end the selection had when Play was pressed, while the loop followed the new one; now the stop moves with the loop (the player gained `setStopFrame`), and a play left outside the new selection (shortened behind it, or moved) starts the loop again from its start.
+- Measured by the tests: a loop of 5,000 to 6,000 frames lengthened to 8,000 while playing, with its stop moved, keeps sounding past the old stop and wraps at the new end; with the stop left where it was, it plays silence past the old end, as the app did. The whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: dragging a selection's end during a looping play in the running app.
 
 ## Released
 

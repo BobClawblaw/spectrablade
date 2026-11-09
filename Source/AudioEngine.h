@@ -180,6 +180,10 @@ public:
     /** Plays from start; stops by itself at stopFrame (-1 = the end). */
     void play (juce::int64 startFrame, juce::int64 stopFrame);
 
+    /** Moves where the play stops by itself (-1 = the end) while it goes on: a loop that follows
+        a selection moves the stop to the selection's new end, so the sound carries on past the old one. */
+    void setStopFrame (juce::int64 frame)         { stopAt = frame; source.setStopFrame (frame); sessionSource.setStopFrame (frame); }
+
     /** Plays [start, end) of the document or session over and over once it gets there, until
         clearLoop() or the mode changes. The played frame keeps counting on through each pass, so
         frame f of pass k (from 0) is played frame f + k * (end - start). */

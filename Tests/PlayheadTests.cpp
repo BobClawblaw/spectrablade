@@ -90,6 +90,42 @@ namespace
         player.clearLoop();
     }
 
+    void testStopFollowsLoop()
+    {
+        // A selection of 5,000 to 6,000 plays looping: the play stops by itself at 6,000, the loop
+        // wraps there. Lengthened to 5,000 to 8,000 while playing, the loop alone would play silence
+        // from 6,000 on (the source stops there) and the view would stop the play; the stop moved
+        // with it, the sound carries on to 8,000 and wraps.
+        Rig rig (30000);
+        auto& player = rig.player;
+        player.setOutputLatency (0);
+        player.setLoop (5000, 6000);
+        player.play (5000, 6000);
+        rig.blocks (3);   // 1,536 frames: round once, at 5,536
+        const auto looping = rig.at (5536) && player.isPlaying();
+
+        player.setStopFrame (8000);
+        player.setLoop (5000, 8000);
+        bool sounding = true;
+
+        for (int i = 0; i < 4; ++i)   // 2,048 frames on: 7,584, all past the old stop with sound
+            sounding = ! rig.block() && sounding;
+
+        const auto on = rig.at (7584) && player.getStopFrame() == 8000;
+        rig.block();                  // to 8,096: round the new end, at 5,096
+        const auto wrapped = rig.at (5096) && player.isPlaying();
+        check (looping && sounding && on && wrapped,
+               "stop frame follows the loop: a loop lengthened while playing, with its stop moved, keeps sounding past the old stop and wraps at the new end");
+
+        // The stop left where it was: silence from the old stop on, until the wrap.
+        player.setStopFrame (6000);
+        rig.blocks (2);               // to 6,120: the last of the sound
+        const auto silent = rig.block() && rig.block() && player.isPlaying();   // 6,120 to 7,144: silence
+        check (silent, "stop frame follows the loop: with the stop left at the old end the loop plays silence past it (what a changed selection did)");
+        player.pause();
+        player.clearLoop();
+    }
+
     void testTail()
     {
         // 1,000 frames of latency on a 30,000-frame file: playing to the end, the transport runs on
@@ -119,5 +155,6 @@ namespace
 void runPlayheadTests()
 {
     testHeardFrame();
+    testStopFollowsLoop();
     testTail();
 }

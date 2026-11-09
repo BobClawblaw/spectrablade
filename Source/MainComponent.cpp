@@ -10836,9 +10836,21 @@ void MainComponent::updatePlaybackLoop()
     playingLoop = wanted;
 
     if (wanted.isEmpty())
+    {
+        // Loop off, or no range: the play goes on to its stop (the end of the last loop, or the end).
         player.clearLoop();
-    else
-        player.setLoop (wanted.getStart(), wanted.getEnd());
+        return;
+    }
+
+    // The play stops by itself where it started, the selection's end then; a selection changed
+    // while looping moves the stop to its new end first, so the sound carries on past the old one
+    // (and the view does not stop the play there). A play now outside the loop (the selection
+    // shortened behind it, or moved) starts the loop again from its start.
+    player.setStopFrame (wanted.getEnd());
+    player.setLoop (wanted.getStart(), wanted.getEnd());
+
+    if (! wanted.contains (player.getPositionFrames()))
+        player.setPositionFrames (wanted.getStart());
 }
 
 void MainComponent::startPreview (PreviewOwner owner, std::unique_ptr<juce::AudioPluginInstance> effect, std::function<void()> ended)
