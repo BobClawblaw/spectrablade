@@ -3,10 +3,13 @@
 #include <JuceHeader.h>
 
 #include "Metronome.h"
+#include "TimeFormat.h"
 
 /** Times typed in by hand: "83.5" or "83.5 s" (seconds), "1:23.5" (minutes and seconds),
     "1:01:23.5" (hours too), or with a tempo map "5|3" or "5|3.5" (bar and beat, counted from 1,
-    with a fraction of a beat). Spaces around the parts are ignored. */
+    with a fraction of a beat). Spaces around the parts are ignored. With View > Time Format on
+    Samples a whole number is samples ("83.5" or "5 s" is still seconds); on a timecode format
+    "hh:mm:ss:ff" or "mm:ss:ff" is read at its frame rate. */
 namespace TimeEntry
 {
     /** The frame a typed time names, or nothing when it can't be read, is negative, or names a beat
@@ -51,6 +54,10 @@ namespace TimeEntry
             return at + (juce::int64) std::llround ((*beat - std::floor (*beat)) * (double) (next - at));
         }
 
+        if (const auto kind = TimeFormat::get(); kind == TimeFormat::Kind::samples || TimeFormat::isSmpte (kind))
+            if (const auto frame = TimeFormat::parse (text, sampleRate, kind))
+                return frame;
+
         auto seconds = text.endsWithChar ('s') ? text.dropLastCharacters (1) : text;
         const auto parts = juce::StringArray::fromTokens (seconds, ":", {});
 
@@ -73,14 +80,10 @@ namespace TimeEntry
         return (juce::int64) std::llround (total * sampleRate);
     }
 
-    /** A time as Go to Time reads it back: "m:ss.mmm", or "h:mm:ss.mmm" from an hour on. */
+    /** A time as Go to Time reads it back, in the format in use (View > Time Format). */
     inline juce::String format (juce::int64 frames, double sampleRate)
     {
-        const auto ms = (juce::int64) std::llround ((double) juce::jmax ((juce::int64) 0, frames) / juce::jmax (1.0, sampleRate) * 1000.0);
-        const auto minutes = ms / 60000, hours = minutes / 60;
-        const auto rest = juce::String::formatted ("%02d.%03d", (int) ((ms / 1000) % 60), (int) (ms % 1000));
-        return hours > 0 ? juce::String::formatted ("%d:%02d:", (int) hours, (int) (minutes % 60)) + rest
-                         : juce::String ((int) minutes) + ":" + rest;
+        return TimeFormat::format (frames, juce::jmax (1.0, sampleRate));
     }
 
     /** A time that may start with "-" (earlier) or "+" (later), as frames; otherwise as parse. */

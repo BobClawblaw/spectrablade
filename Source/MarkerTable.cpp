@@ -1,5 +1,6 @@
 #include "MarkerTable.h"
 #include "Theme.h"
+#include "TimeFormat.h"
 
 #include "TrackColours.h"
 
@@ -7,9 +8,9 @@ MarkerTable::MarkerTable (Session& s, Actions a) : session (s), actions (std::mo
 {
     auto& header = table.getHeader();
     header.addColumn ("Name", name, 180);
-    header.addColumn ("Start (s)", start, 90);
-    header.addColumn ("End (s)", end, 90);
-    header.addColumn ("Length (s)", length, 90);
+    header.addColumn ("Start", start, 90);
+    header.addColumn ("End", end, 90);
+    header.addColumn ("Length", length, 90);
     Theme::follow (table, juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
     addAndMakeVisible (table);
@@ -33,12 +34,14 @@ MarkerTable::MarkerTable (Session& s, Actions a) : session (s), actions (std::mo
     }
 
     session.addChangeListener (this);
+    TimeFormat::broadcaster().addChangeListener (this);
     refilter();
 }
 
 MarkerTable::~MarkerTable()
 {
     session.removeChangeListener (this);
+    TimeFormat::broadcaster().removeChangeListener (this);
 }
 
 void MarkerTable::refilter()
@@ -149,7 +152,7 @@ juce::String MarkerTable::getText (int row, int column) const
         return {};
 
     const auto& m = s->markers[(size_t) index];
-    const auto seconds = [&s] (juce::int64 frames) { return juce::String ((double) frames / s->sampleRate, 3); };
+    const auto seconds = [&s] (juce::int64 frames) { return TimeFormat::format (frames, s->sampleRate); };
 
     switch (column)
     {

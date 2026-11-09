@@ -91,6 +91,7 @@
 #include "CommandAuditTests.h"
 #include "PlayheadTests.h"
 #include "StatisticsTests.h"
+#include "TimeFormatTests.h"
 #include "TestPlugins.h"
 #include "TestUtils.h"
 
@@ -610,6 +611,7 @@ int main (int argc, char* argv[])
         runMatchEqTests();
         runTonalBalanceTests();
         runStatisticsTests();
+        runTimeFormatTests();
         runDitherTests();
         runDialogueIsolationTests();
         runAdaptiveDenoiseTests();

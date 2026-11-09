@@ -64,6 +64,7 @@ namespace
     constexpr const char* themeKey        = "theme";
     constexpr const char* accentKey       = "accent";
     constexpr const char* waveformColourKey = "waveformColour";
+    constexpr const char* timeFormatKey   = "timeFormat";
 
     // The dock's panels.
     namespace Panels
@@ -147,6 +148,7 @@ namespace
         cmdSurroundMaster, cmdStretch, cmdPitch, cmdDereverb, cmdLevelSpeech, cmdVideoStart, cmdDetachVideo, cmdCentreChannel, cmdPhaseCorrection, cmdGenerateTones, cmdPitchCorrection, cmdShowPitchEditor,
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
+        cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -165,8 +167,7 @@ namespace
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
     {
-        const auto total = (juce::int64) ((double) frames / juce::jmax (1.0, sampleRate) * 1000.0);
-        return juce::String::formatted ("%d:%02d.%03d", (int) (total / 60000), (int) ((total / 1000) % 60), (int) (total % 1000));
+        return TimeFormat::format (frames, juce::jmax (1.0, sampleRate));
     }
 
     /** A modal box with explicit result codes, so button order can never be misread. */
@@ -760,6 +761,7 @@ MainComponent::MainComponent()
     auto* settings = appProperties.getUserSettings();
     Theme::apply (Theme::make (settings->getValue (themeKey, "Dark"), settings->getValue (accentKey, "Blue"),
                                settings->getValue (waveformColourKey, "Theme")));
+    TimeFormat::set (TimeFormat::fromKey (settings->getValue (timeFormatKey, TimeFormat::key (TimeFormat::Kind::minutesSeconds))));
     deadMansPedalFile = settings->getFile().getSiblingFile ("RecentlyCrashedPluginsList");
     places = std::make_unique<WindowPlaces> (*settings);
 
@@ -1590,6 +1592,15 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setTicked (dock->isShown (Panels::spectrum)); break;
         case cmdShowTonalBalance: info.setInfo ("Tonal Balance", "Show or hide the long-term spectrum of what goes to the outputs against a target range for a style", "Window", 0);
                             info.setTicked (dock->isShown (Panels::tonalBalance)); break;
+        case cmdTimeMinutesSeconds: case cmdTimeDecimalSeconds: case cmdTimeSamples: case cmdTimeSmpte24:
+        case cmdTimeSmpte25: case cmdTimeSmpte2997Drop: case cmdTimeSmpte2997: case cmdTimeSmpte30:
+        {
+            const auto kind = (TimeFormat::Kind) (id - cmdTimeMinutesSeconds);
+            const auto name = TimeFormat::names()[(int) kind];
+            info.setInfo (name, "Show every time as " + (TimeFormat::isSmpte (kind) ? name + " timecode" : name.toLowerCase()), "View", 0);
+            info.setTicked (TimeFormat::get() == kind);
+            break;
+        }
         case cmdShowStatistics: info.setInfo ("Amplitude Statistics", "Show or hide the numbers of the selection or the file: peaks, RMS, DC offset, bit depth and loudness", "Window", 0);
                             info.setTicked (dock->isShown (Panels::statistics)); break;
         case cmdShowPhase:  info.setInfo ("Phase Meter", "Show or hide the goniometer and correlation of what goes to the outputs", "Window", 0);
@@ -2393,6 +2404,10 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShowPhase:  dock->toggle (Panels::phase); break;
         case cmdShowTonalBalance: dock->toggle (Panels::tonalBalance); break;
         case cmdShowStatistics: dock->toggle (Panels::statistics); break;
+        case cmdTimeMinutesSeconds: case cmdTimeDecimalSeconds: case cmdTimeSamples: case cmdTimeSmpte24:
+        case cmdTimeSmpte25: case cmdTimeSmpte2997Drop: case cmdTimeSmpte2997: case cmdTimeSmpte30:
+            setTimeFormat ((TimeFormat::Kind) (info.commandID - cmdTimeMinutesSeconds));
+            break;
         case cmdMaximizeEditor:
             if (dock->getMaximised().isEmpty())
                 dock->maximise (Panels::editor);
@@ -2756,6 +2771,8 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
 
             menu.addSeparator();
             menu.addSubMenu ("Theme", themeMenu);
+            group ("Time Format", { cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, 0,
+                                    cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30 });
             break;
         }
         case 4:
@@ -11701,6 +11718,21 @@ std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::Str
 void MainComponent::windowCreated (juce::DocumentWindow& window)
 {
     window.addKeyListener (commands.getKeyMappings());   // the keys work with a floating panel in front
+}
+
+void MainComponent::setTimeFormat (TimeFormat::Kind kind)
+{
+    TimeFormat::set (kind);
+    appProperties.getUserSettings()->setValue (timeFormatKey, TimeFormat::key (kind));
+
+    // Everything that shows a time draws it from the format when it paints: every window again.
+    auto& desktop = juce::Desktop::getInstance();
+
+    for (int i = 0; i < desktop.getNumComponents(); ++i)
+        if (auto* c = desktop.getComponent (i))
+            c->repaint();
+
+    commands.commandStatusChanged();
 }
 
 void MainComponent::selectWorkspace (const juce::String& name)

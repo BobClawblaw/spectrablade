@@ -1,5 +1,6 @@
 #include "TransportBar.h"
 #include "Theme.h"
+#include "TimeFormat.h"
 
 namespace TransportBar
 {
@@ -325,13 +326,7 @@ SelectionPanel::SelectionPanel()
 
 juce::String SelectionPanel::format (juce::int64 frames, double rate)
 {
-    if (rate <= 0.0)
-        return "-";
-
-    const auto total = (juce::int64) std::llround ((double) frames / rate * 1000.0);
-    const auto hours = (int) (total / 3600000);
-    const auto text = juce::String::formatted ("%d:%02d.%03d", (int) ((total / 60000) % 60), (int) ((total / 1000) % 60), (int) (total % 1000));
-    return hours > 0 ? juce::String (hours) + ":" + text.paddedLeft ('0', 9) : text;
+    return TimeFormat::format (frames, rate);
 }
 
 void SelectionPanel::set (juce::Range<juce::int64> selection, juce::Range<juce::int64> view, double rate)

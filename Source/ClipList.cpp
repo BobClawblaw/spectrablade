@@ -1,5 +1,6 @@
 #include "ClipList.h"
 #include "Theme.h"
+#include "TimeFormat.h"
 
 ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, std::function<void (juce::uint32)> chooseClip)
     : engine (e), selected (std::move (selectedClip)), choose (std::move (chooseClip))
@@ -7,8 +8,8 @@ ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, 
     auto& header = table.getHeader();
     header.addColumn ("Track", track, 110);
     header.addColumn ("Name", name, 150);
-    header.addColumn ("Start (s)", start, 80);
-    header.addColumn ("Length (s)", length, 80);
+    header.addColumn ("Start", start, 80);
+    header.addColumn ("Length", length, 80);
     header.addColumn ("File", file, 180);
     header.addColumn ("", state, 90);
     Theme::follow (table, juce::ListBox::backgroundColourId, Theme::surface);
@@ -25,6 +26,7 @@ ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, 
     addAndMakeVisible (summary);
 
     engine.session.addChangeListener (this);
+    TimeFormat::broadcaster().addChangeListener (this);
     rebuild();
     startTimerHz (8);
 }
@@ -32,6 +34,7 @@ ClipList::ClipList (AudioEngine& e, std::function<juce::uint32()> selectedClip, 
 ClipList::~ClipList()
 {
     engine.session.removeChangeListener (this);
+    TimeFormat::broadcaster().removeChangeListener (this);
 }
 
 std::vector<std::pair<int, const SessionClip*>> ClipList::inOrder (const SessionState& s)
@@ -89,8 +92,8 @@ void ClipList::rebuild()
         if (c->muted)
             flags.add ("Muted");
 
-        rows.push_back ({ c->id, { tr.name, c->name, juce::String ((double) c->position / s->sampleRate, 3),
-                                   juce::String ((double) c->length / s->sampleRate, 3), c->source.getFileName(), flags.joinIntoString (", ") },
+        rows.push_back ({ c->id, { tr.name, c->name, TimeFormat::format (c->position, s->sampleRate),
+                                   TimeFormat::format (c->length, s->sampleRate), c->source.getFileName(), flags.joinIntoString (", ") },
                           t, c->position, c->length });
     }
 

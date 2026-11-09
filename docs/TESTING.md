@@ -82,6 +82,7 @@ What they check:
 - Polarity: inverted tracks and buses through the mixer, freezing, the strip switch and the session file.
 - Tap tempo: averaging, rounding, the window of taps, restarts, limits and undo steps.
 - Go to time: the time forms, bars and beats across tempo changes, refusals, and scrolling there.
+- Time formats: 83.304 s written in each of the eight formats (29.97 non-drop lagging, drop frame two frames on at the minute and back on the clock at the hour); parsing samples, seconds, m:ss, h:mm:ss, timecode with or without hours, drop frame refusing the dropped numbers, out-of-range parts refused; 3,200 random times written and read back in every format; the rulers' marks (1-2-5 seconds, 1-2-5 samples, frames of timecode then seconds) and labels; the setting's keys, listeners told once of a change, and typed times read as samples or timecode when that format is on.
 - Open recent: order, the limit of ten, settings, missing files and clearing.
 - Trim to cursor: starts and ends, several tracks, locked clips, edges and undo steps.
 - Next and previous clip: time order along a track, the ends, and starting from the cursor.

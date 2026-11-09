@@ -155,6 +155,7 @@ target_sources(SpectraBlade PRIVATE
     Source/MatchEq.cpp
     Source/TonalBalance.cpp
     Source/Statistics.cpp
+    Source/TimeFormat.cpp
     Source/Dither.cpp
     Source/DialogueIsolation.cpp
     Source/AdaptiveDenoise.cpp
@@ -275,6 +276,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/MatchEqTests.cpp
     Tests/TonalBalanceTests.cpp
     Tests/StatisticsTests.cpp
+    Tests/TimeFormatTests.cpp
     Tests/DitherTests.cpp
     Tests/DialogueIsolationTests.cpp
     Tests/AdaptiveDenoiseTests.cpp
@@ -387,6 +389,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/MatchEq.cpp
     Source/TonalBalance.cpp
     Source/Statistics.cpp
+    Source/TimeFormat.cpp
     Source/Dither.cpp
     Source/DialogueIsolation.cpp
     Source/AdaptiveDenoise.cpp

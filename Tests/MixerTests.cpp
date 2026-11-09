@@ -523,10 +523,10 @@ namespace
 
         using C = ClipList::Column;
         check (list.getNumRows() == 4 && list.getClip (0) == first && list.getClip (1) == beside && list.getClip (2) == late
-                   && list.getText (0, C::track) == "Drums" && list.getText (0, C::name) == "kick" && list.getText (0, C::start) == "1.000"
-                   && list.getText (0, C::length) == "0.500" && list.getText (0, C::file) == "kick.wav" && list.getText (1, C::state) == "Locked, Muted"
+                   && list.getText (0, C::track) == "Drums" && list.getText (0, C::name) == "kick" && list.getText (0, C::start) == "0:01.000"
+                   && list.getText (0, C::length) == "0:00.500" && list.getText (0, C::file) == "kick.wav" && list.getText (1, C::state) == "Locked, Muted"
                    && list.getText (2, C::state).isEmpty() && list.getHighlightedRow() < 0,
-               "clip list: every clip in time order (then by track), with its track, name, start, length, file and state");
+               "clip list: every clip in time order (then by track), with its track, name, start and length in the time format, file and state");
 
         list.chooseRow (2);
         const auto shown = chosen == late && view.getSelectedClip() == late && view.getSelectedClips().size() == 1
@@ -706,16 +706,16 @@ namespace
         const auto settle = [] { juce::MessageManager::getInstance()->runDispatchLoopUntil (30); };
         settle();
 
-        const auto texts = table.getNumRows() == 3 && table.getText (0, MarkerTable::name) == "Say \"hi\"" && table.getText (1, MarkerTable::start) == "1.000"
-                           && table.getText (1, MarkerTable::end).isEmpty() && table.getText (2, MarkerTable::end) == "3.500"
-                           && table.getText (2, MarkerTable::length) == "1.500" && table.getText (5, MarkerTable::name).isEmpty();
+        const auto texts = table.getNumRows() == 3 && table.getText (0, MarkerTable::name) == "Say \"hi\"" && table.getText (1, MarkerTable::start) == "0:01.000"
+                           && table.getText (1, MarkerTable::end).isEmpty() && table.getText (2, MarkerTable::end) == "0:03.500"
+                           && table.getText (2, MarkerTable::length) == "0:01.500" && table.getText (5, MarkerTable::name).isEmpty();
         table.chooseRow (2);
         const auto region = view.getTimeSelection() == juce::Range<juce::int64> (96000, 168000) && view.getCursor() == 96000
                             && view.getVisibleFrames().contains (96.0e3);
         table.chooseRow (1);
         table.chooseRow (7);
         check (texts && region && chosen == std::vector<int> { 2, 1 } && view.getTimeSelection().isEmpty() && view.getCursor() == 48000,
-               "marker list: name, start, end and length; choosing a region selects it and scrolls to it, a point moves the cursor");
+               "marker list: name, start, end and length in the time format; choosing a region selects it and scrolls to it, a point moves the cursor");
 
         const auto deleted = view.deleteMarker (1);
         settle();

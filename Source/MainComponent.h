@@ -26,6 +26,7 @@
 #include "MatchEq.h"
 #include "TonalBalance.h"
 #include "Statistics.h"
+#include "TimeFormat.h"
 #include "Dither.h"
 #include "DialogueIsolation.h"
 #include "AdaptiveDenoise.h"
@@ -681,6 +682,7 @@ private:
     void windowCreated (juce::DocumentWindow&) override;
 
     void selectWorkspace (const juce::String& name);
+    void setTimeFormat (TimeFormat::Kind);
     void askToSaveWorkspace();
     void askToDeleteWorkspace();
     void resetWorkspace();

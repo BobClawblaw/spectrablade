@@ -1,6 +1,7 @@
 #include "WaveformView.h"
 #include "Surround.h"
 #include "Theme.h"
+#include "TimeFormat.h"
 
 namespace
 {
@@ -17,13 +18,6 @@ namespace
     const juce::Colour markerColour (0xffff8a3d);
     const juce::Colour regionColour (0xff58a6ff);
 
-    juce::String formatTime (double seconds, double secondsPerTick)
-    {
-        const auto mins = (int) (seconds / 60.0);
-        const auto secs = seconds - mins * 60.0;
-        const auto decimals = secondsPerTick >= 1.0 ? 0 : secondsPerTick >= 0.1 ? 1 : secondsPerTick >= 0.01 ? 2 : 3;
-        return juce::String (mins) + ":" + (secs < 10.0 ? "0" : "") + juce::String (secs, decimals);
-    }
 }
 
 WaveformView::WaveformView (AudioEngine& e) : engine (e)
@@ -483,17 +477,9 @@ void WaveformView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area)
     if (rate <= 0.0 || ! engine.document.hasAudio())
         return;
 
-    // Pick a tick spacing of roughly 100 px from a 1-2-5 series.
+    // Marks about 100 px apart, in the steps the time format counts in.
     const auto secondsPerPixel = framesPerPixel / rate;
-    double tick = 0.001;
-
-    for (auto candidate : { 0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0 })
-    {
-        tick = candidate;
-
-        if (candidate / secondsPerPixel >= 100.0)
-            break;
-    }
+    const auto tick = TimeFormat::rulerTick (secondsPerPixel, rate);
 
     g.setFont (11.0f);
     const auto startSeconds = viewStart / rate;
@@ -505,7 +491,7 @@ void WaveformView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area)
         g.setColour (Theme::dimText);
         g.drawVerticalLine ((int) x, (float) area.getBottom() - 6.0f, (float) area.getBottom());
         g.setColour (Theme::text);
-        g.drawText (formatTime (juce::jmax (0.0, t), tick), juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 80.0f, (float) area.getHeight() - 4.0f),
+        g.drawText (TimeFormat::rulerLabel (t, tick, rate), juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 96.0f, (float) area.getHeight() - 4.0f),
                     juce::Justification::centredLeft, false);
     }
 }
