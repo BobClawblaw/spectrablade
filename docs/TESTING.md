@@ -252,7 +252,7 @@ What they check:
 - The panels: the undo history following the file or the session, the levels, the spectrum against sines at known levels, correlation and the goniometer, and the copy of the output they read.
 - The fade handles: the curves, the faded samples, the fades kept adjustable as one undo step, and dragging the handles in the view.
 - Maximising a group of panels: filling the dock, the layout kept, restoring, and double-clicking a tab.
-- Vertical zoom and the zoom strip: a sine's drawn height at each zoom and its clipping at the lane's edge, the limits and edge levels, Option-scrolling, and the strip's buttons and readout.
+- Vertical zoom and the zoom strip: a sine's drawn height at each zoom and its clipping at the lane's edge, the limits and edge levels, Option-scrolling, the strip's buttons and readout, and its tool buttons (in order left of the times, the tool in hand lit, each running its command, Heal off until there is a drawing).
 - The times under the editor: cursor, selection and view as shown, clicks on them, and which are left out as the strip narrows.
 - Waveform colours: each one's contrast against every theme's canvas and lanes, and the choice replacing the theme's own.
 - Going to edges: a file's and a session's edges walked both ways, with and without a selection, hidden tracks passed over.

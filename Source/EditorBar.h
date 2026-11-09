@@ -3,12 +3,13 @@
 #include <JuceHeader.h>
 #include "WaveformView.h"
 
-/** The strip under the file editor. On the left, the times: the cursor, the selection (start, end
-    and length) and the view (start and end); a click on the cursor's runs Go to Time, on the
-    selection's Set Selection. Fields that don't fit are left out from the right. On the right, the
-    zoom controls, horizontal (out, in, the whole file) and vertical (out, in, back to full scale)
-    with the vertical zoom shown between them. Each button runs its command, so it does what the
-    menu item and keys do. */
+/** The strip under the file editor. On the left, the tools: Box, Lasso and Brush Selection, the
+    one in hand lit, and Heal, on when there is something in the spectrogram to heal. Then the
+    times: the cursor, the selection (start, end and length) and the view (start and end); a click
+    on the cursor's runs Go to Time, on the selection's Set Selection. Fields that don't fit are
+    left out from the right. On the right, the zoom controls, horizontal (out, in, the whole file)
+    and vertical (out, in, back to full scale) with the vertical zoom shown between them. Each
+    button runs its command, so it does what the menu item and keys do. */
 class EditorBar final : public juce::Component,
                         public juce::SettableTooltipClient,
                         private juce::Timer,
@@ -20,7 +21,11 @@ public:
         int zoomOut = 0, zoomIn = 0, zoomFit = 0;
         int verticalOut = 0, verticalIn = 0, verticalReset = 0;
         int goToTime = 0, setSelection = 0;
+        int boxTool = 0, lassoTool = 0, brushTool = 0, heal = 0;
     };
+
+    /** The tool buttons, left to right. */
+    enum class Tool { box, lasso, brush, heal };
 
     EditorBar (juce::ApplicationCommandManager&, WaveformView&, const AudioDocument&, Commands);
     ~EditorBar() override;
@@ -29,6 +34,7 @@ public:
     std::function<void (int commandId)> run;
 
     juce::TextButton& getButton (int commandId);
+    juce::Button& getToolButton (Tool);
 
     /** The vertical zoom as shown, e.g. "1x" or "8x". */
     static juce::String verticalText (double zoom);
@@ -56,6 +62,8 @@ public:
     static constexpr int height = 24;
 
 private:
+    class ToolButton;
+
     void timerCallback() override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override   { refreshTooltips(); }
     void update();
@@ -67,6 +75,7 @@ private:
     const AudioDocument& document;
     Commands ids;
     juce::OwnedArray<juce::TextButton> horizontal, vertical;
+    juce::OwnedArray<ToolButton> tools;
     juce::String shownVertical;
     std::vector<Field> fields;
 
