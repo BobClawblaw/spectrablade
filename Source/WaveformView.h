@@ -69,6 +69,11 @@ public:
 
     const SpectralEdit::Shape& getSpectralShape() const { return shape; }
 
+    /** Takes back the last stroke of the drawing (Undo while a drawing is being made): true if it did.
+        There is nothing to take back once the file has changed since the stroke was drawn. */
+    bool undoStroke();
+    bool canUndoStroke() const;
+
     /** Empty when there is no selection. */
     juce::Range<juce::int64> getSelection() const       { return selection; }
     juce::int64 getCursor() const                       { return cursor; }
@@ -175,6 +180,7 @@ private:
     SpectralEdit::Shape shape;
     float brushRadius = 12.0f, brushStrength = 1.0f;
     int shapeLane = -1;                       // channel whose spectrogram a lasso or brush drag started in
+    juce::uint32 strokeVersion = 0;           // the file's version when the last stroke was drawn
     juce::Point<float> lastDrawn, brushHover { -1.0f, -1.0f };
     juce::Point<double> toShapePoint (juce::Point<float>, juce::Rectangle<int> spectrum) const;   // (frame, octave)
     double octavesPerPixel (juce::Rectangle<int> spectrum) const;

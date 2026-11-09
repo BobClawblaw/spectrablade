@@ -32,13 +32,14 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Crop to Selection | `Cmd-T` |
 | Select Next Clip | `Tab` |
 | Select Previous Clip | `Shift-Tab` |
-| Undo | `Cmd-Z` |
+| Undo (while a drawing is being made: Undo Stroke) | `Cmd-Z` |
 | Redo | `Shift-Cmd-Z` |
 | Repeat the last effect | `Shift-R` |
 | Box Selection tool | `E` |
 | Lasso Selection tool | `D` |
 | Brush Selection tool | `P` |
 | Smaller Brush, Larger Brush | `[`, `]` |
+| Lighter Brush, Heavier Brush | `Shift-[`, `Shift-]` |
 
 ## View
 

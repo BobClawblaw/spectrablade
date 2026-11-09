@@ -394,6 +394,45 @@ namespace
                "spectral tools: the brush is 3 to 60 pixels; with the box tool a plain drag in a spectrogram selects time, as before");
     }
 
+    void testStrokeUndo()
+    {
+        AudioEngine engine;
+        juce::AudioBuffer<float> silence (2, (int) (2 * rate));
+        silence.clear();
+        engine.document.reset (AudioEdits::fromBuffer (std::move (silence)), rate, {}, 24);
+        WaveformView view (engine);
+        view.setBounds (0, 0, 1000, 600);
+        view.setDisplay (WaveformView::Display::spectrogram);
+        view.zoomToFit();
+        const auto top = view.getWaveArea().toFloat().withHeight (view.getWaveArea().toFloat().getHeight() / 2.0f);
+        const auto at = [&top] (float fx, float fy) { return juce::Point<float> (top.getX() + top.getWidth() * fx, top.getY() + top.getHeight() * fy); };
+
+        const auto nothing = ! view.canUndoStroke() && ! view.undoStroke();
+        view.setSpectralTool (WaveformView::SpectralTool::lasso);
+        drag (view, { at (0.2f, 0.3f), at (0.5f, 0.3f), at (0.5f, 0.7f), at (0.2f, 0.7f) });
+        const auto first = view.getSelection();
+        drag (view, { at (0.7f, 0.2f), at (0.9f, 0.2f), at (0.8f, 0.4f) }, juce::ModifierKeys (juce::ModifierKeys::shiftModifier));
+        const auto second = view.getSelection();
+        drag (view, { at (0.3f, 0.4f), at (0.45f, 0.4f), at (0.45f, 0.6f), at (0.3f, 0.6f) }, juce::ModifierKeys (juce::ModifierKeys::altModifier));
+        const auto three = view.getSpectralShape().strokes.size() == 3 && view.canUndoStroke();
+
+        const auto undoTake = view.undoStroke() && view.getSpectralShape().strokes.size() == 2 && ! view.getSpectralShape().strokes.back().subtract
+                              && view.getSelection() == second;
+        const auto undoSecond = view.undoStroke() && view.getSpectralShape().strokes.size() == 1 && view.getSelection() == first;
+        const auto undoFirst = view.undoStroke() && view.getSpectralShape().isEmpty() && view.getSelection().isEmpty() && view.getCursor() == first.getStart();
+        check (nothing && three && undoTake && undoSecond && undoFirst && ! view.canUndoStroke() && ! view.undoStroke(),
+               "stroke undo: each call takes back the last stroke (the take, then the added lasso, then the first), the time selection "
+               "following the strokes left and the cursor landing at the drawing's start; nothing to take back before or after");
+
+        drag (view, { at (0.2f, 0.3f), at (0.5f, 0.3f), at (0.5f, 0.7f), at (0.2f, 0.7f) });
+        const auto drawn = view.canUndoStroke();
+        juce::AudioBuffer<float> other (2, (int) (2 * rate));
+        other.clear();
+        engine.document.apply (AudioEdits::fromBuffer (std::move (other)), "Nothing");
+        check (drawn && ! view.canUndoStroke() && ! view.undoStroke() && view.getSpectralShape().strokes.size() == 1,
+               "stroke undo: once the file has changed since the stroke, Undo is the file's again and the drawing is left as it is");
+    }
+
     void testSnap()
     {
         // A 100-frame square wave crosses zero at every 50th frame: with the view asked to snap,
@@ -436,5 +475,6 @@ void runSpectralShapeTests()
     testHeal();
     testHealThroughTone();
     testTools();
+    testStrokeUndo();
     testSnap();
 }

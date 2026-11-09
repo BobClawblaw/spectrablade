@@ -1033,6 +1033,7 @@ void WaveformView::mouseUp (const juce::MouseEvent&)
     if (shapeLane >= 0)
     {
         shapeLane = -1;
+        strokeVersion = engine.document.getVersion();
         std::erase_if (shape.strokes, [] (auto& s) { return s.isEmpty(); });
 
         if (shape.isEmpty())
@@ -1383,6 +1384,29 @@ void WaveformView::drawAt (juce::Point<float> p, juce::Rectangle<int> spectrum)
         setSelection (shapeSpan());
     else
         repaint();
+}
+
+bool WaveformView::canUndoStroke() const
+{
+    return shapeLane < 0 && ! shape.strokes.empty() && engine.document.getVersion() == strokeVersion;
+}
+
+bool WaveformView::undoStroke()
+{
+    if (! canUndoStroke())
+        return false;
+
+    shape.strokes.pop_back();
+
+    if (shape.isEmpty())
+    {
+        shape = {};
+        setCursor (selection.getStart());
+    }
+    else
+        setSelection (shapeSpan());
+
+    return true;
 }
 
 juce::Range<juce::int64> WaveformView::shapeSpan() const

@@ -4,7 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 334: Undo for the strokes of a drawing, and keys for the brush's strength**
+- While a drawing is being made, Command-Z takes back its last stroke: the Edit menu reads Undo Stroke, each press removes one more (a taking stroke, an added lasso, the first lasso in turn), the time selection follows the strokes left, and when the last goes the cursor lands where the drawing began. Once the file has changed since the stroke was drawn, Undo is the file's again and the drawing stays as it is; there is no Redo for a stroke.
+- Lighter Brush and Heavier Brush have default keys, Shift-[ and Shift-] (Smaller and Larger Brush are [ and ]). The Keyboard Shortcuts window shows them as the characters they type, { and }. docs/SHORTCUTS.md lists them.
+- Measured by the tests: three strokes drawn in the view (a lasso, a Shift lasso, an Option take) come back off one by one with the selection following and the cursor at the drawing's start, nothing to take back before or after; a lasso drawn and then the file changed leaves Undo to the file with the lasso kept. The command table audit passed with the new keys (300 commands, 80 default keys). The whole suite passed (1419 checks); the app launched and quit cleanly.
+- Not tried by hand: Undo Stroke in the running app, and the keys on a keyboard.
 
 ## Released
 

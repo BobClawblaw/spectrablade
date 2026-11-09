@@ -1296,7 +1296,13 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdSaveAs:     info.setInfo ("Save As...", "Save to a new file or format", "File", 0); info.addDefaultKeypress ('s', cmd | shift);
                             info.setActive (hasAudio); break;
 
-        case cmdUndo:       info.setInfo (doc.canUndo() ? "Undo " + doc.getUndoDescription() : juce::String ("Undo"), "Undo", "Edit", 0);
+        case cmdUndo:       if (! multitrackMode && waveform.canUndoStroke())
+                            {
+                                info.setInfo ("Undo Stroke", "Take back the last stroke drawn in the spectrogram", "Edit", 0);
+                                info.addDefaultKeypress ('z', cmd);
+                                break;
+                            }
+                            info.setInfo (doc.canUndo() ? "Undo " + doc.getUndoDescription() : juce::String ("Undo"), "Undo", "Edit", 0);
                             info.addDefaultKeypress ('z', cmd); info.setActive (doc.canUndo()); break;
         case cmdRedo:       info.setInfo (doc.canRedo() ? "Redo " + doc.getRedoDescription() : juce::String ("Redo"), "Redo", "Edit", 0);
                             info.addDefaultKeypress ('z', cmd | shift); info.setActive (doc.canRedo()); break;
@@ -1704,6 +1710,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo (id == cmdBrushHeavier ? "Heavier Brush" : "Lighter Brush",
                           juce::String ("Change how much the selection brush selects, in steps of 10 % (now ") + juce::String (strength)
                               + " %): an effect on what only it painted applies by that much", "Edit", 0);
+            info.addDefaultKeypress (id == cmdBrushHeavier ? '}' : '{', shift);   // Shift-] and Shift-[, the characters they type
             info.setActive (! multitrackMode && waveform.getSpectralTool() == WaveformView::SpectralTool::brush
                             && (id == cmdBrushHeavier ? strength < 100 : strength > 10));
             break;
@@ -2106,7 +2113,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdOpen:       chooseFile(); break;
         case cmdSave:       if (multitrackMode) saveSession(); else save(); break;
         case cmdSaveAs:     if (multitrackMode) saveSessionAs(); else saveAs(); break;
-        case cmdUndo:       if (multitrackMode) engine.session.undo(); else engine.document.undo(); break;
+        case cmdUndo:       if (multitrackMode) engine.session.undo(); else if (! waveform.undoStroke()) engine.document.undo(); break;
         case cmdRedo:       if (multitrackMode) engine.session.redo(); else engine.document.redo(); break;
         case cmdCut:        if (multitrackMode) multitrack.cutSelectedClip(); else cut(); break;
         case cmdCopy:       if (multitrackMode) { multitrack.copySelectedClip(); commands.commandStatusChanged(); } else copy(); break;
