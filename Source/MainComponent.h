@@ -655,6 +655,9 @@ private:
     using EffectField = EffectDialog::Field;
     std::map<juce::String, juce::String> effectTexts;   // the text fields of the effect dialog being applied, while apply runs
     using EffectValues = EffectPresets::Values;
+    /** True when an effect dialog opened now should start with its Preview on: the file is playing
+        (not a session, not recording) and nothing else is previewing. */
+    bool previewsFromStart();
     void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&,
                            const juce::String& presetKey, PreviewOwner,
                            std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,

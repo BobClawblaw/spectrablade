@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 347: The other four dialogs preview from the start too**
+- Milestone 346 turned Preview on for a dialog opened while the file plays, but only for the dialogs on the shared path; the Multiband Compressor, Dynamic EQ and Graphic EQ dialogs and the Parametric EQ window keep a "Preview on the selection" switch of their own, which stayed off. They now start the same way, through one `previewsFromStart` rule for all of them.
+- Measured by the tests: the whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: the four dialogs opening during play in the running app.
+
 **Milestone 345: The mode is said, not only lit**
 - Dogfooding: the single Multitrack button only tinted when pressed, and nothing said which mode was in use or which a click would go to. It is now a two-part switch, Editor | Multitrack, lit on the side in use with the other side where a click goes, and the status line under the editor starts with "Editing file" or "Multitrack session" before the name.
 - Measured by the tests: the whole suite passed; the app launched and quit cleanly.

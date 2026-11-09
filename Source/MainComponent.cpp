@@ -308,6 +308,9 @@ public:
     /** Unticks Preview without asking for anything (the preview has ended elsewhere). */
     void previewEnded()                             { content->preview.setToggleState (false, juce::dontSendNotification); }
 
+    /** Ticks Preview and starts it, as a click on it would. */
+    void startPreviewing()                          { content->preview.setToggleState (true, juce::dontSendNotification); content->previewBands (content->panel.get()); }
+
     /** Where the drawing's spectrum comes from: the newest output, as for the analysis panels. */
     void setReadOutput (std::function<double (juce::AudioBuffer<float>&)> read)
     {
@@ -7885,6 +7888,9 @@ void MainComponent::toggleParametricEq()
     });
     eqWindow->setReadOutput ([this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); });
     places->watch (*eqWindow, "Parametric EQ");
+
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+        eqWindow->startPreviewing();
 }
 
 void MainComponent::previewParametricEq (const ParametricEq* eq)
@@ -8035,6 +8041,12 @@ void MainComponent::showMultiband()
     preview->onClick = update;
     panel->onChange = update;
 
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+    {
+        preview->setToggleState (true, juce::dontSendNotification);
+        update();
+    }
+
     // Presets under the live effect's parameter IDs, shared with it.
     auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::multibandId,
                                                          [p = panel.get()]
@@ -8121,6 +8133,12 @@ void MainComponent::showDynamicEq()
     };
     preview->onClick = update;
     panel->onChange = update;
+
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+    {
+        preview->setToggleState (true, juce::dontSendNotification);
+        update();
+    }
 
     auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::dynamicEqId,
                                                          [p = panel.get()]
@@ -9357,6 +9375,11 @@ void MainComponent::showLimiter()
                       });
 }
 
+bool MainComponent::previewsFromStart()
+{
+    return ! multitrackMode && ! isRecording() && previewOwner == PreviewOwner::none && engine.getPlayer().isPlaying();
+}
+
 void MainComponent::showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>& fields,
                                       const juce::String& presetKey, PreviewOwner owner,
                                       std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
@@ -9473,7 +9496,7 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
 
     // Opened while the file plays, the dialog previews from the start, so its settings are heard
     // as they move (Preview off, the play underneath would go on unchanged).
-    if (! multitrackMode && ! isRecording() && previewOwner == PreviewOwner::none && engine.getPlayer().isPlaying())
+    if (previewsFromStart())
         dialog->setPreviewOn (true, juce::sendNotification);
 
     EffectDialog::show (std::move (dialog), title, this);
@@ -9709,6 +9732,12 @@ void MainComponent::showGraphicEq (int numBands)
     };
     preview->onClick = update;
     panel->onChange = update;
+
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+    {
+        preview->setToggleState (true, juce::dontSendNotification);
+        update();
+    }
 
     // Presets under the live effect's IDs (band1 ... bandN), shared with it.
     auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), numBands == 31 ? BuiltInEffects::graphicEq31Id : BuiltInEffects::graphicEq10Id,
