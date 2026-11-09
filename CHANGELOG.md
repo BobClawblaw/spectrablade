@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.3: the command table audited, the nudge keys as asked, taking from a drawing, and the brush's strength**
+- `SpectraBlade-0.14.3.dmg` on the repository's Releases page, with its SHA-256: Milestones 331 to 333 below on top of 0.14.2. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1417 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.3, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. Nothing in this release has been listened to or clicked through; the parts of each milestone not tried by hand are listed with it below.
+
 **Milestone 333: Taking from a drawing, and the brush's strength**
 - Option-drag with the lasso or the brush draws a stroke that takes from the drawing: what it covers is no longer selected (Shift still adds). A drawing is now its strokes in the order they were drawn, each adding or taking, so a take can be painted back over, and the time selection stays the adding strokes' span. A stroke that takes is drawn as a dark wash with a dashed edge. With the box tool Option-drag still selects a box.
 - Edit > Lighter Brush and Heavier Brush set how much the brush selects, 10 % to 100 % in steps of 10 (100 % to start; the menu items say the current setting, and the brush's circle is filled as strongly as it selects). A stroke's strength is its weight in the drawing: an effect on the drawing applies by that much where only that stroke was painted, so Remove Frequencies with the brush at 50 % takes the sound down by half (6 dB) and Heal blends half of the surroundings in. Where strokes overlap, the last one decides: an add raises the weight to its strength at the least, a take lowers it to one minus its strength at the most, so a take at 50 % over a full stroke leaves half. A lasso always selects fully.
@@ -20,9 +28,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - Twenty-five commands went missing from the menus for two releases (milestone 328) because nothing checked the menus: the main window is not in the test build, and the look passes rendered panels, not menus. Now `Scripts/check_commands.py` reads the command table out of `Source/MainComponent.cpp` and the suite runs it: every command in the enum (up to the sentinel the registration loop runs to) must have a `case` in describeCommand (a name and a description) and one in perform, must be reachable from a menu (the menu bar, the app menu or another addCommandItem; a command that needs no menu item is listed in the script with the reason, and none is yet), and no two commands may claim the same default key (JUCE's key map gives a key to one command only, so a clash makes a command lose its key silently; a key written as `a ? b : c` counts both ways). The script found one thing: Stop was in no menu (it was only the transport bar's button), and it is now in the Transport menu after Play/Pause. The suite needs `python3`, which comes with the command-line tools it already needs.
 - Measured by the tests: 298 commands, each described, performed and in a menu; 78 default keys, no two commands on one. Faults injected by hand into a copy of the source were each found: a command renamed out of its two cases, a command left out of the Edit menu, and a Command-O given to Stop as well as Open. The whole suite passed (1414 checks); the app launched and quit cleanly.
 - Not tried by hand: the Transport menu's Stop in the running app.
-
-
-## Released
 
 **Release 0.14.2: twenty-five commands back in the menus, playing only what is inside a spectral selection, nudging the selection, and selecting at zero crossings**
 - `SpectraBlade-0.14.2.dmg` on the repository's Releases page, with its SHA-256: Milestones 328 to 330 below on top of 0.14.1. Anyone on 0.14.0 or 0.14.1 should take this one: those two left every command added since the Sound Library window (the Dynamic EQ on through Codec Preview) out of the menus. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
