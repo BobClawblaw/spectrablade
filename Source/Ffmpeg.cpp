@@ -83,8 +83,10 @@ const juce::StringArray& importExtensions()
 {
     static const juce::StringArray extensions { "opus", "wma", "aac", "ac3", "eac3", "wv", "ape", "tta", "mka", "mp2", "amr", "dts",
                                                 "mp4", "m4v", "m4b", "mov", "mkv", "webm", "avi",
-                                               #if ! JUCE_MAC
-                                                "aifc", "m4a", "caf",   // Core Audio reads these on the Mac
+                                               #if JUCE_WINDOWS
+                                                "aifc", "caf",          // Core Audio reads these on the Mac
+                                               #elif ! JUCE_MAC
+                                                "aifc", "m4a", "caf",
                                                #endif
                                               };
     return extensions;

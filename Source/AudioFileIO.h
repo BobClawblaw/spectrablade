@@ -8,6 +8,10 @@ namespace AudioFileIO
         in CMakeLists.txt, which also names sessions (.sbsession). */
    #if JUCE_MAC
     inline const juce::StringArray openedFromFinder { "wav", "aif", "aiff", "aifc", "flac", "ogg", "mp3", "m4a", "caf" };
+   #elif JUCE_WINDOWS
+    // M4A through Windows' own decoders (M4aFormat); AIFC and CAF, read by Core Audio on the Mac, open
+    // through ffmpeg here (Ffmpeg::importExtensions).
+    inline const juce::StringArray openedFromFinder { "wav", "aif", "aiff", "flac", "ogg", "mp3", "m4a" };
    #else
     // AIFC, M4A and CAF are read by Core Audio on the Mac; elsewhere they open through ffmpeg (Ffmpeg::importExtensions).
     inline const juce::StringArray openedFromFinder { "wav", "aif", "aiff", "flac", "ogg", "mp3" };

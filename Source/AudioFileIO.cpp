@@ -3,6 +3,7 @@
 #include "AudioEdits.h"
 #include "Ffmpeg.h"
 #include "GaplessMp3.h"
+#include "M4aFormat.h"
 
 namespace AudioFileIO
 {
@@ -220,6 +221,9 @@ void registerFormats (juce::AudioFormatManager& formats)
     formats.registerFormat (new juce::OpusAudioFormat(), false);
    #endif
     formats.registerFormat (new GaplessMp3Format(), false);
+   #if JUCE_WINDOWS
+    formats.registerFormat (new M4aFormat(), false);   // Core Audio reads these on the Mac
+   #endif
    #if JUCE_USE_WINDOWS_MEDIA_FORMAT
     formats.registerFormat (new juce::WindowsMediaAudioFormat(), false);
    #endif

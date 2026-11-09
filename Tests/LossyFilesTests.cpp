@@ -180,11 +180,20 @@ void runLossyFilesTests()
     const auto noiseSnapshot = AudioEdits::fromBuffer (juce::AudioBuffer<float> (noise));
 
     // Each setting, with the least signal-to-error ratio it gives the sweeps (measured, less a little).
+    // The AAC levels are the system encoder's. Apple's (macOS) gains with the rate; Windows' leaves the
+    // error on these tones about 48 dB down from 192 kbps up (it spends the bits on noisier audio, its
+    // band reaching 20 kHz at 320 kbps), so its own levels are held there. MP3 is read by the system's
+    // decoder too, Windows' about 0.3 dB under the others at the highest rate.
+   #if JUCE_WINDOWS
+    constexpr double aac320 = 47.5, aac256 = 48.0, aacMono128 = 45.0, mp3At320 = 76.5;
+   #else
+    constexpr double aac320 = 57.5, aac256 = 50.0, aacMono128 = 56.0, mp3At320 = 77.0;
+   #endif
     struct Case { const char* name; Settings settings; double snrDb; };
-    const Case cases[] { { "MP3 320 kbps", { Kind::mp3, 320 }, 77.0 }, { "MP3 192 kbps", { Kind::mp3, 192 }, 76.5 },
+    const Case cases[] { { "MP3 320 kbps", { Kind::mp3, 320 }, mp3At320 }, { "MP3 192 kbps", { Kind::mp3, 192 }, 76.5 },
                          { "MP3 128 kbps", { Kind::mp3, 128 }, 63.0 }, { "MP3 V0", { Kind::mp3, 0, true, 0 }, 64.0 },
                          { "MP3 V2", { Kind::mp3, 0, true, 2 }, 37.5 }, { "MP3 V4", { Kind::mp3, 0, true, 4 }, 33.5 },
-                         { "AAC 320 kbps", { Kind::aac, 320 }, 57.5 }, { "AAC 256 kbps", { Kind::aac, 256 }, 50.0 },
+                         { "AAC 320 kbps", { Kind::aac, 320 }, aac320 }, { "AAC 256 kbps", { Kind::aac, 256 }, aac256 },
                          { "AAC 192 kbps", { Kind::aac, 192 }, 43.0 }, { "AAC 128 kbps", { Kind::aac, 128 }, 37.0 },
                          { "AAC 96 kbps", { Kind::aac, 96 }, 34.0 } };
     std::map<juce::String, double> noiseKbps;
@@ -224,6 +233,37 @@ void runLossyFilesTests()
         else
             check (m4aOverhead (file) <= 4096,
                    "lossy files: " + juce::String (c.name) + " holds " + juce::String (m4aOverhead (file)) + " bytes besides the audio");
+    }
+
+    // Read from part way in, as audition, previews and session clips read: the same samples as reading
+    // the whole file gives, wherever a read starts and in whatever order (the last of each kind written).
+    for (const auto* ext : { ".mp3", ".m4a" })
+    {
+        const auto file = folder.getChildFile ("sweeps" + juce::String (ext));
+        const auto whole = decode (file, formats);
+        std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
+        auto worst = 0.0f;
+        juce::StringArray positions;
+
+        for (const auto start : { 70000, 1000, 30000, 0, 30001, 95000, 2047 })
+        {
+            const auto count = juce::jmin (4096, whole.audio.getNumSamples() - start);
+
+            if (reader == nullptr || count <= 0)
+                continue;   // past the end of a shorter file
+
+            juce::AudioBuffer<float> part ((int) reader->numChannels, count);
+            reader->read (&part, 0, count, start, true, true);
+            positions.add (juce::String (start));
+
+            for (int ch = 0; ch < part.getNumChannels(); ++ch)
+                for (int i = 0; i < count; ++i)
+                    worst = juce::jmax (worst, std::abs (part.getSample (ch, i) - whole.audio.getSample (ch, start + i)));
+        }
+
+        check (reader != nullptr && positions.size() >= 5 && worst < 1.0e-4f,
+               "lossy files: " + juce::String (ext).substring (1).toUpperCase() + " read from part way in (at " + positions.joinIntoString (", ")
+                   + ", in that order) gives what reading it all does (at most " + juce::String (worst, 7) + " off)");
     }
 
     auto ratesOk = true;
@@ -289,7 +329,7 @@ void runLossyFilesTests()
             check (e1.isEmpty() && std::abs (d96.rate - 48000.0) < 0.5 && d96.audio.getNumSamples() == 96000,
                    "lossy files: " + name + " from 96 kHz is written at 48 kHz, 2 s still 96,000 frames (" + juce::String (d96.audio.getNumSamples()) + ")");
             check (e2.isEmpty() && dm.audio.getNumChannels() == 1 && dm.audio.getNumSamples() == mono.getNumSamples() && lag == 0
-                       && ratio > (kind == Kind::mp3 ? 63.5 : 56.0),
+                       && ratio > (kind == Kind::mp3 ? 63.5 : aacMono128),
                    "lossy files: " + name + " in mono stays one channel of the same length, " + juce::String (ratio, 2) + " dB above the error");
         }
     }

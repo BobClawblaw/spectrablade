@@ -238,6 +238,10 @@ target_sources(SpectraBlade PRIVATE
     Source/Generator.cpp
     Source/LossyFiles.cpp
     Source/AacWriter.cpp
+    Source/Mp4File.cpp
+    Source/MediaFoundation.cpp
+    Source/M4aFormat.cpp
+    Source/PacketReader.cpp
     Source/Ffmpeg.cpp
     Source/FileInfo.cpp
     Source/OpenFiles.cpp
@@ -292,6 +296,11 @@ target_link_libraries(SpectraBlade PRIVATE
     juce::juce_recommended_config_flags
     juce::juce_recommended_lto_flags
     juce::juce_recommended_warning_flags)
+
+# Windows' own AAC encoder and AAC and Apple Lossless decoders (Media Foundation), for .m4a files.
+if(WIN32)
+    target_link_libraries(SpectraBlade PRIVATE mfplat mfuuid wmcodecdspuuid)
+endif()
 
 # Integration checks: plug-in scanning, device routing and rack restore on this machine.
 juce_add_console_app(SpectraBladeTests PRODUCT_NAME "SpectraBladeTests" PLUGINHOST_AU TRUE)
@@ -474,6 +483,10 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Generator.cpp
     Source/LossyFiles.cpp
     Source/AacWriter.cpp
+    Source/Mp4File.cpp
+    Source/MediaFoundation.cpp
+    Source/M4aFormat.cpp
+    Source/PacketReader.cpp
     Source/Ffmpeg.cpp
     Source/FileInfo.cpp
     Source/OpenFiles.cpp
@@ -528,6 +541,10 @@ target_compile_definitions(SpectraBladeTests PRIVATE ${spectrablade_defs} JUCE_M
 add_dependencies(SpectraBladeTests SpectraBlade)
 target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_APP_EXECUTABLE="$<TARGET_FILE:SpectraBlade>")
 target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+if(WIN32)
+    target_link_libraries(SpectraBladeTests PRIVATE mfplat mfuuid wmcodecdspuuid)
+endif()
 target_link_libraries(SpectraBladeTests PRIVATE
     SpectraBladeArt
     SpectraBladeLame
