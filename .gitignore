@@ -3,3 +3,4 @@ build-release/
 dist/
 .DS_Store
 build-win/
+build-release-win/

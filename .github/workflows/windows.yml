@@ -1,0 +1,32 @@
+# Builds the Windows packages (the portable zip and the installer) and keeps them as an artifact.
+# The tests aren't run here: they need an audio device and a desktop, which these runners don't
+# have. Run them on a Windows machine with Scripts/package-windows.ps1 (see docs/TESTING.md).
+name: Windows
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Inno Setup
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build and package
+        shell: pwsh
+        run: ./Scripts/package-windows.ps1 -Jobs 4 -SkipTests
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SpectraBlade-windows-x64
+          path: dist/*
+          if-no-files-found: error

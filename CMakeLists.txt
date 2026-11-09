@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "Minimum macOS version")
 
+# On Windows the C and C++ runtimes are linked in, so the program runs without the Visual C++
+# Redistributable installed.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 # Use a local JUCE checkout with -DSPECTRABLADE_JUCE_DIR=/path/to/JUCE, otherwise fetch the pinned release.
 set(SPECTRABLADE_JUCE_DIR "" CACHE PATH "Local JUCE checkout (optional)")
 
@@ -299,7 +303,8 @@ target_link_libraries(SpectraBlade PRIVATE
 
 # Windows' own AAC encoder and AAC and Apple Lossless decoders (Media Foundation), for .m4a files.
 if(WIN32)
-    target_link_libraries(SpectraBlade PRIVATE mfplat mfuuid wmcodecdspuuid)
+    target_link_libraries(SpectraBlade PRIVATE mfplat mfuuid wmcodecdspuuid delayimp)
+    target_link_options(SpectraBlade PRIVATE /DELAYLOAD:mfplat.dll)   # see MediaFoundation.cpp, present()
 endif()
 
 # Integration checks: plug-in scanning, device routing and rack restore on this machine.
@@ -543,7 +548,8 @@ target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_APP_EXECUTABLE
 target_compile_definitions(SpectraBladeTests PRIVATE SPECTRABLADE_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 
 if(WIN32)
-    target_link_libraries(SpectraBladeTests PRIVATE mfplat mfuuid wmcodecdspuuid)
+    target_link_libraries(SpectraBladeTests PRIVATE mfplat mfuuid wmcodecdspuuid delayimp)
+    target_link_options(SpectraBladeTests PRIVATE /DELAYLOAD:mfplat.dll)
 endif()
 target_link_libraries(SpectraBladeTests PRIVATE
     SpectraBladeArt

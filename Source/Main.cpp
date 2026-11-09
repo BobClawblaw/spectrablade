@@ -1,3 +1,12 @@
+// Before JUCE's headers: letting the copy already running come to the front.
+#if defined (_WIN32)
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h>
+#endif
+
 #include <JuceHeader.h>
 #include "MainComponent.h"
 #include "PluginScanner.h"
@@ -10,8 +19,21 @@ public:
     const juce::String getApplicationName() override       { return JUCE_APPLICATION_NAME_STRING; }
     const juce::String getApplicationVersion() override    { return JUCE_APPLICATION_VERSION_STRING; }
 
-    // The plug-in scanner runs as a second copy of this executable.
-    bool moreThanOneInstanceAllowed() override              { return true; }
+    // The plug-in scanner runs as a second copy of this executable. On Windows, where opening a file
+    // from Explorer starts the program again, any other second copy hands its command line (the files
+    // to open) to the one already running and ends; macOS sends files to the running app itself.
+    bool moreThanOneInstanceAllowed() override
+    {
+       #if JUCE_WINDOWS
+        if (getCommandLineParameters().contains (scannerProcessUID))
+            return true;
+
+        AllowSetForegroundWindow (ASFW_ANY);   // so the running copy can come to the front
+        return false;
+       #else
+        return true;
+       #endif
+    }
 
     void initialise (const juce::String& commandLine) override
     {
@@ -58,6 +80,18 @@ public:
             return;
 
         mainWindow->getMainComponent().openDocuments (AudioFileIO::filesIn (commandLine));
+
+       #if JUCE_WINDOWS
+        // Started again from Explorer or the Start menu: this window comes forward, restored if minimised
+        // (not at start-up, when it shows once loading is done).
+        if (mainWindow->isVisible())
+        {
+            if (mainWindow->isMinimised())
+                mainWindow->setMinimised (false);
+
+            mainWindow->toFront (true);
+        }
+       #endif
     }
 
 private:

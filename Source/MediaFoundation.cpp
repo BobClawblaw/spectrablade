@@ -35,6 +35,18 @@ namespace
         thread_local Com com;
     }
 
+    /** Media Foundation is left out of Windows' N editions until the Media Feature Pack is added. Its
+        library is loaded only when first used (delay-loaded), and only if it is there, so the program
+        starts without it and just goes without what needs it. */
+    bool present()
+    {
+        static const bool found = LoadLibraryExW (L"mfplat.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32) != nullptr;
+        return found;
+    }
+
+    const char* const missing = "Windows' media features (Media Foundation) aren't installed: on an N edition of Windows, "
+                                "add the Media Feature Pack in Settings > Apps > Optional features.";
+
     struct Platform
     {
         Platform()  { startComHere(); ok = SUCCEEDED (MFStartup (MF_VERSION, MFSTARTUP_LITE)); }
@@ -236,6 +248,13 @@ AacEncoder::~AacEncoder() = default;
 std::unique_ptr<AacEncoder> AacEncoder::create (double sampleRate, int channels, int kbps, juce::String& error)
 {
     startComHere();
+
+    if (! present())
+    {
+        error = missing;
+        return {};
+    }
+
     std::unique_ptr<AacEncoder> e (new AacEncoder());
     auto mft = findTransform (MFT_CATEGORY_AUDIO_ENCODER, MFAudioFormat_PCM, MFAudioFormat_AAC);
 
@@ -335,6 +354,13 @@ Resampler::~Resampler() = default;
 std::unique_ptr<Resampler> Resampler::create (double inRate, double outRate, int channels, juce::String& error)
 {
     startComHere();
+
+    if (! present())
+    {
+        error = missing;
+        return {};
+    }
+
     std::unique_ptr<Resampler> r (new Resampler());
     ComPtr<IMFTransform> mft;
 
@@ -397,6 +423,13 @@ std::unique_ptr<Decoder> Decoder::create (const juce::String& codec, const juce:
                                           int channels, int bitsPerSample, juce::String& error)
 {
     startComHere();
+
+    if (! present())
+    {
+        error = missing;
+        return {};
+    }
+
     const auto aac = codec == "aac", mp3 = codec == "mp3";
     const auto subtype = aac ? MFAudioFormat_AAC : mp3 ? MFAudioFormat_MP3 : MFAudioFormat_ALAC;
     const juce::String name (aac ? "AAC" : mp3 ? "MP3" : "Apple Lossless");
