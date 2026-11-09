@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.14.4: the playhead on what is heard, Undo for strokes, keys for the brush's strength, and the Multitrack menu in groups**
+- `SpectraBlade-0.14.4.dmg` on the repository's Releases page, with its SHA-256: Milestones 334 to 336 below on top of 0.14.3. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1424 checks, the heard frame and the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.4, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. Nothing in this release has been listened to or clicked through; the parts of each milestone not tried by hand are listed with it below.
+
 **Milestone 336: The Multitrack menu in groups**
 - The Multitrack menu was one list of 65 commands. The five panels (Mixer, Clip Properties, Clip List, Marker List, Session Notes) and Import Audio stay at the top; the rest are eight submenus by what they do: Tracks (adding, templates, duplicating, deleting, moving, hiding, selecting above and below, Unsolo All and Unmute All), Clips (split, duplicate, repeat, reverse, stretch, pitch, lock, mute, groups, gain lines), Arrange (nudging, moving to the cursor, trimming to it, closing gaps, quantizing), Time Range, Editing and Recording (snapping, zero crossings, crossfades, writing automation, input monitoring, loop recording), Tempo (the metronome and count-in with it), Surround, and Render and Export (bounce, freeze, mix down, stems, regions). The Effects menu's submenu helper now serves every menu.
 - Measured by the tests: the command table audit found every one of the 300 commands still in a menu and no default key claimed twice. The whole suite passed (docs checks); the app launched and quit cleanly.
@@ -19,8 +27,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - Lighter Brush and Heavier Brush have default keys, Shift-[ and Shift-] (Smaller and Larger Brush are [ and ]). The Keyboard Shortcuts window shows them as the characters they type, { and }. docs/SHORTCUTS.md lists them.
 - Measured by the tests: three strokes drawn in the view (a lasso, a Shift lasso, an Option take) come back off one by one with the selection following and the cursor at the drawing's start, nothing to take back before or after; a lasso drawn and then the file changed leaves Undo to the file with the lasso kept. The command table audit passed with the new keys (300 commands, 80 default keys). The whole suite passed (1419 checks); the app launched and quit cleanly.
 - Not tried by hand: Undo Stroke in the running app, and the keys on a keyboard.
-
-## Released
 
 **Release 0.14.3: the command table audited, the nudge keys as asked, taking from a drawing, and the brush's strength**
 - `SpectraBlade-0.14.3.dmg` on the repository's Releases page, with its SHA-256: Milestones 331 to 333 below on top of 0.14.2. Built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
