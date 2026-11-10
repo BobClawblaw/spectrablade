@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 357: New screenshots, and the About box says what it runs on**
+- Dogfooding: the README's screenshots were from 0.9.5 and showed the old lone Multitrack button, not the Editor | Multitrack switch, the tool strip or the status line's mode prefix; and the About box said nothing about where the app runs. All five screenshots are retaken from this build with the demo files (the editor, a multitrack session, the Analysis workspace in the Darker theme, the Light and High Contrast themes), window captures masked at the interface name and scaled to 1,600 wide in sRGB, and their captions name the switch and the tools. The About box now says the app is for macOS 13 or later on Apple silicon, with no Windows, Linux or Intel build, and credits JUCE, LAME, Signalsmith Stretch and Linear and the UCS list as the README does.
+- Measured by the tests: the whole suite passed; the app launched and quit cleanly. The screenshots were looked at one by one.
+- Not tried by hand: the About box on screen.
 
 ## Released
 
