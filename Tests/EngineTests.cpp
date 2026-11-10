@@ -25,6 +25,7 @@
 #include "GraphicEqTests.h"
 #include "DockTests.h"
 #include "OpenFilesTests.h"
+#include "SettingsPanelTests.h"
 #include "PanelTests.h"
 #include "ThemeTests.h"
 #include "EditorBarTests.h"
@@ -92,9 +93,18 @@
 #include "CommandAuditTests.h"
 #include "PlayheadTests.h"
 #include "StatisticsTests.h"
+#include "ExtremeStretchTests.h"
 #include "TimeFormatTests.h"
 #include "TestPlugins.h"
 #include "TestUtils.h"
+#include "../Source/EditorBar.h"
+#include "../Source/Statistics.h"
+#include "../Source/TonalBalance.h"
+#include "../Source/MultitrackView.h"
+#include "../Source/MarkerTable.h"
+#include "../Source/TimeFormat.h"
+#include "../Source/Theme.h"
+#include "../Source/Session.h"
 
 namespace
 {
@@ -568,6 +578,7 @@ int main (int argc, char* argv[])
     //   --plugin-sweep <report> only scan every plug-in on this machine and write what works
     //   --library <folder>      only scan this folder of sounds into a new Sound Library index, and time it
     //   --write-check <folder>  only write categories and tags into copies of WAV files from this folder, and check them
+    //   --theme-sweep <folder>  only draw a page of the main panels in each theme into this folder, as <theme>.png
     juce::StringArray args;
 
     for (int i = 1; i < argc; ++i)
@@ -581,6 +592,87 @@ int main (int argc, char* argv[])
 
     juce::ScopedJuceInitialiser_GUI juceInit;
     juce::Array<juce::PluginDescription> found;
+
+    // A page per theme, to look at: the editor with a lasso in hand, its strip, a session, the
+    // statistics, the tonal balance and the marker list. Anything a component leaves unpainted
+    // shows red.
+    if (const auto dir = valueOf ("--theme-sweep"); dir.isNotEmpty())
+    {
+        Theme::LookAndFeel look;
+        juce::LookAndFeel::setDefaultLookAndFeel (&look);
+        const juce::File folder (dir);
+        folder.createDirectory();
+        const double rate = 48000.0;
+
+        for (const auto& name : Theme::themeNames())
+        {
+            Theme::apply (Theme::make (name, "Blue"));
+            AudioEngine engine;
+            juce::AudioBuffer<float> buf (2, (int) (2 * rate));
+            juce::Random rnd (1);
+
+            for (int ch = 0; ch < 2; ++ch)
+                for (int i = 0; i < buf.getNumSamples(); ++i)
+                    buf.setSample (ch, i, (float) (0.4 * std::sin (juce::MathConstants<double>::twoPi * 220.0 * i / rate) * (0.5 + 0.5 * std::sin (juce::MathConstants<double>::twoPi * 0.7 * i / rate))
+                                                   + 0.05 * (rnd.nextFloat() * 2.0f - 1.0f)));
+
+            engine.document.reset (AudioEdits::fromBuffer (juce::AudioBuffer<float> (buf)), rate, {}, 24, Markers { { 12000, 0, "Intro" }, { 48000, 30000, "Verse" } });
+            WaveformView view (engine);
+            view.setBounds (0, 0, 900, 420);
+            view.setDisplay (WaveformView::Display::both);
+            view.zoomToFit();
+            view.setSelection ({ 30000, 60000 });
+            juce::ApplicationCommandManager commands;
+            EditorBar bar (commands, view, engine.document, { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 });
+            bar.setBounds (0, 0, 900, EditorBar::height);
+            view.setSpectralTool (WaveformView::SpectralTool::lasso);
+
+            Statistics::Panel stats;
+            stats.setBounds (0, 0, 450, 420);
+            auto snapshot = engine.document.getSnapshot();
+            stats.readSource = [snapshot, rate] { return std::optional<Statistics::Panel::Source> (Statistics::Panel::Source { snapshot, 0, 96000, rate }); };
+            stats.formatTime = [rate] (juce::int64 f) { return TimeFormat::format (f, rate); };
+            stats.scan();
+
+            TonalBalance::Panel tonal;
+            tonal.setBounds (0, 0, 450, 200);
+
+            SessionState s;
+            s.sampleRate = rate;
+            s.addTrack(); s.addTrack(); s.addBus();
+            s.tracks[0].name = "Voice"; s.tracks[1].name = "Music";
+            s.markers = { { 12000, 0, "Intro" }, { 48000, 30000, "Verse" } };
+            SessionEdits::addClip (s, 0, juce::File ("/takes/voice.wav"), AudioEdits::fromBuffer (juce::AudioBuffer<float> (buf)), 6000);
+            SessionEdits::addClip (s, 1, juce::File ("/takes/music.wav"), AudioEdits::fromBuffer (juce::AudioBuffer<float> (buf)), 40000);
+            engine.session.reset (s, {});
+            MultitrackView multi (engine);
+            multi.setBounds (0, 0, 900, 300);
+            multi.zoomToRange ({ 0, 160000 });
+            MarkerTable markers (engine.session, { {}, {}, {} });
+            markers.setBounds (0, 0, 450, 160);
+            TestUtils::runUntil ([&] { return ! stats.isScanning(); }, 5000);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+
+            juce::Image page (juce::Image::RGB, 1360, 1000, true);
+            juce::Graphics g (page);
+            g.fillAll (juce::Colours::red);
+            g.drawImageAt (view.createComponentSnapshot (view.getLocalBounds()), 0, 0);
+            g.drawImageAt (bar.createComponentSnapshot (bar.getLocalBounds()), 0, 424);
+            g.drawImageAt (multi.createComponentSnapshot (multi.getLocalBounds()), 0, 452);
+            g.drawImageAt (stats.createComponentSnapshot (stats.getLocalBounds()), 905, 0);
+            g.drawImageAt (tonal.createComponentSnapshot (tonal.getLocalBounds()), 905, 424);
+            g.drawImageAt (markers.createComponentSnapshot (markers.getLocalBounds()), 905, 628);
+            g.setColour (juce::Colours::white);
+            g.drawText (name, 0, 760, 400, 30, juce::Justification::centredLeft);
+            const auto file = folder.getChildFile (name.replaceCharacter (' ', '-') + ".png");
+            file.deleteFile();
+            juce::FileOutputStream out { file };
+            juce::PNGImageFormat().writeImageToStream (page, out);
+        }
+
+        juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+        return 0;
+    }
 
     if (const auto report = valueOf ("--plugin-sweep"); report.isNotEmpty())
     {
@@ -626,6 +718,7 @@ int main (int argc, char* argv[])
         runMatchEqTests();
         runTonalBalanceTests();
         runStatisticsTests();
+        runExtremeStretchTests();
         runTimeFormatTests();
         runDitherTests();
         runDialogueIsolationTests();
@@ -678,6 +771,7 @@ int main (int argc, char* argv[])
         runAuditionTests (engine);
         runDockTests();
         runOpenFilesTests();
+        runSettingsPanelTests();
         runPanelTests();
         runThemeTests();
         runEditorBarTests();

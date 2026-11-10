@@ -152,6 +152,7 @@ private:
     struct Root final : public juce::TreeViewItem
     {
         bool mightContainSubItems() override            { return true; }
+        juce::String getUniqueName() const override     { return "root"; }   // so the tree's openness can be saved and restored
     };
 
     SoundLibraryView& view;
@@ -238,6 +239,18 @@ private:
 
             juce::PopupMenu menu;
             menu.addItem (Platform::showInFileManager(), folder.exists(), false, [f = folder] { f.revealToUser(); });
+            const auto out = owner.view.foldersLeftOut.contains (folder);
+            menu.addItem (out ? "Show in the List Again" : "Leave Out of the List", true, false,
+                          [v = juce::Component::SafePointer<SoundLibraryView> (&owner.view), f = folder, out]
+                          {
+                              if (v == nullptr)
+                                  return;
+
+                              if (out)
+                                  v->showFolderAgain (f);
+                              else
+                                  v->leaveOutFolder (f);
+                          });
             menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (owner).withMousePosition());
         }
 
@@ -247,14 +260,15 @@ private:
                 count = isAll() ? owner.view.total : owner.view.index.countWithin (folder);
 
             const auto top = getParentItem() == &owner.root;
-            const auto label = isAll() ? juce::String ("All Folders") : folder.getFileName();
+            const auto out = ! isAll() && owner.view.foldersLeftOut.contains (folder);
+            const auto label = isAll() ? juce::String ("All Folders") : folder.getFileName() + (out ? " (left out)" : "");
 
             if (isSelected())
                 g.fillAll (Theme::selection);
 
             const juce::Font font (juce::FontOptions (13.0f));
             g.setFont (font);
-            const auto nameColour = count > 0 || isAll() ? Theme::text : Theme::dimText;
+            const auto nameColour = (count > 0 || isAll()) && ! out ? Theme::text : Theme::dimText;
             auto x = 4;
             const auto room = width - 64;
 
@@ -306,6 +320,7 @@ private:
     struct Root final : public juce::TreeViewItem
     {
         bool mightContainSubItems() override            { return true; }
+        juce::String getUniqueName() const override     { return "root"; }   // so the tree's openness can be saved and restored
     };
 
     SoundLibraryView& view;
@@ -354,6 +369,10 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
         showTag (juce::isPositiveAndBelow (i, (int) tagCounts.size()) ? tagCounts[(size_t) i].first : juce::String());
     };
     addAndMakeVisible (tagChoice);
+    formatsButton.setTooltip ("Which formats to list: WAV to start with, so the same sounds as WAV and AIFF show once; add the rest here");
+    formatsButton.setButtonText (describeShownFormats());
+    formatsButton.onClick = [this] { showFormatsMenu(); };
+    addAndMakeVisible (formatsButton);
     header.setSortColumnId (name, true);
     Theme::follow (table, juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
@@ -580,7 +599,7 @@ void SoundLibraryView::updateSummary()
     if (folders == 0)
         line = "No folders yet: Add Folder... chooses the folders of sounds to scan. Nothing else is scanned.";
     else if (text.isEmpty() && filterCategory.isEmpty() && filterCatId.isEmpty() && ! filterWithout && ! filterFavourites
-             && filterRating == 0 && filterTag.isEmpty() && filterWithin == juce::File())
+             && filterRating == 0 && filterTag.isEmpty() && filterWithin == juce::File() && foldersLeftOut.isEmpty() && rows == total)
         line = number (total) + (total == 1 ? " sound in " : " sounds in ") + juce::String (folders) + (folders == 1 ? " folder" : " folders");
     else
         line = number (rows) + " of " + number (total) + " sounds match";
@@ -772,6 +791,8 @@ SoundLibrary::Query SoundLibraryView::query (int offset, int limit) const
     q.minRating = filterRating;
     q.tag = filterTag;
     q.within = filterWithin;
+    q.formats = shownFormats;
+    q.foldersLeftOut = foldersLeftOut;
     return q;
 }
 
@@ -948,6 +969,131 @@ void SoundLibraryView::showTag (const juce::String& tag)
 {
     filterTag = tag;
     refresh();
+}
+
+void SoundLibraryView::showFormats (const juce::StringArray& formatNames)
+{
+    juce::StringArray kept;
+
+    for (const auto& choice : SoundLibrary::formatChoices())
+        if (formatNames.contains (choice.name))
+            kept.add (choice.name);
+
+    shownFormats = kept.isEmpty() ? juce::StringArray { "WAV file" } : kept;
+    formatsButton.setButtonText (describeShownFormats());
+    refresh();
+}
+
+juce::String SoundLibraryView::describeShownFormats() const
+{
+    const auto choices = SoundLibrary::formatChoices();
+    juce::StringArray labels;
+
+    for (const auto& choice : choices)
+        if (shownFormats.contains (choice.name))
+            labels.add (choice.label);
+
+    if (labels.size() == (int) choices.size())
+        return "All Formats";
+
+    if (labels.size() <= 2)
+        return labels.joinIntoString (", ");
+
+    return juce::String (labels.size()) + " Formats";
+}
+
+void SoundLibraryView::toggleFormat (const juce::String& formatName)
+{
+    auto wanted = shownFormats;
+
+    if (formatName.isEmpty())
+    {
+        wanted.clear();
+
+        for (const auto& choice : SoundLibrary::formatChoices())
+            wanted.add (choice.name);
+    }
+    else if (! wanted.contains (formatName))
+    {
+        wanted.add (formatName);
+    }
+    else if (wanted.size() > 1)
+    {
+        wanted.removeString (formatName);
+    }
+    else
+    {
+        return;   // the last format shown stays: a list of nothing helps no one
+    }
+
+    showFormats (wanted);
+
+    if (onShownFormatsChanged != nullptr)
+        onShownFormatsChanged (shownFormats);
+}
+
+void SoundLibraryView::setFoldersLeftOut (const juce::Array<juce::File>& folders)
+{
+    foldersLeftOut.clear();
+
+    for (const auto& f : folders)
+        if (f != juce::File())
+            foldersLeftOut.addIfNotAlreadyThere (f);
+
+    refresh();
+}
+
+void SoundLibraryView::leaveOutFolder (const juce::File& folder)
+{
+    if (folder == juce::File() || foldersLeftOut.contains (folder))
+        return;
+
+    auto wanted = foldersLeftOut;
+    wanted.add (folder);
+    setFoldersLeftOut (wanted);
+
+    if (onFoldersLeftOutChanged != nullptr)
+        onFoldersLeftOutChanged (foldersLeftOut);
+}
+
+void SoundLibraryView::showFolderAgain (const juce::File& folder)
+{
+    if (! foldersLeftOut.contains (folder))
+        return;
+
+    auto wanted = foldersLeftOut;
+    wanted.removeFirstMatchingValue (folder);
+    setFoldersLeftOut (wanted);
+
+    if (onFoldersLeftOutChanged != nullptr)
+        onFoldersLeftOutChanged (foldersLeftOut);
+}
+
+void SoundLibraryView::showFormatsMenu()
+{
+    juce::PopupMenu menu;
+    const auto choices = SoundLibrary::formatChoices();
+    menu.addItem (1, "All Formats", true, shownFormats.size() == (int) choices.size());
+    menu.addSeparator();
+
+    for (size_t i = 0; i < choices.size(); ++i)
+    {
+        const auto shown = shownFormats.contains (choices[i].name);
+        menu.addItem ((int) i + 2, choices[i].label + (choices[i].detail.isEmpty() ? juce::String() : " (" + choices[i].detail + ")"),
+                      ! (shown && shownFormats.size() == 1), shown);
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&formatsButton),
+                        [safe = juce::Component::SafePointer<SoundLibraryView> (this), choices] (int result)
+    {
+        if (safe == nullptr || result == 0)
+            return;
+
+        if (result == 1)
+            safe->toggleFormat ({});
+        else if (juce::isPositiveAndBelow (result - 2, (int) choices.size()))
+            safe->toggleFormat (choices[(size_t) (result - 2)].name);
+    });
 }
 
 juce::StringArray SoundLibraryView::getTagChoices() const
@@ -1171,10 +1317,19 @@ void SoundLibraryView::showCategoryMenu()
     menu.addSeparator();
     menu.addItem (60, "Insert at Cursor", onInsert != nullptr);
     menu.addSeparator();
+    juce::File rowFolder;
+
+    if (const auto* s = chosenRows.size() > 0 ? soundAt (chosenRows[0]) : nullptr)
+        rowFolder = s->file.getParentDirectory();
+
+    menu.addItem (70, "Leave \"" + rowFolder.getFileName() + "\" Out of the List", rowFolder != juce::File() && ! foldersLeftOut.contains (rowFolder));
+    menu.addSeparator();
     menu.addItem (50, "Write Category and Tags into Files...", ! writing);
-    menu.showMenuAsync (juce::PopupMenu::Options(), [this, selectedTags] (int result)
+    menu.showMenuAsync (juce::PopupMenu::Options(), [this, selectedTags, rowFolder] (int result)
     {
-        if (result >= 10 && result <= 15)
+        if (result == 70)
+            leaveOutFolder (rowFolder);
+        else if (result >= 10 && result <= 15)
             setRatingOfSelection (result - 10);
         else if (result == 20 || result == 21)
             setFavouriteOfSelection (result == 20);
@@ -1243,9 +1398,26 @@ void SoundLibraryView::showFoldersMenu()
         menu.addSubMenu (folders[i].getFullPathName(), sub);
     }
 
-    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&foldersButton), [this, folders] (int result)
+    const auto leftOut = foldersLeftOut;
+
+    if (! leftOut.isEmpty())
     {
-        if (result == 1)
+        menu.addSeparator();
+        menu.addSectionHeader ("Left out of the list");
+
+        for (int i = 0; i < leftOut.size(); ++i)
+        {
+            juce::PopupMenu sub;
+            sub.addItem (3000 + i, "Show in the List Again");
+            menu.addSubMenu (leftOut[i].getFullPathName(), sub);
+        }
+    }
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&foldersButton), [this, folders, leftOut] (int result)
+    {
+        if (juce::isPositiveAndBelow (result - 3000, leftOut.size()))
+            showFolderAgain (leftOut[result - 3000]);
+        else if (result == 1)
             rescan();
         else if (juce::isPositiveAndBelow (result - 1000, folders.size()))
             folders[result - 1000].revealToUser();
@@ -1269,6 +1441,8 @@ void SoundLibraryView::resized()
     ratingChoice.setBounds (filters.removeFromLeft (150));
     filters.removeFromLeft (6);
     tagChoice.setBounds (filters.removeFromLeft (220));
+    filters.removeFromLeft (6);
+    formatsButton.setBounds (filters.removeFromLeft (150));
     summary.setBounds (r.removeFromBottom (24).reduced (4, 0));
     preview.setBounds (r.removeFromBottom (juce::jlimit (110, 220, r.getHeight() / 3)));
     const auto widest = juce::jmax (120, r.getWidth() - 320);

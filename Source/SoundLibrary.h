@@ -73,7 +73,26 @@ namespace SoundLibrary
 
         /** Only the sounds in this folder or any folder inside it (none: anywhere). */
         juce::File within {};
+
+        /** Only sounds of these formats (their names as a scan keeps them, e.g. "WAV file"; see
+            formatChoices()); empty: any format. */
+        juce::StringArray formats {};
+
+        /** None of the sounds in these folders or any folder inside them. */
+        juce::Array<juce::File> foldersLeftOut {};
     };
+
+    /** A format the scan can read, as its name is kept with each sound (the reader's) and as it
+        is shown: a short label, and for the catch-all a word on what it covers. */
+    struct FormatChoice
+    {
+        juce::String name, label, detail;
+    };
+
+    /** The formats a scan can give a sound, in the order it tries them: WAV, AIFF, FLAC, Ogg
+        Vorbis and what CoreAudio reads (MP3, M4A, CAF and more). A format whose every file an
+        earlier one takes first is left out, since no sound can carry its name. */
+    std::vector<FormatChoice> formatChoices();
 
     struct ScanResult
     {

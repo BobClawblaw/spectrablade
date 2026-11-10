@@ -56,6 +56,7 @@
 #include "PitchEditor.h"
 #include "Delivery.h"
 #include "SoundLibraryView.h"
+#include "SettingsPanel.h"
 
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
@@ -110,6 +111,7 @@ private:
     class PluginEditorWindow;
     class EditorPanel;
     class KeyShortcutsWindow;
+    class SettingsWindow;
     class EqWindow;
     class PluginListWindow;
     class RackRenderJob;
@@ -146,6 +148,12 @@ private:
     void paste (PasteMode);
     void pasteClip (const AudioClip&, PasteMode);
     void chooseSampleRate();
+    /** File > Settings...: every setting of the app in one window, opened on a section by name
+        (the one last shown when empty). The model lists each setting with how to read and set it. */
+    void showSettings (const juce::String& section = {});
+    Settings::Model makeSettingsModel();
+    void askToNewFile();   // File > New File...: a file of silence at a chosen rate, channels, bit depth and length
+    void newFile (double sampleRate, int channels, int bitDepth, double seconds);
     void convertSampleRate (double newRate);
     void deleteSelection();
     void cropToSelection();
@@ -202,7 +210,16 @@ private:
     void runBatch (const juce::Array<juce::File>&, const Batch::Settings&);
     /** Shows the Sound Library window (making it the first time), or brings it to the front. */
     void showSoundLibrary();
+    void toggleSoundLibrary();   // Window > Sound Library (F5): shown, or hidden when it is showing
     std::unique_ptr<SoundLibraryWindow> soundLibrary;
+
+    /** The formats the Sound Library lists (names as SoundLibrary::formatChoices() gives them; WAV
+        alone to start with) and the folders it leaves out, kept as settings; the window follows a
+        change at once. */
+    juce::StringArray getLibraryShownFormats();
+    void setLibraryShownFormats (const juce::StringArray&);
+    juce::Array<juce::File> getLibraryFoldersLeftOut();
+    void setLibraryFoldersLeftOut (const juce::Array<juce::File>&);
 
     void showBatchReport (const std::vector<Batch::Outcome>&, const juce::File& deliveryReport = {});
 
@@ -215,6 +232,7 @@ private:
     void runStepInBackground (const Sequences::Step&, const juce::String& busy);
     void askToStretch();
     void askToShiftPitch();
+    void askToExtremeStretch();
     void askToReduceReverb();
     void askForCentreChannel();
     void askForPhaseCorrection();
@@ -235,6 +253,7 @@ private:
     void saveMixIntoVideo();
     static juce::StringArray stretchMethods();   // the Method menu of Stretch and Shift Pitch
     double stretchPercent = 100.0, pitchSemitones = 0.0, stretchMethod = 0.0;   // as last asked (method: 0 Signalsmith, 1 SpectraBlade)
+    double extremeFactor = 8.0, extremeWindow = 0.25;                            // Extreme Stretch as last asked
     void recordStep (const Sequences::Step&);              // after the edit is applied
     void noticeUnrecordedEdits();
     void toggleSequenceRecording();
@@ -364,6 +383,8 @@ private:
     void showPanRamp();
     void showStereoWidth();
     int stereoWidthPercent = 50;
+    int newFileRate = 0, newFileChannels = 2, newFileDepth = 24;   // New File's last choices (rate 0: the interface's)
+    double newFileSeconds = 10.0;
     float rampFromDb = 0.0f, rampToDb = -6.0f;
     void showCropMargins();
     void showMoveMarkers();
@@ -524,7 +545,7 @@ private:
     juce::ApplicationCommandManager commands;
     AudioClip clipboard;
 
-    juce::TextButton multitrackButton { "Multitrack" };
+    juce::TextButton editorButton { "Editor" }, multitrackButton { "Multitrack" };   // a two-part switch, lit on the side in use
     juce::TextButton openButton { "Open..." }, pluginsButton { "Plug-ins..." }, audioButton { "Audio Settings..." };
     std::unique_ptr<TransportBar::Bar> transportBar;   // made once the commands are registered
     TransportBar::SelectionPanel selectionPanel;
@@ -572,6 +593,7 @@ private:
     juce::OwnedArray<PluginEditorWindow> editorWindows;
     std::unique_ptr<PluginListWindow> pluginListWindow;
     std::unique_ptr<KeyShortcutsWindow> keyShortcutsWindow;
+    std::unique_ptr<SettingsWindow> settingsWindow;
     std::unique_ptr<EqWindow> eqWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
@@ -653,6 +675,9 @@ private:
     using EffectField = EffectDialog::Field;
     std::map<juce::String, juce::String> effectTexts;   // the text fields of the effect dialog being applied, while apply runs
     using EffectValues = EffectPresets::Values;
+    /** True when an effect dialog opened now should start with its Preview on: the file is playing
+        (not a session, not recording) and nothing else is previewing. */
+    bool previewsFromStart();
     void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&,
                            const juce::String& presetKey, PreviewOwner,
                            std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,

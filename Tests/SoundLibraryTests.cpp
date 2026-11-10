@@ -240,6 +240,134 @@ namespace
                    + "; counting those rated 4 stars or more " + ms (countRated) + ", the favourites " + ms (countFavourites) + ", the tagged "
                    + ms (countKept) + " (with \"creak\" " + ms (countKeptCreaks) + "), the first page of the tagged " + ms (keptFirst));
     }
+
+    /** An AIFF of `frames` frames of silence. */
+    void writeAiff (const juce::File& file, int frames)
+    {
+        file.getParentDirectory().createDirectory();
+        file.deleteFile();
+        juce::AiffAudioFormat aiff;
+        std::unique_ptr<juce::OutputStream> out (file.createOutputStream());
+        auto writer = aiff.createWriterFor (out, juce::AudioFormatWriterOptions().withSampleRate (48000.0).withNumChannels (2).withBitsPerSample (24));
+        juce::AudioBuffer<float> b (2, frames);
+        b.clear();
+        writer->writeFromAudioSampleBuffer (b, 0, frames);
+    }
+
+    void testFormats (const juce::File& dir)
+    {
+        const auto choices = SoundLibrary::formatChoices();
+        const auto labelOf = [&choices] (const juce::String& name)
+        {
+            for (const auto& c : choices)
+                if (c.name == name)
+                    return c.label;
+
+            return juce::String();
+        };
+        auto twice = false;
+
+        for (size_t i = 0; i < choices.size(); ++i)
+            for (size_t j = i + 1; j < choices.size(); ++j)
+                twice = twice || choices[i].name == choices[j].name;
+
+       #if JUCE_MAC
+        check (labelOf ("WAV file") == "WAV" && labelOf ("AIFF file") == "AIFF" && labelOf ("FLAC file") == "FLAC"
+                   && labelOf ("CoreAudio supported file") == "Other" && labelOf ("MP3 file").isEmpty() && ! twice,
+               "sound library formats: the choices are WAV, AIFF, FLAC and the rest with short labels, CoreAudio's as Other, each once, "
+               "and MP3 is not offered on its own (CoreAudio reads every MP3 first)");
+       #else
+        check (labelOf ("WAV file") == "WAV" && labelOf ("AIFF file") == "AIFF" && labelOf ("FLAC file") == "FLAC"
+                   && labelOf ("MP3 file") == "MP3"
+                  #if JUCE_WINDOWS
+                   && labelOf ("M4A file") == "M4A"
+                  #endif
+                   && labelOf ("CoreAudio supported file").isEmpty() && ! twice,
+               "sound library formats: the choices are WAV, AIFF, FLAC, MP3 and the rest with short labels, each once");
+       #endif
+
+        // A library with a sound as WAV and, in a folder of its own, as AIFF: WAV alone lists it once,
+        // and so does leaving the folder out.
+        const auto library = dir.getChildFile ("Twins");
+        const auto aiffs = library.getChildFile ("Aiff");
+        writeWav (library.getChildFile ("Owl Hoot.wav"), 1000);
+        writeWav (library.getChildFile ("Rain on Roof.wav"), 1200);
+        writeAiff (aiffs.getChildFile ("Owl Hoot.aif"), 1000);
+        juce::StringArray every;
+
+        for (const auto& c : choices)
+            every.add (c.name);
+
+        {
+            juce::AudioFormatManager formats;
+            AudioFileIO::registerFormats (formats);
+            Index index (dir.getChildFile ("formats/Index.sqlite"));
+            index.addFolder (library);
+            index.scan (formats);
+            SoundLibrary::Query q;
+            q.formats = { "WAV file" };
+            const auto found = index.find (q);
+            auto wavs = found.size() == 2;
+
+            for (const auto& s : found)
+                wavs = wavs && s.format == "WAV file";
+
+            SoundLibrary::Query owls;
+            owls.text = "owl";
+            owls.formats = { "WAV file" };
+            SoundLibrary::Query without;
+            without.foldersLeftOut = { aiffs };
+            SoundLibrary::Query owlsWithout;
+            owlsWithout.text = "owl";
+            owlsWithout.foldersLeftOut = { aiffs };
+            check (index.find ({}).size() == 3 && wavs && index.count (q) == 2 && index.find (owls).size() == 1 && index.count (owls) == 1
+                       && index.find (without).size() == 2 && index.count (without) == 2 && index.find (owlsWithout).size() == 1,
+                   "sound library formats: a query for WAV alone finds and counts only the WAVs, with a search too; so does one leaving the AIFF folder out");
+        }
+
+        {
+            SoundLibraryView view (dir.getChildFile ("formats view/Index.sqlite"));
+            view.setSize (1300, 700);
+            view.addFolder (library);
+            TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+            int told = 0;
+            juce::StringArray lastTold;
+            view.onShownFormatsChanged = [&] (const juce::StringArray& f) { ++told; lastTold = f; };
+
+            const auto wavFirst = view.getNumRows() == 2 && view.getShownFormats() == juce::StringArray { "WAV file" }
+                                  && view.getSummary().startsWith ("2 of 3 sounds match");
+            view.toggleFormat ("AIFF file");
+            const auto added = view.getNumRows() == 3 && told == 1 && lastTold == juce::StringArray { "WAV file", "AIFF file" }
+                               && view.getSummary().startsWith ("3 sounds in 1 folder");
+            view.toggleFormat ("WAV file");
+            const auto aiffOnly = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::format) == "AIFF" && told == 2;
+            view.toggleFormat ("AIFF file");
+            const auto lastStays = view.getNumRows() == 1 && told == 2;
+            view.toggleFormat ({});
+            const auto all = view.getNumRows() == 3 && view.getShownFormats() == every && told == 3;
+            view.showFormats ({ "AIFF file", "Nothing file" });
+            const auto set = view.getNumRows() == 1 && view.getShownFormats() == juce::StringArray { "AIFF file" } && told == 3;
+            view.showFormats ({});
+            check (wavFirst && added && aiffOnly && lastStays && all && set && view.getShownFormats() == juce::StringArray { "WAV file" },
+                   "sound library window: WAV alone to start with (2 of 3); the menu's toggles add AIFF (reported), leave only the AIFFs, keep "
+                   "the last format, and show every format; the app sets a list (a name not offered dropped, no report back), none meaning WAV");
+
+            // The AIFF folder left out, with every format shown.
+            int foldersTold = 0;
+            view.onFoldersLeftOutChanged = [&] (const juce::Array<juce::File>&) { ++foldersTold; };
+            view.showFormats (every);
+            view.leaveOutFolder (aiffs);
+            const auto leftOut = view.getNumRows() == 2 && view.getFoldersLeftOut() == juce::Array<juce::File> { aiffs } && foldersTold == 1
+                                 && view.getSummary().startsWith ("2 of 3 sounds match");
+            view.leaveOutFolder (aiffs);
+            view.showFolderAgain (aiffs);
+            const auto back = view.getNumRows() == 3 && view.getFoldersLeftOut().isEmpty() && foldersTold == 2;
+            view.setFoldersLeftOut ({ aiffs, aiffs, juce::File() });
+            check (leftOut && back && view.getNumRows() == 2 && view.getFoldersLeftOut().size() == 1 && foldersTold == 2,
+                   "sound library window: a folder left out drops its sounds from the list (reported once, a second time ignored), comes back "
+                   "with Show Again, and the app's list is taken without repeats or an empty folder and without a report");
+        }
+    }
 }
 
 namespace
@@ -270,6 +398,34 @@ namespace
                    && view.getSummary() == "10 sounds in 1 folder. Last scan: 10 added, 0 updated, 0 removed",
                "sound library window: with no folders it scans nothing and says to add one; a missing folder is refused, saying why; an "
                "added one is scanned on its own thread and its 10 sounds listed (\"" + view.getSummary() + "\")");
+
+        // The folder tree keeps what is open through a rebuild (a scan's end rebuilds it, items and all).
+        {
+            juce::TreeView* folders = nullptr;
+
+            for (auto* c : view.getChildren())
+                if (auto* t = dynamic_cast<juce::TreeView*> (c); t != nullptr && t->isVisible())
+                    folders = t;
+
+            auto* item = folders != nullptr && folders->getRootItem() != nullptr ? folders->getRootItem()->getSubItem (1) : nullptr;   // the library, after All Folders
+            const auto itemName = item != nullptr ? item->getUniqueName() : juce::String();
+            const auto hadFolder = item != nullptr && itemName == library.getFullPathName() && ! item->isOpen();
+
+            if (item != nullptr)
+                item->setOpen (true);
+
+            const auto subFolders = item != nullptr ? item->getNumSubItems() : 0;
+            view.rescan();   // the rebuild at its end deletes the items: item is not used past here
+            const auto rescanned = TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("0 added, 0 updated"); }, 20000);
+            auto* after = folders != nullptr && folders->getRootItem() != nullptr ? folders->getRootItem()->getSubItem (1) : nullptr;
+            const juce::String why = juce::String (view.getPane() == SoundLibraryView::Pane::folders ? "folders pane, " : "categories pane, ")
+                                     + (folders != nullptr ? "tree found, " : "no tree, ") + (itemName.isNotEmpty() ? "item " + itemName.quoted() + ", " : "no item, ")
+                                     + (hadFolder ? "closed at first, " : "not the library closed, ") + (rescanned ? "rescanned, " : "not rescanned, ")
+                                     + (after == nullptr ? "nothing after" : after->isOpen() ? "open after" : "closed after");
+            check (view.getPane() == SoundLibraryView::Pane::folders && hadFolder && subFolders > 0 && rescanned && after != nullptr && after->isOpen(),
+                   "sound library window: the folder tree lists the library closed, opens into its " + juce::String (subFolders)
+                       + " folders, and is still open after the rescan rebuilds it (" + why + ")");
+        }
 
         // The bar beside the pane on the left sizes it: dragged to x = 300 the pane is 297 wide and
         // the change is reported when the bar is let go; 0 puts the default back.
@@ -1337,6 +1493,7 @@ void runSoundLibraryTests()
     testCategoriesView (dir);
     testTags (dir);
     testTagsView (dir);
+    testFormats (dir);
     testMetadata (dir);
     testInsert (dir);
     testLarge (dir);

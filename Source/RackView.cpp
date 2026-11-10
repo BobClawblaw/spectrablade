@@ -160,13 +160,23 @@ void RackView::showAddMenu()
             if (! juce::isPositiveAndBelow (chosen, effects.size()))
                 return;
 
-            const auto name = effects[chosen].name;
-
-            engine.addPlugin (effects[chosen], [name] (const juce::String& error)
-            {
-                if (error.isNotEmpty())
-                    juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
-                                                            "Could not load " + name, error);
-            });
+            addEffect (effects[chosen]);
         });
+}
+
+void RackView::addEffect (const juce::PluginDescription& description)
+{
+    const auto name = description.name;
+
+    engine.addPlugin (description, [this, name, safe = juce::Component::SafePointer<RackView> (this)] (const juce::String& error)
+    {
+        if (error.isNotEmpty())
+        {
+            juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon, "Could not load " + name, error);
+            return;
+        }
+
+        if (safe != nullptr && onEditSlot != nullptr && engine.getNumRackSlots() > 0)
+            onEditSlot (engine.getNumRackSlots() - 1);
+    });
 }

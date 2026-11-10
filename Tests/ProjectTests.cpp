@@ -79,7 +79,8 @@ void runProjectTests()
     FileInfo tags;
     tags.title = "Take B";
     tags.comment = "second take";
-    tags.cover = std::make_shared<const juce::MemoryBlock> ("\xff\xd8\xff\xe0 not much of a JPEG", 30);
+    const char fakeJpeg[] = "\xff\xd8\xff\xe0 not much of a JPEG";
+    tags.cover = std::make_shared<const juce::MemoryBlock> (fakeJpeg, sizeof (fakeJpeg) - 1);
     docB.setInfo (tags, "File Info");
     docB.apply (AudioEdits::remove (*docB.getSnapshot(), 2000, 4000), "Delete", MarkerEdits::afterReplace (docB.getMarkers(), 2000, 4000, 0));
     const auto cut = docB.getSnapshot();

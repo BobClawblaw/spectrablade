@@ -273,7 +273,13 @@ namespace
             if (size < 8)
                 break;
 
-            boxes.push_back ({ juce::String ((const char*) head + 4, 4), at, size });
+            // The type's four bytes as characters, whatever they are (the tag boxes start with 0xA9).
+            juce::String type;
+
+            for (int i = 4; i < 8; ++i)
+                type += juce::String::charToString ((juce::juce_wchar) head[i]);
+
+            boxes.push_back ({ type, at, size });
             at += size;
         }
 

@@ -1,5 +1,7 @@
 build/
 build-release/
+build-debug/
+build-asan/
 dist/
 .DS_Store
 build-win/

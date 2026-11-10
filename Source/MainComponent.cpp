@@ -29,6 +29,7 @@
 #include "SessionRecording.h"
 #include "SpectralEdit.h"
 #include "TimeStretch.h"
+#include "ExtremeStretch.h"
 #include "TrackTemplate.h"
 #include "SessionNotes.h"
 #include "UndoHistory.h"
@@ -66,6 +67,8 @@ namespace
     constexpr const char* accentKey       = "accent";
     constexpr const char* waveformColourKey = "waveformColour";
     constexpr const char* timeFormatKey   = "timeFormat";
+    constexpr const char* libraryShownFormatsKey = "libraryShownFormats";
+    constexpr const char* libraryFoldersLeftOutKey = "libraryFoldersLeftOut";
 
     // The dock's panels.
     namespace Panels
@@ -150,6 +153,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
+        cmdExtremeStretch, cmdNewFile, cmdSettings,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -163,7 +167,7 @@ namespace
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
-            || id == cmdStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones || id == cmdPitchCorrection;
+            || id == cmdStretch || id == cmdExtremeStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones || id == cmdPitchCorrection;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -282,6 +286,32 @@ private:
 };
 
 //==============================================================================
+/** File > Settings: every setting of the app, sections down the left. */
+class MainComponent::SettingsWindow final : public juce::DocumentWindow
+{
+public:
+    SettingsWindow (Settings::Model model, std::function<void()> onClose)
+        : DocumentWindow ("Settings", Theme::surface, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        panel = new Settings::Panel (std::move (model));
+        setContentOwned (panel, true);
+        setResizable (true, false);
+        setResizeLimits (640, 420, 3000, 3000);
+        centreWithSize (780, 600);
+        setVisible (true);
+    }
+
+    Settings::Panel& getPanel()                     { return *panel; }
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    Settings::Panel* panel = nullptr;
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
 /** The parametric EQ: its bands and curve, with Apply to filter the selection (or the whole file)
     and Flat to set every band back to 0 dB. It stays open, so it can be applied again. */
 class MainComponent::EqWindow final : public juce::DocumentWindow
@@ -306,6 +336,9 @@ public:
 
     /** Unticks Preview without asking for anything (the preview has ended elsewhere). */
     void previewEnded()                             { content->preview.setToggleState (false, juce::dontSendNotification); }
+
+    /** Ticks Preview and starts it, as a click on it would. */
+    void startPreviewing()                          { content->preview.setToggleState (true, juce::dontSendNotification); content->previewBands (content->panel.get()); }
 
     /** Where the drawing's spectrum comes from: the newest output, as for the analysis panels. */
     void setReadOutput (std::function<double (juce::AudioBuffer<float>&)> read)
@@ -424,7 +457,12 @@ public:
 
     ~PluginEditorWindow() override
     {
-        // The editor must be deleted before the plug-in instance.
+        // The editor must be deleted before the plug-in instance, and the plug-in told it has
+        // gone: otherwise it keeps the editor as its active one and refuses to make another, and
+        // the next window for it falls back to the generic parameter list.
+        if (auto* editor = dynamic_cast<juce::AudioProcessorEditor*> (getContentComponent()))
+            processor.editorBeingDeleted (editor);
+
         clearContentComponent();
     }
 
@@ -772,16 +810,22 @@ MainComponent::MainComponent()
     engine.document.addChangeListener (this);
     engine.session.addChangeListener (this);
 
-    for (auto* b : { &multitrackButton, &openButton, &pluginsButton, &audioButton })
+    for (auto* b : { &editorButton, &multitrackButton, &openButton, &pluginsButton, &audioButton })
         addAndMakeVisible (b);
 
-    multitrackButton.setTooltip (Platform::keys ("Switch between the file and the multitrack session (Cmd+4)"));
+    // The mode switch: the side in use is lit, the other is where a click goes.
+    editorButton.setTooltip (Platform::keys ("Edit the file; the lit side is the mode in use (Cmd+4 switches)"));
+    multitrackButton.setTooltip (Platform::keys ("Work in the multitrack session; the lit side is the mode in use (Cmd+4 switches)"));
+    editorButton.setConnectedEdges (juce::Button::ConnectedOnRight);
+    multitrackButton.setConnectedEdges (juce::Button::ConnectedOnLeft);
+    Theme::follow (editorButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
     Theme::follow (multitrackButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
-    multitrackButton.onClick = [this] { setMultitrack (! multitrackMode); };
+    editorButton.onClick = [this] { setMultitrack (false); };
+    multitrackButton.onClick = [this] { setMultitrack (true); };
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
     pluginsButton.onClick  = [this] { showPluginList(); };
-    audioButton.onClick    = [this] { showAudioSettings(); };
+    audioButton.onClick    = [this] { showSettings ("Audio"); };
     selectionPanel.onClick = [this] { commands.invokeDirectly (cmdSetSelection, true); };
 
     addAndMakeVisible (outputLabel);
@@ -858,7 +902,8 @@ MainComponent::MainComponent()
 
     editorBar = std::make_unique<EditorBar> (commands, waveform, engine.document,
                                              EditorBar::Commands { cmdZoomOut, cmdZoomIn, cmdZoomFit, cmdShorterTracks, cmdTallerTracks,
-                                                                   cmdResetVerticalZoom, cmdGoToTime, cmdSetSelection });
+                                                                   cmdResetVerticalZoom, cmdGoToTime, cmdSetSelection,
+                                                                   cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdSpectralHeal });
     editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, *editorBar, overview, multitrack);
     fileTabs.onChoose = [this] (int index) { switchToFile (index); };
     fileTabs.onClose = [this] (int index) { closeFile (index); };
@@ -949,6 +994,8 @@ MainComponent::MainComponent()
    #if JUCE_MAC
     juce::PopupMenu appMenu;   // at the top of the application menu
     appMenu.addCommandItem (&commands, cmdAbout);
+    appMenu.addSeparator();
+    appMenu.addCommandItem (&commands, cmdSettings);
     juce::MenuBarModel::setMacMainMenu (this, &appMenu);
    #endif
 
@@ -1202,6 +1249,7 @@ MainComponent::~MainComponent()
     dock = nullptr;
     madePanels.clear();
     eqWindow = nullptr;
+    settingsWindow = nullptr;
 }
 
 void MainComponent::saveSettings()
@@ -1235,7 +1283,8 @@ void MainComponent::resized()
 
     // Top: the mode and Open, the transport with the time and zoom in the middle, then the setup buttons.
     auto toolbar = r.removeFromTop (30);
-    multitrackButton.setBounds (toolbar.removeFromLeft (96).reduced (0, 2));
+    editorButton.setBounds (toolbar.removeFromLeft (64).reduced (0, 2));
+    multitrackButton.setBounds (toolbar.removeFromLeft (86).reduced (0, 2));
     toolbar.removeFromLeft (6);
     openButton.setBounds (toolbar.removeFromLeft (76).reduced (0, 2));
     audioButton.setBounds (toolbar.removeFromRight (124).reduced (0, 2));
@@ -1330,9 +1379,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('v', cmd | shift); info.setActive (! clipboard.isEmpty() && hasAudio); break;
         case cmdPasteFill:  info.setInfo ("Paste to Fill Selection", "Replace the selection with the clipboard repeated to the same length", "Edit", 0);
                             info.setActive (! clipboard.isEmpty() && hasSelection); break;
-        case cmdDelete:     info.setInfo ("Delete", "Delete the selection", "Edit", 0);
+        case cmdDelete:     info.setInfo ("Delete", hasSpectral ? "Remove what is inside the box, lasso or brush selection in the spectrogram, keeping the file's length"
+                                                             : "Delete the selection, taking its time out of the file", "Edit", 0);
                             info.addDefaultKeypress (juce::KeyPress::backspaceKey, 0); info.addDefaultKeypress (juce::KeyPress::deleteKey, 0);
-                            info.setActive (hasSelection); break;
+                            info.setActive (hasSelection || hasSpectral); break;
         case cmdSelectAll:  info.setInfo ("Select All", "Select the whole file", "Edit", 0); info.addDefaultKeypress ('a', cmd); info.setActive (hasAudio); break;
         case cmdCrop:       info.setInfo ("Crop to Selection", "Keep only the selection", "Edit", 0); info.addDefaultKeypress ('t', cmd); info.setActive (hasSelection); break;
 
@@ -1461,6 +1511,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdStretch:    info.setInfo ("Stretch...", "Make the selection, or the whole file, longer or shorter, keeping its pitch", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdPitch:      info.setInfo ("Shift Pitch...", "Make the selection, or the whole file, higher or lower, keeping its length", "Effects", 0);
+                            info.setActive (hasAudio && backgroundJob == nullptr); break;
+        case cmdExtremeStretch: info.setInfo ("Extreme Stretch...", "Smear the selection, or the whole file, to many times its length: a pad that keeps the pitch and colour, not the timing", "Effects", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdRemoveDc:   info.setInfo ("Remove DC Offset", "Take each channel's average level out of the selection, or the whole file", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -1628,8 +1680,9 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (openFiles.size() > 1 && ! isRecording()); break;
         case cmdShowSelectionPanel: info.setInfo ("Selection/View", "Show or hide the panel with the selection's and the view's start, end and length", "Window", 0);
                             info.setTicked (dock->isShown (Panels::selection)); break;
-        case cmdShowSoundLibrary: info.setInfo ("Sound Library", "Show the Sound Library: the sounds in the folders you choose, to search, "
-                                                                 "and drag into the multitrack view, the editor or other apps", "Window", 0); break;
+        case cmdShowSoundLibrary: info.setInfo ("Sound Library", "Show or hide the Sound Library: the sounds in the folders you choose, to search, "
+                                                                 "and drag into the multitrack view, the editor or other apps", "Window", 0);
+                            info.addDefaultKeypress (juce::KeyPress::F5Key, 0); info.setTicked (soundLibrary != nullptr && soundLibrary->isVisible()); break;
         case cmdSaveWorkspace: info.setInfo ("Save Workspace As...", "Keep the panels as they are now as a workspace of your own", "Window", 0); break;
         case cmdResetWorkspace: info.setInfo ("Reset Workspace", "Put the current workspace's panels back as it was saved", "Window", 0); break;
         case cmdDeleteWorkspace: info.setInfo ("Delete Workspace...", "Delete the current workspace (the built-in ones can't be deleted)", "Window", 0);
@@ -1767,6 +1820,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setActive (hasAudio && backgroundJob == nullptr); break;
         case cmdMultitrack: info.setInfo ("Multitrack Session", "Show the multitrack session instead of the file", "View", 0);
                             info.addDefaultKeypress ('4', cmd); info.setTicked (multitrackMode); break;
+        case cmdNewFile:    info.setInfo ("New File...", "Start a new file: silence of a chosen length at a chosen sample rate, channels and bit depth, to record, paste or generate into", "File", 0);
+                            info.addDefaultKeypress ('n', cmd); info.setActive (! isRecording()); break;
         case cmdNewSession: info.setInfo ("New Session", "Start an empty multitrack session", "File", 0);
                             info.addDefaultKeypress ('n', cmd | shift); break;
         case cmdOpenSession: info.setInfo ("Open Session...", "Open a multitrack session", "File", 0);
@@ -2051,7 +2106,9 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
 
         case cmdPlugins:    info.setInfo ("Plug-ins...", "Scan and manage plug-ins", "Window", 0); break;
         case cmdKeyShortcuts: info.setInfo ("Keyboard Shortcuts...", "See and change the keys for every command", "Window", 0); break;
-        case cmdAudioSettings: info.setInfo ("Audio Settings...", "Choose the audio interface", "Window", 0); info.addDefaultKeypress (',', cmd); break;
+        case cmdAudioSettings: info.setInfo ("Audio Settings...", "Choose the audio interface (the Audio page of Settings)", "Window", 0); break;
+        case cmdSettings:   info.setInfo ("Settings...", "Every setting of the app in one place: look, editing, playback, multitrack, recording, audio, plug-ins and keys", "File", 0);
+                            info.addDefaultKeypress (',', cmd); break;
         case cmdSaveRack:   info.setInfo ("Save Rack...", "Save the effects rack", "Window", 0); break;
         case cmdLoadRack:   info.setInfo ("Load Rack...", "Load an effects rack", "Window", 0); break;
         default: break;
@@ -2144,7 +2201,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveRegions: chooseFileRegionsFolder (false); break;
         case cmdSavePieces: chooseFileRegionsFolder (true); break;
         case cmdDuplicateClip: multitrack.duplicateSelectedClip(); break;
-        case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
+        case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;   // a spectral selection: its frequencies
         case cmdSelectAll:  if (multitrackMode) multitrack.selectAllClips(); else waveform.selectAll(); break;
         case cmdCrop:       cropToSelection(); break;
         case cmdGain:       applyGain(); break;
@@ -2226,6 +2283,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdReverse:    runStep ({ "reverse", {}, nullptr }); break;
         case cmdStretch:    askToStretch(); break;
         case cmdPitch:      askToShiftPitch(); break;
+        case cmdExtremeStretch: askToExtremeStretch(); break;
         case cmdReverseRegions:
         {
             auto skipped = 0;
@@ -2393,7 +2451,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMoveTrackUp: multitrack.moveTrack (multitrack.getSelectedTrack(), multitrack.getSelectedTrack() - 1); break;
         case cmdMoveTrackDown: multitrack.moveTrack (multitrack.getSelectedTrack(), multitrack.getSelectedTrack() + 1); break;
         case cmdPlugins:    showPluginList(); break;
-        case cmdAudioSettings: showAudioSettings(); break;
+        case cmdAudioSettings: showSettings ("Audio"); break;
+        case cmdSettings:   showSettings(); break;
         case cmdKeyShortcuts: showKeyShortcuts(); break;
         case cmdSaveRack:   saveRack(); break;
         case cmdLoadRack:   loadRack(); break;
@@ -2425,7 +2484,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNextFile:   switchToFile ((openFiles.getActiveIndex() + 1) % openFiles.size()); break;
         case cmdPreviousFile: switchToFile ((openFiles.getActiveIndex() + openFiles.size() - 1) % openFiles.size()); break;
         case cmdShowSelectionPanel: dock->toggle (Panels::selection); break;
-        case cmdShowSoundLibrary: showSoundLibrary(); break;
+        case cmdShowSoundLibrary: toggleSoundLibrary(); break;
         case cmdSaveWorkspace: askToSaveWorkspace(); break;
         case cmdResetWorkspace: resetWorkspace(); break;
         case cmdDeleteWorkspace: askToDeleteWorkspace(); break;
@@ -2435,6 +2494,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShowSpectrogram: setMultitrack (false); setDisplay (WaveformView::Display::spectrogram); break;
         case cmdShowBoth:   setMultitrack (false); setDisplay (WaveformView::Display::both); break;
         case cmdMultitrack: setMultitrack (! multitrackMode); break;
+        case cmdNewFile:    askToNewFile(); break;
         case cmdNewSession: confirmDiscardSession ([this] { newSession(); }); break;
         case cmdOpenSession: confirmDiscardSession ([this] { chooseSession(); }); break;
         case cmdImportToSession: chooseFilesForSession(); break;
@@ -2727,9 +2787,9 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
     switch (index)
     {
         case 0:
-            add ({ cmdOpen });
+            add ({ cmdNewFile, cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, cmdSettings, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectionToZero, cmdSelectZeroCrossings, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdBrushLighter, cmdBrushHeavier, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2745,7 +2805,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Saturation", { cmdExciter });
             group ("Modulation and Delay", { cmdTremolo, cmdEcho, cmdChorus, cmdFlanger, cmdPhaser });
             group ("Reverb", { cmdReverb, cmdConvolutionReverb });
-            group ("Time and Pitch", { cmdDialogueContour, 0,  cmdStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
+            group ("Time and Pitch", { cmdDialogueContour, 0,  cmdStretch, cmdExtremeStretch, cmdPitch, cmdPitchCorrection, 0, cmdReverse, cmdReverseRegions, cmdCrossfadeLoop });
             group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdMultibandWidth, cmdCentreChannel, cmdPhaseCorrection, cmdAzimuth, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
                                             cmdMixToMono, cmdMakeStereo, 0, cmdInvert, cmdInvertLeft, cmdInvertRight });
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
@@ -2764,8 +2824,14 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             juce::PopupMenu themeMenu;
             const auto themes = Theme::themeNames(), accents = Theme::accentNames();
 
+            // The dark themes, then the light ones, then High Contrast, a line between each group.
             for (int i = 0; i < themes.size(); ++i)
+            {
+                if (themes[i] == "Light" || themes[i] == "High Contrast")
+                    themeMenu.addSeparator();
+
                 themeMenu.addItem (themeBaseId + i, themes[i], true, themes[i] == Theme::current().name);
+            }
 
             themeMenu.addSeparator();
             themeMenu.addSectionHeader ("Accent");
@@ -2923,6 +2989,9 @@ void MainComponent::timerCallback()
 
     updatePlaybackLoop();
 
+    if (settingsWindow != nullptr)
+        settingsWindow->getPanel().refresh();   // a setting changed from a menu shows at once
+
     updateInputs();
 
     if (multitrackMode)
@@ -3003,6 +3072,7 @@ void MainComponent::stopTransport()
 
 void MainComponent::refreshTitle()
 {
+    editorButton.setToggleState (! multitrackMode, juce::dontSendNotification);
     multitrackButton.setToggleState (multitrackMode, juce::dontSendNotification);
 
     if (multitrackMode)
@@ -3010,7 +3080,7 @@ void MainComponent::refreshTitle()
         auto& session = engine.session;
         const auto state = session.getState();
         const auto name = session.getFile() == juce::File() ? juce::String ("Untitled Session") : session.getFile().getFileName();
-        fileLabel.setText (name + "  |  " + juce::String (state->sampleRate / 1000.0, 1) + " kHz, "
+        fileLabel.setText ("Multitrack session: " + name + "  |  " + juce::String (state->sampleRate / 1000.0, 1) + " kHz, "
                                + juce::String ((int) state->tracks.size()) + (state->tracks.size() == 1 ? " track" : " tracks"),
                            juce::dontSendNotification);
 
@@ -3022,7 +3092,7 @@ void MainComponent::refreshTitle()
 
     auto& doc = engine.document;
     const auto name = doc.getFile() == juce::File() ? juce::String ("Untitled") : doc.getFile().getFileName();
-    fileLabel.setText (doc.hasAudio() ? name + "  |  " + juce::String (doc.getSampleRate() / 1000.0, 1) + " kHz, "
+    fileLabel.setText (doc.hasAudio() ? "Editing file: " + name + "  |  " + juce::String (doc.getSampleRate() / 1000.0, 1) + " kHz, "
                                           + juce::String (doc.getNumChannels()) + " ch, "
                                           + (doc.getSourceBitDepth() == 32 ? juce::String ("32-bit float")
                                                                             : juce::String (doc.getSourceBitDepth()) + "-bit")
@@ -3584,7 +3654,7 @@ void MainComponent::showTempoDialog (bool atCursor)
 
             if (tempo < 20.0 || tempo > 400.0 || beats < 1 || beats > 16)
             {
-                showError ("Tempo", "The tempo must be 20 to 400 beats a minute, with 1 to 16 beats in a bar.");
+                showError ("Tempo", "The tempo must be from 20 to 400 beats a minute, with 1 to 16 beats in a bar.");
                 return;
             }
 
@@ -3946,7 +4016,7 @@ void MainComponent::askToStretchSelectedClip()
             return;
 
         if (ratio < TimeStretch::shortest || ratio > TimeStretch::longest)
-            showError ("Stretch Clip", "The length must be from 50% to 200% of what it is now.");
+            showError ("Stretch Clip", "The length must be from 50 % to 200 % of what it is now.");
         else if (std::abs (ratio - 1.0) > 1.0e-9)
             processSelectedClip ("Stretch Clip", "Stretched", [ratio, rate = engine.session.getSampleRate()] (const SessionClip& c, const auto& progress)
             {
@@ -5376,11 +5446,68 @@ void MainComponent::showSoundLibrary()
         soundLibrary->getView().setAudioDevice (&engine.deviceManager);
         soundLibrary->getView().setPaneWidth (appProperties.getUserSettings()->getIntValue ("libraryPaneWidth", 0));
         soundLibrary->getView().onPaneWidthChanged = [this] (int width) { appProperties.getUserSettings()->setValue ("libraryPaneWidth", width); };
+        soundLibrary->getView().showFormats (getLibraryShownFormats());
+        soundLibrary->getView().onShownFormatsChanged = [this] (const juce::StringArray& formats) { setLibraryShownFormats (formats); };
+        soundLibrary->getView().setFoldersLeftOut (getLibraryFoldersLeftOut());
+        soundLibrary->getView().onFoldersLeftOutChanged = [this] (const juce::Array<juce::File>& folders) { setLibraryFoldersLeftOut (folders); };
         rememberPlace (*soundLibrary, "Sound Library");
     }
 
     soundLibrary->setVisible (true);
     soundLibrary->toFront (true);
+}
+
+juce::StringArray MainComponent::getLibraryShownFormats()
+{
+    auto formats = juce::StringArray::fromTokens (appProperties.getUserSettings()->getValue (libraryShownFormatsKey, "WAV file"), "|", {});
+    formats.removeEmptyStrings();
+    return formats.isEmpty() ? juce::StringArray { "WAV file" } : formats;
+}
+
+void MainComponent::setLibraryShownFormats (const juce::StringArray& formats)
+{
+    appProperties.getUserSettings()->setValue (libraryShownFormatsKey, formats.joinIntoString ("|"));
+
+    if (soundLibrary != nullptr && soundLibrary->getView().getShownFormats() != formats)
+        soundLibrary->getView().showFormats (formats);
+}
+
+juce::Array<juce::File> MainComponent::getLibraryFoldersLeftOut()
+{
+    juce::Array<juce::File> folders;
+
+    if (const auto xml = appProperties.getUserSettings()->getXmlValue (libraryFoldersLeftOutKey))
+        for (const auto* folder : xml->getChildWithTagNameIterator ("folder"))
+            if (const auto path = folder->getStringAttribute ("path"); path.isNotEmpty())
+                folders.addIfNotAlreadyThere (juce::File (path));
+
+    return folders;
+}
+
+void MainComponent::setLibraryFoldersLeftOut (const juce::Array<juce::File>& folders)
+{
+    juce::XmlElement xml ("foldersLeftOut");
+
+    for (const auto& folder : folders)
+        xml.createNewChildElement ("folder")->setAttribute ("path", folder.getFullPathName());
+
+    appProperties.getUserSettings()->setValue (libraryFoldersLeftOutKey, &xml);
+
+    if (soundLibrary != nullptr && soundLibrary->getView().getFoldersLeftOut() != folders)
+        soundLibrary->getView().setFoldersLeftOut (folders);
+}
+
+void MainComponent::toggleSoundLibrary()
+{
+    if (soundLibrary != nullptr && soundLibrary->isVisible())
+    {
+        soundLibrary->setVisible (false);
+        commands.commandStatusChanged();
+        return;
+    }
+
+    showSoundLibrary();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::showBatchReport (const std::vector<Batch::Outcome>& outcomes, const juce::File& deliveryReport)
@@ -5513,6 +5640,32 @@ void MainComponent::askToStretch()
                               runStepInBackground ({ "stretch", v, nullptr }, "Stretching...");
                       },
                       [this] (const EffectValues& v) { return previewOf ({ "stretch", v, nullptr }); },
+                      "Stretch");
+}
+
+void MainComponent::askToExtremeStretch()
+{
+    const auto range = selectionOrAll();
+    const auto seconds = (double) range.getLength() / engine.document.getSampleRate();
+    const auto toSettings = [] (const EffectValues& v) { return ExtremeStretch::Settings { v.at ("factor"), v.at ("window") }; };
+
+    showEffectDialog ("Extreme Stretch", juce::String (waveform.getSelection().isEmpty() ? "The whole file" : "The selection") + " ("
+                                             + juce::String (seconds, 2) + " s) smeared to many times its length. Each window of the sound keeps "
+                                             "its pitch and colour and loses its timing, so a texture or a chord becomes a pad and attacks, words "
+                                             "and rhythm melt away. A longer window smears more smoothly and loses more of the movement; a "
+                                             "shorter one keeps more of it and sounds grainier. Markers in it keep their place in it.",
+                      { { "factor", "Stretch (times)", extremeFactor, 1, {}, ExtremeStretch::shortestFactor, ExtremeStretch::longestFactor, 1.0 },
+                        { "window", "Window (s)", extremeWindow, 2, {}, ExtremeStretch::shortestWindow, ExtremeStretch::longestWindow, 0.05 } },
+                      "spectrablade:extreme-stretch", PreviewOwner::none,
+                      [toSettings] (const EffectValues& v) { return ExtremeStretch::isValid (toSettings (v)); },
+                      "The stretch must be from 1 to 1,000 times, and the window from 0.05 to 2 seconds.", nullptr, nullptr,
+                      [this] (const EffectValues& v)
+                      {
+                          extremeFactor = v.at ("factor");
+                          extremeWindow = v.at ("window");
+                          runStepInBackground ({ "extremeStretch", v, nullptr }, "Stretching...");
+                      },
+                      [this] (const EffectValues& v) { return previewOf ({ "extremeStretch", v, nullptr }); },
                       "Stretch");
 }
 
@@ -5691,7 +5844,7 @@ void MainComponent::askForPitchCorrection()
     auto* settings = appProperties.getUserSettings();
 
     showEffectDialog ("Pitch Correction",
-                      "For one voice or instrument at a time: finds its pitch every 5 ms (60 to 1000 Hz) and moves it to the "
+                      "For one voice or instrument at a time: finds its pitch every 5 ms (60 to 1,000 Hz) and moves it to the "
                       "nearest note of the scale (A = 440 Hz), keeping its length. The speed is how long a correction takes "
                       "to settle: 0 moves it at once, slower keeps more of the slides and vibrato. Breaths, consonants and "
                       "noise are left as they are.",
@@ -6826,6 +6979,14 @@ void MainComponent::applySpectral (float gainDb)
     else if (! sel.isEmpty() && ! band.isEmpty())
         applyEdit (SpectralEdit::changeBand (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), band, doc.getSampleRate(), gainDb),
                    name, sel);
+    else
+        return;
+
+    // Removed, there is nothing inside the drawing to play or remove again: the time selection
+    // stays, the drawing goes, so Space plays the selection as it now sounds. Attenuated, the
+    // drawing stays for another step or a listen to what is inside.
+    if (std::isinf (gainDb))
+        waveform.clearSpectralSelection();
 }
 
 void MainComponent::healSpectral()
@@ -6847,7 +7008,11 @@ void MainComponent::healSpectral()
         return;
 
     auto& doc = engine.document;
+    const auto version = doc.getVersion();
     applyEdit (SpectralEdit::heal (*doc.getSnapshot(), shape, doc.getSampleRate()), "Heal", sel);
+
+    if (doc.getVersion() != version)   // healed: the drawing has done its work
+        waveform.clearSpectralSelection();
 }
 
 void MainComponent::addMarker()
@@ -6991,7 +7156,7 @@ void MainComponent::showGenerateTone()
     showEffectDialog ("Generate Tone", "Puts a tone in at the cursor, or the start of the selection, the same on every channel, moving "
                                        "what follows on. An end frequency unlike the start sweeps evenly in octaves from one to the other. "
                                        "The level is the peak, from -96 to 0 dBFS; the ends fade over the time given (0 for none, up to "
-                                       "1000 ms). Length up to ten minutes.",
+                                       "1,000 ms). Length up to ten minutes.",
                       { { "wave", "Wave", (double) toneWave, 0, { "Sine", "Square", "Triangle", "Sawtooth" } },
                         { "frequency", "Frequency (Hz)", toneHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 }, { "end", "End frequency (Hz)", toneEndHz, 1, {}, 1, juce::jmin (20000.0, 0.5 * rate - 1.0), 1 },
                         { "level", "Level (dBFS peak)", toneLevelDb, 1, {}, -96, 0, 0.5 }, { "length", "Length (s)", toneSeconds, 3, {}, 0.001, 600, 0.1 },
@@ -7176,7 +7341,7 @@ void MainComponent::askForSilence (const juce::String& title, std::function<void
 
     showEffectDialog (title, "Silence is every channel at or below the level for at least the time.",
                       { { "level", "Level (dB)", (double) silenceThresholdDb, 1, {}, -120.0, 0.0, 1.0 },
-                        { "length", "At least (seconds)", silenceMinSeconds, 3, {}, 0.001, 600.0, 0.05 } },
+                        { "length", "At least (s)", silenceMinSeconds, 3, {}, 0.001, 600.0, 0.05 } },
                       "spectrablade:silence", PreviewOwner::none,
                       [framesOf] (const EffectValues& v) { return framesOf (v) > 0; }, "The time must be at least one frame.", nullptr, nullptr,
                       [this, found, framesOf] (const EffectValues& v)
@@ -7500,10 +7665,31 @@ void MainComponent::showBalance()
 
 void MainComponent::showStereoWidth()
 {
-    showEffectDialog ("Stereo Width", "0 % makes it mono, 100 % leaves it as it is, and up to 200 % widens it, "
-                                      "by scaling the difference between the channels.",
+    // Two channels the same over the range have no difference to scale: say so rather than do nothing.
+    const auto alike = [this]
+    {
+        const auto r = selectionOrAll();
+        const auto snapshot = engine.document.getSnapshot();
+        juce::AudioBuffer<float> block (2, 65536);
+
+        for (auto at = r.getStart(); at < r.getEnd(); at += block.getNumSamples())
+        {
+            const auto n = (int) juce::jmin ((juce::int64) block.getNumSamples(), r.getEnd() - at);
+            snapshot->read (block, 0, at, n);
+
+            if (std::memcmp (block.getReadPointer (0), block.getReadPointer (1), (size_t) n * sizeof (float)) != 0)
+                return false;
+        }
+
+        return true;
+    }();
+
+    showEffectDialog ("Stereo Width", juce::String ("0 % makes it mono, 100 % leaves it as it is, and up to 200 % widens it, "
+                                                    "by scaling the difference between the channels.")
+                                          + (alike ? " The two channels here are the same, so there is no difference to scale: nothing would change." : ""),
                       { { "width", "Width (%)", (double) stereoWidthPercent, 0, {}, 0.0, 200.0, 1.0 } },
-                      "spectrablade:stereo-width", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
+                      "spectrablade:stereo-width", PreviewOwner::none, [alike] (const EffectValues&) { return ! alike; },
+                      "The two channels are the same here (a mono sound in a stereo file), so there is no stereo width to change.", nullptr, nullptr,
                       [this] (const EffectValues& v)
                       {
                           stereoWidthPercent = juce::roundToInt (v.at ("width"));
@@ -7707,7 +7893,7 @@ void MainComponent::showRemoveHum()
 
     showEffectDialog ("Remove Hum", "Takes out mains hum: a narrow notch at the mains frequency and at each of its harmonics up to the "
                                     "number given, each as wide in hertz as the first (the mains frequency divided by the narrowness: "
-                                    "1.7 Hz at 50 Hz and 30). Harmonics from 1 to 40; narrowness from 5 (wide) to 200 (narrow).",
+                                    "1.7 Hz at 50 Hz and 30). Harmonics 1 to 40, narrowness 5 (wide) to 200 (narrow).",
                       { { "mains", "Mains", humIs60 ? 1.0 : 0.0, 0, { "50 Hz", "60 Hz" } },
                         { "harmonics", "Harmonics", (double) humHarmonics, 0, {}, 1, 40, 1 }, { "q", "Narrowness (Q)", humQ, 0, {}, 5, 200, 1 } },
                       "spectrablade:remove-hum", PreviewOwner::none,
@@ -7749,13 +7935,13 @@ void MainComponent::showDeclip()
 
     showEffectDialog ("Repair Clipping", "Finds clipped peaks, two or more samples in a row held level at or above the share of each "
                                          "channel's peak given, and rebuilds each as the curve that best fits the samples on either side. "
-                                         "Rebuilt peaks rise above the clipped level; Keep the Peak Level lowers the selection so they "
+                                         "Rebuilt peaks rise above the clipped level; Keep the peak level lowers the selection so they "
                                          "reach it, and no higher. Clipping longer than 5 ms is left as it is.",
                       { { "threshold", "Clipped at or above (% of the peak)", declipThreshold * 100.0, 1, {}, 50, 100, 0.5 },
-                        { "keep", "Keep the Peak Level", declipKeepPeak ? 0.0 : 1.0, 0, { "Yes", "No" } } },
+                        { "keep", "Keep the peak level", declipKeepPeak ? 0.0 : 1.0, 0, { "Yes", "No" } } },
                       "spectrablade:declip", PreviewOwner::none,
                       [toSettings] (const EffectValues& v) { const auto d = toSettings (v); return d.threshold >= 0.5 && d.threshold <= 1.0; },
-                      "The share of the peak must be from 50 to 100%.",
+                      "The share of the peak must be from 50 to 100 %.",
                       nullptr, nullptr,
                       [this, toSettings, rate] (const EffectValues& v)
                       {
@@ -7800,7 +7986,7 @@ void MainComponent::showEqBand()
 
     showEffectDialog ("EQ Band", "A bell boosts or cuts around the frequency (a higher Q is narrower); a shelf boosts or cuts "
                                  "everything below or above it, half as much at the frequency; a high-pass or low-pass removes what is "
-                                 "below or above it, 3 dB down at the frequency with a Q of 0.71. Gain from -48 to +48 dB; Q from 0.05 to 50.",
+                                 "below or above it, 3 dB down at the frequency with a Q of 0.71. Gain -48 to +48 dB, Q 0.05 to 50.",
                       { { "type", "Type", (double) eqBandType, 0, { "Bell", "Low Shelf", "High Shelf", "High-Pass", "Low-Pass" } },
                         { "frequency", "Frequency (Hz)", eqBandHz, 1, {}, 20, juce::jmin (20000.0, nyquist - 1.0), 1 }, { "gain", "Gain (dB)", eqBandGainDb, 1, {}, -48, 48, 0.5 }, { "q", "Q", eqBandQ, 2, {}, 0.05, 50, 0.05 } },
                       "spectrablade:eq-band", PreviewOwner::none,
@@ -7845,6 +8031,9 @@ void MainComponent::toggleParametricEq()
     });
     eqWindow->setReadOutput ([this] (juce::AudioBuffer<float>& b) { engine.copyRecentOutput (b); return engine.getOutputSampleRate(); });
     places->watch (*eqWindow, "Parametric EQ");
+
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+        eqWindow->startPreviewing();
 }
 
 void MainComponent::previewParametricEq (const ParametricEq* eq)
@@ -7995,6 +8184,12 @@ void MainComponent::showMultiband()
     preview->onClick = update;
     panel->onChange = update;
 
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+    {
+        preview->setToggleState (true, juce::dontSendNotification);
+        update();
+    }
+
     // Presets under the live effect's parameter IDs, shared with it.
     auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::multibandId,
                                                          [p = panel.get()]
@@ -8081,6 +8276,12 @@ void MainComponent::showDynamicEq()
     };
     preview->onClick = update;
     panel->onChange = update;
+
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+    {
+        preview->setToggleState (true, juce::dontSendNotification);
+        update();
+    }
 
     auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), BuiltInEffects::dynamicEqId,
                                                          [p = panel.get()]
@@ -9317,6 +9518,11 @@ void MainComponent::showLimiter()
                       });
 }
 
+bool MainComponent::previewsFromStart()
+{
+    return ! multitrackMode && ! isRecording() && previewOwner == PreviewOwner::none && engine.getPlayer().isPlaying();
+}
+
 void MainComponent::showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>& fields,
                                       const juce::String& presetKey, PreviewOwner owner,
                                       std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
@@ -9430,6 +9636,11 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
         previewEnded = {};
         stopPreview();
     };
+
+    // Opened while the file plays, the dialog previews from the start, so its settings are heard
+    // as they move (Preview off, the play underneath would go on unchanged).
+    if (previewsFromStart())
+        dialog->setPreviewOn (true, juce::sendNotification);
 
     EffectDialog::show (std::move (dialog), title, this);
 }
@@ -9664,6 +9875,12 @@ void MainComponent::showGraphicEq (int numBands)
     };
     preview->onClick = update;
     panel->onChange = update;
+
+    if (previewsFromStart())   // opened while the file plays: heard from the start
+    {
+        preview->setToggleState (true, juce::dontSendNotification);
+        update();
+    }
 
     // Presets under the live effect's IDs (band1 ... bandN), shared with it.
     auto presets = std::make_shared<EffectPresets::Bar> (EffectPresets::userStore(), numBands == 31 ? BuiltInEffects::graphicEq31Id : BuiltInEffects::graphicEq10Id,
@@ -10090,6 +10307,14 @@ void MainComponent::deleteSelection()
 {
     const auto sel = waveform.getSelection();
 
+    // With a box, lasso or brush selection in the spectrogram, Delete removes what is inside it
+    // (as Remove Frequencies does), keeping the file's length; a plain selection takes its time out.
+    if (! waveform.getSpectralShape().isEmpty() || (! sel.isEmpty() && ! waveform.getSpectralBand().isEmpty()))
+    {
+        applySpectral (-std::numeric_limits<float>::infinity());
+        return;
+    }
+
     if (! sel.isEmpty())
         applyEdit (AudioEdits::remove (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Delete", { sel.getStart(), sel.getStart() },
                    MarkerEdits::afterReplace (engine.document.getMarkers(), sel.getStart(), sel.getEnd(), 0));
@@ -10177,7 +10402,7 @@ void MainComponent::applyNormalize()
         fields.push_back ({ "apart", "Channels", normalizeChannelsApart ? 1.0 : 0.0, 0, { "All together", "Each on its own" } });
 
     showEffectDialog ("Normalize", "Raises or lowers the selection, or the whole file, so its highest peak reaches the level; with "
-                                   "Each on Its Own, each channel's peak does.",
+                                   "Each on its own, each channel's peak does.",
                       fields, "spectrablade:normalize", PreviewOwner::none, [] (const EffectValues&) { return true; }, {}, nullptr, nullptr,
                       [this, toStep] (const EffectValues& v)
                       {
@@ -10825,9 +11050,21 @@ void MainComponent::updatePlaybackLoop()
     playingLoop = wanted;
 
     if (wanted.isEmpty())
+    {
+        // Loop off, or no range: the play goes on to its stop (the end of the last loop, or the end).
         player.clearLoop();
-    else
-        player.setLoop (wanted.getStart(), wanted.getEnd());
+        return;
+    }
+
+    // The play stops by itself where it started, the selection's end then; a selection changed
+    // while looping moves the stop to its new end first, so the sound carries on past the old one
+    // (and the view does not stop the play there). A play now outside the loop (the selection
+    // shortened behind it, or moved) starts the loop again from its start.
+    player.setStopFrame (wanted.getEnd());
+    player.setLoop (wanted.getStart(), wanted.getEnd());
+
+    if (! wanted.contains (player.getPositionFrames()))
+        player.setPositionFrames (wanted.getStart());
 }
 
 void MainComponent::startPreview (PreviewOwner owner, std::unique_ptr<juce::AudioPluginInstance> effect, std::function<void()> ended)
@@ -10915,8 +11152,18 @@ void MainComponent::startRenderedPreview (const EffectPreview::Request& request,
         player.setLoop (loop.getStart(), loop.getEnd());
         playingLoop = loop;
 
+        // A preview loops until the dialog ends it: the play's own stop (the selection's end when
+        // Play was pressed) would stop it where the rendered audio runs past that, and a play
+        // outside the loop would never come round to it.
         if (! player.isPlaying())
             player.play (loop.getStart(), -1);
+        else
+        {
+            player.setStopFrame (-1);
+
+            if (! loop.contains (player.getPositionFrames()))
+                player.setPositionFrames (loop.getStart());
+        }
 
         if (status != nullptr)
             status (r.note.isNotEmpty() ? r.note : ! generates && shortened ? "Playing the first " + juce::String ((int) EffectPreview::longestSeconds) + " s" : juce::String());
@@ -10984,6 +11231,259 @@ std::optional<EffectPreview::Request> MainComponent::previewOf (const Sequences:
 juce::AudioPluginInstance* MainComponent::previewEffectOf (PreviewOwner owner) const
 {
     return owner != PreviewOwner::none && owner == previewOwner ? engine.getPreviewEffect() : nullptr;
+}
+
+void MainComponent::showSettings (const juce::String& section)
+{
+    if (settingsWindow == nullptr)
+    {
+        // Deleted later, not inside its own close button's callback.
+        settingsWindow = std::make_unique<SettingsWindow> (makeSettingsModel(), [this]
+        {
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+            {
+                if (safe != nullptr)
+                    safe->settingsWindow = nullptr;
+            });
+        });
+        places->watch (*settingsWindow, "Settings");
+    }
+
+    if (section.isNotEmpty())
+        settingsWindow->getPanel().showSection (section);
+
+    settingsWindow->setVisible (true);
+    settingsWindow->toFront (true);
+}
+
+Settings::Model MainComponent::makeSettingsModel()
+{
+    using Item = Settings::Item;
+    auto* settings = appProperties.getUserSettings();
+    const auto changed = [this] { commands.commandStatusChanged(); };
+
+    // Look: the theme, its accent and waveform colour, the time format and the editor's display.
+    const auto themes = Theme::themeNames(), accents = Theme::accentNames(), waveforms = Theme::waveformNames();
+    juce::StringArray waveformChoices (waveforms);
+    waveformChoices.set (0, "Theme's Own");
+    juce::StringArray fadeNames;
+
+    for (auto shape : FadeShapes::all)
+        fadeNames.add (FadeShapes::id (shape));
+
+    Settings::Model model;
+
+    model.push_back ({ "Look", "How the app looks, and how times read. Each change shows at once.",
+        { Item::choice ("Theme", "The colours of every window", themes,
+                        [themes] { return juce::jmax (0, themes.indexOf (Theme::current().name)); },
+                        [this, themes, settings] (int i) { setTheme (themes[i], settings->getValue (accentKey, "Blue"), settings->getValue (waveformColourKey, "Theme")); }),
+          Item::choice ("Accent", "The colour of the selection, the cursor and what is on", accents,
+                        [accents, settings] { return juce::jmax (0, accents.indexOf (settings->getValue (accentKey, "Blue"))); },
+                        [this, accents, settings] (int i) { setTheme (Theme::current().name, accents[i], settings->getValue (waveformColourKey, "Theme")); }),
+          Item::choice ("Waveform colour", "The waveform's colour, or the theme's own", waveformChoices,
+                        [waveforms, settings] { return juce::jmax (0, waveforms.indexOf (settings->getValue (waveformColourKey, "Theme"))); },
+                        [this, waveforms, settings] (int i) { setTheme (Theme::current().name, settings->getValue (accentKey, "Blue"), waveforms[i]); }),
+          Item::choice ("Time format", "How every time reads: the rulers, the transport, the lists and the dialogs", TimeFormat::names(),
+                        [] { return (int) TimeFormat::get(); },
+                        [this] (int i) { setTimeFormat ((TimeFormat::Kind) juce::jlimit (0, (int) TimeFormat::Kind::count - 1, i)); }),
+          Item::choice ("Editor shows", "The waveform, the spectrogram, or both one over the other", { "Waveform", "Spectrogram", "Waveform and spectrogram" },
+                        [this] { return (int) waveform.getDisplay(); },
+                        [this] (int i) { setDisplay ((WaveformView::Display) juce::jlimit (0, 2, i)); }) } });
+
+    model.push_back ({ "Editing", "How edits in the file editor behave.",
+        { Item::toggle ("Select at zero crossings", "Every selection end you drag or nudge lands on a zero crossing, so cuts don't click",
+                        [this] { return selectZeroCrossings; },
+                        [this, settings, changed] (bool on) { selectZeroCrossings = on; settings->setValue (selectZeroCrossingsKey, on); changed(); }),
+          Item::choice ("Fade shape", "The curve of Fade In and Fade Out in the editor", fadeNames,
+                        [this] { return (int) std::distance (FadeShapes::all.begin(), std::find (FadeShapes::all.begin(), FadeShapes::all.end(), fadeShape)); },
+                        [this, settings] (int i) { fadeShape = FadeShapes::all[(size_t) juce::jlimit (0, (int) FadeShapes::all.size() - 1, i)]; settings->setValue (fadeShapeKey, FadeShapes::id (fadeShape)); }),
+          Item::toggle ("File tabs over the editor", "A tab for each open file above the editor, as well as the Files panel",
+                        [this] { return editorPanel != nullptr && editorPanel->areTabsWanted(); },
+                        [this, settings, changed] (bool on) { if (editorPanel != nullptr) editorPanel->setTabsWanted (on); settings->setValue (fileTabsKey, on); changed(); }),
+          Item::toggle ("Keep project history", "A project keeps each file's undo history, so it can be undone after it is opened again",
+                        [settings] { return settings->getBoolValue (projectHistoryKey, true); },
+                        [settings, changed] (bool on) { settings->setValue (projectHistoryKey, on); changed(); }),
+          Item::toggle ("Preview in the open panel", "Hear files as you select them in File > Open",
+                        [settings] { return settings->getBoolValue (openPreviewKey, false); },
+                        [this, settings] (bool on) { settings->setValue (openPreviewKey, on); if (openPreview != nullptr) openPreview->setPreviewOn (on); }) } });
+
+    model.push_back ({ "Playback", "How the file and the session play.",
+        { Item::toggle ("Loop playback", "A selection or time range plays over and over",
+                        [this] { return loopPlayback; },
+                        [this, settings, changed] (bool on) { loopPlayback = on; settings->setValue (loopPlaybackKey, on); updatePlaybackLoop(); changed(); }),
+          Item::choice ("Surround files play", "5.1 and 7.1 folded down to stereo, or to separate outputs after the output pair", { "Folded down to stereo", "To separate outputs" },
+                        [this] { return engine.getSurroundOutputs() ? 1 : 0; },
+                        [this, settings, changed] (int i) { engine.setSurroundOutputs (i == 1); settings->setValue ("surroundOutputs", i == 1); changed(); }) } });
+
+    model.push_back ({ "Multitrack", "How clips are edited in the session.",
+        { Item::toggle ("Snapping", "Clip edges, the cursor and the time selection snap to markers, clip edges and the grid",
+                        [this] { return multitrack.isSnapping(); },
+                        [this, settings, changed] (bool on) { multitrack.setSnapping (on); settings->setValue (snappingKey, on); changed(); }),
+          Item::toggle ("Zero crossings on drags", "A clip edge or a split you drag lands on a zero crossing",
+                        [this] { return multitrack.isFindingZeroCrossings(); },
+                        [this, settings, changed] (bool on) { multitrack.setFindingZeroCrossings (on); settings->setValue (zeroCrossingsKey, on); changed(); }),
+          Item::toggle ("Crossfade at edits", "Clips that overlap after an edit get a short crossfade",
+                        [this] { return multitrack.isCrossfading(); },
+                        [this, settings, changed] (bool on) { multitrack.setCrossfading (on); settings->setValue (crossfadingKey, on); changed(); }),
+          Item::toggle ("Write automation", "Moves on the mixer and in effect windows are written as automation while playing",
+                        [this] { return multitrack.isWritingAutomation(); },
+                        [this, changed] (bool on) { multitrack.setWritingAutomation (on); changed(); }) } });
+
+    model.push_back ({ "Recording", "How a take starts and ends in the session.",
+        { Item::number ("Pre-roll", "Playback runs this long before a punch-in (a count-in replaces it)", 0.0, SessionRecording::Rolls::longest, 0.1, 1, "s",
+                        [this] { return rolls.preroll; },
+                        [this, settings] (double v) { rolls.preroll = v; settings->setValue (prerollKey, v); }),
+          Item::number ("Post-roll", "Recording runs this long after a punch-out", 0.0, SessionRecording::Rolls::longest, 0.1, 1, "s",
+                        [this] { return rolls.postroll; },
+                        [this, settings] (double v) { rolls.postroll = v; settings->setValue (postrollKey, v); }),
+          Item::toggle ("Count-in", "A bar of clicks before recording starts, in place of the pre-roll",
+                        [this] { return countIn; },
+                        [this, changed] (bool on) { countIn = on; changed(); }),
+          Item::toggle ("Metronome", "Clicks on the beat while the session plays",
+                        [this] { return engine.getPlayer().isMetronomeOn(); },
+                        [this, changed] (bool on) { engine.getPlayer().setMetronome (on); changed(); }),
+          Item::toggle ("Input monitoring", "Armed tracks play their inputs",
+                        [this] { return inputMonitoring; },
+                        [this, changed] (bool on) { inputMonitoring = on; updateInputs(); changed(); }),
+          Item::toggle ("Loop recording", "Record over the time range again and again, keeping each pass as a take",
+                        [this] { return loopRecording; },
+                        [this, changed] (bool on) { loopRecording = on; changed(); }) } });
+
+    model.push_back ({ "Audio", "The audio interface, its sample rate and buffer size. The output pair and the input are chosen at the bottom of the main window.",
+        { Item::component ({}, 440, [this] () -> std::unique_ptr<juce::Component>
+                           {
+                               if (! engine.isDeviceOpen())
+                                   return std::make_unique<juce::Label> ("none", "No audio device is open.");
+
+                               return std::make_unique<juce::AudioDeviceSelectorComponent> (engine.deviceManager, 0, 0, 1, 256, false, false, true, false);
+                           }) } });
+
+    model.push_back ({ "Plug-ins", "VST3 and Audio Unit effects are found by a scan and listed in the Plug-ins window, where one that fails can be checked again.",
+        { Item::button ("Plug-ins...", "Scan for plug-ins and manage the list", [this] { showPluginList(); }) } });
+
+    model.push_back ({ "Keys", "Every command's keys, to change, export and import, or to take from another key set.",
+        { Item::button ("Keyboard Shortcuts...", "See and change the keys for every command", [this] { showKeyShortcuts(); }) } });
+
+    Settings::Section library { "Sound Library", "The folders the Sound Library indexes are chosen in its own window (F5). Its list shows WAV "
+                                                 "files to start with, so the same sounds as WAV and AIFF show once; add the other formats here, "
+                                                 "and bring back a folder left out of the list.", {} };
+
+    for (const auto& choice : SoundLibrary::formatChoices())
+        library.items.push_back (Item::toggle ("Show " + choice.label + " files", choice.detail,
+                                               [this, name = choice.name] { return getLibraryShownFormats().contains (name); },
+                                               [this, name = choice.name] (bool on)
+                                               {
+                                                   auto shown = getLibraryShownFormats();
+
+                                                   if (on)
+                                                       shown.addIfNotAlreadyThere (name);
+                                                   else if (shown.size() > 1)
+                                                       shown.removeString (name);   // the last one shown stays
+
+                                                   setLibraryShownFormats (shown);
+                                               }));
+
+    library.items.push_back (Item::button ("Folders Left Out...", "Bring a folder left out of the Sound Library's list back into it", [this]
+    {
+        juce::PopupMenu menu;
+        const auto folders = getLibraryFoldersLeftOut();
+
+        if (folders.isEmpty())
+            menu.addItem (1, "No folder is left out", false);
+
+        for (int i = 0; i < folders.size(); ++i)
+        {
+            juce::PopupMenu sub;
+            sub.addItem (100 + i, "Show in the List Again");
+            menu.addSubMenu (folders[i].getFullPathName(), sub);
+        }
+
+        menu.showMenuAsync (juce::PopupMenu::Options(), [this, folders] (int result)
+        {
+            if (! juce::isPositiveAndBelow (result - 100, folders.size()))
+                return;
+
+            auto kept = folders;
+            kept.remove (result - 100);
+            setLibraryFoldersLeftOut (kept);
+        });
+    }));
+    library.items.push_back (Item::button ("Sound Library...", "Show the Sound Library", [this] { showSoundLibrary(); }));
+    model.push_back (std::move (library));
+
+    return model;
+}
+
+void MainComponent::askToNewFile()
+{
+    if (isRecording())
+        return;
+
+    const juce::Array<int> rates { 8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000 };
+    const juce::Array<int> channelCounts { 1, 2, 6, 8 }, depths { 16, 24, 32 };
+    constexpr double shortest = 0.1, longest = 3600.0;
+
+    auto* box = new juce::AlertWindow ("New File", "A new file of silence to record, paste or generate into. It opens beside the files open, "
+                                                   "unsaved until Save As. Length " + juce::String (shortest, 1) + " to 3,600 s.",
+                                       juce::MessageBoxIconType::NoIcon, this);
+    juce::StringArray rateNames, channelNames { "Mono", "Stereo", "5.1 (6 channels)", "7.1 (8 channels)" }, depthNames { "16-bit", "24-bit", "32-bit float" };
+
+    for (auto r : rates)
+        rateNames.add (juce::String (r) + " Hz");
+
+    // The interface's rate to start with, as a recording would take it.
+    auto rate = newFileRate;
+
+    if (rate == 0)
+        if (auto* device = engine.deviceManager.getCurrentAudioDevice())
+            rate = (int) std::llround (device->getCurrentSampleRate());
+
+    box->addComboBox ("rate", rateNames, "Sample rate");
+    box->addComboBox ("channels", channelNames, "Channels");
+    box->addComboBox ("depth", depthNames, "Bit depth");
+    box->addTextEditor ("seconds", juce::String (newFileSeconds, 1), "Length (s)");
+    box->getComboBoxComponent ("rate")->setSelectedItemIndex (juce::jmax (0, rates.indexOf (rates.contains (rate) ? rate : 48000)));
+    box->getComboBoxComponent ("channels")->setSelectedItemIndex (juce::jmax (0, channelCounts.indexOf (newFileChannels)));
+    box->getComboBoxComponent ("depth")->setSelectedItemIndex (juce::jmax (0, depths.indexOf (newFileDepth)));
+    box->addButton ("Create", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box, rates, channelCounts, depths] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto seconds = box->getTextEditorContents ("seconds").getDoubleValue();
+
+        if (! (seconds >= shortest && seconds <= longest))
+        {
+            juce::MessageManager::callAsync ([] { showError ("New File", "The length must be from 0.1 to 3,600 s."); });
+            return;
+        }
+
+        newFileRate = rates[box->getComboBoxComponent ("rate")->getSelectedItemIndex()];
+        newFileChannels = channelCounts[box->getComboBoxComponent ("channels")->getSelectedItemIndex()];
+        newFileDepth = depths[box->getComboBoxComponent ("depth")->getSelectedItemIndex()];
+        newFileSeconds = seconds;
+        newFile (newFileRate, newFileChannels, newFileDepth, seconds);
+    }), true);
+}
+
+void MainComponent::newFile (double sampleRate, int channels, int bitDepth, double seconds)
+{
+    if (isRecording())
+        return;
+
+    // Beside the files open, as an opened file goes; the editor starts at the file's start.
+    stopPreview();
+    openFiles.prepareForAnother (waveform.getPlace());
+    engine.newDocument (channels, sampleRate, bitDepth, (juce::int64) std::llround (seconds * sampleRate));
+    setMultitrack (false);
+    waveform.setPlace ({});
+    waveform.zoomToFit();
+    refreshTitle();
+    timerCallback();
+    commands.commandStatusChanged();
 }
 
 void MainComponent::chooseSampleRate()

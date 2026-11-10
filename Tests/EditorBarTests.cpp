@@ -99,7 +99,7 @@ namespace
         WaveformView view (engine);
         view.setBounds (0, 0, 800, 300);
         juce::ApplicationCommandManager commands;
-        EditorBar bar (commands, view, engine.document, { 1, 2, 3, 4, 5, 6, 7, 8 });
+        EditorBar bar (commands, view, engine.document, { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12 });
         juce::Array<int> ran;
         bar.run = [&] (int id) { ran.add (id); };
         bar.setBounds (0, 0, 800, EditorBar::height);
@@ -128,6 +128,40 @@ namespace
         juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
         check (atOne && atEight && bar.getShownVertical() == "64x" && ! bar.getButton (5).isEnabled(),
                "editor bar: shows the vertical zoom as it changes (1x, 8x, 64x), with out and full scale off at 1x and in off at 64x");
+
+        // The tools: left of the times, the one in hand lit; each runs its command; Heal is off
+        // until there is a drawing or a box of frequencies.
+        using Tool = EditorBar::Tool;
+        ran.clear();
+        const auto lit = [&] { juce::String s; for (auto t : { Tool::box, Tool::lasso, Tool::brush, Tool::heal }) s << (bar.getToolButton (t).getToggleState() ? "1" : "0"); return s; };
+        const auto boxLit = lit();
+        view.setSpectralTool (WaveformView::SpectralTool::lasso);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+        const auto lassoLit = lit();
+        const auto healOff = ! bar.getToolButton (Tool::heal).isEnabled();
+
+        for (auto t : { Tool::box, Tool::lasso, Tool::brush, Tool::heal })
+            bar.getToolButton (t).triggerClick();   // Heal is off, so it does nothing
+
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        auto place = view.getPlace();
+        SpectralEdit::Stroke stroke;
+        stroke.lasso = { { 1000.0, 9.0 }, { 5000.0, 9.0 }, { 5000.0, 11.0 }, { 1000.0, 11.0 } };
+        place.shape.strokes.push_back (stroke);
+        place.selection = { 1000, 5000 };
+        view.setPlace (place);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
+        bar.getToolButton (Tool::heal).triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (30);
+        const auto fields = bar.getFields();
+        const auto toolsFirst = bar.getToolButton (Tool::heal).getRight() < (fields.empty() || fields[0].bounds.isEmpty() ? bar.getWidth() : fields[0].bounds.getX())
+                                && bar.getToolButton (Tool::box).getX() < bar.getToolButton (Tool::lasso).getX()
+                                && bar.getToolButton (Tool::lasso).getX() < bar.getToolButton (Tool::brush).getX()
+                                && bar.getToolButton (Tool::brush).getRight() < bar.getToolButton (Tool::heal).getX();
+        check (boxLit == "1000" && lassoLit == "0100" && healOff && ran == juce::Array<int> { 9, 10, 11, 12 } && toolsFirst
+                   && bar.getToolButton (Tool::heal).isEnabled() && ! bar.getToolButton (Tool::heal).getToggleState(),
+               "editor bar: the tool buttons sit left of the times in order (Box, Lasso, Brush, then Heal), the tool in hand is lit (" + boxLit + " then "
+                   + lassoLit + "), each runs its command, and Heal does nothing until there is a drawing");
         check (EditorBar::verticalText (1.5) == "1.5x" && EditorBar::verticalText (2.0) == "2x" && EditorBar::verticalText (12.0) == "12x",
                "editor bar: zooms read 1.5x, 2x, 12x");
     }
@@ -146,7 +180,7 @@ namespace
         EditorBar bar (commands, view, engine.document, { 1, 2, 3, 4, 5, 6, 7, 8 });
         juce::Array<int> ran;
         bar.run = [&] (int id) { ran.add (id); };
-        bar.setBounds (0, 0, 1000, EditorBar::height);
+        bar.setBounds (0, 0, 1100, EditorBar::height);   // room for all three: Windows' monospaced font (Courier New) is wider than the Mac's
 
         const auto& f = bar.getFields();
         const auto settle = [] (std::function<bool()> done)
@@ -184,8 +218,14 @@ namespace
         clickAt (f[0].bounds.getCentre());
         clickAt (f[1].bounds.getCentre());
         clickAt (f[2].bounds.getCentre());
+        juce::String placed;
+
+        for (const auto& field : f)
+            placed << field.bounds.getX() << "+" << field.bounds.getWidth() << " ";
+
         check (ordered && ran == juce::Array<int> { 7, 8 },
-               "editor bar: the fields sit left to right before the zoom controls; a click on the cursor runs Go to Time, on the selection Set Selection, and on the view nothing");
+               "editor bar: the fields sit left to right before the zoom controls; a click on the cursor runs Go to Time, on the selection Set Selection, and on the view nothing"
+               " (fields at " + placed + "before " + juce::String (bar.getButton (1).getX()) + ")");
 
         // Narrowing it a pixel at a time: the fields go from the right, and those left stay clear of the zoom controls.
         int viewGone = 0, selectionGone = 0, cursorGone = 0;

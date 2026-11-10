@@ -8,6 +8,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 
 | Command | Keys |
 |---|---|
+| New File... | `Cmd-N` |
 | Open... | `Cmd-O` |
 | Save | `Cmd-S` |
 | Save As... | `Shift-Cmd-S` |
@@ -23,7 +24,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Copy | `Cmd-C` |
 | Paste | `Cmd-V` |
 | Paste Mix | `Shift-Cmd-V` |
-| Delete | `Delete` or `Forward Delete` |
+| Delete (a spectral selection: remove what is inside it) | `Delete` or `Forward Delete` |
 | Select All | `Cmd-A` |
 | Step Selection Earlier, Step Selection Later | `Option-Shift-Left`, `Option-Shift-Right` |
 | Double Selection, Halve Selection | `Option-Shift-Up`, `Option-Shift-Down` |
@@ -126,7 +127,8 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Command | Keys |
 |---|---|
 | Effects Rack | `Option-Cmd-E` |
-| Audio Settings... | `Cmd-,` |
+| Sound Library (show, or hide when it is showing) | `F5` |
+| Settings... | `Cmd-,` |
 | Maximize Editor, or Restore All Panels | `Shift-Cmd-F` |
 
 ## With the mouse

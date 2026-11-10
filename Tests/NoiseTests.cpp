@@ -57,7 +57,7 @@ namespace
         return std::sqrt (sum / (count * b.getNumChannels()));
     }
 
-    /** Amplitude of the tone in channel 0 over a whole number of its periods. */
+    /** Amplitude of the tone in channel 0 over a whole number of its periods (85 fit in 4096 samples). */
     double toneAmplitude (const juce::AudioBuffer<float>& b, int start, int count)
     {
         double re = 0.0, im = 0.0;
@@ -101,8 +101,8 @@ void runNoiseTests()
         const auto lowered = toDb (before / after);
         check (lowered > 11.0 && lowered < 12.5, "noise reduction: noise lowered by " + juce::String (lowered, 2) + " dB (asked 12)");
 
-        const auto toneBefore = toneAmplitude (input, 5 * second, 85 * 4800);
-        const auto toneAfter = toneAmplitude (result, 5 * second, 85 * 4800);
+        const auto toneBefore = toneAmplitude (input, 5 * second, 35 * 4096);
+        const auto toneAfter = toneAmplitude (result, 5 * second, 35 * 4096);
         const auto toneChange = toDb (toneAfter / toneBefore);
         check (std::abs (toneChange) < 0.1, "noise reduction: the tone keeps its level (" + juce::String (toneChange, 3) + " dB)");
 
@@ -134,7 +134,7 @@ void runNoiseTests()
         const auto result = readAll (*NoiseReduction::reduce (*snapshot, 0, snapshot->getNumFrames(), rate, *print, deep));
         const auto lowered = toDb (rms (input, 2 * second + 4096, second) / rms (result, 2 * second + 4096, second));
         check (lowered > 22.0 && lowered < 24.5, "noise reduction: noise lowered by " + juce::String (lowered, 2) + " dB (asked 24)");
-        check (std::abs (toDb (toneAmplitude (result, 5 * second, 85 * 4800) / toneAmplitude (input, 5 * second, 85 * 4800))) < 0.1,
+        check (std::abs (toDb (toneAmplitude (result, 5 * second, 35 * 4096) / toneAmplitude (input, 5 * second, 35 * 4096))) < 0.1,
                "noise reduction: at 24 dB the tone still keeps its level");
     }
 

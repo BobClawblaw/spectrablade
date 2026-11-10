@@ -196,7 +196,7 @@ namespace
         tabs.mouseDown (press (tabs, tabs.getCloseBounds (2).getCentre()));
         tabs.mouseUp (press (tabs, first.getCentre()));   // released away from the ×: nothing closes
         check (chosen == std::vector<int> { 0 } && closed == std::vector<int> { 1 },
-               "file tabs: clicking a tab shows its file, and its × closes it only when released over it");
+               "file tabs: clicking a tab shows its file, and its close mark closes it only when released over it");
 
         tabs.setSize (150, FileTabs::height);
         const auto squeezed = tabs.getTabBounds (0).getWidth() == 50 && tabs.getTabBounds (2).getRight() == 150;
@@ -218,9 +218,42 @@ namespace
     }
 }
 
+namespace
+{
+    void testNewFile()
+    {
+        // A blank: 200,000 frames of silence from one 65,536-frame block in four segments.
+        const auto blank = AudioEdits::blank (2, 200000);
+        juce::AudioBuffer<float> read (2, 200000);
+        blank->read (read, 0, 0, 200000);
+        const auto& segs = blank->getSegments();
+        check (blank->getNumChannels() == 2 && blank->getNumFrames() == 200000 && segs.size() == 4 && segs[0].block == segs[3].block
+                   && segs[3].length == 200000 - 3 * 65536 && read.getMagnitude (0, 200000) <= 0.0f
+                   && AudioEdits::blank (2, 0)->getNumFrames() == 0 && AudioEdits::blank (0, 100)->getNumFrames() == 0,
+               "new file: a blank of 200,000 frames reads as silence from four segments of one block; no frames or no channels gives an empty one");
+
+        // A new file beside an open one: its own entry, Untitled, with the frames, channels, rate
+        // and bit depth asked for, not dirty; closing it brings the other back.
+        AudioEngine engine;
+        OpenFiles files (engine);
+        auto& doc = engine.document;
+        files.prepareForAnother ({});
+        load (engine, "a.wav", 1000, 0.25f);
+        files.prepareForAnother ({});
+        engine.newDocument (2, 44100.0, 16, 441000);
+        const auto made = files.size() == 2 && files.getActiveIndex() == 1 && files.nameAt (1) == "Untitled" && doc.hasAudio()
+                          && doc.getNumFrames() == 441000 && doc.getNumChannels() == 2 && juce::exactlyEqual (doc.getSampleRate(), 44100.0)
+                          && doc.getSourceBitDepth() == 16 && doc.getFile() == juce::File() && ! doc.isDirty() && ! doc.canUndo();
+        files.close (1);
+        check (made && files.size() == 1 && files.getActiveIndex() == 0 && doc.getFile() == fileNamed ("a.wav") && doc.getNumFrames() == 1000,
+               "new file: a new stereo file of 10 s at 44.1 kHz for 16-bit opens beside a file already open, Untitled and not dirty, and closes back to it");
+    }
+}
+
 void runOpenFilesTests()
 {
     testSwitching();
+    testNewFile();
     testViewPlaces();
     testPanel();
     testTabs();

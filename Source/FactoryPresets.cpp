@@ -353,6 +353,9 @@ namespace
             { "10% slower", { { "percent", 110.0 } } }, { "10% faster", { { "percent", 90.0 } } },
             { "Half speed", { { "percent", 200.0 } } }, { "Double speed", { { "percent", 50.0 } } },
             { "PAL to film (25 to 24 fps)", { { "percent", 104.17 } } }, { "Film to PAL (24 to 25 fps)", { { "percent", 96.0 } } } };
+        t["spectrablade:extreme-stretch"] = {
+            { "Pad (8x, 0.25 s)", { { "factor", 8.0 }, { "window", 0.25 } } }, { "Drone (50x, 0.5 s)", { { "factor", 50.0 }, { "window", 0.5 } } },
+            { "Glacier (200x, 1 s)", { { "factor", 200.0 }, { "window", 1.0 } } }, { "Grainy (8x, 0.05 s)", { { "factor", 8.0 }, { "window", 0.05 } } } };
         t["spectrablade:shift-pitch"] = {
             { "Octave down", { { "semitones", -12.0 } } }, { "Fifth down", { { "semitones", -7.0 } } },
             { "Semitone down", { { "semitones", -1.0 } } }, { "Semitone up", { { "semitones", 1.0 } } },

@@ -505,9 +505,7 @@ void DocumentPlayerProcessor::resetSource()
 void DocumentPlayerProcessor::play (juce::int64 startFrame, juce::int64 stopFrame)
 {
     transport.stop();
-    stopAt = stopFrame;
-    source.setStopFrame (stopFrame);
-    sessionSource.setStopFrame (stopFrame);
+    setStopFrame (stopFrame);
     setPositionFrames (startFrame);
     transport.start();
 }
@@ -970,6 +968,14 @@ juce::String AudioEngine::adoptFile (const juce::File& file, AudioFileIO::Loaded
     player->resetSource();
     sendChangeMessage();
     return {};
+}
+
+void AudioEngine::newDocument (int channels, double sampleRate, int bitDepth, juce::int64 frames)
+{
+    player->pause();
+    document.reset (AudioEdits::blank (channels, frames), sampleRate, {}, bitDepth);
+    player->resetSource();
+    sendChangeMessage();
 }
 
 void AudioEngine::swapDocument (AudioDocument& other)

@@ -22,6 +22,10 @@ namespace AudioEdits
 
     Snapshot fromBuffer (juce::AudioBuffer<float>&& buffer);
 
+    /** Silence: `frames` frames of `numChannels` channels, from one small block of zeros used over
+        and over, so a long blank costs nothing. */
+    Snapshot blank (int numChannels, juce::int64 frames);
+
     AudioClip copy (const AudioSnapshot&, juce::int64 start, juce::int64 end, double sampleRate);
     Snapshot remove (const AudioSnapshot&, juce::int64 start, juce::int64 end);
     Snapshot crop (const AudioSnapshot&, juce::int64 start, juce::int64 end);

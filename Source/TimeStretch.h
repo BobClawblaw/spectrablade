@@ -35,6 +35,14 @@ namespace TimeStretch
     /** How long the joins are crossfaded where a processed range meets the audio around it. */
     inline constexpr double joinSeconds = 0.005;
 
+    /** [start, end) of the audio, processed with up to a quarter second of the audio either side
+        of it (so what comes out at its edges carries on from what is there), that part cut out
+        (`ratio` times its length, process mapping every input position to `ratio` times it),
+        put back in its place with its joins blended over joinSeconds; null for an empty range, a
+        range too long to hold, or when processing stops (an empty result). */
+    AudioDocument::Snapshot processRange (const AudioSnapshot&, juce::int64 start, juce::int64 end, double ratio, double sampleRate,
+                                          const std::function<juce::AudioBuffer<float> (const juce::AudioBuffer<float>&)>& process);
+
     /** The audio with [start, end) stretched to `ratio` times its length at the same pitch (the
         rest moving with it), its joins with the audio either side crossfaded over joinSeconds.
         Null for an empty range, or when progress stops it. */

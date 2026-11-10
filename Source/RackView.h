@@ -12,6 +12,11 @@ public:
 
     std::function<void (int slotIndex)> onEditSlot;
 
+    /** Adds an effect at the end of the rack (as + Add Effect does) and, once it is in, asks for
+        its window through onEditSlot, so a new effect is in front without a click on Edit. A
+        failure to load is shown. */
+    void addEffect (const juce::PluginDescription&);
+
     void paint (juce::Graphics&) override;
     void resized() override;
 

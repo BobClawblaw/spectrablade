@@ -384,6 +384,12 @@ namespace
         check (cleared && view.getSpectralShape().strokes.size() == 1 && view.getSpectralShape().strokes.front().dabs.size() == dabCount && view.getSelection() == span,
                "spectral tools: choosing another selection clears the drawing, and the file's kept place brings it back");
 
+        view.clearSpectralSelection();
+        const auto dropped = view.getSpectralShape().isEmpty() && view.getSpectralBand().isEmpty() && view.getSelection() == span;
+        view.setPlace (place);
+        check (dropped && view.getSpectralShape().strokes.size() == 1,
+               "spectral tools: clearing the spectral selection drops the drawing and keeps the time selection (what Remove Frequencies and Heal do once done)");
+
         view.setBrushRadius (500.0f);
         const auto big = view.getBrushRadius();
         view.setBrushRadius (0.0f);

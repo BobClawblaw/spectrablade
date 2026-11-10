@@ -45,6 +45,7 @@ What they check:
 - Closing gaps on a track, around locked clips and keeping overlaps.
 - Zero crossings: finding them, and splits landing on them.
 - SpectraBlade Stretch: a tone's length, pitch, level and edges from 50% to 200%, its channels exactly opposite as they went in; a click train's onsets found within 1 ms, each click coming out in place at its own peak with silence before it; a busy kit (ghost hits 15 dB down under a dying kick, 50 and 60 ms apart) with every hit found within 1 ms and each coming out as it went in; hats about 20 dB under a bass line, each found within 1 ms and coming out as it went in; no attacks in steady white noise; a steady chord with no attacks found and its energy away from the notes under -40 dB; progress and stopping; Shift Pitch with it; and the method as a sequence step.
+- Extreme stretch: eight times longer at the same level with the two tones' shares of the spectrum kept, channels alike and a repeat bit for bit, noise holding its level within 0.4 dB across the hops, the first and last 50 ms carrying sound, the settings' limits and the window sizes, a factor of 1 keeping the length, a stop, a stretched range spliced with the audio either side bit for bit, and the step in a sequence bit for bit.
 - Time stretch: lengths, pitch and level kept on a tone, channels in step (within 0.001), progress and cancelling, and the clip edit; a click train's 16 clicks kept once each, in place, from 50% to 200%; the level kept at the edges; Stretch and Shift Pitch on part of a file (the audio either side bit for bit, the pitch, the joins), markers, and as sequence steps.
 - Pitch shift: four shifts of a tone landing on their pitches at the same length and level, cancelling, and the clip edit.
 - The undo history: listing steps, going back and forward by clicking, and new steps.
@@ -239,7 +240,7 @@ What they check:
 - Custom delivery specs: the ranges at their edges, a custom -20 LUFS +/- 1 LU spec at -2 dBTP met through the limiter and named in the report, and Batch refusing one out of range.
 - Batch delivery report: each file's lines against the spec written as a text file in the batch's folder, numbered when the name is taken, counting the files that meet it and saying why one wasn't written; none for other levels or when nothing was written.
 - Sound Library index: names split into words (case changes, acronyms, digits, letters past ASCII); a scan of chosen folders (headers, BWF descriptions, unreadable and non-audio files), refused folders, search by the start of words in names and descriptions, sorting and paging, rescans that read only what changed, stopping, a second connection, removing a folder; and the time of counts, searches and pages on an index of a million sounds.
-- Sound Library window: nothing scanned without a folder, a missing folder refused, an added one scanned on its own thread and listed, the bar beside the folders dragged to size the pane and reported, search and every column's text, sorting by length and rate, a drag from selected rows carrying their files (and none from a row not selected), Rescan, and removing a folder.
+- Sound Library window: nothing scanned without a folder, a missing folder refused, an added one scanned on its own thread and listed, the bar beside the folders dragged to size the pane and reported, search and every column's text, sorting by length and rate, a drag from selected rows carrying their files (and none from a row not selected), Rescan, and removing a folder. Formats and folders left out: the choices offered (each once, MP3 not on its own), an index queried for WAV alone or leaving the AIFF folder out finding and counting the WAVs alone, the window starting with WAV alone, its menu's toggles (reported, the last format kept, every format), a list set by the app, and a folder left out and brought back.
 - Sound Library folders: the folders inside one that hold sounds, read from the index in name order (not a sibling whose name starts the same, nor empty folders), how many sounds are in each and deeper, queries limited to one folder (searched too); the window's By Folder pane first, a folder chosen, By Category showing every sound again, a removed folder's sounds gone.
 - Sound Library preview: playing sample for sample at the device's rate and stopping at the end, a selected part looping, the preview volume, mono in both channels, 5.1 folded down, resampling 44.1 kHz on a 48 kHz device, an unreadable file playing silence, a selected part written as a WAV of its own (rate, channels, bits and samples kept; asked again, the same file), and the mouse: selecting by dragging, carrying the selected part out, clicking to play from a point, scrubbing along the strip; selecting a row shows its sound.
 - Sound Library categories: the bundled UCS list (753 subcategories in 82 categories, the 8.2.1 fix in), CatIDs from UCS names and from iXML (USER CATID, USER CATEGORY and SUBCATEGORY, the ASWG catId), the name winning, a query by category, subcategory or none, counts by category, searching by a category's names, sorting by category, setting by hand (kept through a rescan, cleared back to the file's own), an index from before categories brought up to date and read again, and the window's category list, column and setting a selection's category. A name gives a category only with its CatID in its own case, and an older index loses the categories that names gave otherwise.
@@ -257,11 +258,12 @@ What they check:
 - Markers: the edit rules (delete, insert, replace, crop), undo and redo, and WAV, AIFF and FLAC round trips.
 - The recorder against a simulated device: channel mapping among active inputs, a 30 s take checked sample by sample, the playback anchor, and a punch-in through a simulated loop cable that must line up exactly.
 - The dock: docking, tabbing, floating and closing panels, layouts in XML, workspaces, and the dock itself laying out stand-in panels and taking drops.
+- The settings panel: a page per section with a switch, a choice, a number, a button and a made component, each reading its setting and writing a change through at once, refreshed after a change made elsewhere, shown by name.
 - Several open files: keeping each aside with its history and place, switching, closing, the Files panel, the tabs over the editor, and dropping several at once.
 - The panels: the undo history following the file or the session, the levels, the spectrum against sines at known levels, correlation and the goniometer, and the copy of the output they read.
 - The fade handles: the curves, the faded samples, the fades kept adjustable as one undo step, and dragging the handles in the view.
 - Maximising a group of panels: filling the dock, the layout kept, restoring, and double-clicking a tab.
-- Vertical zoom and the zoom strip: a sine's drawn height at each zoom and its clipping at the lane's edge, the limits and edge levels, Option-scrolling, and the strip's buttons and readout.
+- Vertical zoom and the zoom strip: a sine's drawn height at each zoom and its clipping at the lane's edge, the limits and edge levels, Option-scrolling, the strip's buttons and readout, and its tool buttons (in order left of the times, the tool in hand lit, each running its command, Heal off until there is a drawing).
 - The times under the editor: cursor, selection and view as shown, clicks on them, and which are left out as the strip narrows.
 - Waveform colours: each one's contrast against every theme's canvas and lanes, and the choice replacing the theme's own.
 - Going to edges: a file's and a session's edges walked both ways, with and without a selection, hidden tracks passed over.
@@ -308,6 +310,32 @@ The player only ever plays silence, so the tests make no sound. The live input t
 ```bash
 ./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --live-input
 ```
+
+## A page of each theme
+
+```bash
+./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests --theme-sweep themes
+```
+
+draws the editor (waveform and spectrogram, a selection, markers, the lasso in hand), its strip, a session with two clips, the Amplitude Statistics, the Tonal Balance and the marker list in every theme, one `themes/<theme>.png` each, to look at after a change to a theme or a panel. Anything a component leaves unpainted shows red. The theme test checks the contrast rules on every theme and accent without looking; this is for the eye.
+
+## Under the debugger and the sanitizers
+
+The suite is also run as a Debug build, which turns on JUCE's assertions and leak detector, and as a build with the Address and Undefined Behaviour Sanitizers, which catch reads past a buffer, uses of freed memory and undefined arithmetic that a Release build passes over in silence. Each is its own build folder:
+
+```bash
+cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DCMAKE_OSX_ARCHITECTURES=arm64
+cmake --build build-debug --target SpectraBladeTests
+./build-debug/SpectraBladeTests_artefacts/Debug/SpectraBladeTests --app build-debug/SpectraBlade_artefacts/Debug/SpectraBlade.app/Contents/MacOS/SpectraBlade
+
+F="-fsanitize=address,undefined -fno-omit-frame-pointer"
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_C_FLAGS="$F" -DCMAKE_CXX_FLAGS="$F" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+cmake --build build-asan --target SpectraBladeTests
+ASAN_OPTIONS=detect_leaks=0 UBSAN_OPTIONS=print_stacktrace=1 ./build-asan/SpectraBladeTests_artefacts/RelWithDebInfo/SpectraBladeTests --app build-asan/SpectraBlade_artefacts/RelWithDebInfo/SpectraBlade.app/Contents/MacOS/SpectraBlade 2>&1 | tee asan.log
+grep "runtime error\|ERROR: AddressSanitizer" asan.log
+```
+
+Both pass. Under the sanitizers the only reports are shifts of negative or too-large values inside the LAME encoder and JUCE's bundled JPEG library, which are theirs; none is in SpectraBlade's code. Under Debug the one timing check a Debug build can't meet (scrubbing speed) is given four times the room, and these assertions remain, none ours: JUCE's Opus reader building a tag from UTF-8 bytes as if ASCII (our tags are read from the file itself, so nothing shows), a Label grabbing focus in a mixer that is not on screen in the test, and the VST3 host's checks on kHs Gain.
 
 ## The plug-in sweep
 

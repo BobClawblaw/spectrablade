@@ -91,7 +91,7 @@ namespace
         // The tags first; LAME's tag frame comes straight after them.
         const auto id3 = FileInfoIO::id3v2 (info);
 
-        if (! out.write (id3.getData(), id3.getSize()))
+        if (id3.getSize() > 0 && ! out.write (id3.getData(), id3.getSize()))
             return "Writing failed (disk full?).";
 
         std::vector<unsigned char> encoded ((size_t) (framesPerWrite * 5 / 4 + 7200));

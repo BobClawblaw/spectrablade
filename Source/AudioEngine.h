@@ -180,6 +180,10 @@ public:
     /** Plays from start; stops by itself at stopFrame (-1 = the end). */
     void play (juce::int64 startFrame, juce::int64 stopFrame);
 
+    /** Moves where the play stops by itself (-1 = the end) while it goes on: a loop that follows
+        a selection moves the stop to the selection's new end, so the sound carries on past the old one. */
+    void setStopFrame (juce::int64 frame)         { stopAt = frame; source.setStopFrame (frame); sessionSource.setStopFrame (frame); }
+
     /** Plays [start, end) of the document or session over and over once it gets there, until
         clearLoop() or the mode changes. The played frame keeps counting on through each pass, so
         frame f of pass k (from 0) is played frame f + k * (end - start). */
@@ -365,6 +369,10 @@ public:
     /** Takes a file already read (by openFile, or on another thread) into the document. Returns
         its error, or empty on success. */
     juce::String adoptFile (const juce::File& file, AudioFileIO::Loaded);
+
+    /** A new, unsaved file of `frames` frames of silence takes the document's place: `channels`
+        channels at `sampleRate`, to be saved at `bitDepth` (16, 24 or 32 for float). */
+    void newDocument (int channels, double sampleRate, int bitDepth, juce::int64 frames);
 
     /** Brings another document into the editor in place of the open one, which goes into
         `other` (switching between open files). Playback pauses. */

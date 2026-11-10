@@ -60,6 +60,24 @@ Snapshot fromBuffer (juce::AudioBuffer<float>&& buffer)
     return std::make_shared<const AudioSnapshot> (channels, std::move (segs));
 }
 
+Snapshot blank (int numChannels, juce::int64 frames)
+{
+    constexpr int chunk = 65536;
+    std::vector<Segment> segs;
+
+    if (numChannels > 0 && frames > 0)
+    {
+        juce::AudioBuffer<float> zeros (numChannels, (int) juce::jmin ((juce::int64) chunk, frames));
+        zeros.clear();
+        auto block = std::make_shared<const AudioBlock> (std::move (zeros));
+
+        for (juce::int64 at = 0; at < frames; at += chunk)
+            segs.push_back ({ block, 0, juce::jmin ((juce::int64) chunk, frames - at) });
+    }
+
+    return std::make_shared<const AudioSnapshot> (juce::jmax (0, numChannels), std::move (segs));
+}
+
 AudioClip copy (const AudioSnapshot& s, juce::int64 start, juce::int64 end, double sampleRate)
 {
     const auto r = clampRange (s, start, end);

@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(SpectraBlade VERSION 0.14.5 LANGUAGES C CXX)
+project(SpectraBlade VERSION 0.14.11 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -169,6 +169,7 @@ target_sources(SpectraBlade PRIVATE
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
     Source/TimeStretch.cpp
+    Source/ExtremeStretch.cpp
     Source/PhaseVocoder.cpp
     Source/TrackTemplate.cpp
     Source/UndoHistory.cpp
@@ -249,6 +250,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Ffmpeg.cpp
     Source/FileInfo.cpp
     Source/OpenFiles.cpp
+    Source/SettingsPanel.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
     Source/Theme.cpp
@@ -332,6 +334,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/MatchEqTests.cpp
     Tests/TonalBalanceTests.cpp
     Tests/StatisticsTests.cpp
+    Tests/ExtremeStretchTests.cpp
     Tests/TimeFormatTests.cpp
     Tests/DitherTests.cpp
     Tests/DialogueIsolationTests.cpp
@@ -384,6 +387,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/PluginTests.cpp
     Tests/DockTests.cpp
     Tests/OpenFilesTests.cpp
+    Tests/SettingsPanelTests.cpp
     Tests/PanelTests.cpp
     Tests/ThemeTests.cpp
     Tests/EditorBarTests.cpp
@@ -414,6 +418,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/AudioEngine.cpp
     Source/SampleRateConverter.cpp
     Source/TimeStretch.cpp
+    Source/ExtremeStretch.cpp
     Source/PhaseVocoder.cpp
     Source/TrackTemplate.cpp
     Source/UndoHistory.cpp
@@ -495,6 +500,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Ffmpeg.cpp
     Source/FileInfo.cpp
     Source/OpenFiles.cpp
+    Source/SettingsPanel.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
     Source/Theme.cpp
