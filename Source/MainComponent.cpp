@@ -150,7 +150,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
-        cmdExtremeStretch, cmdNewFile,
+        cmdExtremeStretch, cmdNewFile, cmdSettings,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -279,6 +279,32 @@ public:
     void closeButtonPressed() override              { closeCallback(); }
 
 private:
+    std::function<void()> closeCallback;
+};
+
+//==============================================================================
+/** File > Settings: every setting of the app, sections down the left. */
+class MainComponent::SettingsWindow final : public juce::DocumentWindow
+{
+public:
+    SettingsWindow (Settings::Model model, std::function<void()> onClose)
+        : DocumentWindow ("Settings", Theme::surface, DocumentWindow::closeButton),
+          closeCallback (std::move (onClose))
+    {
+        setUsingNativeTitleBar (true);
+        panel = new Settings::Panel (std::move (model));
+        setContentOwned (panel, true);
+        setResizable (true, false);
+        setResizeLimits (640, 420, 3000, 3000);
+        centreWithSize (780, 600);
+        setVisible (true);
+    }
+
+    Settings::Panel& getPanel()                     { return *panel; }
+    void closeButtonPressed() override              { closeCallback(); }
+
+private:
+    Settings::Panel* panel = nullptr;
     std::function<void()> closeCallback;
 };
 
@@ -796,7 +822,7 @@ MainComponent::MainComponent()
 
     openButton.onClick     = [this] { commands.invokeDirectly (cmdOpen, true); };
     pluginsButton.onClick  = [this] { showPluginList(); };
-    audioButton.onClick    = [this] { showAudioSettings(); };
+    audioButton.onClick    = [this] { showSettings ("Audio"); };
     selectionPanel.onClick = [this] { commands.invokeDirectly (cmdSetSelection, true); };
 
     addAndMakeVisible (outputLabel);
@@ -965,6 +991,8 @@ MainComponent::MainComponent()
    #if JUCE_MAC
     juce::PopupMenu appMenu;   // at the top of the application menu
     appMenu.addCommandItem (&commands, cmdAbout);
+    appMenu.addSeparator();
+    appMenu.addCommandItem (&commands, cmdSettings);
     juce::MenuBarModel::setMacMainMenu (this, &appMenu);
    #endif
 
@@ -1213,6 +1241,7 @@ MainComponent::~MainComponent()
     dock = nullptr;
     madePanels.clear();
     eqWindow = nullptr;
+    settingsWindow = nullptr;
 }
 
 void MainComponent::saveSettings()
@@ -2068,7 +2097,9 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
 
         case cmdPlugins:    info.setInfo ("Plug-ins...", "Scan and manage plug-ins", "Window", 0); break;
         case cmdKeyShortcuts: info.setInfo ("Keyboard Shortcuts...", "See and change the keys for every command", "Window", 0); break;
-        case cmdAudioSettings: info.setInfo ("Audio Settings...", "Choose the audio interface", "Window", 0); info.addDefaultKeypress (',', cmd); break;
+        case cmdAudioSettings: info.setInfo ("Audio Settings...", "Choose the audio interface (the Audio page of Settings)", "Window", 0); break;
+        case cmdSettings:   info.setInfo ("Settings...", "Every setting of the app in one place: look, editing, playback, multitrack, recording, audio, plug-ins and keys", "File", 0);
+                            info.addDefaultKeypress (',', cmd); break;
         case cmdSaveRack:   info.setInfo ("Save Rack...", "Save the effects rack", "Window", 0); break;
         case cmdLoadRack:   info.setInfo ("Load Rack...", "Load an effects rack", "Window", 0); break;
         default: break;
@@ -2411,7 +2442,8 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdMoveTrackUp: multitrack.moveTrack (multitrack.getSelectedTrack(), multitrack.getSelectedTrack() - 1); break;
         case cmdMoveTrackDown: multitrack.moveTrack (multitrack.getSelectedTrack(), multitrack.getSelectedTrack() + 1); break;
         case cmdPlugins:    showPluginList(); break;
-        case cmdAudioSettings: showAudioSettings(); break;
+        case cmdAudioSettings: showSettings ("Audio"); break;
+        case cmdSettings:   showSettings(); break;
         case cmdKeyShortcuts: showKeyShortcuts(); break;
         case cmdSaveRack:   saveRack(); break;
         case cmdLoadRack:   loadRack(); break;
@@ -2743,7 +2775,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 0:
             add ({ cmdNewFile, cmdOpen });
             menu.addSubMenu ("Open Recent", RecentFiles::createMenu (recentFiles, recentBaseId, [this] (const juce::File& f) { return isThere (f); }), recentFiles.getNumFiles() > 0 && ! isRecording());
-            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
+            add ({ cmdCloseFile, cmdNextFile, cmdPreviousFile, 0, cmdSave, cmdSaveAs, cmdSaveSelection, cmdSaveRegions, cmdSavePieces, cmdSaveChannels, cmdExportLossy, cmdExportFfmpeg, 0, cmdAttachVideo, cmdVideoStart, cmdDetachVideo, cmdSaveIntoVideo, 0, cmdBatchProcess, cmdNewFromChannels, 0, cmdFileInfo, cmdSettings, 0, cmdOpenProject, cmdSaveProject, cmdSaveProjectAs, cmdKeepProjectHistory, 0, cmdNewSession, cmdOpenSession, cmdSaveCopyWithAudio, 0, cmdExportMarkers, cmdImportMarkers, cmdExportClips }); break;
         case 1: add ({ cmdUndo, cmdRedo, cmdUndoHistory, cmdRepeatLast, 0, cmdCut, cmdCopy, cmdPaste, cmdPasteMix, cmdPasteFill, cmdDelete, cmdRepeatSelection, 0, cmdSelectAll, cmdSelectAudible, cmdSetSelection, cmdStepSelectionEarlier, cmdStepSelectionLater, cmdDoubleSelection, cmdHalveSelection, cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectionToZero, cmdSelectZeroCrossings, cmdCopySelectionTime, cmdFindClipping, cmdFindSilence, cmdNextSound, cmdPreviousSound, cmdSelectTrackClips, cmdSelectClipsAfter, cmdSelectClipsInRange, cmdSelectClipsInRegion, cmdNextClip, cmdPreviousClip, cmdCrop, cmdCropMargins, 0, cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdBrushLarger, cmdBrushSmaller, cmdBrushLighter, cmdBrushHeavier, 0, cmdConvertRate }); break;
         case 2:
         {
@@ -2930,6 +2962,9 @@ void MainComponent::timerCallback()
         stopPlayingInside();
 
     updatePlaybackLoop();
+
+    if (settingsWindow != nullptr)
+        settingsWindow->getPanel().refresh();   // a setting changed from a menu shows at once
 
     updateInputs();
 
@@ -11118,6 +11153,143 @@ std::optional<EffectPreview::Request> MainComponent::previewOf (const Sequences:
 juce::AudioPluginInstance* MainComponent::previewEffectOf (PreviewOwner owner) const
 {
     return owner != PreviewOwner::none && owner == previewOwner ? engine.getPreviewEffect() : nullptr;
+}
+
+void MainComponent::showSettings (const juce::String& section)
+{
+    if (settingsWindow == nullptr)
+    {
+        // Deleted later, not inside its own close button's callback.
+        settingsWindow = std::make_unique<SettingsWindow> (makeSettingsModel(), [this]
+        {
+            juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (this)]
+            {
+                if (safe != nullptr)
+                    safe->settingsWindow = nullptr;
+            });
+        });
+        places->watch (*settingsWindow, "Settings");
+    }
+
+    if (section.isNotEmpty())
+        settingsWindow->getPanel().showSection (section);
+
+    settingsWindow->setVisible (true);
+    settingsWindow->toFront (true);
+}
+
+Settings::Model MainComponent::makeSettingsModel()
+{
+    using Item = Settings::Item;
+    auto* settings = appProperties.getUserSettings();
+    const auto changed = [this] { commands.commandStatusChanged(); };
+
+    // Look: the theme, its accent and waveform colour, the time format and the editor's display.
+    const auto themes = Theme::themeNames(), accents = Theme::accentNames(), waveforms = Theme::waveformNames();
+    juce::StringArray waveformChoices (waveforms);
+    waveformChoices.set (0, "Theme's Own");
+    juce::StringArray fadeNames;
+
+    for (auto shape : FadeShapes::all)
+        fadeNames.add (FadeShapes::id (shape));
+
+    Settings::Model model;
+
+    model.push_back ({ "Look", "How the app looks, and how times read. Each change shows at once.",
+        { Item::choice ("Theme", "The colours of every window", themes,
+                        [themes] { return juce::jmax (0, themes.indexOf (Theme::current().name)); },
+                        [this, themes, settings] (int i) { setTheme (themes[i], settings->getValue (accentKey, "Blue"), settings->getValue (waveformColourKey, "Theme")); }),
+          Item::choice ("Accent", "The colour of the selection, the cursor and what is on", accents,
+                        [accents, settings] { return juce::jmax (0, accents.indexOf (settings->getValue (accentKey, "Blue"))); },
+                        [this, accents, settings] (int i) { setTheme (Theme::current().name, accents[i], settings->getValue (waveformColourKey, "Theme")); }),
+          Item::choice ("Waveform colour", "The waveform's colour, or the theme's own", waveformChoices,
+                        [waveforms, settings] { return juce::jmax (0, waveforms.indexOf (settings->getValue (waveformColourKey, "Theme"))); },
+                        [this, waveforms, settings] (int i) { setTheme (Theme::current().name, settings->getValue (accentKey, "Blue"), waveforms[i]); }),
+          Item::choice ("Time format", "How every time reads: the rulers, the transport, the lists and the dialogs", TimeFormat::names(),
+                        [] { return (int) TimeFormat::get(); },
+                        [this] (int i) { setTimeFormat ((TimeFormat::Kind) juce::jlimit (0, (int) TimeFormat::Kind::count - 1, i)); }),
+          Item::choice ("Editor shows", "The waveform, the spectrogram, or both one over the other", { "Waveform", "Spectrogram", "Waveform and spectrogram" },
+                        [this] { return (int) waveform.getDisplay(); },
+                        [this] (int i) { setDisplay ((WaveformView::Display) juce::jlimit (0, 2, i)); }) } });
+
+    model.push_back ({ "Editing", "How edits in the file editor behave.",
+        { Item::toggle ("Select at zero crossings", "Every selection end you drag or nudge lands on a zero crossing, so cuts don't click",
+                        [this] { return selectZeroCrossings; },
+                        [this, settings, changed] (bool on) { selectZeroCrossings = on; settings->setValue (selectZeroCrossingsKey, on); changed(); }),
+          Item::choice ("Fade shape", "The curve of Fade In and Fade Out in the editor", fadeNames,
+                        [this] { return (int) std::distance (FadeShapes::all.begin(), std::find (FadeShapes::all.begin(), FadeShapes::all.end(), fadeShape)); },
+                        [this, settings] (int i) { fadeShape = FadeShapes::all[(size_t) juce::jlimit (0, (int) FadeShapes::all.size() - 1, i)]; settings->setValue (fadeShapeKey, FadeShapes::id (fadeShape)); }),
+          Item::toggle ("File tabs over the editor", "A tab for each open file above the editor, as well as the Files panel",
+                        [this] { return editorPanel != nullptr && editorPanel->areTabsWanted(); },
+                        [this, settings, changed] (bool on) { if (editorPanel != nullptr) editorPanel->setTabsWanted (on); settings->setValue (fileTabsKey, on); changed(); }),
+          Item::toggle ("Keep project history", "A project keeps each file's undo history, so it can be undone after it is opened again",
+                        [settings] { return settings->getBoolValue (projectHistoryKey, true); },
+                        [settings, changed] (bool on) { settings->setValue (projectHistoryKey, on); changed(); }),
+          Item::toggle ("Preview in the open panel", "Hear files as you select them in File > Open",
+                        [settings] { return settings->getBoolValue (openPreviewKey, false); },
+                        [this, settings] (bool on) { settings->setValue (openPreviewKey, on); if (openPreview != nullptr) openPreview->setPreviewOn (on); }) } });
+
+    model.push_back ({ "Playback", "How the file and the session play.",
+        { Item::toggle ("Loop playback", "A selection or time range plays over and over",
+                        [this] { return loopPlayback; },
+                        [this, settings, changed] (bool on) { loopPlayback = on; settings->setValue (loopPlaybackKey, on); updatePlaybackLoop(); changed(); }),
+          Item::choice ("Surround files play", "5.1 and 7.1 folded down to stereo, or to separate outputs after the output pair", { "Folded down to stereo", "To separate outputs" },
+                        [this] { return engine.getSurroundOutputs() ? 1 : 0; },
+                        [this, settings, changed] (int i) { engine.setSurroundOutputs (i == 1); settings->setValue ("surroundOutputs", i == 1); changed(); }) } });
+
+    model.push_back ({ "Multitrack", "How clips are edited in the session.",
+        { Item::toggle ("Snapping", "Clip edges, the cursor and the time selection snap to markers, clip edges and the grid",
+                        [this] { return multitrack.isSnapping(); },
+                        [this, settings, changed] (bool on) { multitrack.setSnapping (on); settings->setValue (snappingKey, on); changed(); }),
+          Item::toggle ("Zero crossings on drags", "A clip edge or a split you drag lands on a zero crossing",
+                        [this] { return multitrack.isFindingZeroCrossings(); },
+                        [this, settings, changed] (bool on) { multitrack.setFindingZeroCrossings (on); settings->setValue (zeroCrossingsKey, on); changed(); }),
+          Item::toggle ("Crossfade at edits", "Clips that overlap after an edit get a short crossfade",
+                        [this] { return multitrack.isCrossfading(); },
+                        [this, settings, changed] (bool on) { multitrack.setCrossfading (on); settings->setValue (crossfadingKey, on); changed(); }),
+          Item::toggle ("Write automation", "Moves on the mixer and in effect windows are written as automation while playing",
+                        [this] { return multitrack.isWritingAutomation(); },
+                        [this, changed] (bool on) { multitrack.setWritingAutomation (on); changed(); }) } });
+
+    model.push_back ({ "Recording", "How a take starts and ends in the session.",
+        { Item::number ("Pre-roll", "Playback runs this long before a punch-in (a count-in replaces it)", 0.0, SessionRecording::Rolls::longest, 0.1, 1, "s",
+                        [this] { return rolls.preroll; },
+                        [this, settings] (double v) { rolls.preroll = v; settings->setValue (prerollKey, v); }),
+          Item::number ("Post-roll", "Recording runs this long after a punch-out", 0.0, SessionRecording::Rolls::longest, 0.1, 1, "s",
+                        [this] { return rolls.postroll; },
+                        [this, settings] (double v) { rolls.postroll = v; settings->setValue (postrollKey, v); }),
+          Item::toggle ("Count-in", "A bar of clicks before recording starts, in place of the pre-roll",
+                        [this] { return countIn; },
+                        [this, changed] (bool on) { countIn = on; changed(); }),
+          Item::toggle ("Metronome", "Clicks on the beat while the session plays",
+                        [this] { return engine.getPlayer().isMetronomeOn(); },
+                        [this, changed] (bool on) { engine.getPlayer().setMetronome (on); changed(); }),
+          Item::toggle ("Input monitoring", "Armed tracks play their inputs",
+                        [this] { return inputMonitoring; },
+                        [this, changed] (bool on) { inputMonitoring = on; updateInputs(); changed(); }),
+          Item::toggle ("Loop recording", "Record over the time range again and again, keeping each pass as a take",
+                        [this] { return loopRecording; },
+                        [this, changed] (bool on) { loopRecording = on; changed(); }) } });
+
+    model.push_back ({ "Audio", "The audio interface, its sample rate and buffer size. The output pair and the input are chosen at the bottom of the main window.",
+        { Item::component ({}, 440, [this] () -> std::unique_ptr<juce::Component>
+                           {
+                               if (! engine.isDeviceOpen())
+                                   return std::make_unique<juce::Label> ("none", "No audio device is open.");
+
+                               return std::make_unique<juce::AudioDeviceSelectorComponent> (engine.deviceManager, 0, 0, 1, 256, false, false, true, false);
+                           }) } });
+
+    model.push_back ({ "Plug-ins", "VST3 and Audio Unit effects are found by a scan and listed in the Plug-ins window, where one that fails can be checked again.",
+        { Item::button ("Plug-ins...", "Scan for plug-ins and manage the list", [this] { showPluginList(); }) } });
+
+    model.push_back ({ "Keys", "Every command's keys, to change, export and import, or to take from another key set.",
+        { Item::button ("Keyboard Shortcuts...", "See and change the keys for every command", [this] { showKeyShortcuts(); }) } });
+
+    model.push_back ({ "Sound Library", "The folders the Sound Library indexes are chosen in its own window (F5).",
+        { Item::button ("Sound Library...", "Show the Sound Library", [this] { showSoundLibrary(); }) } });
+
+    return model;
 }
 
 void MainComponent::askToNewFile()

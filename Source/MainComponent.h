@@ -56,6 +56,7 @@
 #include "PitchEditor.h"
 #include "Delivery.h"
 #include "SoundLibraryView.h"
+#include "SettingsPanel.h"
 
 class MainComponent final : public juce::Component,
                             public juce::ApplicationCommandTarget,
@@ -110,6 +111,7 @@ private:
     class PluginEditorWindow;
     class EditorPanel;
     class KeyShortcutsWindow;
+    class SettingsWindow;
     class EqWindow;
     class PluginListWindow;
     class RackRenderJob;
@@ -146,6 +148,10 @@ private:
     void paste (PasteMode);
     void pasteClip (const AudioClip&, PasteMode);
     void chooseSampleRate();
+    /** File > Settings...: every setting of the app in one window, opened on a section by name
+        (the one last shown when empty). The model lists each setting with how to read and set it. */
+    void showSettings (const juce::String& section = {});
+    Settings::Model makeSettingsModel();
     void askToNewFile();   // File > New File...: a file of silence at a chosen rate, channels, bit depth and length
     void newFile (double sampleRate, int channels, int bitDepth, double seconds);
     void convertSampleRate (double newRate);
@@ -579,6 +585,7 @@ private:
     juce::OwnedArray<PluginEditorWindow> editorWindows;
     std::unique_ptr<PluginListWindow> pluginListWindow;
     std::unique_ptr<KeyShortcutsWindow> keyShortcutsWindow;
+    std::unique_ptr<SettingsWindow> settingsWindow;
     std::unique_ptr<EqWindow> eqWindow;
     std::unique_ptr<RackRenderJob> renderJob;
     std::unique_ptr<BackgroundJob> backgroundJob;

@@ -200,6 +200,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Ffmpeg.cpp
     Source/FileInfo.cpp
     Source/OpenFiles.cpp
+    Source/SettingsPanel.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
     Source/Theme.cpp
@@ -330,6 +331,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/PluginTests.cpp
     Tests/DockTests.cpp
     Tests/OpenFilesTests.cpp
+    Tests/SettingsPanelTests.cpp
     Tests/PanelTests.cpp
     Tests/ThemeTests.cpp
     Tests/EditorBarTests.cpp
@@ -437,6 +439,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Ffmpeg.cpp
     Source/FileInfo.cpp
     Source/OpenFiles.cpp
+    Source/SettingsPanel.cpp
     Source/LevelsPanel.cpp
     Source/Analysis.cpp
     Source/Theme.cpp

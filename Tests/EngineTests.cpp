@@ -24,6 +24,7 @@
 #include "GraphicEqTests.h"
 #include "DockTests.h"
 #include "OpenFilesTests.h"
+#include "SettingsPanelTests.h"
 #include "PanelTests.h"
 #include "ThemeTests.h"
 #include "EditorBarTests.h"
@@ -755,6 +756,7 @@ int main (int argc, char* argv[])
         runAuditionTests (engine);
         runDockTests();
         runOpenFilesTests();
+        runSettingsPanelTests();
         runPanelTests();
         runThemeTests();
         runEditorBarTests();

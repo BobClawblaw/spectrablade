@@ -128,7 +128,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 |---|---|
 | Effects Rack | `Option-Cmd-E` |
 | Sound Library (show, or hide when it is showing) | `F5` |
-| Audio Settings... | `Cmd-,` |
+| Settings... | `Cmd-,` |
 | Maximize Editor, or Restore All Panels | `Shift-Cmd-F` |
 
 ## With the mouse
