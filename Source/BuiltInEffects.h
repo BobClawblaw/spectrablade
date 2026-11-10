@@ -37,6 +37,7 @@ namespace BuiltInEffects
     constexpr const char* exciterId = "spectrablade:exciter";
     constexpr const char* maximizerId = "spectrablade:maximizer";
     constexpr const char* transientShaperId = "spectrablade:transient-shaper";
+    constexpr const char* basicSynthId = "spectrablade:basic-synth";
 
     /** The format to add to the app's AudioPluginFormatManager. */
     std::unique_ptr<juce::AudioPluginFormat> createFormat();
@@ -51,10 +52,10 @@ namespace BuiltInEffects
         as one does (a skewed range can't give every float). */
     void setExactly (juce::AudioParameterFloat&, float plain);
 
-    /** What every built-in effect shares: its description, mono or stereo in and out alike, no MIDI,
-        one program, hosted parameters (so automation and sessions find each by its ID), and a
-        saved state of each parameter's plain value (Hz, dB, ms, a choice's index, on or off) that
-        restores every value exactly. */
+    /** What every built-in effect shares: its description, mono or stereo in and out alike (an
+        instrument has no input, and takes MIDI), one program, hosted parameters (so automation and
+        sessions find each by its ID), and a saved state of each parameter's plain value (Hz, dB,
+        ms, a choice's index, on or off) that restores every value exactly. */
     class BuiltInEffect : public juce::AudioPluginInstance
     {
     public:
@@ -63,7 +64,7 @@ namespace BuiltInEffects
         void releaseResources() override                              {}
         bool isBusesLayoutSupported (const BusesLayout&) const override;
         double getTailLengthSeconds() const override                  { return 0.0; }
-        bool acceptsMidi() const override                             { return false; }
+        bool acceptsMidi() const override                             { return instrument; }
         bool producesMidi() const override                            { return false; }
         juce::AudioProcessorEditor* createEditor() override;
         bool hasEditor() const override                               { return true; }
@@ -98,8 +99,9 @@ namespace BuiltInEffects
         virtual bool linksChannels() const                            { return false; }
 
     protected:
-        /** With sidechain, a second input bus (off until the host turns it on) for a key. */
-        BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag, bool sidechain = false);
+        /** With sidechain, a second input bus (off until the host turns it on) for a key. An
+            instrument has an output alone, and takes MIDI. */
+        BuiltInEffect (const juce::PluginDescription&, const juce::String& stateTag, bool sidechain = false, bool instrument = false);
 
         /** What an effect keeps besides its parameters, written into and read back from its state. */
         virtual void addToState (juce::XmlElement&) const          {}
@@ -113,8 +115,9 @@ namespace BuiltInEffects
     private:
         juce::PluginDescription description;
         juce::String tag;
+        bool instrument = false;
 
-        static BusesProperties busesFor (bool sidechain);
+        static BusesProperties busesFor (bool sidechain, bool instrument);
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BuiltInEffect)
     };
@@ -843,5 +846,55 @@ namespace BuiltInEffects
         std::vector<float> shown;
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DynamicEqEditor)
+    };
+
+    /** The instrument built in, a basic synthesizer: an oscillator (sine, triangle, sawtooth or
+        square, the last two without aliasing) through a resonant low-pass filter and an ADSR
+        envelope, with sixteen voices (the oldest taken over when all are sounding) and each note's
+        level set by its velocity. Its parameters are hosted, so they can be automated and saved
+        like any effect's. Mono, played the same on both channels; no audio input. With the cutoff
+        at 20,000 Hz and no resonance the filter is out of the way, so a sine at 0 dB with attack,
+        decay and release at 0 and sustain at 100 % plays at exactly the note's velocity. A note's
+        wave starts from the beginning of its cycle. */
+    class BasicSynthProcessor final : public BuiltInEffect
+    {
+    public:
+        static constexpr int numVoices = 16;
+
+        BasicSynthProcessor();
+
+        void prepareToPlay (double sampleRate, int maximumBlockSize) override;
+        void reset() override;
+        void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+        double getTailLengthSeconds() const override;
+
+        /** How many notes are sounding (their envelopes still active). */
+        int getNumSounding() const;
+
+    private:
+        struct Voice
+        {
+            int note = -1;
+            float velocity = 0.0f;
+            double phase = 0.0;
+            juce::ADSR envelope;
+            juce::dsp::StateVariableTPTFilter<float> filter;
+            juce::uint32 age = 0;
+        };
+
+        void noteOn (int note, float velocity);
+        void noteOff (int note);
+        void allOff (bool atOnce);
+        void renderVoices (juce::AudioBuffer<float>&, int from, int count, bool filterOpen, float gain);
+        float oscillate (Voice&, double increment) const;
+
+        juce::AudioParameterChoice* wave = nullptr;
+        juce::AudioParameterFloat *level = nullptr, *attack = nullptr, *decay = nullptr, *sustain = nullptr, *release = nullptr,
+                                  *cutoff = nullptr, *resonance = nullptr;
+        std::array<Voice, numVoices> voices;
+        juce::uint32 counter = 0;
+        double rate = 48000.0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BasicSynthProcessor)
     };
 }

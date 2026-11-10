@@ -52,6 +52,13 @@ namespace
     juce::PluginDescription exciterDescription()        { return describe ("Exciter", "Distortion", exciterId, 0x53424558); }                     // "SBEX"
     juce::PluginDescription maximizerDescription()      { return describe ("Maximizer", "Dynamics", maximizerId, 0x53424d58); }                   // "SBMX"
     juce::PluginDescription transientShaperDescription() { return describe ("Transient Shaper", "Dynamics", transientShaperId, 0x53425453); }     // "SBTS"
+    juce::PluginDescription basicSynthDescription()
+    {
+        auto d = describe ("Basic Synth", "Instrument", basicSynthId, 0x53425359);   // "SBSY"
+        d.isInstrument = true;
+        d.numInputChannels = 0;
+        return d;
+    }
 
     juce::PluginDescription graphicEqDescription (int bands)
     {
@@ -137,6 +144,8 @@ namespace
                 effect = std::make_unique<MaximizerProcessor>();
             else if (d.fileOrIdentifier == transientShaperId)
                 effect = std::make_unique<TransientShaperProcessor>();
+            else if (d.fileOrIdentifier == basicSynthId)
+                effect = std::make_unique<BasicSynthProcessor>();
 
             if (effect == nullptr)
             {
@@ -158,7 +167,8 @@ std::unique_ptr<juce::AudioPluginFormat> createFormat()
 juce::Array<juce::PluginDescription> getDescriptions()
 {
     return { parametricEqDescription(), compressorDescription(), limiterDescription(), chorusDescription(), flangerDescription(), phaserDescription(), reverbDescription(), convolutionDescription(),
-             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription(), exciterDescription(), maximizerDescription(), transientShaperDescription() };
+             graphicEqDescription (10), graphicEqDescription (31), multibandDescription(), deEsserDescription(), dynamicEqDescription(), multibandWidthDescription(), exciterDescription(), maximizerDescription(), transientShaperDescription(),
+             basicSynthDescription() };
 }
 
 void addTo (juce::KnownPluginList& list)
@@ -199,21 +209,28 @@ void setExactly (juce::AudioParameterFloat& p, float plain)
 }
 
 //==============================================================================
-juce::AudioProcessor::BusesProperties BuiltInEffect::busesFor (bool sidechain)
+juce::AudioProcessor::BusesProperties BuiltInEffect::busesFor (bool sidechain, bool instrument)
 {
+    if (instrument)
+        return BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo());
+
     auto buses = BusesProperties().withInput ("Input", juce::AudioChannelSet::stereo())
                                   .withOutput ("Output", juce::AudioChannelSet::stereo());
     return sidechain ? buses.withInput ("Sidechain", juce::AudioChannelSet::stereo(), false) : buses;
 }
 
-BuiltInEffect::BuiltInEffect (const juce::PluginDescription& d, const juce::String& stateTag, bool sidechain)
-    : AudioPluginInstance (busesFor (sidechain)), description (d), tag (stateTag)
+BuiltInEffect::BuiltInEffect (const juce::PluginDescription& d, const juce::String& stateTag, bool sidechain, bool isInstrument)
+    : AudioPluginInstance (busesFor (sidechain, isInstrument)), description (d), tag (stateTag), instrument (isInstrument)
 {
 }
 
 bool BuiltInEffect::isBusesLayoutSupported (const BusesLayout& layout) const
 {
     const auto in = layout.getMainInputChannelSet(), out = layout.getMainOutputChannelSet();
+
+    if (instrument)
+        return in.isDisabled() && (out == juce::AudioChannelSet::mono() || out == juce::AudioChannelSet::stereo());
+
     const auto key = layout.inputBuses.size() > 1 ? layout.getChannelSet (true, 1) : juce::AudioChannelSet::disabled();
     const auto wide = linksChannels() && in.isDiscreteLayout() && in.size() > 2 && in.size() <= mostLinkedChannels;
     return in == out && (in == juce::AudioChannelSet::mono() || in == juce::AudioChannelSet::stereo() || wide)
@@ -2171,5 +2188,223 @@ void DynamicEqEditor::resized()
     auto r = getLocalBounds();
     presets.setBounds (r.removeFromTop (40).reduced (8, 6));
     panel.setBounds (r);
+}
+
+//==============================================================================
+BasicSynthProcessor::BasicSynthProcessor()
+    : BuiltInEffect (basicSynthDescription(), "SPECTRABLADE_BASIC_SYNTH", false, true)
+{
+    wave = addChoice ("wave", "Wave", { "Sine", "Triangle", "Sawtooth", "Square" }, 2);
+    level = addFloat ("level", "Level", { -40.0f, 0.0f }, -12.0f, "dB");
+    attack = addFloat ("attack", "Attack", { 0.0f, 5000.0f, 0.0f, 0.3f }, 5.0f, "ms");
+    decay = addFloat ("decay", "Decay", { 0.0f, 5000.0f, 0.0f, 0.3f }, 100.0f, "ms");
+    sustain = addFloat ("sustain", "Sustain", { 0.0f, 100.0f }, 70.0f, "%");
+    release = addFloat ("release", "Release", { 0.0f, 10000.0f, 0.0f, 0.3f }, 200.0f, "ms");
+    cutoff = addFloat ("cutoff", "Cutoff", { 20.0f, 20000.0f, 0.0f, 0.25f }, 20000.0f, "Hz");
+    resonance = addFloat ("resonance", "Resonance", { 0.0f, 100.0f }, 0.0f, "%");
+}
+
+void BasicSynthProcessor::prepareToPlay (double sampleRate, int maximumBlockSize)
+{
+    rate = sampleRate;
+
+    for (auto& v : voices)
+    {
+        v.envelope.setSampleRate (rate);
+        v.filter.prepare ({ rate, (juce::uint32) juce::jmax (1, maximumBlockSize), 1 });
+        v.filter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
+    }
+
+    reset();
+}
+
+void BasicSynthProcessor::reset()
+{
+    allOff (true);
+}
+
+double BasicSynthProcessor::getTailLengthSeconds() const
+{
+    return release->get() * 0.001;
+}
+
+int BasicSynthProcessor::getNumSounding() const
+{
+    return (int) std::count_if (voices.begin(), voices.end(), [] (const Voice& v) { return v.note >= 0; });
+}
+
+void BasicSynthProcessor::noteOn (int note, float velocity)
+{
+    // The voice already playing the note, else a free one, else the oldest.
+    Voice* voice = nullptr;
+
+    for (auto& v : voices)
+        if (v.note == note)
+            voice = &v;
+
+    if (voice == nullptr)
+        for (auto& v : voices)
+            if (v.note < 0)
+            {
+                voice = &v;
+                break;
+            }
+
+    if (voice == nullptr)
+        voice = &*std::min_element (voices.begin(), voices.end(), [] (const Voice& a, const Voice& b) { return a.age < b.age; });
+
+    voice->note = note;
+    voice->velocity = velocity;
+    voice->phase = 0.0;
+    voice->filter.reset();
+    voice->envelope.noteOn();
+    voice->age = ++counter;
+}
+
+void BasicSynthProcessor::noteOff (int note)
+{
+    for (auto& v : voices)
+        if (v.note == note)
+            v.envelope.noteOff();
+}
+
+void BasicSynthProcessor::allOff (bool atOnce)
+{
+    for (auto& v : voices)
+    {
+        if (atOnce)
+        {
+            v.note = -1;
+            v.envelope.reset();
+            v.filter.reset();
+        }
+        else
+        {
+            v.envelope.noteOff();
+        }
+    }
+}
+
+float BasicSynthProcessor::oscillate (Voice& v, double increment) const
+{
+    // A step's correction near a wave's jump (PolyBLEP), so the sawtooth and square don't alias.
+    const auto blep = [] (double t, double dt)
+    {
+        if (t < dt)
+        {
+            t /= dt;
+            return t + t - t * t - 1.0;
+        }
+
+        if (t > 1.0 - dt)
+        {
+            t = (t - 1.0) / dt;
+            return t * t + t + t + 1.0;
+        }
+
+        return 0.0;
+    };
+
+    const auto t = v.phase;
+    double s = 0.0;
+
+    switch (wave->getIndex())
+    {
+        case 0:  s = std::sin (juce::MathConstants<double>::twoPi * t); break;
+        case 1:  s = t < 0.5 ? 4.0 * t - 1.0 : 3.0 - 4.0 * t; break;
+        case 2:  s = 2.0 * t - 1.0 - blep (t, increment); break;
+        default: s = (t < 0.5 ? 1.0 : -1.0) + blep (t, increment) - blep (std::fmod (t + 0.5, 1.0), increment); break;
+    }
+
+    v.phase += increment;
+
+    if (v.phase >= 1.0)
+        v.phase -= 1.0;
+
+    return (float) s;
+}
+
+void BasicSynthProcessor::renderVoices (juce::AudioBuffer<float>& buffer, int from, int count, bool filterOpen, float gain)
+{
+    if (count <= 0 || buffer.getNumChannels() == 0)
+        return;
+
+    auto* out = buffer.getWritePointer (0);
+
+    for (auto& v : voices)
+    {
+        if (v.note < 0)
+            continue;
+
+        const auto increment = juce::MidiMessage::getMidiNoteInHertz (v.note) / rate;
+
+        for (int i = from; i < from + count; ++i)
+        {
+            if (! v.envelope.isActive())
+            {
+                v.note = -1;
+                break;
+            }
+
+            auto s = oscillate (v, increment);
+
+            if (! filterOpen)
+                s = v.filter.processSample (0, s);
+
+            out[i] += s * v.envelope.getNextSample() * v.velocity;
+        }
+    }
+
+    buffer.applyGain (0, from, count, gain);
+
+    for (int ch = 1; ch < buffer.getNumChannels(); ++ch)
+        buffer.copyFrom (ch, from, buffer, 0, from, count);
+}
+
+void BasicSynthProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    const auto n = buffer.getNumSamples();
+    buffer.clear();
+
+    // The settings, taken once a block.
+    const juce::ADSR::Parameters envelope { attack->get() * 0.001f, decay->get() * 0.001f, sustain->get() * 0.01f, release->get() * 0.001f };
+    const auto hz = juce::jmin (cutoff->get(), (float) (0.49 * rate));
+    const auto q = resonance->get();
+    const auto open = cutoff->get() >= 19999.0f && q <= 0.0f;
+    const auto gain = juce::Decibels::decibelsToGain (level->get());
+
+    for (auto& v : voices)
+    {
+        v.envelope.setParameters (envelope);
+
+        if (! open)
+        {
+            v.filter.setCutoffFrequency (hz);
+            v.filter.setResonance (juce::MathConstants<float>::sqrt2 * 0.5f + q * 0.01f * (20.0f - juce::MathConstants<float>::sqrt2 * 0.5f));
+        }
+    }
+
+    int done = 0;
+
+    for (const auto meta : midi)
+    {
+        const auto at = juce::jlimit (done, n, meta.samplePosition);
+        renderVoices (buffer, done, at - done, open, gain);
+        done = at;
+
+        const auto m = meta.getMessage();
+
+        if (m.isNoteOn())
+            noteOn (m.getNoteNumber(), m.getFloatVelocity());
+        else if (m.isNoteOff())
+            noteOff (m.getNoteNumber());
+        else if (m.isAllSoundOff())
+            allOff (true);
+        else if (m.isAllNotesOff())
+            allOff (false);
+    }
+
+    renderVoices (buffer, done, n - done, open, gain);
+    midi.clear();
 }
 }

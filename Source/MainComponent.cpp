@@ -9,6 +9,8 @@
 #include "Dereverb.h"
 #include "Leveller.h"
 #include "Generator.h"
+#include "Instrument.h"
+#include "PluginMenu.h"
 #include "LossyFiles.h"
 #include "Ffmpeg.h"
 #include "Theme.h"
@@ -153,7 +155,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
-        cmdExtremeStretch, cmdNewFile, cmdSettings,
+        cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -167,7 +169,8 @@ namespace
             || id == cmdRemoveHum || id == cmdDeclip || id == cmdGenerateTone || id == cmdGenerateNoise
             || (id >= cmdBoxTool && id <= cmdExportLossy) || id == cmdExportFfmpeg || id == cmdFileInfo
             || id == cmdRecordSequence || id == cmdPlaySequence || id == cmdSaveChannels
-            || id == cmdStretch || id == cmdExtremeStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones || id == cmdPitchCorrection;
+            || id == cmdStretch || id == cmdExtremeStretch || id == cmdPitch || id == cmdDereverb || id == cmdLevelSpeech || id == cmdCentreChannel || id == cmdPhaseCorrection || id == cmdGenerateTones || id == cmdPitchCorrection
+            || id == cmdGenerateInstrument;
     }
 
     juce::String formatTime (juce::int64 frames, double sampleRate)
@@ -679,6 +682,50 @@ private:
     AudioDocument::Snapshot snapshot;
     juce::uint32 version;
     double sampleRate;
+    juce::AudioBuffer<float> audio;
+    juce::String error;
+};
+
+//==============================================================================
+/** Plays notes through a fresh copy of an instrument on a background thread, then puts the sound in
+    at the cursor, or the start of the selection, as Generate does. */
+class MainComponent::InstrumentRenderJob final : public juce::ThreadWithProgressWindow
+{
+public:
+    InstrumentRenderJob (MainComponent& o, juce::PluginDescription d, juce::MemoryBlock s, Instrument::Phrase p, double rate, int channels)
+        : ThreadWithProgressWindow ("Playing " + d.name + "...", true, true, 30000, "Cancel", &o),
+          owner (o), description (std::move (d)), state (std::move (s)), phrase (std::move (p)), sampleRate (rate), numChannels (channels)
+    {
+    }
+
+    void run() override
+    {
+        error = Instrument::render (owner.engine.pluginFormatManager, description, state, phrase, sampleRate, numChannels, audio,
+                                    [this] (float p) { setProgress (p); return ! threadShouldExit(); });
+    }
+
+    void threadComplete (bool userPressedCancel) override
+    {
+        if (! userPressedCancel && error.isEmpty())
+            owner.insertGenerated (audio, "Generate from Instrument");
+        else if (! userPressedCancel)
+            showError ("Generate from Instrument", error);
+
+        // Deleting ourselves from inside our own callback is not safe; do it afterwards.
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (&owner)]
+        {
+            if (safe != nullptr)
+                safe->instrumentJob = nullptr;
+        });
+    }
+
+private:
+    MainComponent& owner;
+    juce::PluginDescription description;
+    juce::MemoryBlock state;
+    Instrument::Phrase phrase;
+    double sampleRate;
+    int numChannels;
     juce::AudioBuffer<float> audio;
     juce::String error;
 };
@@ -1573,6 +1620,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdGenerateTones: info.setInfo ("Generate DTMF Tones...", "Put telephone signalling tones (DTMF or MF) for typed digits in at the cursor, or the start of the selection", "Effects", 0);
                                info.setActive (hasAudio); break;
         case cmdGenerateNoise: info.setInfo ("Generate Noise...", "Put white, pink or brown noise in at the cursor, or the start of the selection", "Effects", 0);
+            break;
+        case cmdGenerateInstrument: info.setInfo ("Generate from Instrument...", "Play notes on an instrument plug-in (a synthesizer) and put the sound in at the cursor, or the start of the selection", "Effects", 0);
                                info.setActive (hasAudio); break;
         case cmdInsertSilence: info.setInfo ("Insert Silence...", "Put a chosen length of silence in at the cursor, or the start of the selection", "Effects", 0);
                             info.setActive (hasAudio); break;
@@ -2311,6 +2360,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdGenerateTone: showGenerateTone(); break;
         case cmdGenerateNoise: showGenerateNoise(); break;
         case cmdGenerateTones: showGenerateTones(); break;
+        case cmdGenerateInstrument: showGenerateInstrument(); break;
         case cmdSelectAudible: selectAudibleSpan(); break;
         case cmdFindClipping: findNextClipping(); break;
         case cmdMarkClipping: addMarkersAtClipping(); break;
@@ -2809,7 +2859,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Stereo and Channels", { cmdBalance, cmdPanRamp, cmdStereoWidth, cmdMultibandWidth, cmdCentreChannel, cmdPhaseCorrection, cmdAzimuth, 0, cmdSwapChannels, cmdLeftToRight, cmdRightToLeft,
                                             cmdMixToMono, cmdMakeStereo, 0, cmdInvert, cmdInvertLeft, cmdInvertRight });
             group ("Silence", { cmdSilence, cmdSilenceOutside, cmdSilenceLeft, cmdSilenceRight, cmdInsertSilence, 0, cmdTrimSilence, cmdShortenPauses });
-            group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise });
+            group ("Generate", { cmdGenerateTone, cmdGenerateTones, cmdGenerateNoise, cmdGenerateInstrument });
             menu.addSeparator();
             group ("Noise Reduction and Repair", { cmdCaptureNoisePrint, cmdNoiseReduction, cmdAdaptiveDenoise, cmdDialogueIsolation, 0, cmdDereverb, cmdClickRepair, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, 0, cmdCaptureAmbience, cmdAmbienceMatch, 0, cmdRemoveHum, cmdDeclip, cmdRepair, cmdRemoveDc });
             group ("Spectral", { cmdRebalance, 0,  cmdSpectralAttenuate, cmdSpectralRemove, cmdSpectralHeal });
@@ -7185,6 +7235,217 @@ void MainComponent::showGenerateTone()
                       });
 }
 
+/** What the bench instrument reports from its window (a knob moved, a program changed): the open
+    dialog is nudged on the message thread, so its preview plays the new settings. A plug-in may
+    report from any thread. */
+struct MainComponent::BenchListener final : public juce::AudioProcessorListener
+{
+    explicit BenchListener (MainComponent& o) : owner (o) {}
+
+    void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override    { changed(); }
+    void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override   { changed(); }
+
+    void changed()
+    {
+        juce::MessageManager::callAsync ([safe = juce::Component::SafePointer<MainComponent> (&owner)]
+        {
+            if (safe != nullptr && safe->benchChanged != nullptr)
+                safe->benchChanged();
+        });
+    }
+
+    MainComponent& owner;
+};
+
+void MainComponent::loadBench (const juce::PluginDescription& description, std::function<void (const juce::String&)> done)
+{
+    if (benchInstrument != nullptr && benchDescription.createIdentifierString() == description.createIdentifierString())
+    {
+        done ({});
+        return;
+    }
+
+    if (benchLoading)
+    {
+        done ("The instrument is still loading.");
+        return;
+    }
+
+    closeEditorFor (benchInstrument.get());
+    benchInstrument = nullptr;
+    benchLoading = true;
+
+    engine.createPlugin (description, engine.document.getSampleRate(),
+                         [this, description, done] (std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error)
+                         {
+                             benchLoading = false;
+
+                             if (instance == nullptr)
+                             {
+                                 done (error);
+                                 return;
+                             }
+
+                             // Prepared, as some instruments' windows expect, though nothing is played through it.
+                             instance->setNonRealtime (true);
+                             instance->prepareToPlay (engine.document.getSampleRate(), 1024);
+
+                             if (benchListener == nullptr)
+                                 benchListener = std::make_unique<BenchListener> (*this);
+
+                             instance->addListener (benchListener.get());
+                             benchDescription = description;
+                             benchInstrument = std::move (instance);
+                             done ({});
+                         });
+}
+
+juce::MemoryBlock MainComponent::benchStateFor (const juce::PluginDescription& description) const
+{
+    juce::MemoryBlock state;
+
+    if (benchInstrument != nullptr && benchDescription.createIdentifierString() == description.createIdentifierString())
+        benchInstrument->getStateInformation (state);
+
+    return state;
+}
+
+void MainComponent::showGenerateInstrument()
+{
+    // The instruments known: the built-in first, then the scanned ones by name.
+    juce::Array<juce::PluginDescription> instruments;
+
+    for (auto& d : BuiltInEffects::getDescriptions())
+        if (d.isInstrument)
+            instruments.add (d);
+
+    juce::Array<juce::PluginDescription> scanned;
+
+    for (auto& t : engine.knownPlugins.getTypes())
+        if (t.isInstrument && t.pluginFormatName != BuiltInEffects::formatName)
+            scanned.add (t);
+
+    std::stable_sort (scanned.begin(), scanned.end(), [] (const juce::PluginDescription& a, const juce::PluginDescription& b)
+    {
+        if (const auto byName = a.name.compareIgnoreCase (b.name); byName != 0)
+            return byName < 0;
+
+        return a.pluginFormatName.compareIgnoreCase (b.pluginFormatName) < 0;
+    });
+    instruments.addArray (scanned);
+
+    juce::StringArray names;
+    int chosen = 0;
+
+    for (int i = 0; i < instruments.size(); ++i)
+    {
+        const auto& d = instruments.getReference (i);
+        names.add (d.name + " (" + (d.pluginFormatName == BuiltInEffects::formatName ? juce::String ("built in")
+                                                                                      : PluginMenu::formatTitle (d.pluginFormatName) + ", " + d.manufacturerName.trim()) + ")");
+
+        if (d.createIdentifierString() == benchDescription.createIdentifierString())
+            chosen = i;
+    }
+
+    const auto rate = engine.document.getSampleRate();
+    const auto channels = engine.document.getSnapshot() != nullptr ? engine.document.getSnapshot()->getNumChannels() : 2;
+    const auto chosenInstrument = [instruments] (const EffectValues& v)
+    {
+        return instruments[juce::jlimit (0, instruments.size() - 1, (int) v.at ("instrument"))];
+    };
+
+    // The notes as typed (effectTexts holds the dialog's text while its settings are judged, previewed or applied).
+    const auto phraseOf = [this] (const EffectValues& v, double longest) -> std::optional<Instrument::Phrase>
+    {
+        const auto pitches = Instrument::parsePitches (effectTexts["notes"]);
+
+        if (! pitches.has_value())
+            return std::nullopt;
+
+        const auto hold = v.at ("hold");
+        const auto length = juce::jmin (v.at ("length"), longest);
+        const auto velocity = (float) (v.at ("velocity") / 127.0);
+        auto phrase = v.at ("play") > 0.5 ? Instrument::inTurn (*pitches, hold, length, velocity)
+                                          : Instrument::together (*pitches, hold, length, velocity);
+        return Instrument::isValid (phrase) ? std::optional<Instrument::Phrase> (std::move (phrase)) : std::nullopt;
+    };
+
+    const auto dialog = showEffectDialog (
+        "Generate from Instrument",
+        "Plays notes on an instrument plug-in (a synthesizer) and puts the sound in at the cursor, or the start of the selection, "
+        "moving what follows on. Notes by name (C4, F#3, Bb2: C4 is middle C) or MIDI number (60), separated by commas, played "
+        "together or one after another, each held for the hold time; the length is the whole sound, tails included, up to ten minutes. "
+        "Instrument Window... opens the instrument's own controls: what is set there is played, and kept until another instrument's window is opened.",
+        { { "instrument", "Instrument", (double) chosen, 0, names },
+          EffectField::textField ("notes", "Notes", instrumentNotes, "ABCDEFGabcdefg#0123456789-,", 200),
+          { "play", "Play", (double) instrumentPlay, 0, { "Together", "One after another" } },
+          { "velocity", "Velocity (1 to 127)", instrumentVelocity, 0, {}, 1, 127, 1 },
+          { "hold", "Hold each note (s)", instrumentHold, 3, {}, 0.001, 600, 0.1 },
+          { "length", "Length (s)", instrumentSeconds, 3, {}, 0.001, 600, 0.1 } },
+        "spectrablade:generate-instrument", PreviewOwner::rendered,
+        [phraseOf] (const EffectValues& v) { return phraseOf (v, Instrument::longestSeconds).has_value(); },
+        "The notes must be names (C4, F#3, Bb2) or MIDI numbers (0 to 127) separated by commas, the hold above 0, and the length above 0 and up to 600 s.",
+        nullptr, nullptr,
+        [this, phraseOf, chosenInstrument, rate, channels] (const EffectValues& v)
+        {
+            const auto phrase = phraseOf (v, Instrument::longestSeconds);
+
+            if (! phrase.has_value())
+                return;
+
+            const auto d = chosenInstrument (v);
+            instrumentNotes = effectTexts["notes"];
+            instrumentPlay = v.at ("play") > 0.5 ? 1 : 0;
+            instrumentVelocity = v.at ("velocity");
+            instrumentHold = v.at ("hold");
+            instrumentSeconds = v.at ("length");
+            instrumentJob = std::make_unique<InstrumentRenderJob> (*this, d, benchStateFor (d), *phrase, rate, channels);
+            instrumentJob->launchThread();
+        },
+        [this, phraseOf, chosenInstrument, rate, channels] (const EffectValues& v) -> std::optional<EffectPreview::Request>
+        {
+            const auto phrase = phraseOf (v, EffectPreview::longestSeconds);
+
+            if (! phrase.has_value())
+                return std::nullopt;
+
+            const auto d = chosenInstrument (v);
+            const auto state = benchStateFor (d);
+            auto& formats = engine.pluginFormatManager;
+
+            // The state in the preview's key (FNV-1a), so a change in the instrument's window renders anew.
+            juce::uint64 hash = 14695981039346656037ull;
+
+            for (size_t i = 0; i < state.getSize(); ++i)
+                hash = (hash ^ (juce::uint64) ((const juce::uint8*) state.getData())[i]) * 1099511628211ull;
+
+            return generatedPreview ("instrument " + d.createIdentifierString() + " state=" + juce::String::toHexString ((juce::int64) hash) + "/" + juce::String ((juce::int64) state.getSize()), v,
+                                     [&formats, d, state, p = *phrase, rate, channels]
+                                     {
+                                         juce::AudioBuffer<float> out;
+                                         Instrument::render (formats, d, state, p, rate, channels, out);
+                                         return out;
+                                     });
+        },
+        "Insert", "Instrument Window...",
+        [this, chosenInstrument] (const EffectValues& v)
+        {
+            loadBench (chosenInstrument (v), [this] (const juce::String& error)
+            {
+                if (error.isNotEmpty())
+                    showError ("Generate from Instrument", error);
+                else if (benchInstrument != nullptr)
+                    showEditor (*benchInstrument);
+            });
+        });
+
+    benchChanged = [dialog]
+    {
+        if (dialog != nullptr)
+            dialog->nudge();
+    };
+}
+
 void MainComponent::showGenerateTones()
 {
     auto* settings = appProperties.getUserSettings();
@@ -9523,18 +9784,21 @@ bool MainComponent::previewsFromStart()
     return ! multitrackMode && ! isRecording() && previewOwner == PreviewOwner::none && engine.getPlayer().isPlaying();
 }
 
-void MainComponent::showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>& fields,
-                                      const juce::String& presetKey, PreviewOwner owner,
-                                      std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
-                                      std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
-                                      std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
-                                      std::function<void (const EffectValues&)> apply,
-                                      std::function<std::optional<EffectPreview::Request> (const EffectValues&)> rendered,
-                                      const juce::String& applyText)
+juce::Component::SafePointer<EffectDialog>
+MainComponent::showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>& fields,
+                                 const juce::String& presetKey, PreviewOwner owner,
+                                 std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
+                                 std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
+                                 std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
+                                 std::function<void (const EffectValues&)> apply,
+                                 std::function<std::optional<EffectPreview::Request> (const EffectValues&)> rendered,
+                                 const juce::String& applyText,
+                                 const juce::String& extraText, std::function<void (const EffectValues&)> onExtra)
 {
     const auto live = make != nullptr && owner != PreviewOwner::none;
-    auto dialog = std::make_unique<EffectDialog> (EffectDialog::Options { message, fields, presetKey, live || rendered != nullptr, applyText });
+    auto dialog = std::make_unique<EffectDialog> (EffectDialog::Options { message, fields, presetKey, live || rendered != nullptr, applyText, extraText });
     juce::Component::SafePointer<EffectDialog> safe (dialog.get());
+    dialog->onExtra = std::move (onExtra);
 
     const auto previewEndedHere = [safe]
     {
@@ -9643,6 +9907,7 @@ void MainComponent::showEffectDialog (const juce::String& title, const juce::Str
         dialog->setPreviewOn (true, juce::sendNotification);
 
     EffectDialog::show (std::move (dialog), title, this);
+    return safe;
 }
 
 void MainComponent::showSweptDelay (bool flanger)

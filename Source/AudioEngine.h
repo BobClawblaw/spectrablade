@@ -489,6 +489,11 @@ public:
 
     using AddCallback = std::function<void (const juce::String& error)>;
     void addPlugin (const juce::PluginDescription& description, AddCallback onDone);
+
+    /** Makes a plug-in instance for use outside the rack (an instrument on the bench), its buses
+        enabled, calling back on the message thread with it or an error. Asynchronous, as AUv3 needs. */
+    void createPlugin (const juce::PluginDescription&, double rate,
+                       std::function<void (std::unique_ptr<juce::AudioPluginInstance>, const juce::String& error)>);
     void removeRackSlot (int index);
     void clearRack();
 
@@ -542,8 +547,6 @@ private:
     void updateWideTracks();
     void addPluginsFromXml (std::shared_ptr<std::vector<std::unique_ptr<juce::XmlElement>>> slots,
                             size_t next, juce::StringArray errors, AddCallback onDone);
-    void createPlugin (const juce::PluginDescription&, double rate,
-                       std::function<void (std::unique_ptr<juce::AudioPluginInstance>, const juce::String& error)>);
     double currentSampleRate() const;
     juce::String inputDeviceNameFor (const juce::AudioDeviceManager::AudioDeviceSetup&) const;
     int currentBlockSize() const;

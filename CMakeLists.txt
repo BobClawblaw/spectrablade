@@ -241,6 +241,7 @@ target_sources(SpectraBlade PRIVATE
     Source/Navigation.cpp
     Source/Restoration.cpp
     Source/Generator.cpp
+    Source/Instrument.cpp
     Source/LossyFiles.cpp
     Source/AacWriter.cpp
     Source/Mp4File.cpp
@@ -394,6 +395,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/NavigationTests.cpp
     Tests/RestorationTests.cpp
     Tests/GeneratorTests.cpp
+    Tests/InstrumentTests.cpp
     Tests/LossyFilesTests.cpp
     Tests/FfmpegTests.cpp
     Tests/FileInfoTests.cpp
@@ -491,6 +493,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/Navigation.cpp
     Source/Restoration.cpp
     Source/Generator.cpp
+    Source/Instrument.cpp
     Source/LossyFiles.cpp
     Source/AacWriter.cpp
     Source/Mp4File.cpp

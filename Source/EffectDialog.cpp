@@ -263,6 +263,12 @@ EffectDialog::EffectDialog (Options o) : options (std::move (o))
         addAndMakeVisible (*b);
     }
 
+    extraButton.setButtonText (options.extraText);
+    extraButton.onClick = [this] { if (onExtra != nullptr) onExtra (getValues()); };
+    extraButton.setWantsKeyboardFocus (false);
+    extraButton.setVisible (options.extraText.isNotEmpty());
+    addChildComponent (extraButton);
+
     // The message's height at the dialog's width.
     juce::AttributedString text;
     text.append (options.message, message.getFont());
@@ -496,6 +502,14 @@ void EffectDialog::resized()
     applyButton.setBounds (buttons.removeFromRight (100));
     buttons.removeFromRight (gap);
     cancelButton.setBounds (buttons.removeFromRight (100));
+
+    if (options.extraText.isNotEmpty())
+        extraButton.setBounds (buttons.removeFromLeft (juce::jmin (180, juce::jmax (0, buttons.getWidth() - gap))));
+}
+
+void EffectDialog::nudge()
+{
+    changed();
 }
 
 void EffectDialog::show (std::unique_ptr<EffectDialog> dialog, const juce::String& title, juce::Component* parent)

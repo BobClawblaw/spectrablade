@@ -43,6 +43,7 @@ public:
         juce::String presetKey;              // empty: no presets
         bool canPreview = true;
         juce::String applyText = "Apply";
+        juce::String extraText {};           // a button at the left of Apply and Cancel ("Instrument Window..."); empty for none
     };
 
     explicit EffectDialog (Options);
@@ -74,6 +75,11 @@ public:
     std::function<void (bool)> onPreview, onBypass;
     std::function<void (const Values&)> onApply;     // Apply or Return; then the dialog closes
     std::function<void()> onClose;                   // closed any way, after onApply when applied
+    std::function<void (const Values&)> onExtra;     // the extra button (Options::extraText) clicked
+
+    /** As if a setting had changed: onChange now, and onSettled once nothing changes for settleMs.
+        For a change made elsewhere that the preview should follow (an instrument's own window). */
+    void nudge();
 
     /** Opens it in a modal window of its own over `parent`; the window owns it. */
     static void show (std::unique_ptr<EffectDialog>, const juce::String& title, juce::Component* parent);
@@ -109,7 +115,7 @@ private:
     std::unique_ptr<EffectPresets::Bar> presets;
     juce::ToggleButton preview { "Preview" }, bypass { "Bypass" };
     juce::Label status;
-    juce::TextButton applyButton, cancelButton { "Cancel" };
+    juce::TextButton applyButton, cancelButton { "Cancel" }, extraButton;
     bool closing = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EffectDialog)

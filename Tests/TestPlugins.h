@@ -89,6 +89,103 @@ private:
     int write = 0;
 };
 
+/** An instrument: no input, one output channel, and a latency it reports. Each note-on puts one
+    full-scale sample out, `latency` frames after the note (as a plug-in with that latency would),
+    and every note it is given is kept with the frame it came at. */
+class ClickInstrument final : public juce::AudioPluginInstance
+{
+public:
+    explicit ClickInstrument (int latencyFrames)
+        : AudioPluginInstance (BusesProperties().withOutput ("Out", juce::AudioChannelSet::mono(), true)),
+          latency (latencyFrames)
+    {
+        setLatencySamples (latency);
+    }
+
+    void fillInPluginDescription (juce::PluginDescription& d) const override
+    {
+        d.name = "Test Click";
+        d.pluginFormatName = "Test";
+        d.fileOrIdentifier = "test-click";
+        d.isInstrument = true;
+        d.numInputChannels = 0;
+        d.numOutputChannels = 1;
+    }
+
+    const juce::String getName() const override  { return "Test Click"; }
+
+    void prepareToPlay (double r, int) override
+    {
+        preparedRate = r;
+        ++prepared;
+        frame = 0;
+        pending.clear();
+    }
+
+    void releaseResources() override             { ++released; }
+    void reset() override                        { pending.clear(); }
+
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer& midi) override
+    {
+        b.clear();
+        wasNonRealtime = isNonRealtime();
+
+        for (const auto meta : midi)
+        {
+            const auto m = meta.getMessage();
+
+            if (m.isNoteOn())
+            {
+                notes.push_back ({ m.getNoteNumber(), frame + meta.samplePosition });
+                pending.push_back (meta.samplePosition + latency);
+            }
+            else if (m.isNoteOff())
+            {
+                offs.push_back ({ m.getNoteNumber(), frame + meta.samplePosition });
+            }
+        }
+
+        for (auto it = pending.begin(); it != pending.end();)
+        {
+            if (*it < b.getNumSamples())
+            {
+                b.setSample (0, *it, 1.0f);
+                it = pending.erase (it);
+            }
+            else
+            {
+                *it -= b.getNumSamples();
+                ++it;
+            }
+        }
+
+        frame += b.getNumSamples();
+    }
+
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override            { return true; }
+    bool producesMidi() const override           { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override              { return false; }
+    int getNumPrograms() override                { return 1; }
+    int getCurrentProgram() override             { return 0; }
+    void setCurrentProgram (int) override        {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+
+    std::vector<std::pair<int, juce::int64>> notes, offs;   // (pitch, frame) of each note-on and note-off
+    int prepared = 0, released = 0;
+    double preparedRate = 0.0;
+    bool wasNonRealtime = false;
+
+private:
+    const int latency;
+    juce::int64 frame = 0;
+    std::vector<int> pending;
+};
+
 /** Has a sidechain input (stereo, or mono when asked) and adds it to its input, both delayed by
     its latency: out[n] = in[n - latency] + key[n - latency], so a key out of line shows. */
 class SidechainPlugin final : public juce::AudioPluginInstance

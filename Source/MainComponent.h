@@ -115,6 +115,8 @@ private:
     class EqWindow;
     class PluginListWindow;
     class RackRenderJob;
+    class InstrumentRenderJob;
+    struct BenchListener;
     class BackgroundJob;
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
@@ -202,6 +204,7 @@ private:
     void showGenerateTone();
     void showGenerateNoise();
     void showGenerateTones();
+    void showGenerateInstrument();
     void exportLossy();
     void askLossySettings (const juce::File&, juce::Range<juce::int64> selection);
     void exportWithFfmpeg();
@@ -284,6 +287,21 @@ private:
                                                             std::function<juce::AudioBuffer<float>()> make);
     int toneWave = 0;                // the generators' last settings
     double toneHz = 1000.0, toneEndHz = 1000.0, toneLevelDb = -12.0, toneSeconds = 1.0, toneFadeMs = 5.0;
+    juce::String instrumentNotes = "C4";   // Generate from Instrument's last settings
+    int instrumentPlay = 0;
+    double instrumentVelocity = 100.0, instrumentHold = 1.0, instrumentSeconds = 2.0;
+
+    /** The instrument on the bench: the one Generate from Instrument plays, kept with its settings
+        from one use to the next, with its own window opened from the dialog. Loaded when first
+        wanted (asynchronously, as AUv3 needs), and replaced when another instrument's window is
+        asked for. What is rendered is a fresh instance given its state, so its window stays. */
+    juce::PluginDescription benchDescription;
+    std::unique_ptr<juce::AudioPluginInstance> benchInstrument;
+    std::unique_ptr<BenchListener> benchListener;
+    bool benchLoading = false;
+    std::function<void()> benchChanged;   // what a change in the bench's window does: nudges the open dialog's preview
+    void loadBench (const juce::PluginDescription&, std::function<void (const juce::String& error)> done);
+    juce::MemoryBlock benchStateFor (const juce::PluginDescription&) const;   // the bench's state when it holds this instrument, else empty
     int noiseColour = 0;
     double noiseLevelDb = -20.0, noiseSeconds = 1.0, noiseFadeMs = 5.0;
     double declipThreshold = 0.99;   // Repair Clipping's last settings
@@ -596,6 +614,7 @@ private:
     std::unique_ptr<SettingsWindow> settingsWindow;
     std::unique_ptr<EqWindow> eqWindow;
     std::unique_ptr<RackRenderJob> renderJob;
+    std::unique_ptr<InstrumentRenderJob> instrumentJob;
     std::unique_ptr<BackgroundJob> backgroundJob;
     std::optional<NoiseReduction::Print> noisePrint;
     juce::File deadMansPedalFile;
@@ -678,14 +697,18 @@ private:
     /** True when an effect dialog opened now should start with its Preview on: the file is playing
         (not a session, not recording) and nothing else is previewing. */
     bool previewsFromStart();
-    void showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&,
-                           const juce::String& presetKey, PreviewOwner,
-                           std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
-                           std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
-                           std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
-                           std::function<void (const EffectValues&)> apply,
-                           std::function<std::optional<EffectPreview::Request> (const EffectValues&)> rendered = nullptr,
-                           const juce::String& applyText = "Apply");
+    /** Returns the dialog (null once it has closed), for what must reach it later (a nudge). With
+        extraText, a button of that name at the left of Apply and Cancel calls onExtra with the values. */
+    juce::Component::SafePointer<EffectDialog>
+    showEffectDialog (const juce::String& title, const juce::String& message, const std::vector<EffectField>&,
+                      const juce::String& presetKey, PreviewOwner,
+                      std::function<bool (const EffectValues&)> valid, const juce::String& invalidText,
+                      std::function<std::unique_ptr<juce::AudioPluginInstance> (const EffectValues&)> make,
+                      std::function<bool (juce::AudioPluginInstance&, const EffectValues&)> setLive,
+                      std::function<void (const EffectValues&)> apply,
+                      std::function<std::optional<EffectPreview::Request> (const EffectValues&)> rendered = nullptr,
+                      const juce::String& applyText = "Apply",
+                      const juce::String& extraText = {}, std::function<void (const EffectValues&)> onExtra = nullptr);
 
     /** A step's request for the document's rate (nothing when the step can't run with these settings). */
     std::optional<EffectPreview::Request> previewOf (const Sequences::Step&, bool wholeRange = false) const;

@@ -2,7 +2,15 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-**To 1.0.0:** feature work has stopped at 0.14.7: the app is complete, and the releases since are dogfooding releases, full builds at the polishing stage. From here, each release fixes what real use turns up, reported as [issues](https://github.com/BobClawblaw/spectrablade/issues) and kept in the [dogfooding log](docs/DOGFOODING.md) with what fixed each, until nothing found in a round of use is left: that is 1.0.0. The items below wait behind that.
+**Now: the 0.15 line, instruments for sound design.** Feature work stopped at 0.14.7 for dogfooding, and has started again on main for one line of work: instrument plug-ins (VST3, and Audio Units on the Mac) played from notes, patterns and sequences, with their parameters automated, so new sounds can be made from an instrument and its settings and then edited like any other audio. Not a DAW: no tempo map beyond the one the multitrack has, no bars-and-beats sequencing of a song, no MIDI routing between tracks. The first step is in (Milestone 362: Generate from Instrument, with the built-in Basic Synth); the rest, in order:
+
+1. **Instrument tracks** in the multitrack: a track whose chain starts with an instrument, its parameters automated with the envelopes and touch-to-write that effect parameters already have, bounced, frozen, mixed down and exported as stems like any track.
+2. **MIDI clips** in the session: notes with pitch, velocity, start and length, undoable and saved in the session file, played into the track's instrument at session time; a pattern clip that loops.
+3. **A clip editor:** a piano-roll grid with step entry, and a one-note trigger clip for hits.
+4. **Live input:** MIDI keyboards through the audio device settings, an on-screen keyboard, recording into a clip, and Standard MIDI File import.
+5. **Controller lanes:** pitch bend, the mod wheel and CCs as envelopes on a MIDI clip, for the parameters instruments expose that way.
+
+The releases meanwhile are still dogfooding releases, and what real use turns up still goes into the [dogfooding log](docs/DOGFOODING.md) and its [issues](https://github.com/BobClawblaw/spectrablade/issues). 1.0.0 follows once the instrument line has had a round of use with nothing left in the log. The items below wait behind that.
 
 **Done, not on this list:** the mastering suite and the audio-repair suite are in (milestones 297 to 326: every job the big suites do, built our own way, listed in the changelog), as are the Sound Library, surround, video, projects, batch processing, the stretch methods and the rest. What is left of them is use: nothing from milestones 297 to 326 has been listened to yet, and each of those tools has been run once on four real recordings and no more. Open from those runs: a room full of voices is noise to Adaptive Noise Reduction and Dialogue Isolation, which need quiet moments or one pitch (both say so when they find almost nothing to keep); and a rough character voice reads as voiced in 46 % of its loud frames at the middle sensitivity, the rest having two harmonics over the floor or periods unlike each other (taking two harmonics for a voice took hum for a voice too, and was dropped). Both go to the dogfooding log if real use runs into them.
 
