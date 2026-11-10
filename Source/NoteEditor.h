@@ -14,7 +14,10 @@
     drag on empty grid selects a box of them, Option-click removes one, Delete and Backspace
     remove the selected, Cmd-A selects all; the arrow keys move the selected notes a semitone
     or a grid step (Shift: an octave, or a quarter step). The velocity slider sets the selected
-    notes'. The grid divides the beat at the clip's start by its choice, or is off. The time
+    notes'. A controller lane (the Lane choice: the mod wheel, the pitch bend or any CC) shows
+    under the notes as a line over the timeline: a click puts a point there (snapped), dragging
+    moves it, Option-click removes it; the lane's value is sent with the notes. The grid divides
+    the beat at the clip's start by its choice, or is off. The time
     across is the notes' whole timeline: the part before the clip's start (its offset, after a
     trim or split) and the part past the pattern are washed out, as their notes don't play.
 
@@ -71,6 +74,14 @@ public:
     void selectAll();
     void removeSelected();
 
+    /** The controller lane shown under the notes (ControllerLane::pitchBend, a CC, or -1 for none). */
+    void setLane (int controller);
+    int getLane() const noexcept                                   { return laneController; }
+    juce::Rectangle<int> laneArea() const;                         // empty without a lane
+    int lanePointAt (juce::Point<float>) const;                    // a point of the shown lane, or -1
+    float laneValueAt (float y) const;
+    float yForLaneValue (float value) const;
+
     void paint (juce::Graphics&) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent&) override;
@@ -79,10 +90,10 @@ public:
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     bool keyPressed (const juce::KeyPress&) override;
 
-    static constexpr int keyboardWidth = 44, rowHeight = 12, topBar = 30;
+    static constexpr int keyboardWidth = 44, rowHeight = 12, topBar = 30, laneHeight = 72;
 
 private:
-    enum class Drag { none, move, resize, box, loop, nothing };
+    enum class Drag { none, move, resize, box, loop, lanePoint, nothing };
 
     void timerCallback() override;
     void commit (const juce::String& description);
@@ -107,7 +118,10 @@ private:
     juce::Rectangle<float> box;
     bool dragged = false;
 
-    juce::ComboBox gridBox;
+    juce::ComboBox gridBox, laneBox;
+    juce::Label laneLabel;
+    int laneController = -1;
+    int dragPoint = -1;
     juce::Slider velocitySlider;
     juce::Label gridLabel, velocityLabel, status;
 

@@ -34,6 +34,29 @@ NoteEditor::NoteEditor()
         repaint();
     };
 
+    addAndMakeVisible (laneLabel);
+    laneLabel.setText ("Lane", juce::dontSendNotification);
+    Theme::follow (laneLabel, juce::Label::textColourId, Theme::dimText);
+    addAndMakeVisible (laneBox);
+    laneBox.addItem ("None", 1);
+
+    for (auto c : { 1, ControllerLane::pitchBend, 2, 7, 10, 11, 64, 71, 74 })
+        laneBox.addItem (ControllerLane::nameOf (c), c + 2);
+
+    laneBox.addSeparator();
+
+    for (int c = 0; c < 128; ++c)
+        if (c != 1 && c != 2 && c != 7 && c != 10 && c != 11 && c != 64 && c != 71 && c != 74)
+            laneBox.addItem (ControllerLane::nameOf (c), c + 2);
+
+    laneBox.setSelectedId (1, juce::dontSendNotification);
+    laneBox.onChange = [this]
+    {
+        laneController = laneBox.getSelectedId() >= 2 ? laneBox.getSelectedId() - 2 : -1;
+        resized();
+        repaint();
+    };
+
     addAndMakeVisible (velocityLabel);
     velocityLabel.setText ("Velocity", juce::dontSendNotification);
     Theme::follow (velocityLabel, juce::Label::textColourId, Theme::dimText);
@@ -162,7 +185,53 @@ juce::int64 NoteEditor::snapped (juce::int64 frame) const
 //==============================================================================
 juce::Rectangle<int> NoteEditor::rollArea() const
 {
-    return getLocalBounds().withTrimmedTop (topBar).withTrimmedLeft (keyboardWidth);
+    return getLocalBounds().withTrimmedTop (topBar).withTrimmedLeft (keyboardWidth).withTrimmedBottom (laneController >= 0 ? laneHeight : 0);
+}
+
+juce::Rectangle<int> NoteEditor::laneArea() const
+{
+    if (laneController < 0)
+        return {};
+
+    return getLocalBounds().withTrimmedLeft (keyboardWidth).removeFromBottom (laneHeight);
+}
+
+void NoteEditor::setLane (int controller)
+{
+    laneBox.setSelectedId (controller >= 0 && controller <= ControllerLane::pitchBend ? controller + 2 : 1, juce::sendNotificationSync);
+}
+
+float NoteEditor::yForLaneValue (float value) const
+{
+    const auto area = laneArea().toFloat().reduced (0.0f, 6.0f);
+    return area.getBottom() - juce::jlimit (0.0f, 1.0f, value) * area.getHeight();
+}
+
+float NoteEditor::laneValueAt (float y) const
+{
+    const auto area = laneArea().toFloat().reduced (0.0f, 6.0f);
+    return area.getHeight() > 0.0f ? juce::jlimit (0.0f, 1.0f, (area.getBottom() - y) / area.getHeight()) : 0.0f;
+}
+
+int NoteEditor::lanePointAt (juce::Point<float> p) const
+{
+    if (! shown.has_value() || laneController < 0 || ! laneArea().toFloat().contains (p))
+        return -1;
+
+    const auto* lane = shown->clip.findLane (laneController);
+
+    if (lane == nullptr)
+        return -1;
+
+    for (auto i = (int) lane->envelope.points.size() - 1; i >= 0; --i)
+    {
+        const auto& point = lane->envelope.points[(size_t) i];
+
+        if (juce::Point<float> (xOf (point.frame), yForLaneValue (point.value)).getDistanceFrom (p) <= 6.0f)
+            return i;
+    }
+
+    return -1;
 }
 
 float NoteEditor::yOf (int pitch) const
@@ -353,6 +422,53 @@ void NoteEditor::paint (juce::Graphics& g)
 
     g.setColour (Theme::line);
     g.drawRect (area);
+
+    // The lane: its line over the timeline (the rest value, dashed, without points), its points.
+    if (laneController >= 0)
+    {
+        const auto strip = laneArea();
+        g.setColour (Theme::inset);
+        g.fillRect (strip);
+        g.setColour (Theme::line);
+        g.drawRect (strip);
+        g.setFont (11.0f);
+        g.setColour (Theme::dimText);
+        g.drawText (ControllerLane::nameOf (laneController), strip.reduced (6, 2), juce::Justification::topLeft);
+
+        const auto* lane = c.findLane (laneController);
+        const auto rest = laneController == ControllerLane::pitchBend ? 0.5f : 0.0f;
+
+        if (lane == nullptr || lane->envelope.isEmpty())
+        {
+            const float dashes[] = { 4.0f, 4.0f };
+            g.setColour (Theme::dimText);
+            g.drawDashedLine ({ (float) strip.getX(), yForLaneValue (rest), (float) strip.getRight(), yForLaneValue (rest) }, dashes, 2, 1.0f);
+        }
+        else
+        {
+            juce::Path line;
+            const auto left = (float) strip.getX(), right = (float) strip.getRight();
+
+            for (auto x = left; ; x = juce::jmin (right, x + 2.0f))
+            {
+                const auto y = yForLaneValue (lane->envelope.valueAt (frameAt (x)));
+
+                if (line.isEmpty())
+                    line.startNewSubPath (x, y);
+                else
+                    line.lineTo (x, y);
+
+                if (x >= right)
+                    break;
+            }
+
+            g.setColour (Theme::accentLight);
+            g.strokePath (line, juce::PathStrokeType (1.5f));
+
+            for (auto& point : lane->envelope.points)
+                g.fillEllipse (juce::Rectangle<float> (7.0f, 7.0f).withCentre ({ xOf (point.frame), yForLaneValue (point.value) }));
+        }
+    }
 }
 
 void NoteEditor::resized()
@@ -364,6 +480,9 @@ void NoteEditor::resized()
     velocityLabel.setBounds (bar.removeFromLeft (56));
     velocitySlider.setBounds (bar.removeFromLeft (juce::jmin (180, bar.getWidth())));
     bar.removeFromLeft (12);
+    laneLabel.setBounds (bar.removeFromLeft (34));
+    laneBox.setBounds (bar.removeFromLeft (juce::jmin (150, juce::jmax (60, bar.getWidth() / 3))));
+    bar.removeFromLeft (12);
     status.setBounds (bar);
 }
 
@@ -374,7 +493,51 @@ void NoteEditor::mouseDown (const juce::MouseEvent& e)
     drag = Drag::none;
     dragged = false;
 
-    if (! shown.has_value() || ! rollArea().contains (e.getPosition()))
+    if (! shown.has_value())
+        return;
+
+    // The lane: a point grabbed, removed with Option, or a new one put where the mouse is.
+    if (laneController >= 0 && laneArea().contains (e.getPosition()))
+    {
+        base = shown;
+        const auto hit = lanePointAt (e.position);
+        auto* lane = const_cast<ControllerLane*> (shown->clip.findLane (laneController));
+
+        if (hit >= 0 && lane != nullptr && e.mods.isAltDown())
+        {
+            lane->envelope.remove (hit);
+            commit ("Remove Lane Point");
+            drag = Drag::nothing;
+            return;
+        }
+
+        if (hit >= 0)
+        {
+            dragPoint = hit;
+            drag = Drag::lanePoint;
+            return;
+        }
+
+        if (e.mods.isPopupMenu())
+        {
+            drag = Drag::nothing;
+            return;
+        }
+
+        if (lane == nullptr)
+        {
+            shown->clip.lanes.push_back ({ laneController, {} });
+            lane = &shown->clip.lanes.back();
+        }
+
+        dragPoint = lane->envelope.add (snapped (frameAt (e.position.x)), laneValueAt (e.position.y));
+        drag = Drag::lanePoint;
+        commit ("Lane Point");
+        base = shown;
+        return;
+    }
+
+    if (! rollArea().contains (e.getPosition()))
         return;
 
     const auto p = e.position;
@@ -479,6 +642,18 @@ void NoteEditor::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    if (drag == Drag::lanePoint)
+    {
+        if (auto* lane = const_cast<ControllerLane*> (shown->clip.findLane (laneController)))
+        {
+            dragPoint = lane->envelope.move (dragPoint, snapped (frameAt (p.x)), laneValueAt (p.y));
+            dragged = true;
+            repaint();
+        }
+
+        return;
+    }
+
     if (drag == Drag::box)
     {
         box = juce::Rectangle<float>::leftTopRightBottom (juce::jmin (dragStart.x, p.x), juce::jmin (dragStart.y, p.y), juce::jmax (dragStart.x, p.x), juce::jmax (dragStart.y, p.y));
@@ -555,8 +730,8 @@ void NoteEditor::mouseUp (const juce::MouseEvent&)
         return;
     }
 
-    if ((was == Drag::move || was == Drag::resize || was == Drag::loop) && dragged && shown.has_value() && base.has_value() && ! (shown->clip == base->clip))
-        commit (was == Drag::move ? "Move Notes" : was == Drag::loop ? "Loop Length" : "Note Length");
+    if ((was == Drag::move || was == Drag::resize || was == Drag::loop || was == Drag::lanePoint) && dragged && shown.has_value() && base.has_value() && ! (shown->clip == base->clip))
+        commit (was == Drag::move ? "Move Notes" : was == Drag::loop ? "Loop Length" : was == Drag::lanePoint ? "Lane Point" : "Note Length");
 
     base.reset();
     refreshControls();

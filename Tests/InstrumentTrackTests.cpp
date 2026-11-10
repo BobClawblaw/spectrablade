@@ -142,6 +142,83 @@ namespace
                 limited = meta.getMessage().getNoteNumber() == 127 && meta.getMessage().getFloatVelocity() >= 0.99f;
 
         check (limited, "note clips: a pitch or velocity out of range is kept to 127 and 1");
+
+        // Lanes: a mod wheel rising over the clip and a pitch bend held at rest, sent at the clip's
+        // start and at each 64-frame step where the rounded value changes, before the note there,
+        // the same over blocks of 1, 997 and 4,096 frames; a repeating lane starts over each pass.
+        NoteClip ride;
+        ride.position = 1000;
+        ride.length = 12800;
+        ride.notes = { { 60, 0, 12800, 0.5f } };
+        ride.lanes = { { 1, Envelope { { { 0, 0.0f }, { 12800, 1.0f } } } }, { ControllerLane::pitchBend, Envelope { { { 0, 0.5f } } } } };
+
+        const auto events = [] (const NoteClip& clip, int blockSize)
+        {
+            std::vector<std::tuple<juce::int64, int, int>> out;   // (frame, controller or 128 for the bend, or -1 for a note on, value)
+            juce::MidiBuffer buffer;
+
+            for (juce::int64 from = 0; from < 16000; from += blockSize)
+            {
+                buffer.clear();
+                clip.addMidi (from, (int) juce::jmin ((juce::int64) blockSize, 16000 - from), buffer);
+
+                for (const auto meta : buffer)
+                {
+                    const auto m = meta.getMessage();
+
+                    if (m.isController())
+                        out.emplace_back (from + meta.samplePosition, m.getControllerNumber(), m.getControllerValue());
+                    else if (m.isPitchWheel())
+                        out.emplace_back (from + meta.samplePosition, 128, m.getPitchWheelValue());
+                    else if (m.isNoteOn())
+                        out.emplace_back (from + meta.samplePosition, -1, m.getNoteNumber());
+                }
+            }
+
+            return out;
+        };
+
+        const auto byOne = events (ride, 1), byOdd = events (ride, 997), byBig = events (ride, 4096);
+        int wheel = 0, bends = 0;
+        bool rising = true, ordered = ! byOne.empty();
+        int lastValue = -1;
+
+        for (size_t i = 0; i < byOne.size(); ++i)
+        {
+            const auto [frame, controller, value] = byOne[i];
+
+            if (controller == 1)
+            {
+                ++wheel;
+                rising = rising && value > lastValue && (frame == 1000 || frame % 64 == 0);
+                lastValue = value;
+            }
+            else if (controller == 128)
+            {
+                ++bends;
+                ordered = ordered && value == 8192 && frame == 1000;
+            }
+            else if (controller == -1)
+            {
+                ordered = ordered && i == 2 && frame == 1000;   // after the wheel and the bend at the start
+            }
+        }
+
+        check (byOne == byOdd && byOne == byBig && wheel == 128 && lastValue == 127 && rising && bends == 1 && ordered,
+               "note clips: a lane's values go out at the clip's start and each 64-frame step where they change (the wheel's 128 values, rising), the "
+               "bend at rest once, before the note at that frame, the same over blocks of 1, 997 and 4,096 frames");
+
+        NoteClip loop = ride;
+        loop.loopLength = 6400;
+        const auto looped = events (loop, 64);
+        auto passStarts = 0;
+
+        for (auto& [frame, controller, value] : looped)
+            if (controller == 1 && (frame == 1000 || frame == 7400) && value == 0)
+                ++passStarts;
+
+        check (passStarts == 2 && std::count_if (looped.begin(), looped.end(), [] (auto& e) { return std::get<1> (e) == 1; }) == 2 * 64,
+               "note clips: a repeating clip's lane starts over with each pass");
     }
 
     void testEdits()
@@ -157,6 +234,7 @@ namespace
         raw.length = 0;
         raw.loopLength = 99;
         raw.notes = { { 200, -1, 0, 2.0f }, { -3, 10, 5, 0.0f } };
+        raw.lanes = { { 300, Envelope { { { 50, 2.0f }, { 10, -1.0f } } } }, { 128, Envelope { { { 0, 0.5f } } } }, { 7, {} } };
 
         const auto id = SessionEdits::addNoteClip (s, trackId, raw);
         const auto onBus = SessionEdits::addNoteClip (s, busId, raw), onFolder = SessionEdits::addNoteClip (s, folderId, raw);
@@ -164,8 +242,11 @@ namespace
         const auto* c = where.has_value() ? &s.tracks[(size_t) where->first].noteClips[(size_t) where->second] : nullptr;
         check (id != 0 && onBus == 0 && onFolder == 0 && c != nullptr && c->name == "Notes" && c->position == 0 && c->length == 1
                    && c->loopLength == 1 && c->notes.size() == 2 && c->notes[0] == ClipNote { 127, 0, 1, 1.0f }
-                   && c->notes[1].pitch == 0 && c->notes[1].start == 10 && c->notes[1].length == 5 && c->notes[1].velocity > 0.0f,
-               "note clips: added to a track (not a bus or folder) with its values kept to what plays");
+                   && c->notes[1].pitch == 0 && c->notes[1].start == 10 && c->notes[1].length == 5 && c->notes[1].velocity > 0.0f
+                   && c->lanes.size() == 1 && c->lanes[0].controller == ControllerLane::pitchBend && c->lanes[0].envelope.points.size() == 2
+                   && c->lanes[0].envelope.points[0] == AutomationPoint { 10, 0.0f } && c->lanes[0].envelope.points[1] == AutomationPoint { 50, 1.0f },
+               "note clips: added to a track (not a bus or folder) with its values kept to what plays (a lane's points in order and from 0 to 1, "
+               "a second lane for the same controller and an empty one dropped)");
 
         NoteClip values;
         values.name = "Chord";
@@ -341,6 +422,7 @@ namespace
         c.length = 48000;
         c.loopLength = 24000;
         c.notes = { { 60, 0, 6000, 0.5f }, { 67, 12000, 6000, 0.25f } };
+        c.lanes = { { 74, Envelope { { { 0, 0.25f }, { 9000, 0.75f } } } }, { ControllerLane::pitchBend, Envelope { { { 100, 0.5f } } } } };
         c.muted = true;
         c.colour = 2;
         const auto id = SessionEdits::addNoteClip (s, t.id, c);
@@ -352,8 +434,9 @@ namespace
 
         const auto* back = loaded.state.tracks.size() == 1 && loaded.state.tracks[0].noteClips.size() == 1 ? &loaded.state.tracks[0].noteClips[0] : nullptr;
         check (id != 0 && error.isEmpty() && loaded.error.isEmpty() && back != nullptr && back->name == "Riff" && back->position == 96000
-                   && back->offset == 3000 && back->length == 48000 && back->loopLength == 24000 && back->notes == c.notes && back->muted && back->colour == 2,
-               "note clips: saved in the session file and read back (name, place, offset, length, loop, notes, mute, colour)");
+                   && back->offset == 3000 && back->length == 48000 && back->loopLength == 24000 && back->notes == c.notes && back->lanes == c.lanes
+                   && back->muted && back->colour == 2,
+               "note clips: saved in the session file and read back (name, place, offset, length, loop, notes, lanes, mute, colour)");
     }
 
     /** A track with a constant stereo clip from 0 to 9,000 and a repeating note clip. */

@@ -49,14 +49,24 @@ namespace
         played.addEvent (juce::MidiMessage::noteOn (1, 60, 0.5f), 3);
         played.addEvent (juce::MidiMessage::noteOff (1, 60), 100);
         played.addEvent (juce::MidiMessage::noteOn (1, 64, 1.0f), 150);
+        played.addEvent (juce::MidiMessage::controllerEvent (1, 1, 64), 20);
+        played.addEvent (juce::MidiMessage::pitchWheel (1, 16383), 160);
+        played.addEvent (juce::MidiMessage::controllerEvent (1, 1, 127), 170);
         live.captureBlock (played, 1000);
-        const auto notes = live.stopCapture (2000);
-        const auto clip = MidiIn::clipOf (notes, 900);
+        const auto capture = live.stopCapture (2000);
+        const auto& notes = capture.notes;
+        const auto clip = MidiIn::clipOf (capture, 900);
+        const auto* wheel = clip.findLane (1);
+        const auto* bend = clip.findLane (ControllerLane::pitchBend);
         check (notes.size() == 2 && notes[0].pitch == 60 && notes[0].on == 1003 && notes[0].off == 1100 && std::abs (notes[0].velocity - 0.5f) < 0.01f
                    && notes[1].pitch == 64 && notes[1].on == 1150 && notes[1].off == 2000 && ! live.isCapturing()
                    && clip.position == 900 && clip.length == 1100 && clip.notes.size() == 2 && clip.notes[0] == ClipNote { 60, 103, 97, notes[0].velocity }
-                   && clip.notes[1].start == 250 && clip.notes[1].length == 850 && MidiIn::clipOf ({}, 5).notes.empty(),
-               "live MIDI: captured notes keep their session frames (a note still held ends at the stop), and make a clip from the record start");
+                   && clip.notes[1].start == 250 && clip.notes[1].length == 850 && MidiIn::clipOf ({}, 5).notes.empty()
+                   && capture.controllers.size() == 3 && wheel != nullptr && wheel->envelope.points.size() == 2 && wheel->envelope.points[0].frame == 120
+                   && std::abs (wheel->envelope.points[0].value - 64.0f / 127.0f) < 1.0e-5f && wheel->envelope.points[1] == AutomationPoint { 270, 1.0f }
+                   && bend != nullptr && bend->envelope.points.size() == 1 && bend->envelope.points[0] == AutomationPoint { 260, 1.0f },
+               "live MIDI: captured notes keep their session frames (a note still held ends at the stop), and make a clip from the record start, "
+               "the wheel's and the bend's moves as lanes");
 
         // Blocks taken while not capturing are not kept; a note-off with nothing held is nothing.
         live.captureBlock (played, 5000);
@@ -64,7 +74,8 @@ namespace
         juce::MidiBuffer offOnly;
         offOnly.addEvent (juce::MidiMessage::noteOff (1, 72), 0);
         live.captureBlock (offOnly, 0);
-        check (live.stopCapture (100).empty(), "live MIDI: nothing is kept outside a capture, nor a note-off with no note on");
+        const auto nothing = live.stopCapture (100);
+        check (nothing.notes.empty() && nothing.controllers.empty(), "live MIDI: nothing is kept outside a capture, nor a note-off with no note on");
     }
 
     void testImport()

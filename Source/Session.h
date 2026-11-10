@@ -218,6 +218,27 @@ struct ClipNote
     }
 };
 
+/** A controller's course over a note clip's timeline: a CC (0 to 127) or the pitch bend
+    (pitchBend), as an envelope of values from 0 to 1 at frames of the timeline (a CC's 0 to 127;
+    the bend from all the way down to all the way up, 0.5 at rest), repeating with the pattern.
+    Sent to the instrument with the notes: at the clip's start and each pass's, and at each
+    automation step (TrackEffects::automationStep frames of the session) where the value it rounds
+    to changed, before the notes at that frame. With no points the lane sends nothing. */
+/** Frames between the values a lane sends (TrackEffects::automationStep). */
+inline constexpr int automationStepFrames = 64;
+
+struct ControllerLane
+{
+    static constexpr int pitchBend = 128;
+    int controller = 1;                    // the mod wheel, or any CC 0 to 127, or pitchBend
+    Envelope envelope;
+
+    bool operator== (const ControllerLane& o) const noexcept { return controller == o.controller && envelope == o.envelope; }
+
+    /** The lane's name: a CC's usual meaning where it has one. */
+    static juce::String nameOf (int controller);
+};
+
 /** Notes placed on a track, played into its instrument (the first slot of its chain, when it
     is one; a track without an instrument plays nothing from them): a clip at a session position,
     length frames long, its notes at frames of their own timeline, which starts `offset` frames
@@ -234,10 +255,21 @@ struct NoteClip
     juce::int64 length = 0;                // frames it plays
     juce::int64 loopLength = 0;            // frames between repeats of the notes, or 0 to play them once
     std::vector<ClipNote> notes;
+    std::vector<ControllerLane> lanes;     // at most one a controller
     bool muted = false;                    // stays in place but plays nothing
     int colour = -1;                       // a place in TrackColours::palette, or -1 for its track's colour
 
     juce::int64 getEnd() const noexcept    { return position + length; }
+
+    /** The lane for a controller, or null. */
+    const ControllerLane* findLane (int controller) const noexcept;
+
+    /** A lane's value at a frame of the session (its envelope at the timeline frame, repeating
+        with the pattern), or nothing outside the clip or without points. */
+    std::optional<float> laneValueAt (const ControllerLane&, juce::int64 frame) const noexcept;
+
+    /** The MIDI message for a lane's value: a controller change or a pitch wheel move. */
+    static juce::MidiMessage laneMessage (int controller, float value);
 
     /** The session frame the notes' timeline starts at. */
     juce::int64 getOrigin() const noexcept { return position - offset; }
@@ -258,7 +290,7 @@ struct NoteClip
     bool operator== (const NoteClip& o) const noexcept
     {
         return id == o.id && name == o.name && position == o.position && offset == o.offset && length == o.length && loopLength == o.loopLength
-            && notes == o.notes && muted == o.muted && colour == o.colour;
+            && notes == o.notes && lanes == o.lanes && muted == o.muted && colour == o.colour;
     }
 };
 
@@ -784,15 +816,16 @@ namespace SessionEdits
     /** A note clip's values kept to what plays: the position and offset from 0, the length at
         least 1, the loop length from 0 (once) up to offset + length, pitches 0 to 127, each note's
         start from 0 and length at least 1, velocities above 0 and up to 1, the name "Notes" when
-        empty. */
+        empty; lanes with a controller 0 to 128, one a controller, points from 0 to 1 in time
+        order, empty ones dropped. */
     NoteClip tidiedNoteClip (NoteClip);
 
     /** Adds a note clip (its id given here, the rest tidied as above) to a track: not a bus, a
         folder or a frozen track. Returns its id, or 0 when it can't be added. */
     juce::uint32 addNoteClip (SessionState&, juce::uint32 trackId, NoteClip);
 
-    /** Replaces a note clip's name, length, loop length, notes and colour (tidied as above); it
-        keeps its id, track, position and mute. False when there is no such clip. */
+    /** Replaces a note clip's name, length, loop length, notes, lanes and colour (tidied as
+        above); it keeps its id, track, position and mute. False when there is no such clip. */
     bool replaceNoteClip (SessionState&, juce::uint32 clipId, const NoteClip&);
 
     /** Moves a note clip to a track (a new one when past the last; onto a bus or folder it only

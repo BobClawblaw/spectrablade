@@ -218,6 +218,51 @@ std::optional<std::pair<int, int>> SessionState::findNoteClip (juce::uint32 clip
 }
 
 //==============================================================================
+juce::String ControllerLane::nameOf (int controller)
+{
+    switch (controller)
+    {
+        case pitchBend: return "Pitch bend";
+        case 1:  return "Mod wheel (CC 1)";
+        case 2:  return "Breath (CC 2)";
+        case 7:  return "Volume (CC 7)";
+        case 10: return "Pan (CC 10)";
+        case 11: return "Expression (CC 11)";
+        case 64: return "Sustain (CC 64)";
+        case 71: return "Resonance (CC 71)";
+        case 74: return "Cutoff (CC 74)";
+        default: return "CC " + juce::String (controller);
+    }
+}
+
+const ControllerLane* NoteClip::findLane (int controller) const noexcept
+{
+    for (auto& l : lanes)
+        if (l.controller == controller)
+            return &l;
+
+    return nullptr;
+}
+
+std::optional<float> NoteClip::laneValueAt (const ControllerLane& lane, juce::int64 frame) const noexcept
+{
+    if (lane.envelope.isEmpty() || frame < position || frame >= getEnd())
+        return std::nullopt;
+
+    const auto period = juce::jmax ((juce::int64) 1, getPeriod());
+    return juce::jlimit (0.0f, 1.0f, lane.envelope.valueAt ((frame - getOrigin()) % period));
+}
+
+juce::MidiMessage NoteClip::laneMessage (int controller, float value)
+{
+    const auto v = juce::jlimit (0.0f, 1.0f, value);
+
+    if (controller == ControllerLane::pitchBend)
+        return juce::MidiMessage::pitchWheel (1, juce::jlimit (0, 16383, (int) std::lround (v * 16383.0f)));
+
+    return juce::MidiMessage::controllerEvent (1, juce::jlimit (0, 127, controller), juce::jlimit (0, 127, (int) std::lround (v * 127.0f)));
+}
+
 void NoteClip::addMidi (juce::int64 from, int count, juce::MidiBuffer& midi) const
 {
     const auto to = from + count, end = getEnd(), origin = getOrigin();
@@ -231,6 +276,43 @@ void NoteClip::addMidi (juce::int64 from, int count, juce::MidiBuffer& midi) con
     // before it is on. A note starting before the clip isn't played.
     const auto period = juce::jmax ((juce::int64) 1, getPeriod());
     const auto firstPass = juce::jmax ((juce::int64) 0, (from - origin) / period - 1);
+
+    // The lanes first, so a note starting at a frame hears the controller's value there: at the
+    // clip's start, at each pass's start, and at each step where the rounded value changed.
+    for (auto& lane : lanes)
+    {
+        if (lane.envelope.isEmpty())
+            continue;
+
+        const auto steps = (juce::int64) automationStepFrames;
+        const auto rounded = [&] (juce::int64 frame) -> int
+        {
+            const auto v = laneValueAt (lane, frame);
+            return v.has_value() ? (int) std::lround (*v * (lane.controller == ControllerLane::pitchBend ? 16383.0f : 127.0f)) : -1;
+        };
+
+        // The latest of the clip's start and the pass starts at or before a frame.
+        const auto anchorBefore = [&] (juce::int64 frame) { return juce::jmax (position, origin + ((frame - origin) / period) * period); };
+        const auto send = [&] (juce::int64 frame) { midi.addEvent (laneMessage (lane.controller, *laneValueAt (lane, frame)), (int) (frame - from)); };
+
+        if (position >= from && position < to)
+            send (position);
+
+        for (auto pass = origin + (firstPass + 1) * period; pass < juce::jmin (to, end); pass += period)
+            if (pass > position && pass >= from)
+                send (pass);
+
+        for (auto f = ((juce::jmax (from, position + 1) + steps - 1) / steps) * steps; f < juce::jmin (to, end); f += steps)
+        {
+            const auto anchor = anchorBefore (f);
+
+            if (f == anchor)
+                continue;   // sent above
+
+            if (rounded (f) != rounded (juce::jmax (f - steps, anchor)))
+                send (f);
+        }
+    }
 
     for (auto pass = firstPass; origin + pass * period < juce::jmin (to, end); ++pass)
     {
@@ -2204,6 +2286,26 @@ NoteClip tidiedNoteClip (NoteClip c)
         n.velocity = n.velocity > 0.0f ? juce::jmin (1.0f, n.velocity) : 1.0f / 127.0f;
     }
 
+    std::vector<ControllerLane> lanes;
+
+    for (auto lane : c.lanes)
+    {
+        lane.controller = juce::jlimit (0, ControllerLane::pitchBend, lane.controller);
+
+        if (lane.envelope.isEmpty() || std::any_of (lanes.begin(), lanes.end(), [&lane] (auto& l) { return l.controller == lane.controller; }))
+            continue;
+
+        for (auto& p : lane.envelope.points)
+        {
+            p.frame = juce::jmax ((juce::int64) 0, p.frame);
+            p.value = juce::jlimit (0.0f, 1.0f, p.value);
+        }
+
+        std::stable_sort (lane.envelope.points.begin(), lane.envelope.points.end(), [] (auto& a, auto& b) { return a.frame < b.frame; });
+        lanes.push_back (std::move (lane));
+    }
+
+    c.lanes = std::move (lanes);
     return c;
 }
 
@@ -2235,6 +2337,7 @@ bool replaceNoteClip (SessionState& s, juce::uint32 clipId, const NoteClip& valu
     c.length = tidy.length;
     c.loopLength = tidy.loopLength;
     c.notes = std::move (tidy.notes);
+    c.lanes = std::move (tidy.lanes);
     c.colour = tidy.colour;
     return true;
 }
@@ -2908,6 +3011,19 @@ juce::String save (const SessionState& state, const juce::File& target,
                 note->setAttribute ("length", juce::String (n.length));
                 note->setAttribute ("velocity", n.velocity);
             }
+
+            for (auto& lane : c.lanes)
+            {
+                auto* laneXml = clip->createNewChildElement ("LANE");
+                laneXml->setAttribute ("controller", lane.controller);
+
+                for (auto& point : lane.envelope.points)
+                {
+                    auto* pointXml = laneXml->createNewChildElement ("POINT");
+                    pointXml->setAttribute ("frame", juce::String (point.frame));
+                    pointXml->setAttribute ("value", point.value);
+                }
+            }
         }
     }
 
@@ -3150,6 +3266,17 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             for (auto* noteXml : clipXml->getChildWithTagNameIterator ("NOTE"))
                 clip.notes.push_back ({ noteXml->getIntAttribute ("pitch"), noteXml->getStringAttribute ("start").getLargeIntValue(),
                                         noteXml->getStringAttribute ("length").getLargeIntValue(), (float) noteXml->getDoubleAttribute ("velocity") });
+
+            for (auto* laneXml : clipXml->getChildWithTagNameIterator ("LANE"))
+            {
+                ControllerLane lane;
+                lane.controller = laneXml->getIntAttribute ("controller", 1);
+
+                for (auto* pointXml : laneXml->getChildWithTagNameIterator ("POINT"))
+                    lane.envelope.points.push_back ({ pointXml->getStringAttribute ("frame").getLargeIntValue(), (float) pointXml->getDoubleAttribute ("value") });
+
+                clip.lanes.push_back (std::move (lane));
+            }
 
             if (! track.isBus)
             {

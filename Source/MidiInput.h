@@ -16,6 +16,22 @@ namespace MidiIn
         float velocity = 0.8f;
     };
 
+    /** A controller moved live, in session frames: a CC (0 to 127) or the pitch bend
+        (ControllerLane::pitchBend), its value from 0 to 1. */
+    struct CapturedController
+    {
+        int controller = 1;
+        juce::int64 frame = 0;
+        float value = 0.0f;
+    };
+
+    /** What a capture kept: the notes and the controller moves. */
+    struct Capture
+    {
+        std::vector<CapturedNote> notes;
+        std::vector<CapturedController> controllers;
+    };
+
     /** The live messages: given from any thread with their time (a device callback, the keyboard
         on the message thread), taken block by block on the audio thread in time order, each at
         the frame its time falls in. A capture keeps the note-ons and -offs of the blocks taken
@@ -42,12 +58,13 @@ namespace MidiIn
             ringing on), counted down by each block taken: more than 0 while something may sound. */
         juce::int64 getSoundingFrames() const noexcept        { return sounding; }
 
-        /** Starts keeping the notes taken from now on; stopCapture gives them, those still held
-            ended at `endFrame`, and forgets them. A block's notes are kept when it is played at a
-            session frame (captureBlock); blocks taken while stopped are not. */
+        /** Starts keeping the notes and controller moves taken from now on; stopCapture gives
+            them, notes still held ended at `endFrame`, and forgets them. A block's messages are
+            kept when it is played at a session frame (captureBlock); blocks taken while stopped
+            are not. */
         void startCapture();
         bool isCapturing() const noexcept                     { return capturing; }
-        std::vector<CapturedNote> stopCapture (juce::int64 endFrame);
+        Capture stopCapture (juce::int64 endFrame);
 
         /** Audio thread, while capturing: the notes of a block taken, played from this session frame. */
         void captureBlock (const juce::MidiBuffer&, juce::int64 blockFrame);
@@ -64,14 +81,16 @@ namespace MidiIn
 
         juce::SpinLock captureLock;
         std::vector<CapturedNote> captured;              // under the lock: notes ended
+        std::vector<CapturedController> controllers;     // under the lock
         std::array<juce::int64, 128> held;               // under the lock: each pitch's on frame, or -1
         std::array<float, 128> heldVelocity;
     };
 
-    /** A clip of captured notes: at the first note's frame (or `from`, when earlier and not
-        before 0), as long as the last note's end, each note at its frames from there. Empty
-        notes give a clip of no notes and no length (nothing to add). */
-    NoteClip clipOf (const std::vector<CapturedNote>&, juce::int64 from);
+    /** A clip of a capture: at the first note's frame (or `from`, when earlier and not before
+        0), as long as the last note's end or controller move, each note at its frames from there
+        and each controller's moves as a lane. No notes give a clip of no notes and no length
+        (nothing to add). */
+    NoteClip clipOf (const Capture&, juce::int64 from);
 
     /** A Standard MIDI File's tracks as note clips, one for each track with notes, each named by
         the track's name (or "Track n"), its notes at frames of the session rate from the file's

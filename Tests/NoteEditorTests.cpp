@@ -153,6 +153,27 @@ void runNoteEditorTests()
     check (whole == 240000 && rig.notes().empty() && rig.shown.clip.loopLength == 96000 && rig.last() == "Loop Length",
            "piano roll: the timeline is the clip's offset and length, and dragging the first repeat line sets the loop length (snapped), one undo step");
 
+    // A lane shown under the notes: a click puts a point there (snapped, the value from the
+    // height), a drag moves it, Option-click removes it; each one undo step.
+    e.setLane (1);
+    const auto strip = e.laneArea();
+    const auto laneX = [&e] (juce::int64 frame) { return e.noteBounds ({ 60, frame, 1, 1.0f }).getX(); };
+    rig.click ({ laneX (6500), e.yForLaneValue (0.75f) });
+    const auto* lane = rig.shown.clip.findLane (1);
+    const auto added = lane != nullptr && lane->envelope.points.size() == 1 && lane->envelope.points[0].frame == 6000
+                       && std::abs (lane->envelope.points[0].value - 0.75f) < 0.02f && rig.last() == "Lane Point";
+    rig.drag ({ laneX (6000), e.yForLaneValue (0.75f) }, { laneX (12500), e.yForLaneValue (0.25f) });
+    lane = rig.shown.clip.findLane (1);
+    const auto moved = lane != nullptr && lane->envelope.points.size() == 1 && lane->envelope.points[0].frame == 12000
+                       && std::abs (lane->envelope.points[0].value - 0.25f) < 0.02f;
+    rig.click ({ laneX (12000), e.yForLaneValue (0.25f) }, juce::ModifierKeys::leftButtonModifier | juce::ModifierKeys::altModifier);
+    lane = rig.shown.clip.findLane (1);
+    check (! strip.isEmpty() && e.rollArea().getBottom() <= strip.getY() && added && moved && lane != nullptr && lane->envelope.isEmpty()
+               && rig.last() == "Remove Lane Point" && e.getLane() == 1,
+           "piano roll: a lane under the notes takes a point where it is clicked (snapped), moves it by dragging and drops it with Option-click, each an undo step");
+    e.setLane (-1);
+    check (e.laneArea().isEmpty() && e.getLane() == -1, "piano roll: with no lane chosen the notes have the whole height");
+
     // Another clip shown drops the selection; nothing shown disables the controls.
     rig.shown.clip.id = 8;
     e.refresh();

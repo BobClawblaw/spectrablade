@@ -44,11 +44,12 @@ namespace MidiIn
     {
         const juce::SpinLock::ScopedLockType sl (captureLock);
         captured.clear();
+        controllers.clear();
         held.fill (-1);
         capturing = true;
     }
 
-    std::vector<CapturedNote> Live::stopCapture (juce::int64 endFrame)
+    Capture Live::stopCapture (juce::int64 endFrame)
     {
         capturing = false;
         const juce::SpinLock::ScopedLockType sl (captureLock);
@@ -62,7 +63,7 @@ namespace MidiIn
                 held[(size_t) pitch] = -1;
             }
 
-        return std::exchange (captured, {});
+        return { std::exchange (captured, {}), std::exchange (controllers, {}) };
     }
 
     void Live::captureBlock (const juce::MidiBuffer& block, juce::int64 blockFrame)
@@ -91,6 +92,14 @@ namespace MidiIn
                 held[pitch] = frame;
                 heldVelocity[pitch] = m.getFloatVelocity();
             }
+            else if (m.isController())
+            {
+                controllers.push_back ({ m.getControllerNumber(), frame, (float) m.getControllerValue() / 127.0f });
+            }
+            else if (m.isPitchWheel())
+            {
+                controllers.push_back ({ ControllerLane::pitchBend, frame, (float) m.getPitchWheelValue() / 16383.0f });
+            }
             else if (m.isNoteOff() || m.isAllNotesOff())
             {
                 for (int pitch = 0; pitch < 128; ++pitch)
@@ -108,10 +117,11 @@ namespace MidiIn
     }
 
     //==============================================================================
-    NoteClip clipOf (const std::vector<CapturedNote>& notes, juce::int64 from)
+    NoteClip clipOf (const Capture& capture, juce::int64 from)
     {
         NoteClip clip;
         clip.name = "Recorded";
+        const auto& notes = capture.notes;
 
         if (notes.empty())
             return clip;
@@ -125,6 +135,9 @@ namespace MidiIn
             last = juce::jmax (last, n.off);
         }
 
+        for (auto& c : capture.controllers)
+            last = juce::jmax (last, c.frame + 1);
+
         clip.position = juce::jmax ((juce::int64) 0, juce::jmin (first, from));
         clip.length = juce::jmax ((juce::int64) 1, last - clip.position);
 
@@ -132,6 +145,21 @@ namespace MidiIn
             clip.notes.push_back ({ juce::jlimit (0, 127, n.pitch), n.on - clip.position, juce::jmax ((juce::int64) 1, n.off - n.on), juce::jlimit (0.0f, 1.0f, n.velocity) });
 
         std::sort (clip.notes.begin(), clip.notes.end(), [] (const ClipNote& a, const ClipNote& b) { return a.start < b.start; });
+
+        // Each controller's moves as a lane, in time order (moves before the clip start at 0).
+        for (auto& c : capture.controllers)
+        {
+            auto* lane = const_cast<ControllerLane*> (clip.findLane (c.controller));
+
+            if (lane == nullptr)
+            {
+                clip.lanes.push_back ({ c.controller, {} });
+                lane = &clip.lanes.back();
+            }
+
+            lane->envelope.add (juce::jmax ((juce::int64) 0, c.frame - clip.position), juce::jlimit (0.0f, 1.0f, c.value));
+        }
+
         return clip;
     }
 

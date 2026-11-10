@@ -4568,17 +4568,17 @@ void MainComponent::finishRecordingNotes()
 
     auto& player = engine.getPlayer();
     const auto end = juce::jmax (noteRecordStart + 1, player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor());
-    const auto notes = engine.getLiveMidi().stopCapture (end);
+    const auto capture = engine.getLiveMidi().stopCapture (end);
     recordingNotes = false;
     commands.commandStatusChanged();
 
-    if (notes.empty())
+    if (capture.notes.empty())
     {
         showNote ("Record Notes", "No notes were played, so no clip was made.");
         return;
     }
 
-    auto clip = MidiIn::clipOf (notes, noteRecordStart);
+    auto clip = MidiIn::clipOf (capture, noteRecordStart);
     auto next = *engine.session.getState();
 
     if (const auto id = SessionEdits::addNoteClip (next, engine.getLiveMidi().getTrack(), std::move (clip)); id != 0)
