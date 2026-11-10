@@ -4,12 +4,18 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.15.2: The instrument menus sorted**
+- `SpectraBlade-0.15.2.dmg` on the repository's Releases page, with its SHA-256: Milestone 371 below on top of 0.15.1, from the first try of 0.15.1 by hand: the instrument menus list the built-in Basic Synth first, a few scanned instruments flat with their format and maker, and many under a submenu a format and a maker, as the effect menus do. A dogfooding release, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 from the pushed source, signed it, and the whole suite (1,580 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.15.2, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for Milestone 371 and quit cleanly. The menus have not been clicked on screen; nothing has been listened to.
+
 **Milestone 371: The instrument menus sorted**
 - From the first try of 0.15.1: a long flat list of instruments is no way to find one. The Inst button's menu, Instrument in the track's menu and Add Instrument Track... now list the built-in Basic Synth first and plain, then the scanned instruments: a few of them (up to twelve) flat, each named with its format and maker; more than that under a submenu a format (Audio Units, then VST3, then any other) with a submenu a maker, by name, as the effect menus are. The one a track has is ticked wherever it is.
 - Measured by the tests (1 new check): three instruments listed flat with their format and maker, the built-in first; sixteen under Audio Units and VST3 submenus after the built-in. The whole suite passed (1,580 checks; 318 commands, 97 default keys); the app launched and quit cleanly.
 - Not tried by hand: the menus on screen.
-
-## Released
 
 **Release 0.15.1: Instruments where they can be found**
 - `SpectraBlade-0.15.1.dmg` on the repository's Releases page, with its SHA-256: Milestone 370 below on top of 0.15.0, the first thing the first try of 0.15.0 by hand turned up ([dogfooding log](docs/DOGFOODING.md) row 12): an instrument could not be found, hidden in a track's FX menu and listed as if it were an effect. Each track now has an Inst button of its own, Add Instrument Track... makes a track with one in one go, the FX menu is effects alone, and Generate from Instrument opens the instrument's window with its dialog. A dogfooding release, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
