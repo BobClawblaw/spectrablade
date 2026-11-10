@@ -236,10 +236,19 @@ void runLossyFilesTests()
     }
 
     // Read from part way in, as audition, previews and session clips read: the same samples as reading
-    // the whole file gives, wherever a read starts and in whatever order (the last of each kind written).
-    for (const auto* ext : { ".mp3", ".m4a" })
+    // the whole file gives, wherever a read starts and in whatever order: the last of each kind written,
+    // and a 22.05 kHz mono MP3 at V9, whose frames borrow the most bits from the frames before them
+    // (Core Audio decodes those wrongly after a move unless it is given the frames before).
+    const auto lowRate = 22050.0;
+    const auto lowFile = folder.getChildFile ("low.mp3");
+    const auto lowError = write (*AudioEdits::fromBuffer (sweeps (1, lowRate, seconds)), lowRate, lowFile, { Kind::mp3, 0, true, 9 });
+    check (lowError.isEmpty(), "lossy files: a 22.05 kHz mono MP3 at V9 is written (" + lowError + ")");
+    struct Seekable { juce::File file; const char* name; };
+
+    for (const auto& s : { Seekable { folder.getChildFile ("sweeps.mp3"), "MP3" }, Seekable { folder.getChildFile ("sweeps.m4a"), "M4A" },
+                           Seekable { lowFile, "a 22.05 kHz mono V9 MP3" } })
     {
-        const auto file = folder.getChildFile ("sweeps" + juce::String (ext));
+        const auto& file = s.file;
         const auto whole = decode (file, formats);
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
         auto worst = 0.0f;
@@ -262,7 +271,7 @@ void runLossyFilesTests()
         }
 
         check (reader != nullptr && positions.size() >= 5 && worst < 1.0e-4f,
-               "lossy files: " + juce::String (ext).substring (1).toUpperCase() + " read from part way in (at " + positions.joinIntoString (", ")
+               "lossy files: " + juce::String (s.name) + " read from part way in (at " + positions.joinIntoString (", ")
                    + ", in that order) gives what reading it all does (at most " + juce::String (worst, 7) + " off)");
     }
 

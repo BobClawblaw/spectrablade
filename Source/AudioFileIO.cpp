@@ -203,12 +203,104 @@ juce::String saveRange (const AudioSnapshot& snapshot, double sampleRate, juce::
     return save (*AudioEdits::crop (snapshot, start, end), sampleRate, target, bitDepth, formats, MarkerEdits::afterCrop (markers, start, end), info);
 }
 
+#if JUCE_MAC
+namespace
+{
+    /** Core Audio's reader for an MP3, reading so that every read gives what reading the file from
+        its start gives. After a move into a variable-bit-rate MP3, Core Audio decodes the first frames
+        wrongly: their bits sit in the frames before the move (the bit reservoir), which it doesn't
+        decode first. Measured, the wrong stretch reached 3,456 samples in a V4 file and 9,216 in a
+        9 kbps mono one, and none in constant-rate files. So a move goes to primingFrames before the
+        sample asked for and what is decoded on the way is dropped; reading on from where the last read
+        ended, as playing and loading do, costs nothing extra. */
+    class PrimedReader final : public juce::AudioFormatReader
+    {
+    public:
+        static constexpr juce::int64 primingFrames = 32768;
+
+        explicit PrimedReader (std::unique_ptr<juce::AudioFormatReader> r)
+            : juce::AudioFormatReader (nullptr, r->getFormatName()), inner (std::move (r))
+        {
+            sampleRate = inner->sampleRate;
+            bitsPerSample = inner->bitsPerSample;
+            lengthInSamples = inner->lengthInSamples;
+            numChannels = inner->numChannels;
+            usesFloatingPointData = inner->usesFloatingPointData;
+            metadataValues = inner->metadataValues;
+        }
+
+        juce::AudioChannelSet getChannelLayout() override { return inner->getChannelLayout(); }
+
+        bool readSamples (int* const* dest, int numDestChannels, int startOffsetInDestBuffer, juce::int64 start, int count) override
+        {
+            if (count <= 0)
+                return true;
+
+            if (start != next)
+            {
+                const auto onward = next >= 0 && start >= next && start - next <= primingFrames;
+                auto from = onward ? next : juce::jmax<juce::int64> (0, start - primingFrames);
+                juce::AudioBuffer<int> dropped ((int) numChannels, 4096);
+
+                while (from < start)
+                {
+                    const auto n = (int) juce::jmin<juce::int64> (dropped.getNumSamples(), start - from);
+
+                    if (! inner->readSamples (dropped.getArrayOfWritePointers(), (int) numChannels, 0, from, n))
+                        return fail();
+
+                    from += n;
+                }
+            }
+
+            if (! inner->readSamples (dest, numDestChannels, startOffsetInDestBuffer, start, count))
+                return fail();
+
+            next = start + count;
+            return true;
+        }
+
+    private:
+        bool fail()
+        {
+            next = -1;   // where Core Audio is now isn't known: the next read moves afresh
+            return false;
+        }
+
+        std::unique_ptr<juce::AudioFormatReader> inner;
+        juce::int64 next = 0;
+    };
+
+    /** Core Audio's formats, with an MP3 read through a PrimedReader. */
+    class MacCoreAudioFormat final : public juce::CoreAudioFormat
+    {
+    public:
+        juce::AudioFormatReader* createReaderFor (juce::InputStream* in, bool deleteStreamIfOpeningFails) override
+        {
+            const auto mp3 = in != nullptr && looksLikeMp3 (*in);
+            auto* reader = juce::CoreAudioFormat::createReaderFor (in, deleteStreamIfOpeningFails);
+            return mp3 && reader != nullptr ? new PrimedReader (std::unique_ptr<juce::AudioFormatReader> (reader)) : reader;
+        }
+
+    private:
+        /** Whether the stream starts as an MP3 does: with an ID3v2 tag, or a Layer III frame header. */
+        static bool looksLikeMp3 (juce::InputStream& in)
+        {
+            const auto position = in.getPosition();
+            juce::uint8 head[3] {};
+            const auto got = in.read (head, 3);
+            in.setPosition (position);
+            return got == 3 && ((head[0] == 'I' && head[1] == 'D' && head[2] == '3')
+                                || (head[0] == 0xff && (head[1] & 0xe0) == 0xe0 && (head[1] & 0x06) == 0x02));
+        }
+    };
+}
+#endif
+
 void registerFormats (juce::AudioFormatManager& formats)
 {
-   #if JUCE_MAC
-    formats.registerBasicFormats();   // Core Audio's MP3 reader leaves out the encoder's delay and padding itself
-   #else
-    // registerBasicFormats' list, with MP3 read gaplessly (a format can only be registered once).
+    // registerBasicFormats' list (a format can only be registered once): on the Mac with Core Audio's
+    // MP3 reads primed at each move, elsewhere with MP3 read gaplessly.
     formats.registerFormat (new juce::WavAudioFormat(), true);
     formats.registerFormat (new juce::AiffAudioFormat(), false);
    #if JUCE_USE_FLAC
@@ -220,13 +312,15 @@ void registerFormats (juce::AudioFormatManager& formats)
    #if JUCE_USE_OPUS
     formats.registerFormat (new juce::OpusAudioFormat(), false);
    #endif
-    formats.registerFormat (new GaplessMp3Format(), false);
+   #if JUCE_MAC
+    formats.registerFormat (new MacCoreAudioFormat(), false);   // MP3, M4A, CAF and the rest; leaves out an MP3's encoder delay and padding itself
+   #endif
+    formats.registerFormat (new GaplessMp3Format(), false);     // on the Mac, only an MP3 Core Audio won't open
    #if JUCE_WINDOWS
     formats.registerFormat (new M4aFormat(), false);   // Core Audio reads these on the Mac
    #endif
    #if JUCE_USE_WINDOWS_MEDIA_FORMAT
     formats.registerFormat (new juce::WindowsMediaAudioFormat(), false);
-   #endif
    #endif
 }
 

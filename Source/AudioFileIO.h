@@ -18,7 +18,8 @@ namespace AudioFileIO
    #endif
 
     /** Registers the audio formats the app reads and writes: JUCE's, with MP3 read gaplessly where
-        Core Audio doesn't (GaplessMp3Format). Use this rather than registerBasicFormats. */
+        Core Audio doesn't (GaplessMp3Format) and, on the Mac, Core Audio's MP3 reads giving the same
+        samples from anywhere in the file as from its start. Use this rather than registerBasicFormats. */
     void registerFormats (juce::AudioFormatManager&);
 
     /** The files in a command line or an open-files request: each token, quoted or not, naming an
