@@ -568,3 +568,13 @@ target_link_libraries(SpectraBladeTests PRIVATE
     SpectraBladeSqlite
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)
+
+# JUCE writes each target's Windows version resource (its .rc, from the version) once and never again:
+# its rule doesn't depend on the version, so a build folder made at an older version kept stamping
+# that version into the program's file properties. Removed at each configure, it is made again.
+if(WIN32)
+    foreach(rc_target IN ITEMS SpectraBlade SpectraBladeTests)
+        get_target_property(rc_dir ${rc_target} JUCE_GENERATED_SOURCES_DIRECTORY)
+        file(REMOVE "${rc_dir}/${rc_target}_resources.rc")
+    endforeach()
+endif()

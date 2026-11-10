@@ -4,6 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 361: The Windows program's file properties give its version**
+- Found testing the 0.14.12 installer: `SpectraBlade.exe` from the Windows packages said 0.14.5 in its file properties (Details in Explorer, and what Windows reads), though the installer, its uninstall entry and the About box said 0.14.12. JUCE writes a target's Windows version resource once, by a rule that doesn't depend on the version, so a build folder first made at 0.14.5 kept stamping 0.14.5. `CMakeLists.txt` now removes the generated `.rc` at each configure on Windows, so it is made again from the current version.
+- Checked on Windows 11: the package script remade both resources, the program reads 0.14.12 as its file and product version, and the whole suite passed.
+
 **Milestone 360: Low-rate MP3 read from part way in on Windows**
 - Found by Milestone 359's new check, run on Windows: a 22.05 kHz mono MP3 at V9 read from part way in gave other samples than reading it from the start (up to 0.71 off). Windows' MP3 reader starts its decoder some frames before where a read begins, so the bit reservoir has what the first frames borrow; those frames were counted at 10, or by their whole size, where it is the audio data after each frame's header and side information that the reservoir reaches back through (255 bytes in MPEG-2), and that file's 26-byte frames hold 13. The count is now taken from the file's smallest frame's audio data (23 frames for that file; 10 still at 44.1 kHz). Windows only (`GaplessMp3.cpp`); the Mac reads MP3 through Core Audio.
 - Measured by the tests on Windows 11: the whole suite passed; MP3, M4A and the 22.05 kHz V9 MP3 read from seven positions in any order give what reading them whole gives, to 0.0000000.
