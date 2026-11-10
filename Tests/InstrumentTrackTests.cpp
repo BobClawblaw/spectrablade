@@ -8,6 +8,8 @@
 #include "../Source/OfflineRender.h"
 #include "../Source/BuiltInEffects.h"
 #include "../Source/AudioEngine.h"
+#include "../Source/Instrument.h"
+#include "../Source/MultitrackView.h"
 #include "TestPlugins.h"
 #include "TestUtils.h"
 #include "InstrumentTrackTests.h"
@@ -607,6 +609,41 @@ namespace
     }
 }
 
+namespace
+{
+    void testAddInstrumentTrack (AudioEngine& engine)
+    {
+        // The instruments the app offers: the built-in synth first, named with where it is from;
+        // Add Instrument Track makes a track named after one, selects it and gives it the instrument.
+        BuiltInEffects::addTo (engine.knownPlugins);
+        const auto known = Instrument::known (engine.knownPlugins);
+        const auto builtInFirst = ! known.isEmpty() && known[0].fileOrIdentifier == BuiltInEffects::basicSynthId
+                                  && Instrument::title (known[0]) == "Basic Synth (built in)"
+                                  && std::all_of (known.begin(), known.end(), [] (auto& d) { return d.isInstrument; });
+
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        engine.session.reset (s, {});
+        MultitrackView view (engine);
+        view.setBounds (0, 0, 800, 300);
+        view.addInstrumentTrack (known[0]);
+        const auto state = engine.session.getState();
+        const auto trackId = state->tracks.size() == 2 ? state->tracks[1].id : 0u;
+
+        // The view hears of the new track by a change message, and the instrument is made asynchronously.
+        const auto selected = TestUtils::runUntil ([&] { return view.getSelectedTrack() == 1; }, 5000);
+        const auto added = state->tracks.size() == 2 && state->tracks[1].name == "Basic Synth" && selected;
+        const auto loaded = TestUtils::runUntil ([&] { return engine.getTrackEffects().getInstrument (trackId) != nullptr; }, 10000);
+        view.removeTrackInstrument (trackId);
+        check (builtInFirst && added && loaded && engine.getTrackEffects().getInstrument (trackId) == nullptr,
+               "instrument tracks: the known instruments start with the Basic Synth (built in); Add Instrument Track adds a track named after "
+               "it, selected, with the instrument first in its chain, and Remove Instrument takes it out"
+                   + juce::String (builtInFirst ? "" : " [known]") + (added ? "" : " [added]") + (loaded ? "" : " [loaded]"));
+        engine.clearTrackEffects();
+    }
+}
+
 void runInstrumentTrackTests (AudioEngine& engine)
 {
     testMidi();
@@ -615,4 +652,5 @@ void runInstrumentTrackTests (AudioEngine& engine)
     testFile (engine.formatManager);
     testChain();
     testSynth (engine);
+    testAddInstrumentTrack (engine);
 }

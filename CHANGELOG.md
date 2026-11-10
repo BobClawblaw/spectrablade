@@ -4,7 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 370: Instruments apart from effects, and where to find them**
+- From the first try of 0.15.0 by hand: the only way onto an instrument was a submenu inside a track's FX menu, and nothing else in the app pointed at it, so an instrument could not be found; and instruments and effects were shown as one list, though they are not the same thing. Now each track has an **Inst** button beside FX, named after its instrument once it has one, whose menu chooses or swaps the instrument (the built-in Basic Synth first, then every scanned one, named with where it is from), opens its window and removes it; the same menu is under Instrument in the track's own menu; and Multitrack > Tracks > **Add Instrument Track...** makes a track named after the instrument chosen, selects it and gives it the instrument, its window open. The FX menu lists and counts effects alone, numbered from the first effect; they run after the instrument as before, so effects on an instrument track work the same way as on any track.
+- Generate from Instrument opens the instrument's own window with its dialog, and again when another instrument is chosen, so the sound is shaped first and the preview follows; Instrument Window... brings it back. The note clip dialog and the piano roll say where the instrument is chosen.
+- Measured by the tests (1 new check): the known instruments start with the Basic Synth, titled "(built in)", all instruments; Add Instrument Track adds a track named after it, selected, with the instrument first in its chain, and Remove Instrument takes it out. The whole suite passed (1,579 checks; 318 commands, 97 default keys); the app launched and quit cleanly.
+- In the [dogfooding log](docs/DOGFOODING.md) as row 12. Not tried by hand: the Inst button and its menu on screen, the dialog opening the window.
 
 ## Released
 

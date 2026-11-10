@@ -1,7 +1,40 @@
 #include "Instrument.h"
 
+#include "BuiltInEffects.h"
+#include "PluginMenu.h"
+
 namespace Instrument
 {
+    juce::Array<juce::PluginDescription> known (const juce::KnownPluginList& list)
+    {
+        juce::Array<juce::PluginDescription> instruments, scanned;
+
+        for (auto& d : BuiltInEffects::getDescriptions())
+            if (d.isInstrument)
+                instruments.add (d);
+
+        for (auto& t : list.getTypes())
+            if (t.isInstrument && t.pluginFormatName != BuiltInEffects::formatName)
+                scanned.add (t);
+
+        std::stable_sort (scanned.begin(), scanned.end(), [] (const juce::PluginDescription& a, const juce::PluginDescription& b)
+        {
+            if (const auto byName = a.name.compareIgnoreCase (b.name); byName != 0)
+                return byName < 0;
+
+            return a.pluginFormatName.compareIgnoreCase (b.pluginFormatName) < 0;
+        });
+
+        instruments.addArray (scanned);
+        return instruments;
+    }
+
+    juce::String title (const juce::PluginDescription& d)
+    {
+        return d.name + " (" + (d.pluginFormatName == BuiltInEffects::formatName ? juce::String ("built in")
+                                                                                  : PluginMenu::formatTitle (d.pluginFormatName) + ", " + d.manufacturerName.trim()) + ")";
+    }
+
 namespace
 {
     constexpr int blockSize = 1024;

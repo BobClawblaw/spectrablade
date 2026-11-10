@@ -156,7 +156,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
-        cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi,
+        cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi, cmdAddInstrumentTrack,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -1899,6 +1899,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('o', cmd | shift); break;
         case cmdImportToSession: info.setInfo ("Import Audio...", "Add audio files to the session, each on a new track, at the cursor", "Multitrack", 0);
                             info.addDefaultKeypress ('i', cmd); info.setActive (multitrackMode); break;
+        case cmdAddInstrumentTrack: info.setInfo ("Add Instrument Track...", "Add a track with an instrument plug-in (chosen from a menu), named after it, for note clips and live MIDI to play", "Multitrack", 0);
+                            info.setActive (multitrackMode && ! isRecording()); break;
         case cmdAddTrack:   info.setInfo ("Add Track", "Add an empty track", "Multitrack", 0);
                             info.addDefaultKeypress ('t', cmd | shift); info.setActive (multitrackMode); break;
         case cmdAddFolder:  info.setInfo ("Add Folder", "Add a folder above the selected track, with it inside: its mute and solo act on its tracks, and it can be collapsed", "Multitrack", 0);
@@ -2577,6 +2579,21 @@ bool MainComponent::perform (const InvocationInfo& info)
             engine.session.apply (std::move (next), "Add Track");
             break;
         }
+        case cmdAddInstrumentTrack:
+        {
+            const auto instruments = Instrument::known (engine.knownPlugins);
+            juce::PopupMenu menu;
+
+            for (int i = 0; i < instruments.size(); ++i)
+                menu.addItem (i + 1, Instrument::title (instruments.getReference (i)));
+
+            menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(), [this, instruments] (int result)
+            {
+                if (juce::isPositiveAndBelow (result - 1, instruments.size()))
+                    multitrack.addInstrumentTrack (instruments[result - 1]);
+            });
+            break;
+        }
         case cmdAddBus:
         {
             auto next = *engine.session.getState();
@@ -2932,7 +2949,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 4:
             // The panels and Import at the top; the rest in groups by what they do.
             add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, cmdImportMidi, 0 });
-            group ("Tracks", { cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, 0, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack,
+            group ("Tracks", { cmdAddTrack, cmdAddInstrumentTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, 0, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack,
                                0, cmdTrackAbove, cmdTrackBelow, 0, cmdUnsoloAll, cmdUnmuteAll });
             group ("Clips", { cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, 0, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines });
             group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
@@ -7471,37 +7488,15 @@ juce::MemoryBlock MainComponent::benchStateFor (const juce::PluginDescription& d
 void MainComponent::showGenerateInstrument()
 {
     // The instruments known: the built-in first, then the scanned ones by name.
-    juce::Array<juce::PluginDescription> instruments;
-
-    for (auto& d : BuiltInEffects::getDescriptions())
-        if (d.isInstrument)
-            instruments.add (d);
-
-    juce::Array<juce::PluginDescription> scanned;
-
-    for (auto& t : engine.knownPlugins.getTypes())
-        if (t.isInstrument && t.pluginFormatName != BuiltInEffects::formatName)
-            scanned.add (t);
-
-    std::stable_sort (scanned.begin(), scanned.end(), [] (const juce::PluginDescription& a, const juce::PluginDescription& b)
-    {
-        if (const auto byName = a.name.compareIgnoreCase (b.name); byName != 0)
-            return byName < 0;
-
-        return a.pluginFormatName.compareIgnoreCase (b.pluginFormatName) < 0;
-    });
-    instruments.addArray (scanned);
-
+    const auto instruments = Instrument::known (engine.knownPlugins);
     juce::StringArray names;
     int chosen = 0;
 
     for (int i = 0; i < instruments.size(); ++i)
     {
-        const auto& d = instruments.getReference (i);
-        names.add (d.name + " (" + (d.pluginFormatName == BuiltInEffects::formatName ? juce::String ("built in")
-                                                                                      : PluginMenu::formatTitle (d.pluginFormatName) + ", " + d.manufacturerName.trim()) + ")");
+        names.add (Instrument::title (instruments.getReference (i)));
 
-        if (d.createIdentifierString() == benchDescription.createIdentifierString())
+        if (instruments.getReference (i).createIdentifierString() == benchDescription.createIdentifierString())
             chosen = i;
     }
 
@@ -7533,7 +7528,7 @@ void MainComponent::showGenerateInstrument()
         "Plays notes on an instrument plug-in (a synthesizer) and puts the sound in at the cursor, or the start of the selection, "
         "moving what follows on. Notes by name (C4, F#3, Bb2: C4 is middle C) or MIDI number (60), separated by commas, played "
         "together or one after another, each held for the hold time; the length is the whole sound, tails included, up to ten minutes. "
-        "Instrument Window... opens the instrument's own controls: what is set there is played, and kept until another instrument's window is opened.",
+        "The instrument's own window opens with this dialog (Instrument Window... brings it back): what is set there is played, and kept until another instrument's window is opened.",
         { { "instrument", "Instrument", (double) chosen, 0, names },
           EffectField::textField ("notes", "Notes", instrumentNotes, "ABCDEFGabcdefg#0123456789-,", 200),
           { "play", "Play", (double) instrumentPlay, 0, { "Together", "One after another" } },
@@ -7602,6 +7597,35 @@ void MainComponent::showGenerateInstrument()
         if (dialog != nullptr)
             dialog->nudge();
     };
+
+    // The instrument's window opens with the dialog, and again when another instrument is chosen,
+    // so its sound can be shaped before anything is inserted.
+    if (dialog != nullptr)
+    {
+        const auto openWindow = [this, chosenInstrument] (const EffectValues& v)
+        {
+            const auto d = chosenInstrument (v);
+
+            if (d.createIdentifierString() == benchDescription.createIdentifierString() && benchInstrument != nullptr)
+                return;
+
+            loadBench (d, [this] (const juce::String& error)
+            {
+                if (error.isEmpty() && benchInstrument != nullptr)
+                    showEditor (*benchInstrument);
+            });
+        };
+
+        auto previous = std::move (dialog->onChange);
+        dialog->onChange = [previous, openWindow] (const EffectValues& v)
+        {
+            if (previous != nullptr)
+                previous (v);
+
+            openWindow (v);
+        };
+        openWindow (dialog->getValues());
+    }
 }
 
 void MainComponent::showNoteClipDialog (juce::uint32 trackId, juce::uint32 clipId)
@@ -7677,7 +7701,7 @@ void MainComponent::showNoteClipDialog (juce::uint32 trackId, juce::uint32 clipI
 
     showEffectDialog (
         existing != nullptr ? "Edit Notes" : "Add Notes",
-        "Notes for the track's instrument (the first slot of its effects: Add Instrument in the FX menu), as a clip on the track"
+        "Notes for the track's instrument (its Inst button, or Instrument in its menu), as a clip on the track"
         + juce::String (existing != nullptr ? "." : " at the cursor.")
         + " Notes by name (C4, F#3, Bb2: C4 is middle C) or MIDI number (60), separated by commas, played together or one after "
           "another, each held for the hold time, within the pattern's length; the pattern plays once, or repeats that many times. "

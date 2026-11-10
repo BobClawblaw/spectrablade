@@ -72,6 +72,22 @@ public:
         A failure to load is shown. */
     void addTrackEffect (juce::uint32 trackId, const juce::PluginDescription&);
 
+    /** Gives a track this instrument (in place of the one it had), first in its chain, its window
+        opened as a new effect's is. */
+    void setTrackInstrument (juce::uint32 trackId, const juce::PluginDescription&);
+    void removeTrackInstrument (juce::uint32 trackId);
+    void showInstrumentWindow (juce::uint32 trackId);
+
+    /** Adds a track named after the instrument, selects it and gives it the instrument. */
+    void addInstrumentTrack (const juce::PluginDescription&);
+
+    /** Selects a track or bus by id (0: none). */
+    void chooseTrack (juce::uint32 trackId);
+
+    /** The track's instrument menu (as its Inst button shows): the instruments to choose or swap in,
+        the one it has ticked, its window and Remove Instrument. */
+    void showInstrumentMenu (juce::uint32 trackId, juce::Component& target);
+
     juce::int64 getCursor() const noexcept        { return cursor; }
     void setCursor (juce::int64 frame);
 
@@ -566,6 +582,7 @@ private:
     void selectClip (juce::uint32 clipId, bool adding);   // adding: Shift-click, which toggles it
     void showInputMenu (juce::uint32 trackId, juce::Component& target);
     void showEffectsMenu (juce::uint32 trackId, juce::Component& target);
+    juce::PopupMenu instrumentMenuFor (juce::uint32 trackId);   // choose, swap, open or remove the track's instrument
     void showSends (juce::uint32 trackId, juce::Component& target);
     void showAutomationMenu (juce::uint32 trackId, juce::Component& target);
     void showClipMenu (juce::uint32 clipId);

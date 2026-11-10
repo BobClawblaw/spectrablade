@@ -30,6 +30,13 @@ namespace Instrument
     /** The longest phrase rendered, in seconds. */
     constexpr double longestSeconds = 600.0;
 
+    /** The instruments the app knows: the built-in ones first, then every scanned VST3 or Audio
+        Unit instrument, by name (then format). */
+    juce::Array<juce::PluginDescription> known (const juce::KnownPluginList&);
+
+    /** An instrument's name with where it is from: "Basic Synth (built in)", "Name (Audio Units, Maker)". */
+    juce::String title (const juce::PluginDescription&);
+
     /** Pitches 0 to 127, velocities 0 to 1, starts from 0, holds above 0, and the length above 0
         and up to longestSeconds. */
     bool isValid (const Phrase&);

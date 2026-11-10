@@ -1,4 +1,5 @@
 #include "MultitrackView.h"
+#include "Instrument.h"
 #include "Theme.h"
 #include "TimeFormat.h"
 #include "Surround.h"
@@ -78,6 +79,10 @@ public:
         Theme::follow (effectsButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         effectsButton.onClick = [this] { view.showEffectsMenu (trackId, effectsButton); };
 
+        instrumentButton.setTooltip ("This track's instrument: the plug-in its note clips and live MIDI play, before its effects");
+        Theme::follow (instrumentButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
+        instrumentButton.onClick = [this] { view.showInstrumentMenu (trackId, instrumentButton); };
+
         automationButton.setTooltip ("Volume and pan envelopes");
         Theme::follow (automationButton, juce::TextButton::buttonOnColourId, Theme::accentDeep);
         automationButton.onClick = [this] { view.showAutomationMenu (trackId, automationButton); };
@@ -127,7 +132,7 @@ public:
             };
         }
 
-        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &arm, &mute, &solo, &gain, &pan, &sendsButton, &inputButton, &automationButton })
+        for (auto* c : std::initializer_list<juce::Component*> { &name, &effectsButton, &instrumentButton, &arm, &mute, &solo, &gain, &pan, &sendsButton, &inputButton, &automationButton })
             addAndMakeVisible (c);
     }
 
@@ -178,6 +183,7 @@ public:
         arm.setVisible (! isBus && ! isFolder);
         arm.setToggleState (view.isArmed (trackId), juce::dontSendNotification);
         inputButton.setVisible (! isBus && ! isFolder);
+        instrumentButton.setVisible (! isBus && ! isFolder);
         inputButton.setButtonText (t.input.isDefault() ? juce::String ("In")
                                    : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
                                                            : juce::String (t.input.first + 1));
@@ -207,8 +213,11 @@ public:
         }
 
         const auto& effects = view.engine.getTrackEffects();
-        const auto slots = effects.getNumSlots (trackId);
+        const auto* instrument = effects.getInstrument (trackId);
+        const auto slots = effects.getNumSlots (trackId) - (instrument != nullptr ? 1 : 0);   // the effects, the instrument apart
         effectsButton.setButtonText (slots > 0 ? "FX " + juce::String (slots) : juce::String ("FX"));
+        instrumentButton.setButtonText (instrument != nullptr ? instrument->getName() : juce::String ("Inst"));
+        instrumentButton.setToggleState (instrument != nullptr, juce::dontSendNotification);
         auto anyOn = false;
 
         for (int i = 0; i < slots; ++i)
@@ -426,6 +435,9 @@ public:
 
         effectsButton.setBounds (top.removeFromRight (40));
 
+        if (instrumentButton.isVisible())
+            instrumentButton.setBounds (top.removeFromRight (juce::jmin (90, juce::jmax (44, top.getWidth() / 3))).withTrimmedRight (2));
+
         // Inverted polarity: a Ø before the name.
         if (inverted)
             top.removeFromLeft (14);
@@ -525,6 +537,7 @@ public:
         {
             menu.addItem ("5.1 Track", ! t->isFrozen(), t->fiveOne, [this, on = t->fiveOne] { view.setTrackChannels (trackId, on ? 2 : 6); });
             menu.addItem ("7.1 Track", ! t->isFrozen(), t->sevenOne, [this, on = t->sevenOne] { view.setTrackChannels (trackId, on ? 2 : 8); });
+            menu.addSubMenu ("Instrument", view.instrumentMenuFor (trackId), ! t->isFrozen());
             menu.addItem ("Add Notes...", ! t->isFrozen() && view.onEditNotes != nullptr, false, [this] { view.onEditNotes (trackId, 0); });
             menu.addItem ("Add Trigger", ! t->isFrozen(), false, [this] { view.addTrigger (trackId); });
         }
@@ -572,7 +585,7 @@ private:
     MultitrackView& view;
     int group = 0;
     juce::Label name;
-    juce::TextButton effectsButton { "FX" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
+    juce::TextButton effectsButton { "FX" }, instrumentButton { "Inst" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
     juce::Slider gain, pan;
     juce::Colour colour;
     bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false, soloSafe = false, inverted = false;
@@ -1138,39 +1151,33 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
     auto& effects = engine.getTrackEffects();
     const auto slots = effects.getNumSlots (trackId);
 
-    // The effects, then (on a track) the instruments: one array, so a menu choice is an index into it.
-    juce::Array<juce::PluginDescription> types, instruments;
+    // Effects only: the instrument has its own button and menu (showInstrumentMenu).
+    juce::Array<juce::PluginDescription> types;
     const auto* track = state->findTrack (trackId);
-    const auto takesInstrument = track != nullptr && ! track->isBus && ! track->isFolder;
 
     for (auto& type : engine.knownPlugins.getTypes())
-        (type.isInstrument ? instruments : types).add (type);
-
-    const auto effectCount = types.size();
-
-    if (takesInstrument)
-        types.addArray (instruments);
+        if (! type.isInstrument)
+            types.add (type);
 
     // Plug-in choices take ids from 1 (PluginMenu); each slot's actions sit above them.
     // Sidechain choices: sidechainBase + slot * keyChoices + 0 for none, or 1 + the key track's place.
     enum { slotBase = 1000000, editSlot = 0, bypassSlot, moveSlotUp, moveSlotDown, removeSlot, actions };
     enum { sidechainBase = 2000000, keyChoices = 10000 };
     juce::PopupMenu menu;
-    const auto hasInstrument = effects.getInstrument (trackId) != nullptr;
+    const auto first = effects.getInstrument (trackId) != nullptr ? 1 : 0;   // the instrument's slot is not an effect
 
-    for (int i = 0; i < slots; ++i)
+    for (int i = first; i < slots; ++i)
     {
         const auto* plugin = effects.getPlugin (trackId, i);
         const auto bypassed = effects.isBypassed (trackId, i);
         const auto id = slotBase + i * actions;
         const auto keyId = track != nullptr ? track->sidechainKey (effects.getSlotId (trackId, i)) : 0u;
         const auto* key = state->findTrack (keyId);
-        const auto instrument = hasInstrument && i == 0;   // it stays first: nothing moves above it
         juce::PopupMenu slot;
         slot.addItem (id + editSlot, "Edit...");
         slot.addItem (id + bypassSlot, "Bypass", true, bypassed);
-        slot.addItem (id + moveSlotUp, "Move Up", i > (hasInstrument ? 1 : 0));
-        slot.addItem (id + moveSlotDown, "Move Down", i + 1 < slots && ! instrument);
+        slot.addItem (id + moveSlotUp, "Move Up", i > first);
+        slot.addItem (id + moveSlotDown, "Move Down", i + 1 < slots);
 
         // A track whose output goes into this plug-in's sidechain input: not this one, nor one
         // that listens to it.
@@ -1192,7 +1199,7 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
 
         slot.addSeparator();
         slot.addItem (id + removeSlot, "Remove");
-        menu.addSubMenu ((instrument ? juce::String ("Instrument: ") : juce::String (i + 1) + ". ") + plugin->getName() + (bypassed ? " (bypassed)" : "")
+        menu.addSubMenu (juce::String (i - first + 1) + ". " + plugin->getName() + (bypassed ? " (bypassed)" : "")
                              + (key != nullptr ? ", sidechain from " + key->name : juce::String()),
                          slot);
     }
@@ -1200,7 +1207,7 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
     if (const auto latency = effects.getChainLatency (trackId); latency > 0)
         menu.addItem (-1, "Latency " + juce::String (latency) + " frames, compensated", false);
 
-    if (slots > 0)
+    if (slots > first)
         menu.addSeparator();
 
     if (types.isEmpty())
@@ -1209,18 +1216,9 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
     }
     else
     {
-        juce::Array<juce::PluginDescription> effectsOnly (types.begin(), effectCount);
         juce::PopupMenu add;
-        PluginMenu::add (add, effectsOnly);
-        menu.addSubMenu ("Add Effect", add, effectCount > 0);
-
-        // An instrument (one a track): first in the chain, played by the track's note clips.
-        if (takesInstrument)
-        {
-            juce::PopupMenu addInstrument;
-            PluginMenu::add (addInstrument, instruments, effectCount + 1);
-            menu.addSubMenu (hasInstrument ? "Replace Instrument" : "Add Instrument", addInstrument, ! instruments.isEmpty());
-        }
+        PluginMenu::add (add, types);
+        menu.addSubMenu ("Add Effect", add);
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
@@ -1266,15 +1264,80 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
 
             const auto chosen = PluginMenu::chosen (types, result);
 
-            if (! juce::isPositiveAndBelow (chosen, types.size()))
-                return;
-
-            // A new instrument takes the place of the one there.
-            if (types[chosen].isInstrument && engine.getTrackEffects().getInstrument (trackId) != nullptr)
-                engine.removeTrackPlugin (trackId, 0);
-
-            addTrackEffect (trackId, types[chosen]);
+            if (juce::isPositiveAndBelow (chosen, types.size()))
+                addTrackEffect (trackId, types[chosen]);
         });
+}
+
+juce::PopupMenu MultitrackView::instrumentMenuFor (juce::uint32 trackId)
+{
+    juce::PopupMenu menu;
+    const auto* current = engine.getTrackEffects().getInstrument (trackId);
+    const juce::Component::SafePointer<MultitrackView> safe (this);
+
+    if (current != nullptr)
+    {
+        menu.addItem ("Instrument Window (" + current->getName() + ")", [safe, trackId] { if (safe != nullptr) safe->showInstrumentWindow (trackId); });
+        menu.addItem ("Remove Instrument", [safe, trackId] { if (safe != nullptr) safe->removeTrackInstrument (trackId); });
+        menu.addSeparator();
+    }
+
+    const auto instruments = Instrument::known (engine.knownPlugins);
+
+    if (instruments.isEmpty())
+        menu.addItem ("No instruments: scan with Plug-ins... first", false, false, nullptr);
+
+    for (auto& d : instruments)
+        menu.addItem (Instrument::title (d), true, current != nullptr && current->getPluginDescription().createIdentifierString() == d.createIdentifierString(),
+                      [safe, trackId, d] { if (safe != nullptr) safe->setTrackInstrument (trackId, d); });
+
+    return menu;
+}
+
+void MultitrackView::showInstrumentMenu (juce::uint32 trackId, juce::Component& target)
+{
+    instrumentMenuFor (trackId).showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target));
+}
+
+void MultitrackView::setTrackInstrument (juce::uint32 trackId, const juce::PluginDescription& description)
+{
+    if (engine.getTrackEffects().getInstrument (trackId) != nullptr)
+        engine.removeTrackPlugin (trackId, 0);
+
+    addTrackEffect (trackId, description);
+}
+
+void MultitrackView::removeTrackInstrument (juce::uint32 trackId)
+{
+    if (engine.getTrackEffects().getInstrument (trackId) != nullptr)
+        engine.removeTrackPlugin (trackId, 0);
+}
+
+void MultitrackView::showInstrumentWindow (juce::uint32 trackId)
+{
+    if (auto* instrument = engine.getTrackEffects().getInstrument (trackId); instrument != nullptr && onEditPlugin != nullptr)
+        onEditPlugin (*instrument);
+}
+
+void MultitrackView::addInstrumentTrack (const juce::PluginDescription& description)
+{
+    auto next = *engine.session.getState();
+    auto& track = next.addTrack();
+    track.name = description.name;
+    const auto id = track.id;
+    engine.session.apply (std::move (next), "Add Instrument Track");
+    chooseTrack (id);
+    setTrackInstrument (id, description);
+}
+
+void MultitrackView::chooseTrack (juce::uint32 trackId)
+{
+    selectedTrackId = trackId;
+    rebuildHeaders();
+    repaint();
+
+    if (onSelectionChanged != nullptr)
+        onSelectionChanged();
 }
 
 void MultitrackView::addTrackEffect (juce::uint32 trackId, const juce::PluginDescription& description)

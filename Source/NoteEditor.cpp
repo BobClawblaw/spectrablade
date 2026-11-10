@@ -149,7 +149,7 @@ void NoteEditor::refreshControls()
         text << "; " << juce::String ((int) selected.size()) << " selected";
 
     if (! shown->hasInstrument)
-        text << ". The track has no instrument: Add Instrument in its FX menu.";
+        text << ". The track has no instrument: right-click its name and choose one under Instrument.";
 
     status.setText (text, juce::dontSendNotification);
 }
