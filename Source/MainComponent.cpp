@@ -6866,6 +6866,14 @@ void MainComponent::applySpectral (float gainDb)
     else if (! sel.isEmpty() && ! band.isEmpty())
         applyEdit (SpectralEdit::changeBand (*doc.getSnapshot(), sel.getStart(), sel.getEnd(), band, doc.getSampleRate(), gainDb),
                    name, sel);
+    else
+        return;
+
+    // Removed, there is nothing inside the drawing to play or remove again: the time selection
+    // stays, the drawing goes, so Space plays the selection as it now sounds. Attenuated, the
+    // drawing stays for another step or a listen to what is inside.
+    if (std::isinf (gainDb))
+        waveform.clearSpectralSelection();
 }
 
 void MainComponent::healSpectral()
@@ -6887,7 +6895,11 @@ void MainComponent::healSpectral()
         return;
 
     auto& doc = engine.document;
+    const auto version = doc.getVersion();
     applyEdit (SpectralEdit::heal (*doc.getSnapshot(), shape, doc.getSampleRate()), "Heal", sel);
+
+    if (doc.getVersion() != version)   // healed: the drawing has done its work
+        waveform.clearSpectralSelection();
 }
 
 void MainComponent::addMarker()

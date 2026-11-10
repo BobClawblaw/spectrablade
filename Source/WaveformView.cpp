@@ -1295,6 +1295,13 @@ void WaveformView::timerCallback()
 }
 
 //==============================================================================
+void WaveformView::clearSpectralSelection()
+{
+    band = {};
+    shape = {};
+    repaint();
+}
+
 void WaveformView::setSpectralTool (SpectralTool t)
 {
     tool = t;

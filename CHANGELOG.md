@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 353: The drawing goes once its inside is removed or healed**
+- Dogfooding: after Delete (or Remove Frequencies) on a box, lasso or brush selection, Space played nothing. The drawing stayed selected, and Space plays only what is inside a drawing, which was now silence. Once what is inside has been removed or healed the drawing has done its work: it goes, the time selection stays, and Space plays the selection as it now sounds. Attenuate Frequencies keeps the drawing, for another step or a listen to what is left inside.
+- Measured by the tests: clearing the spectral selection drops the drawing and the band and keeps the time selection; the whole suite passed; the app launched and quit cleanly.
+- Not tried by hand: Delete then Space in the running app.
+
 **Milestone 352: Delete on a spectral selection removes its frequencies**
 - Dogfooding: Delete with a box, lasso or brush selection in the spectrogram took the selection's time out of the file, shortening it, when what was wanted was the frequencies inside the drawing gone. Delete now does what Remove Frequencies (Option-Delete) does whenever a spectral selection is in place, keeping the file's length, and its menu text says which it will do; with a plain selection it takes the time out as before.
 - Measured by the tests: the whole suite passed (the spectral removal itself is held by the spectral shape tests); the app launched and quit cleanly.

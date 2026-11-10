@@ -69,6 +69,10 @@ public:
 
     const SpectralEdit::Shape& getSpectralShape() const { return shape; }
 
+    /** Drops the drawing and the band, keeping the time selection: after what was inside them has
+        been removed or healed, so Space plays the selection as it now sounds, not the emptied inside. */
+    void clearSpectralSelection();
+
     /** Takes back the last stroke of the drawing (Undo while a drawing is being made): true if it did.
         There is nothing to take back once the file has changed since the stroke was drawn. */
     bool undoStroke();
