@@ -41,6 +41,30 @@ juce::String describe (const juce::KeyPress& k)
     return k.getTextDescriptionWithIcons();
 }
 
+std::vector<PanelKey> panelKeys()
+{
+    return {
+        { "Piano Roll", "Up / Down", "Move the selected notes a semitone up or down" },
+        { "Piano Roll", "Shift-Up / Shift-Down", "Move the selected notes an octave up or down" },
+        { "Piano Roll", "Left / Right", "Move the selected notes a grid step earlier or later" },
+        { "Piano Roll", "Shift-Left / Shift-Right", "Move the selected notes a quarter of a grid step" },
+        { "Piano Roll", "Delete / Forward Delete", "Remove the selected notes" },
+        { "Piano Roll", "Cmd-A", "Select every note" },
+        { "Sound Library", "Return", "Insert the selected sound at the cursor" },
+        { "Sound Library", "Space", "Play or stop the selected sound" },
+        { "Sound Library", "0 to 5", "Rate the selected sounds (0 clears the rating)" },
+        { "Sound Library", "F", "Mark the selected sounds as favourites, or unmark them" },
+        { "Keyboard", "A to L and ;", "The white keys from C, an octave and a third" },
+        { "Keyboard", "W E T Y U O P", "The black keys between them" },
+        { "Marker List", "Return", "Rename the selected marker" },
+        { "Marker List", "Delete", "Remove the selected marker" },
+        { "Effect dialogs", "Space", "Start or stop the preview" },
+        { "Effect dialogs", "Return", "Apply" },
+        { "Effect dialogs", "Escape", "Cancel" },
+        { "Effect dialogs", "Up / Down", "Step the focused value (Shift: by a tenth)" },
+    };
+}
+
 std::vector<Row> rows (juce::ApplicationCommandManager& commands, const juce::String& query, bool changedOnly)
 {
     auto& mappings = *commands.getKeyMappings();
@@ -87,6 +111,31 @@ std::vector<Row> rows (juce::ApplicationCommandManager& commands, const juce::St
         const auto m = a.menu.compareNatural (b.menu);
         return m != 0 ? m < 0 : a.name.compareNatural (b.name) < 0;
     });
+
+    // The panels' fixed keys after the commands, in their own order; never "changed".
+    if (! changedOnly)
+    {
+        const auto fixed = panelKeys();
+
+        for (size_t i = 0; i < fixed.size(); ++i)
+        {
+            Row r;
+            r.id = -1 - (int) i;
+            r.name = fixed[i].action;
+            r.menu = fixed[i].panel;
+            r.fixedKeys = fixed[i].keys;
+            r.description = "A key the " + fixed[i].panel + " handles itself while it has the focus. It can't be changed here.";
+            r.readOnly = true;
+            const auto text = (r.name + " " + r.menu + " " + r.fixedKeys + " fixed panel").toLowerCase();
+            auto all = true;
+
+            for (auto& w : words)
+                all = all && text.contains (w);
+
+            if (all)
+                result.push_back (std::move (r));
+        }
+    }
 
     return result;
 }
@@ -349,10 +398,10 @@ void Editor::paintListBoxItem (int row, juce::Graphics& g, int width, int height
     for (auto& k : r.keys)
         keys.add (describe (k));
 
-    const auto keyText = keys.isEmpty() ? juce::String ("no key") : keys.joinIntoString ("   ");
+    const auto keyText = r.fixedKeys.isNotEmpty() ? r.fixedKeys : keys.isEmpty() ? juce::String ("no key") : keys.joinIntoString ("   ");
     auto keyArea = area.removeFromRight (juce::jmin (220, width / 3));
     g.setFont (juce::FontOptions (13.0f));
-    g.setColour (keys.isEmpty() ? Theme::dimText : (r.changed ? juce::Colour (0xffffc857) : lf.findColour (juce::ListBox::textColourId)));
+    g.setColour (r.fixedKeys.isNotEmpty() || keys.isEmpty() ? Theme::dimText : (r.changed ? juce::Colour (0xffffc857) : lf.findColour (juce::ListBox::textColourId)));
     g.drawText (keyText, keyArea, juce::Justification::centredRight, true);
 
     g.setColour (lf.findColour (juce::ListBox::textColourId));
@@ -372,9 +421,18 @@ void Editor::showDetails()
     keyButtons.clear();
     const auto* info = commands.getCommandForID (chosen);
     const auto readOnly = info == nullptr || (info->flags & juce::ApplicationCommandInfo::readOnlyInKeyEditor) != 0;
+    const auto fixed = std::find_if (shown.begin(), shown.end(), [this] (const Row& r) { return r.id == chosen && r.id < 0; });
 
-    title.setText (info != nullptr ? info->shortName + "  (" + info->categoryName + ")" : "Choose a command to change its keys.", juce::dontSendNotification);
-    description.setText (info != nullptr ? info->description : juce::String(), juce::dontSendNotification);
+    if (fixed != shown.end())
+    {
+        title.setText (fixed->name + "  (" + fixed->menu + ": " + fixed->fixedKeys + ")", juce::dontSendNotification);
+        description.setText (fixed->description, juce::dontSendNotification);
+    }
+    else
+    {
+        title.setText (info != nullptr ? info->shortName + "  (" + info->categoryName + ")" : "Choose a command to change its keys.", juce::dontSendNotification);
+        description.setText (info != nullptr ? info->description : juce::String(), juce::dontSendNotification);
+    }
 
     if (info != nullptr)
     {

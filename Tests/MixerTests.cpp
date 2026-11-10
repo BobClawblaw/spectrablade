@@ -1495,8 +1495,12 @@ namespace
         const auto all = KeyShortcuts::rows (commands, {}, false);
         const auto byWords = KeyShortcuts::rows (commands, "transport OVER", false);
         const auto byKey = KeyShortcuts::rows (commands, "space", false);
-        const auto listed = all.size() == 3 && all[0].name == "Save" && all[1].name == "Loop Playback" && all[2].name == "Play"
-                            && byWords.size() == 1 && byWords[0].id == 3 && byKey.size() == 1 && byKey[0].id == 2
+        const auto fixedCount = (int) KeyShortcuts::panelKeys().size();
+        const auto byPanel = KeyShortcuts::rows (commands, "piano roll octave", false);
+        const auto listed = all.size() == 3 + (size_t) fixedCount && all[0].name == "Save" && all[1].name == "Loop Playback" && all[2].name == "Play"
+                            && all[3].id < 0 && all[3].readOnly && all[3].fixedKeys.isNotEmpty() && all.back().menu == "Effect dialogs"
+                            && byWords.size() == 1 && byWords[0].id == 3 && byKey.size() == 1 + 2 && byKey[0].id == 2 && byKey[1].readOnly
+                            && byPanel.size() == 1 && byPanel[0].fixedKeys == "Shift-Up / Shift-Down"
                             && KeyShortcuts::rows (commands, {}, true).empty();
 
         // Taking a key from another command, replacing in place, and the changed-only list.

@@ -77,6 +77,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 |---|---|
 | Previous Marker | `Option-Left Arrow` |
 | Next Marker | `Option-Right Arrow` |
+| Previous Region, Next Region | `Shift-Cmd-[`, `Shift-Cmd-]` |
 | Add Marker (Add Region with a selection) | `M` |
 
 ## Effects
@@ -165,4 +166,29 @@ Every settings dialog in the Effects menu, and Clip Gain and Normalize Clip in t
 | Step by a tenth | hold `Shift` while turning the wheel or pressing the key |
 | Step a menu | mouse wheel over it |
 | Set a value back to where it started | double-click its slider |
+
+## Inside panels
+
+Keys a panel handles itself while it has the focus. They are not commands: they can't be changed in Window > Keyboard Shortcuts (which lists them after the commands, for reference) and clash with no command's key, since they work only there.
+
+| Panel: what | Keys |
+|---|---|
+| Piano Roll: move the selected notes a semitone up or down | `Up` / `Down` |
+| Piano Roll: move the selected notes an octave up or down | `Shift-Up` / `Shift-Down` |
+| Piano Roll: move the selected notes a grid step earlier or later | `Left` / `Right` |
+| Piano Roll: move the selected notes a quarter of a grid step | `Shift-Left` / `Shift-Right` |
+| Piano Roll: remove the selected notes | `Delete` / `Forward Delete` |
+| Piano Roll: select every note | `Cmd-A` |
+| Sound Library: insert the selected sound at the cursor | `Return` |
+| Sound Library: play or stop the selected sound | `Space` |
+| Sound Library: rate the selected sounds (0 clears the rating) | `0` to `5` |
+| Sound Library: mark the selected sounds as favourites, or unmark them | `F` |
+| Keyboard: the white keys from C, an octave and a third | `A` to `L` and `;` |
+| Keyboard: the black keys between them | `W` `E` `T` `Y` `U` `O` `P` |
+| Marker List: rename the selected marker | `Return` |
+| Marker List: remove the selected marker | `Delete` |
+| Effect dialogs: start or stop the preview | `Space` |
+| Effect dialogs: apply | `Return` |
+| Effect dialogs: cancel | `Escape` |
+| Effect dialogs: step the focused value (Shift: by a tenth) | `Up` / `Down` |
 

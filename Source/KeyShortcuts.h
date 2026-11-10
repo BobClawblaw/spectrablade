@@ -18,12 +18,24 @@ namespace KeyShortcuts
     /** A command as the window lists it. */
     struct Row
     {
-        juce::CommandID id = 0;
+        juce::CommandID id = 0;  // a command's, or below 0 for a panel's fixed key (see panelKeys)
         juce::String name, menu, description;
         juce::Array<juce::KeyPress> keys;
+        juce::String fixedKeys;  // a panel's fixed key, as text
         bool changed = false;    // its keys differ from its defaults
         bool readOnly = false;   // the command's keys can't be changed
     };
+
+    /** A key a panel handles itself while it has the focus (not a command: it can't be changed,
+        and clashes with no command's key since it works only there). */
+    struct PanelKey
+    {
+        juce::String panel, keys, action;
+    };
+
+    /** Every panel key, by panel, as docs/SHORTCUTS.md lists them under "Inside panels" and the
+        window lists them after the commands. */
+    std::vector<PanelKey> panelKeys();
 
     /** The commands, by menu then name, that match every word of the query (in the name, the menu,
         the description or a key, ignoring case); only those changed from the defaults if asked.

@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include "TestUtils.h"
 #include "CommandAuditTests.h"
+#include "../Source/KeyShortcuts.h"
 
 namespace
 {
@@ -12,6 +13,35 @@ namespace
     {
         const auto script = juce::File (SPECTRABLADE_SOURCE_DIR).getChildFile ("Scripts").getChildFile ("check_commands.py");
         check (script.existsAsFile(), "command table: the audit script is at Scripts/check_commands.py");
+
+        // The panels' fixed keys, as the shortcuts window lists them, are each a row of the
+        // document's "Inside panels" table: "Panel: what" and the keys, written alike.
+        const auto doc = juce::File (SPECTRABLADE_SOURCE_DIR).getChildFile ("docs").getChildFile ("SHORTCUTS.md").loadFileAsString();
+        const auto panels = doc.fromFirstOccurrenceOf ("## Inside panels", false, false);
+        juce::StringArray missing;
+
+        for (auto& k : KeyShortcuts::panelKeys())
+        {
+            auto found = false;
+
+            for (auto& line : juce::StringArray::fromLines (panels))
+            {
+                if (! line.startsWith ("|"))
+                    continue;
+
+                const auto cells = juce::StringArray::fromTokens (line, "|", "");
+                const auto what = cells.size() > 1 ? cells[1].trim() : juce::String();
+                const auto keys = cells.size() > 2 ? cells[2].removeCharacters ("`").trim() : juce::String();
+                found = found || (what.equalsIgnoreCase (k.panel + ": " + k.action) && keys == k.keys);
+            }
+
+            if (! found)
+                missing.add (k.panel + ": " + k.action + " (" + k.keys + ")");
+        }
+
+        check (missing.isEmpty() && KeyShortcuts::panelKeys().size() >= 18,
+               "command table: every panel's fixed key the shortcuts window lists is in docs/SHORTCUTS.md under Inside panels, written alike"
+                   + (missing.isEmpty() ? juce::String() : " (missing: " + missing.joinIntoString ("; ") + ")"));
 
         juce::ChildProcess python;
        #if JUCE_WINDOWS
