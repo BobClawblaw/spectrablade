@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 352: Delete on a spectral selection removes its frequencies**
+- Dogfooding: Delete with a box, lasso or brush selection in the spectrogram took the selection's time out of the file, shortening it, when what was wanted was the frequencies inside the drawing gone. Delete now does what Remove Frequencies (Option-Delete) does whenever a spectral selection is in place, keeping the file's length, and its menu text says which it will do; with a plain selection it takes the time out as before.
+- Measured by the tests: the whole suite passed (the spectral removal itself is held by the spectral shape tests); the app launched and quit cleanly.
+- Not tried by hand: Delete over a drawing in the running app.
+
 **Milestone 351: A preview started during play loops**
 - Dogfooding: with an effect dialog open and its preview on while the file was already playing, the play did not loop; it ran to the selection's end and stopped, or ran on past the selection. The rendered preview set its loop but left the play's own stop point where Play had put it (the selection's end), so an effect whose result runs past that (a stretch, an echo, a reverb) was stopped there by the editor; and it never moved a playhead that was outside the loop into it, so the loop never came round. A preview started while playing now clears the stop (a preview loops until the dialog ends it) and brings the playhead into the loop when it is outside, as a preview started from a stop and the Bypass switch already did.
 - Measured by the tests: the whole suite passed; the app launched and quit cleanly.

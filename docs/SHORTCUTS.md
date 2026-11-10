@@ -24,7 +24,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Copy | `Cmd-C` |
 | Paste | `Cmd-V` |
 | Paste Mix | `Shift-Cmd-V` |
-| Delete | `Delete` or `Forward Delete` |
+| Delete (a spectral selection: remove what is inside it) | `Delete` or `Forward Delete` |
 | Select All | `Cmd-A` |
 | Step Selection Earlier, Step Selection Later | `Option-Shift-Left`, `Option-Shift-Right` |
 | Double Selection, Halve Selection | `Option-Shift-Up`, `Option-Shift-Down` |

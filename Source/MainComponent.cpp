@@ -1342,9 +1342,10 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('v', cmd | shift); info.setActive (! clipboard.isEmpty() && hasAudio); break;
         case cmdPasteFill:  info.setInfo ("Paste to Fill Selection", "Replace the selection with the clipboard repeated to the same length", "Edit", 0);
                             info.setActive (! clipboard.isEmpty() && hasSelection); break;
-        case cmdDelete:     info.setInfo ("Delete", "Delete the selection", "Edit", 0);
+        case cmdDelete:     info.setInfo ("Delete", hasSpectral ? "Remove what is inside the box, lasso or brush selection in the spectrogram, keeping the file's length"
+                                                             : "Delete the selection, taking its time out of the file", "Edit", 0);
                             info.addDefaultKeypress (juce::KeyPress::backspaceKey, 0); info.addDefaultKeypress (juce::KeyPress::deleteKey, 0);
-                            info.setActive (hasSelection); break;
+                            info.setActive (hasSelection || hasSpectral); break;
         case cmdSelectAll:  info.setInfo ("Select All", "Select the whole file", "Edit", 0); info.addDefaultKeypress ('a', cmd); info.setActive (hasAudio); break;
         case cmdCrop:       info.setInfo ("Crop to Selection", "Keep only the selection", "Edit", 0); info.addDefaultKeypress ('t', cmd); info.setActive (hasSelection); break;
 
@@ -2160,7 +2161,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdSaveRegions: chooseFileRegionsFolder (false); break;
         case cmdSavePieces: chooseFileRegionsFolder (true); break;
         case cmdDuplicateClip: multitrack.duplicateSelectedClip(); break;
-        case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;
+        case cmdDelete:     if (multitrackMode) multitrack.deleteSelectedClip(); else deleteSelection(); break;   // a spectral selection: its frequencies
         case cmdSelectAll:  if (multitrackMode) multitrack.selectAllClips(); else waveform.selectAll(); break;
         case cmdCrop:       cropToSelection(); break;
         case cmdGain:       applyGain(); break;
@@ -10180,6 +10181,14 @@ void MainComponent::pasteClip (const AudioClip& clip, PasteMode mode)
 void MainComponent::deleteSelection()
 {
     const auto sel = waveform.getSelection();
+
+    // With a box, lasso or brush selection in the spectrogram, Delete removes what is inside it
+    // (as Remove Frequencies does), keeping the file's length; a plain selection takes its time out.
+    if (! waveform.getSpectralShape().isEmpty() || (! sel.isEmpty() && ! waveform.getSpectralBand().isEmpty()))
+    {
+        applySpectral (-std::numeric_limits<float>::infinity());
+        return;
+    }
 
     if (! sel.isEmpty())
         applyEdit (AudioEdits::remove (*engine.document.getSnapshot(), sel.getStart(), sel.getEnd()), "Delete", { sel.getStart(), sel.getStart() },
