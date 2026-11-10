@@ -74,8 +74,12 @@ namespace SoundLibrary
         /** Only the sounds in this folder or any folder inside it (none: anywhere). */
         juce::File within {};
 
-        /** None of these formats (their names as a scan keeps them, e.g. "AIFF file"; see formatChoices()). */
-        juce::StringArray hiddenFormats {};
+        /** Only sounds of these formats (their names as a scan keeps them, e.g. "WAV file"; see
+            formatChoices()); empty: any format. */
+        juce::StringArray formats {};
+
+        /** None of the sounds in these folders or any folder inside them. */
+        juce::Array<juce::File> foldersLeftOut {};
     };
 
     /** A format the scan can read, as its name is kept with each sound (the reader's) and as it

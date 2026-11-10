@@ -66,7 +66,8 @@ namespace
     constexpr const char* accentKey       = "accent";
     constexpr const char* waveformColourKey = "waveformColour";
     constexpr const char* timeFormatKey   = "timeFormat";
-    constexpr const char* libraryHiddenFormatsKey = "libraryHiddenFormats";
+    constexpr const char* libraryShownFormatsKey = "libraryShownFormats";
+    constexpr const char* libraryFoldersLeftOutKey = "libraryFoldersLeftOut";
 
     // The dock's panels.
     namespace Panels
@@ -5413,8 +5414,10 @@ void MainComponent::showSoundLibrary()
         soundLibrary->getView().setAudioDevice (&engine.deviceManager);
         soundLibrary->getView().setPaneWidth (appProperties.getUserSettings()->getIntValue ("libraryPaneWidth", 0));
         soundLibrary->getView().onPaneWidthChanged = [this] (int width) { appProperties.getUserSettings()->setValue ("libraryPaneWidth", width); };
-        soundLibrary->getView().hideFormats (getLibraryHiddenFormats());
-        soundLibrary->getView().onHiddenFormatsChanged = [this] (const juce::StringArray& formats) { setLibraryHiddenFormats (formats); };
+        soundLibrary->getView().showFormats (getLibraryShownFormats());
+        soundLibrary->getView().onShownFormatsChanged = [this] (const juce::StringArray& formats) { setLibraryShownFormats (formats); };
+        soundLibrary->getView().setFoldersLeftOut (getLibraryFoldersLeftOut());
+        soundLibrary->getView().onFoldersLeftOutChanged = [this] (const juce::Array<juce::File>& folders) { setLibraryFoldersLeftOut (folders); };
         rememberPlace (*soundLibrary, "Sound Library");
     }
 
@@ -5422,17 +5425,44 @@ void MainComponent::showSoundLibrary()
     soundLibrary->toFront (true);
 }
 
-juce::StringArray MainComponent::getLibraryHiddenFormats()
+juce::StringArray MainComponent::getLibraryShownFormats()
 {
-    return juce::StringArray::fromTokens (appProperties.getUserSettings()->getValue (libraryHiddenFormatsKey), "|", {});
+    auto formats = juce::StringArray::fromTokens (appProperties.getUserSettings()->getValue (libraryShownFormatsKey, "WAV file"), "|", {});
+    formats.removeEmptyStrings();
+    return formats.isEmpty() ? juce::StringArray { "WAV file" } : formats;
 }
 
-void MainComponent::setLibraryHiddenFormats (const juce::StringArray& formats)
+void MainComponent::setLibraryShownFormats (const juce::StringArray& formats)
 {
-    appProperties.getUserSettings()->setValue (libraryHiddenFormatsKey, formats.joinIntoString ("|"));
+    appProperties.getUserSettings()->setValue (libraryShownFormatsKey, formats.joinIntoString ("|"));
 
-    if (soundLibrary != nullptr && soundLibrary->getView().getHiddenFormats() != formats)
-        soundLibrary->getView().hideFormats (formats);
+    if (soundLibrary != nullptr && soundLibrary->getView().getShownFormats() != formats)
+        soundLibrary->getView().showFormats (formats);
+}
+
+juce::Array<juce::File> MainComponent::getLibraryFoldersLeftOut()
+{
+    juce::Array<juce::File> folders;
+
+    if (const auto xml = appProperties.getUserSettings()->getXmlValue (libraryFoldersLeftOutKey))
+        for (const auto* folder : xml->getChildWithTagNameIterator ("folder"))
+            if (const auto path = folder->getStringAttribute ("path"); path.isNotEmpty())
+                folders.addIfNotAlreadyThere (juce::File (path));
+
+    return folders;
+}
+
+void MainComponent::setLibraryFoldersLeftOut (const juce::Array<juce::File>& folders)
+{
+    juce::XmlElement xml ("foldersLeftOut");
+
+    for (const auto& folder : folders)
+        xml.createNewChildElement ("folder")->setAttribute ("path", folder.getFullPathName());
+
+    appProperties.getUserSettings()->setValue (libraryFoldersLeftOutKey, &xml);
+
+    if (soundLibrary != nullptr && soundLibrary->getView().getFoldersLeftOut() != folders)
+        soundLibrary->getView().setFoldersLeftOut (folders);
 }
 
 void MainComponent::toggleSoundLibrary()
@@ -11302,24 +11332,50 @@ Settings::Model MainComponent::makeSettingsModel()
     model.push_back ({ "Keys", "Every command's keys, to change, export and import, or to take from another key set.",
         { Item::button ("Keyboard Shortcuts...", "See and change the keys for every command", [this] { showKeyShortcuts(); }) } });
 
-    Settings::Section library { "Sound Library", "The folders the Sound Library indexes are chosen in its own window (F5). Leave a format out "
-                                                 "of its list when the same sounds are there twice, as WAV and AIFF, say.", {} };
+    Settings::Section library { "Sound Library", "The folders the Sound Library indexes are chosen in its own window (F5). Its list shows WAV "
+                                                 "files to start with, so the same sounds as WAV and AIFF show once; add the other formats here, "
+                                                 "and bring back a folder left out of the list.", {} };
 
     for (const auto& choice : SoundLibrary::formatChoices())
         library.items.push_back (Item::toggle ("Show " + choice.label + " files", choice.detail,
-                                               [this, name = choice.name] { return ! getLibraryHiddenFormats().contains (name); },
+                                               [this, name = choice.name] { return getLibraryShownFormats().contains (name); },
                                                [this, name = choice.name] (bool on)
                                                {
-                                                   auto hidden = getLibraryHiddenFormats();
+                                                   auto shown = getLibraryShownFormats();
 
                                                    if (on)
-                                                       hidden.removeString (name);
-                                                   else
-                                                       hidden.addIfNotAlreadyThere (name);
+                                                       shown.addIfNotAlreadyThere (name);
+                                                   else if (shown.size() > 1)
+                                                       shown.removeString (name);   // the last one shown stays
 
-                                                   setLibraryHiddenFormats (hidden);
+                                                   setLibraryShownFormats (shown);
                                                }));
 
+    library.items.push_back (Item::button ("Folders Left Out...", "Bring a folder left out of the Sound Library's list back into it", [this]
+    {
+        juce::PopupMenu menu;
+        const auto folders = getLibraryFoldersLeftOut();
+
+        if (folders.isEmpty())
+            menu.addItem (1, "No folder is left out", false);
+
+        for (int i = 0; i < folders.size(); ++i)
+        {
+            juce::PopupMenu sub;
+            sub.addItem (100 + i, "Show in the List Again");
+            menu.addSubMenu (folders[i].getFullPathName(), sub);
+        }
+
+        menu.showMenuAsync (juce::PopupMenu::Options(), [this, folders] (int result)
+        {
+            if (! juce::isPositiveAndBelow (result - 100, folders.size()))
+                return;
+
+            auto kept = folders;
+            kept.remove (result - 100);
+            setLibraryFoldersLeftOut (kept);
+        });
+    }));
     library.items.push_back (Item::button ("Sound Library...", "Show the Sound Library", [this] { showSoundLibrary(); }));
     model.push_back (std::move (library));
 

@@ -213,10 +213,13 @@ private:
     void toggleSoundLibrary();   // Window > Sound Library (F5): shown, or hidden when it is showing
     std::unique_ptr<SoundLibraryWindow> soundLibrary;
 
-    /** The formats the Sound Library leaves out of its list (names as SoundLibrary::formatChoices()
-        gives them), kept as a setting; the window follows a change at once. */
-    juce::StringArray getLibraryHiddenFormats();
-    void setLibraryHiddenFormats (const juce::StringArray&);
+    /** The formats the Sound Library lists (names as SoundLibrary::formatChoices() gives them; WAV
+        alone to start with) and the folders it leaves out, kept as settings; the window follows a
+        change at once. */
+    juce::StringArray getLibraryShownFormats();
+    void setLibraryShownFormats (const juce::StringArray&);
+    juce::Array<juce::File> getLibraryFoldersLeftOut();
+    void setLibraryFoldersLeftOut (const juce::Array<juce::File>&);
 
     void showBatchReport (const std::vector<Batch::Outcome>&, const juce::File& deliveryReport = {});
 

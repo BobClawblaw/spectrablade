@@ -275,11 +275,17 @@ namespace
                "sound library formats: the choices are WAV, AIFF, FLAC and the rest with short labels, CoreAudio's as Other, each once, "
                "and MP3 is not offered on its own (CoreAudio reads every MP3 first)");
 
-        // A library with a sound as WAV and as AIFF: hiding AIFF lists it once.
+        // A library with a sound as WAV and, in a folder of its own, as AIFF: WAV alone lists it once,
+        // and so does leaving the folder out.
         const auto library = dir.getChildFile ("Twins");
+        const auto aiffs = library.getChildFile ("Aiff");
         writeWav (library.getChildFile ("Owl Hoot.wav"), 1000);
         writeWav (library.getChildFile ("Rain on Roof.wav"), 1200);
-        writeAiff (library.getChildFile ("Owl Hoot.aif"), 1000);
+        writeAiff (aiffs.getChildFile ("Owl Hoot.aif"), 1000);
+        juce::StringArray every;
+
+        for (const auto& c : choices)
+            every.add (c.name);
 
         {
             juce::AudioFormatManager formats;
@@ -288,7 +294,7 @@ namespace
             index.addFolder (library);
             index.scan (formats);
             SoundLibrary::Query q;
-            q.hiddenFormats = { "AIFF file" };
+            q.formats = { "WAV file" };
             const auto found = index.find (q);
             auto wavs = found.size() == 2;
 
@@ -297,9 +303,15 @@ namespace
 
             SoundLibrary::Query owls;
             owls.text = "owl";
-            owls.hiddenFormats = { "AIFF file" };
-            check (index.find ({}).size() == 3 && wavs && index.count (q) == 2 && index.find (owls).size() == 1 && index.count (owls) == 1,
-                   "sound library formats: a query leaving AIFF out finds and counts only the WAVs, with a search too");
+            owls.formats = { "WAV file" };
+            SoundLibrary::Query without;
+            without.foldersLeftOut = { aiffs };
+            SoundLibrary::Query owlsWithout;
+            owlsWithout.text = "owl";
+            owlsWithout.foldersLeftOut = { aiffs };
+            check (index.find ({}).size() == 3 && wavs && index.count (q) == 2 && index.find (owls).size() == 1 && index.count (owls) == 1
+                       && index.find (without).size() == 2 && index.count (without) == 2 && index.find (owlsWithout).size() == 1,
+                   "sound library formats: a query for WAV alone finds and counts only the WAVs, with a search too; so does one leaving the AIFF folder out");
         }
 
         {
@@ -309,21 +321,40 @@ namespace
             TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
             int told = 0;
             juce::StringArray lastTold;
-            view.onHiddenFormatsChanged = [&] (const juce::StringArray& f) { ++told; lastTold = f; };
+            view.onShownFormatsChanged = [&] (const juce::StringArray& f) { ++told; lastTold = f; };
 
-            view.hideFormats ({ "AIFF file", "Nothing file" });
-            const auto hidden = view.getNumRows() == 2 && view.getHiddenFormats() == juce::StringArray { "AIFF file" } && told == 0
-                                && view.getSummary().startsWith ("2 of 3 sounds match");
+            const auto wavFirst = view.getNumRows() == 2 && view.getShownFormats() == juce::StringArray { "WAV file" }
+                                  && view.getSummary().startsWith ("2 of 3 sounds match");
             view.toggleFormat ("AIFF file");
-            const auto shown = view.getNumRows() == 3 && view.getHiddenFormats().isEmpty() && told == 1 && lastTold.isEmpty()
+            const auto added = view.getNumRows() == 3 && told == 1 && lastTold == juce::StringArray { "WAV file", "AIFF file" }
                                && view.getSummary().startsWith ("3 sounds in 1 folder");
             view.toggleFormat ("WAV file");
-            const auto aiffs = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::format) == "AIFF" && told == 2
-                               && lastTold == juce::StringArray { "WAV file" };
+            const auto aiffOnly = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::format) == "AIFF" && told == 2;
+            view.toggleFormat ("AIFF file");
+            const auto lastStays = view.getNumRows() == 1 && told == 2;
             view.toggleFormat ({});
-            check (hidden && shown && aiffs && view.getNumRows() == 3 && told == 3,
-                   "sound library window: formats hidden by the app list the rest (a name not offered dropped, no report back); the menu's "
-                   "toggles report each change, show every format again, and can leave only the AIFFs");
+            const auto all = view.getNumRows() == 3 && view.getShownFormats() == every && told == 3;
+            view.showFormats ({ "AIFF file", "Nothing file" });
+            const auto set = view.getNumRows() == 1 && view.getShownFormats() == juce::StringArray { "AIFF file" } && told == 3;
+            view.showFormats ({});
+            check (wavFirst && added && aiffOnly && lastStays && all && set && view.getShownFormats() == juce::StringArray { "WAV file" },
+                   "sound library window: WAV alone to start with (2 of 3); the menu's toggles add AIFF (reported), leave only the AIFFs, keep "
+                   "the last format, and show every format; the app sets a list (a name not offered dropped, no report back), none meaning WAV");
+
+            // The AIFF folder left out, with every format shown.
+            int foldersTold = 0;
+            view.onFoldersLeftOutChanged = [&] (const juce::Array<juce::File>&) { ++foldersTold; };
+            view.showFormats (every);
+            view.leaveOutFolder (aiffs);
+            const auto leftOut = view.getNumRows() == 2 && view.getFoldersLeftOut() == juce::Array<juce::File> { aiffs } && foldersTold == 1
+                                 && view.getSummary().startsWith ("2 of 3 sounds match");
+            view.leaveOutFolder (aiffs);
+            view.showFolderAgain (aiffs);
+            const auto back = view.getNumRows() == 3 && view.getFoldersLeftOut().isEmpty() && foldersTold == 2;
+            view.setFoldersLeftOut ({ aiffs, aiffs, juce::File() });
+            check (leftOut && back && view.getNumRows() == 2 && view.getFoldersLeftOut().size() == 1 && foldersTold == 2,
+                   "sound library window: a folder left out drops its sounds from the list (reported once, a second time ignored), comes back "
+                   "with Show Again, and the app's list is taken without repeats or an empty folder and without a report");
         }
     }
 }

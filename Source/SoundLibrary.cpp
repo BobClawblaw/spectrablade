@@ -120,17 +120,25 @@ namespace
             values.add (to);
         }
 
-        if (! q.hiddenFormats.isEmpty())
+        if (! q.formats.isEmpty())
         {
             juce::StringArray marks;
 
-            for (const auto& format : q.hiddenFormats)
+            for (const auto& format : q.formats)
             {
                 values.add (format);
                 marks.add ("?");
             }
 
-            conditions.add ("(s.format IS NULL OR s.format NOT IN (" + marks.joinIntoString (", ") + "))");
+            conditions.add ("s.format IN (" + marks.joinIntoString (", ") + ")");
+        }
+
+        for (const auto& folder : q.foldersLeftOut)
+        {
+            const auto [from, to] = pathRange (folder);
+            conditions.add ("NOT (s.path >= ? AND s.path < ?)");
+            values.add (from);
+            values.add (to);
         }
 
         return { conditions.joinIntoString (" AND "), values };
