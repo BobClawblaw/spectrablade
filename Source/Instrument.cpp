@@ -29,6 +29,72 @@ namespace Instrument
         return instruments;
     }
 
+    void addMenu (juce::PopupMenu& menu, const juce::Array<juce::PluginDescription>& instruments,
+                  const std::function<void (const juce::PluginDescription&)>& choose, const juce::PluginDescription* ticked)
+    {
+        const auto isTicked = [ticked] (const juce::PluginDescription& d)
+        {
+            return ticked != nullptr && ticked->createIdentifierString() == d.createIdentifierString();
+        };
+
+        juce::Array<juce::PluginDescription> scanned;
+
+        for (auto& d : instruments)
+        {
+            if (d.pluginFormatName == BuiltInEffects::formatName)
+                menu.addItem (title (d), true, isTicked (d), [choose, d] { choose (d); });
+            else
+                scanned.add (d);
+        }
+
+        if (scanned.isEmpty())
+            return;
+
+        if (scanned.size() < groupFrom)
+        {
+            for (auto& d : scanned)
+                menu.addItem (title (d), true, isTicked (d), [choose, d] { choose (d); });
+
+            return;
+        }
+
+        // Formats in PluginMenu's order, each with its makers in order and their instruments by name.
+        juce::StringArray formats;
+
+        for (auto& d : scanned)
+            formats.addIfNotAlreadyThere (d.pluginFormatName);
+
+        const auto rank = [] (const juce::String& f) { return f == "AudioUnit" ? 0 : f == "VST3" ? 1 : 2; };
+        std::stable_sort (formats.begin(), formats.end(), [&rank] (const juce::String& a, const juce::String& b)
+        {
+            return rank (a) != rank (b) ? rank (a) < rank (b) : a.compareIgnoreCase (b) < 0;
+        });
+
+        for (auto& format : formats)
+        {
+            std::map<juce::String, std::vector<juce::PluginDescription>, std::function<bool (const juce::String&, const juce::String&)>> makers (
+                [] (const juce::String& a, const juce::String& b) { return a.compareIgnoreCase (b) < 0; });
+
+            for (auto& d : scanned)
+                if (d.pluginFormatName == format)
+                    makers[d.manufacturerName.trim().isEmpty() ? juce::String ("Unknown maker") : d.manufacturerName.trim()].push_back (d);
+
+            juce::PopupMenu byMaker;
+
+            for (auto& [maker, list] : makers)
+            {
+                juce::PopupMenu items;
+
+                for (auto& d : list)
+                    items.addItem (d.name, true, isTicked (d), [choose, d] { choose (d); });
+
+                byMaker.addSubMenu (maker, items);
+            }
+
+            menu.addSubMenu (PluginMenu::formatTitle (format), byMaker);
+        }
+    }
+
     juce::String title (const juce::PluginDescription& d)
     {
         return d.name + " (" + (d.pluginFormatName == BuiltInEffects::formatName ? juce::String ("built in")

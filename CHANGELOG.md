@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 371: The instrument menus sorted**
+- From the first try of 0.15.1: a long flat list of instruments is no way to find one. The Inst button's menu, Instrument in the track's menu and Add Instrument Track... now list the built-in Basic Synth first and plain, then the scanned instruments: a few of them (up to twelve) flat, each named with its format and maker; more than that under a submenu a format (Audio Units, then VST3, then any other) with a submenu a maker, by name, as the effect menus are. The one a track has is ticked wherever it is.
+- Measured by the tests (1 new check): three instruments listed flat with their format and maker, the built-in first; sixteen under Audio Units and VST3 submenus after the built-in. The whole suite passed (1,580 checks; 318 commands, 97 default keys); the app launched and quit cleanly.
+- Not tried by hand: the menus on screen.
 
 ## Released
 

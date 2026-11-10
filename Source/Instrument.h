@@ -37,6 +37,14 @@ namespace Instrument
     /** An instrument's name with where it is from: "Basic Synth (built in)", "Name (Audio Units, Maker)". */
     juce::String title (const juce::PluginDescription&);
 
+    /** Adds the instruments to a menu, each choosing itself: the built-in ones first, then the
+        scanned ones, with their format and maker in their names when there are up to
+        groupFrom of them, and past that in a submenu a format (Audio Units, then VST3, then any
+        other), each with a submenu a maker, by name. `ticked`, when given, is marked. */
+    constexpr int groupFrom = 13;
+    void addMenu (juce::PopupMenu&, const juce::Array<juce::PluginDescription>&,
+                  const std::function<void (const juce::PluginDescription&)>& choose, const juce::PluginDescription* ticked = nullptr);
+
     /** Pitches 0 to 127, velocities 0 to 1, starts from 0, holds above 0, and the length above 0
         and up to longestSeconds. */
     bool isValid (const Phrase&);

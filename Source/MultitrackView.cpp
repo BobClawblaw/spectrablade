@@ -1287,10 +1287,9 @@ juce::PopupMenu MultitrackView::instrumentMenuFor (juce::uint32 trackId)
     if (instruments.isEmpty())
         menu.addItem ("No instruments: scan with Plug-ins... first", false, false, nullptr);
 
-    for (auto& d : instruments)
-        menu.addItem (Instrument::title (d), true, current != nullptr && current->getPluginDescription().createIdentifierString() == d.createIdentifierString(),
-                      [safe, trackId, d] { if (safe != nullptr) safe->setTrackInstrument (trackId, d); });
-
+    const auto ticked = current != nullptr ? current->getPluginDescription() : juce::PluginDescription();
+    Instrument::addMenu (menu, instruments, [safe, trackId] (const juce::PluginDescription& d) { if (safe != nullptr) safe->setTrackInstrument (trackId, d); },
+                         current != nullptr ? &ticked : nullptr);
     return menu;
 }
 

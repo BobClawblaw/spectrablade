@@ -2581,17 +2581,9 @@ bool MainComponent::perform (const InvocationInfo& info)
         }
         case cmdAddInstrumentTrack:
         {
-            const auto instruments = Instrument::known (engine.knownPlugins);
             juce::PopupMenu menu;
-
-            for (int i = 0; i < instruments.size(); ++i)
-                menu.addItem (i + 1, Instrument::title (instruments.getReference (i)));
-
-            menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition(), [this, instruments] (int result)
-            {
-                if (juce::isPositiveAndBelow (result - 1, instruments.size()))
-                    multitrack.addInstrumentTrack (instruments[result - 1]);
-            });
+            Instrument::addMenu (menu, Instrument::known (engine.knownPlugins), [this] (const juce::PluginDescription& d) { multitrack.addInstrumentTrack (d); });
+            menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
             break;
         }
         case cmdAddBus:

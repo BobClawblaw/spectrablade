@@ -636,6 +636,47 @@ namespace
         const auto added = state->tracks.size() == 2 && state->tracks[1].name == "Basic Synth" && selected;
         const auto loaded = TestUtils::runUntil ([&] { return engine.getTrackEffects().getInstrument (trackId) != nullptr; }, 10000);
         view.removeTrackInstrument (trackId);
+        // The menu: few scanned instruments flat with their format and maker in the name, many in
+        // submenus a format and a maker; the built-in always first and plain.
+        const auto fake = [] (const juce::String& name, const juce::String& format, const juce::String& maker)
+        {
+            juce::PluginDescription d;
+            d.name = name;
+            d.pluginFormatName = format;
+            d.manufacturerName = maker;
+            d.isInstrument = true;
+            d.fileOrIdentifier = format + ":" + maker + ":" + name;
+            return d;
+        };
+        juce::Array<juce::PluginDescription> few { known[0], fake ("Zed", "VST3", "Acme"), fake ("Alpha", "AudioUnit", "Beta Labs") };
+        juce::PopupMenu fewMenu, manyMenu;
+        juce::PluginDescription chosen;
+        Instrument::addMenu (fewMenu, few, [&chosen] (const juce::PluginDescription& d) { chosen = d; });
+        juce::StringArray fewTexts;
+        auto fewSubmenus = 0;
+
+        for (juce::PopupMenu::MenuItemIterator it (fewMenu); it.next();)
+        {
+            fewTexts.add (it.getItem().text);
+            fewSubmenus += it.getItem().subMenu != nullptr ? 1 : 0;
+        }
+
+        auto many = few;
+
+        for (int i = 0; i < Instrument::groupFrom; ++i)
+            many.add (fake ("Synth " + juce::String (i), i % 2 == 0 ? "VST3" : "AudioUnit", i % 3 == 0 ? "Acme" : "Beta Labs"));
+
+        Instrument::addMenu (manyMenu, many, [&chosen] (const juce::PluginDescription& d) { chosen = d; });
+        juce::StringArray manyTexts;
+
+        for (juce::PopupMenu::MenuItemIterator it (manyMenu); it.next();)
+            manyTexts.add (it.getItem().text + (it.getItem().subMenu != nullptr ? " >" : ""));
+
+        const auto flat = fewTexts.size() == 3 && fewTexts[0] == "Basic Synth (built in)" && fewTexts[1] == "Zed (VST3, Acme)" && fewTexts[2] == "Alpha (Audio Units, Beta Labs)" && fewSubmenus == 0;
+        const auto grouped = manyTexts.size() == 3 && manyTexts[0] == "Basic Synth (built in)" && manyTexts[1] == "Audio Units >" && manyTexts[2] == "VST3 >";
+        check (flat && grouped, "instrument tracks: the instrument menu lists a few scanned instruments flat with their format and maker, and many under a "
+                                "submenu a format and a maker, the built-in always first (" + fewTexts.joinIntoString (", ") + " / " + manyTexts.joinIntoString (", ") + ")");
+
         check (builtInFirst && added && loaded && engine.getTrackEffects().getInstrument (trackId) == nullptr,
                "instrument tracks: the known instruments start with the Basic Synth (built in); Add Instrument Track adds a track named after "
                "it, selected, with the instrument first in its chain, and Remove Instrument takes it out"
