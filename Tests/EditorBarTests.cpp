@@ -180,7 +180,7 @@ namespace
         EditorBar bar (commands, view, engine.document, { 1, 2, 3, 4, 5, 6, 7, 8 });
         juce::Array<int> ran;
         bar.run = [&] (int id) { ran.add (id); };
-        bar.setBounds (0, 0, 1000, EditorBar::height);
+        bar.setBounds (0, 0, 1100, EditorBar::height);   // room for all three: Windows' monospaced font (Courier New) is wider than the Mac's
 
         const auto& f = bar.getFields();
         const auto settle = [] (std::function<bool()> done)
@@ -218,8 +218,14 @@ namespace
         clickAt (f[0].bounds.getCentre());
         clickAt (f[1].bounds.getCentre());
         clickAt (f[2].bounds.getCentre());
+        juce::String placed;
+
+        for (const auto& field : f)
+            placed << field.bounds.getX() << "+" << field.bounds.getWidth() << " ";
+
         check (ordered && ran == juce::Array<int> { 7, 8 },
-               "editor bar: the fields sit left to right before the zoom controls; a click on the cursor runs Go to Time, on the selection Set Selection, and on the view nothing");
+               "editor bar: the fields sit left to right before the zoom controls; a click on the cursor runs Go to Time, on the selection Set Selection, and on the view nothing"
+               " (fields at " + placed + "before " + juce::String (bar.getButton (1).getX()) + ")");
 
         // Narrowing it a pixel at a time: the fields go from the right, and those left stay clear of the zoom controls.
         int viewGone = 0, selectionGone = 0, cursorGone = 0;

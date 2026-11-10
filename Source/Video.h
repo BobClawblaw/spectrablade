@@ -18,7 +18,8 @@ namespace Video
     /** Videos whose picture macOS can't show (MKV, WebM): the panel shows a preview made by ffmpeg. */
     bool needsPreview (const juce::File&);
 
-    /** Where previews are kept: ~/Library/Caches/SpectraBlade/Video Previews, unless set (for tests). */
+    /** Where previews are kept, unless set (for tests): ~/Library/Caches/SpectraBlade/Video Previews on macOS,
+        SpectraBlade/Video Previews in the local application data folder on Windows. */
     juce::File previewFolder();
     void setPreviewFolder (const juce::File&);
 
@@ -138,6 +139,7 @@ namespace Video
         bool usingPreview = false, blank = false;
 
         juce::File file;
+        juce::File waitingForWindow;   // Windows: loaded once the panel is on the screen (DirectShow draws in a window of its own)
         std::unique_ptr<juce::VideoComponent> player;
         juce::String message, caption;
         Follower follower;

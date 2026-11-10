@@ -3,17 +3,18 @@
 [![Latest release](https://img.shields.io/github/v/release/BobClawblaw/spectrablade?label=release)](https://github.com/BobClawblaw/spectrablade/releases/latest)
 [![Licence: AGPL-3.0](https://img.shields.io/github/license/BobClawblaw/spectrablade?label=licence)](LICENSE)
 ![macOS 13 or later](https://img.shields.io/badge/macOS-13%2B-black?logo=apple)
-![Apple silicon](https://img.shields.io/badge/arch-Apple%20silicon-555)
+![Windows 10 or later](https://img.shields.io/badge/Windows-10%2B-0078D6?logo=windows)
+![Apple silicon and x64](https://img.shields.io/badge/arch-Apple%20silicon%20%7C%20x64-555)
 ![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus)
 [![JUCE 9.0.4](https://img.shields.io/badge/JUCE-9.0.4-8DC63F)](https://juce.com)
 ![Plug-ins: VST3 and AU](https://img.shields.io/badge/plug--ins-VST3%20%7C%20AU-orange)
 [![Last commit](https://img.shields.io/github/last-commit/BobClawblaw/spectrablade)](https://github.com/BobClawblaw/spectrablade/commits/main)
 
-A clean-room audio editor for macOS: waveform and spectral editing, repair and loudness tools, built-in effects, multitrack sessions with automation and mixdown, and VST3 and Audio Unit plug-ins. Built on JUCE 9.0.4.
+A clean-room audio editor for macOS and Windows: waveform and spectral editing, repair and loudness tools, built-in effects, multitrack sessions with automation and mixdown, and VST3 plug-ins (and Audio Units on the Mac). Built on JUCE 9.0.4.
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
-**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon). Every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
+**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon). For Windows 10 or later (64-bit), see [Windows](#windows). Every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
 
 **Status:** 0.14.11, a dogfooding release: feature work has stopped, the app is complete, and the releases from here to 1.0.0 fix what real use turns up. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
@@ -36,8 +37,9 @@ A clean-room audio editor for macOS: waveform and spectral editing, repair and l
 | AIFF | Yes, with markers and tags | Save: 8, 16 or 24-bit (dithered), with markers and tags |
 | FLAC | Yes, with tags | Save: 16 or 24-bit (dithered), with tags |
 | MP3 | Yes | File > Export as MP3 or AAC: constant 96 to 320 kbps, or variable V0, V2 or V4 (LAME) |
-| AAC (.m4a) | Yes | File > Export as MP3 or AAC: 96 to 320 kbps average (the macOS encoder) |
-| Apple Lossless (.m4a), CAF and the other types macOS reads | Yes | Apple Lossless through ffmpeg |
+| AAC (.m4a) | Yes | File > Export as MP3 or AAC: 96 to 320 kbps average (the system's encoder: macOS's, or Windows' own) |
+| Apple Lossless (.m4a) | Yes | Through ffmpeg |
+| CAF, AIFC and the other types macOS reads | Yes on the Mac; through ffmpeg on Windows | No |
 | Ogg Vorbis | Yes | No |
 | Opus | Yes, with tags | File > Export with ffmpeg |
 | WavPack, AC-3 | Through ffmpeg | File > Export with ffmpeg |
@@ -48,9 +50,9 @@ File > File Info shows and changes the title, artist, album, genre, year, track 
 
 MP3 and AAC files hold one or two channels at up to 48 kHz; audio above 48 kHz is written at 44.1 or 48 kHz. Both keep the audio's exact length and start, through the encoder-delay information players read.
 
-The formats marked "through ffmpeg" need [ffmpeg](https://ffmpeg.org) installed (with Homebrew, `brew install ffmpeg`); SpectraBlade looks for it in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` and the `PATH`. It is not part of SpectraBlade. A file opened through ffmpeg is decoded in full to 32-bit float; saving it again goes through Save As.
+The formats marked "through ffmpeg" need [ffmpeg](https://ffmpeg.org) installed (with Homebrew, `brew install ffmpeg`; on Windows, `winget install Gyan.FFmpeg`); SpectraBlade looks for it in `/opt/homebrew/bin`, `/usr/local/bin`, `/opt/local/bin` and the `PATH`, and on Windows for `ffmpeg.exe` on the `PATH` and where winget, Scoop and Chocolatey put it. It is not part of SpectraBlade. A file opened through ffmpeg is decoded in full to 32-bit float; saving it again goes through Save As.
 
-Opening a video edits its sound and shows its picture in the Video panel (Window > Video), following the cursor and playing along; File > Attach Video... gives any file a video to go with. File > Save Sound into Video... writes a copy of the video with the edited sound (needs ffmpeg). macOS shows MP4, M4V and MOV pictures (and some AVI) itself; for MKV, WebM and others it can't show, ffmpeg makes a preview (kept in ~/Library/Caches/SpectraBlade/Video Previews), labelled "preview" in the panel. The picture follows edits that change the sound's length: a cut jumps it, audio pasted from elsewhere in the file brings its picture, and inserted silence or generated audio shows black. With the length unchanged, the picture is copied into the new video as it is; with it changed, the picture is cut to match and encoded again (H.264, or VP9 in WebM, MPEG-4 in AVI).
+Opening a video edits its sound and shows its picture in the Video panel (Window > Video), following the cursor and playing along; File > Attach Video... gives any file a video to go with. File > Save Sound into Video... writes a copy of the video with the edited sound (needs ffmpeg). macOS shows MP4, M4V and MOV pictures (and some AVI) itself; for MKV, WebM and others it can't show, ffmpeg makes a preview (kept in ~/Library/Caches/SpectraBlade/Video Previews), labelled "preview" in the panel. Windows shows AVI itself and everything else through a preview (kept in `%LOCALAPPDATA%\SpectraBlade\Video Previews`), as its own player has no MP4 or QuickTime reader. The picture follows edits that change the sound's length: a cut jumps it, audio pasted from elsewhere in the file brings its picture, and inserted silence or generated audio shows black. With the length unchanged, the picture is copied into the new video as it is; with it changed, the picture is cut to match and encoded again (H.264, or VP9 in WebM, MPEG-4 in AVI).
 
 A multitrack session can have a video too: in the Multitrack workspace, File > Attach Video... gives the session one, and File > Video Start... sets where in the session its first frame plays (typed, or at the cursor). The Video panel then follows the session's playhead, black before the video starts. File > Save Mix into Video... writes a copy of the video with the session's mix from that start for the video's length, its picture copied as it is (needs ffmpeg). The video and its start are kept in the session file, and so in projects. To bring a video's own sound into the session, import the video as you would an audio file.
 
@@ -90,7 +92,20 @@ Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications; the lic
 
 Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a large collection takes a while; it runs in the background, and the window shows how far it has got.
 
+## Windows
+
+SpectraBlade runs on 64-bit Windows from the same source: tried on Windows 11, and set up for Windows 10 or later. Windows builds aren't on the Releases page yet: build them with `Scripts/package-windows.ps1` (see [Packaging](#packaging)), or take the `SpectraBlade-windows-x64` artifact of the latest run of the Windows workflow on the repository's Actions page.
+
+- `SpectraBlade-<version>-windows-x64-setup.exe` installs it for you alone, needing no administrator rights (run it with `/ALLUSERS` to install it for everyone), adds it to the Start menu, offers it in Explorer's Open With list for WAV, AIFF, FLAC, Ogg, MP3 and M4A files, and can open sessions and projects with it. Uninstall it from Settings > Apps.
+- `SpectraBlade-<version>-windows-x64.zip` is the same program to run from any folder, without an installer.
+
+The program isn't signed, so SmartScreen may stop it the first time: More info > Run anyway. It needs nothing else installed. Its settings and log are in `%APPDATA%\SpectraBlade`. Opening another file from Explorer while it is running opens it in the window already there.
+
+What differs from the Mac: Audio Units are the Mac's own, so plug-ins are VST3 only; AAC is written by Windows' own encoder, which on pure tones keeps its error about 48 dB down from 192 kbps up, where Apple's gains about 9 dB more at 320 kbps (on fuller material the higher rates do spend their bits, and its band reaches 20 kHz at 320 kbps); MP3 and M4A are read by Windows' decoders, gaplessly and to the sample from anywhere in the file; and the audio devices are Windows Audio (WASAPI) and DirectSound (ASIO isn't built in). On an N edition of Windows, AAC and M4A need the Media Feature Pack (Settings > Apps > Optional features).
+
 ## Getting started
+
+On Windows, read Ctrl for Cmd and Alt for Option in the keys below, and Explorer for Finder.
 
 - **Open a file:** File > Open (Cmd-O), drop it on the window, or click one of the recent files listed in the empty editor. Tick Preview in the open panel to hear files as you select them.
 - **Start a file:** File > New File (Cmd-N) makes a file of silence at a chosen sample rate (the interface's to start with), channels (mono, stereo, 5.1 or 7.1), bit depth and length (0.1 to 3,600 s), to record, paste or generate into. It opens beside the files open, named Untitled until Save As.
@@ -111,10 +126,10 @@ Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a larg
 
 ## Plug-ins
 
-SpectraBlade hosts VST3 and Audio Unit (v2 and v3) effects. Window > Plug-ins... scans for them **out of process**: each one is loaded in a worker copy of the app, and one that crashes, or hangs longer than 60 s, is marked as not working while the editor keeps running.
+SpectraBlade hosts VST3 effects, and on the Mac Audio Unit (v2 and v3) effects too. Window > Plug-ins... scans for them **out of process**: each one is loaded in a worker copy of the app, and one that crashes, or hangs longer than 60 s, is marked as not working while the editor keeps running.
 
 - AU: `/Library/Audio/Plug-Ins/Components`, `~/Library/Audio/Plug-Ins/Components`, and AUv3 app extensions
-- VST3: `/Library/Audio/Plug-Ins/VST3`, `~/Library/Audio/Plug-Ins/VST3`
+- VST3: `/Library/Audio/Plug-Ins/VST3`, `~/Library/Audio/Plug-Ins/VST3`; on Windows `C:\Program Files\Common Files\VST3`
 
 VST2 is deliberately not supported: Steinberg no longer licenses the VST2 SDK.
 
@@ -128,6 +143,16 @@ cmake --build build -j 12
 open build/SpectraBlade_artefacts/Release/SpectraBlade.app
 ```
 
+On Windows you need Visual Studio 2022 or later, or its Build Tools, with Desktop development with C++ (which brings CMake and Ninja). In an x64 Native Tools Command Prompt:
+
+```bat
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+build\SpectraBlade_artefacts\Release\SpectraBlade.exe
+```
+
+On Windows CMake also builds in SQLite 3.50.4 (fetched and checked against its SHA-256; `-DSPECTRABLADE_SQLITE_DIR=` for a local copy), which macOS has as a system library, and links the C++ runtime in.
+
 CMake fetches JUCE 9.0.4, LAME 4.0 (checked against its SHA-256) and Signalsmith Stretch 1.4.0 with Signalsmith Linear 0.6.4 (each at its release commit) by itself. To use a local copy instead, add `-DSPECTRABLADE_JUCE_DIR=/path/to/JUCE`, `-DSPECTRABLADE_LAME_DIR=/path/to/lame-4.0`, `-DSPECTRABLADE_STRETCH_DIR=/path/to/signalsmith-stretch` or `-DSPECTRABLADE_LINEAR_DIR=/path/to/signalsmith-linear`.
 
 ## Packaging
@@ -137,6 +162,14 @@ Scripts/package.sh
 ```
 
 This builds a Release app for Apple silicon (arm64 only) in `build-release/`, signs it ad hoc, runs the integration tests with that signed app as the plug-in scan worker, and writes `dist/SpectraBlade-<version>.dmg` (the app, `LICENSE.txt`, LAME's licence as `LAME-LICENSE.txt`, and Signalsmith Stretch's and Signalsmith Linear's as `SIGNALSMITH-STRETCH-LICENSE.txt` and `SIGNALSMITH-LINEAR-LICENSE.txt`) with its SHA-256. Options: `--juce <dir>` builds with a local JUCE checkout, `--jobs <n>` sets the build's parallel jobs (4 by default), and `--skip-tests` skips the tests. The version comes from `CMakeLists.txt`.
+
+On Windows, in PowerShell:
+
+```powershell
+Scripts/package-windows.ps1
+```
+
+This finds Visual Studio with `vswhere`, builds a Release program for x64 in `build-release-win/`, runs the tests with it as the plug-in scan worker, and writes `dist/SpectraBlade-<version>-windows-x64.zip` (the program and the same licences) and `dist/SpectraBlade-<version>-windows-x64-setup.exe` (from `Scripts/SpectraBlade.iss`, with [Inno Setup 6](https://jrsoftware.org/isinfo.php)), each with its SHA-256. Options: `-Juce <dir>`, `-Jobs <n>`, `-SkipTests`, and `-NoInstaller` for the zip alone. The Windows workflow (`.github/workflows/windows.yml`) runs it on every push, without the tests (they need an audio device), and keeps the packages as an artifact.
 
 To check a disk image's app on its own, mount it and point the tests at it:
 
@@ -150,6 +183,8 @@ To check a disk image's app on its own, mount it and point the tests at it:
 ./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests
 ```
 
+On Windows it is `build\SpectraBladeTests_artefacts\Release\SpectraBladeTests.exe` (the command table check needs `python` on the `PATH`).
+
 They cover editing and undo bit for bit, every effect, file formats, plug-in scanning and hosting, the audio device, recording, the multitrack mixer, automation, mixdown, the interface driven by the mouse and the command table (every command described, in a menu and with a key of its own, checked by a Python script the suite runs); [docs/TESTING.md](docs/TESTING.md) lists what each part checks, and how to run the opt-in plug-in sweep.
 
 ## Reporting a problem
@@ -158,7 +193,7 @@ Please open an [issue](https://github.com/BobClawblaw/spectrablade/issues) with 
 
 ## Licence
 
-SpectraBlade is licensed under the GNU Affero General Public License, version 3; the full text is in `LICENSE`. JUCE is dual-licensed under the AGPLv3 or a commercial JUCE licence, and SpectraBlade uses it under the AGPLv3. The Sound Library's categories are the Universal Category System's list, v8.2.1 (universalcategorysystem.com, a public domain initiative), converted by `Scripts/ucs_convert.py` into `ThirdParty/UCS/`. The MP3 encoder is LAME 4.0's library (LGPL 2 or later), fetched from its pinned source release and built into the app. Signalsmith Stretch (one of the two methods of Stretch and Shift Pitch, and the one stretching clips uses) is version 1.4.0, with the Signalsmith Linear 0.6.4 FFTs (both MIT licence, Signalsmith Audio), fetched at their release commits and built into the app. Anyone who passes on the app, changed or not, must offer its source code under the same licence.
+SpectraBlade is licensed under the GNU Affero General Public License, version 3; the full text is in `LICENSE`. JUCE is dual-licensed under the AGPLv3 or a commercial JUCE licence, and SpectraBlade uses it under the AGPLv3. The Sound Library's categories are the Universal Category System's list, v8.2.1 (universalcategorysystem.com, a public domain initiative), converted by `Scripts/ucs_convert.py` into `ThirdParty/UCS/`. The MP3 encoder is LAME 4.0's library (LGPL 2 or later), fetched from its pinned source release and built into the app. Signalsmith Stretch (one of the two methods of Stretch and Shift Pitch, and the one stretching clips uses) is version 1.4.0, with the Signalsmith Linear 0.6.4 FFTs (both MIT licence, Signalsmith Audio), fetched at their release commits and built into the app. On Windows, SQLite (public domain) is built in too, and AAC, M4A and MP3 go through Windows' own codecs (Media Foundation), which are part of Windows and not shipped with SpectraBlade. Anyone who passes on the app, changed or not, must offer its source code under the same licence.
 
 `Scripts/package.sh` signs the app ad hoc, without the hardened runtime, so it loads any plug-in's code. Releases are not signed with a Developer ID and are not notarized, so Gatekeeper asks the first time the app is opened (see [Download and install](#download-and-install)). The CMake target still asks for the hardened runtime with `disable-library-validation` (which third-party plug-ins need), which takes effect for anyone who builds and signs it with their own Developer ID.
 

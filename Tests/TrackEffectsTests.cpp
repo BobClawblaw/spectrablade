@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/AudioEngine.h"
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
@@ -205,7 +206,7 @@ void runTrackEffectsTests()
         auto dir = juce::File::createTempFile ("fx");
         dir.createDirectory();
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
 
         SessionState empty;
         empty.sampleRate = rate;

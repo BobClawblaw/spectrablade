@@ -8,6 +8,7 @@
 #include "../Source/AudioEdits.h"
 #include "../Source/PluginMenu.h"
 #include "../Source/RackView.h"
+#include "../Source/BuiltInEffects.h"
 #include "DocumentTests.h"
 #include "RecorderTests.h"
 #include "MarkerTests.h"
@@ -139,8 +140,16 @@ namespace
         {
             juce::StringArray candidates;
 
-            for (auto& dir : { juce::File ("/Library/Audio/Plug-Ins/VST3"),
-                               juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Audio/Plug-Ins/VST3") })
+           #if JUCE_WINDOWS
+            const auto env = [] (const char* name) { return juce::SystemStats::getEnvironmentVariable (name, {}); };
+            const juce::Array<juce::File> dirs { juce::File (env ("CommonProgramFiles") + "/VST3"),
+                                                 juce::File (env ("LOCALAPPDATA") + "/Programs/Common/VST3") };
+           #else
+            const juce::Array<juce::File> dirs { juce::File ("/Library/Audio/Plug-Ins/VST3"),
+                                                 juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Audio/Plug-Ins/VST3") };
+           #endif
+
+            for (auto& dir : dirs)
                 for (auto& f : dir.findChildFiles (juce::File::findDirectories, false, "*.vst3"))
                     candidates.add (f.getFullPathName());
 
@@ -168,6 +177,11 @@ namespace
                 }
             }
 
+           #if ! JUCE_MAC
+            if (candidates.isEmpty())   // macOS always has some; a fresh Windows machine none
+                std::cout << "      (no VST3 plug-ins installed; scan of installed bundles skipped)" << std::endl;
+            else
+           #endif
             check (withTypes > 0, "out-of-process scan reads VST3 bundles (" + juce::String (withTypes) + "/" + juce::String (scanned) + ")");
         }
 
@@ -473,8 +487,9 @@ namespace
         auto* first = engine.getRackPlugin (0);
         juce::AudioProcessorParameter* param = nullptr;
 
+        // A continuous one: a switch or a choice would snap the value set below to another.
         for (auto* p : first->getParameters())
-            if (p->isAutomatable())
+            if (p->isAutomatable() && ! p->isBoolean() && ! p->isDiscrete())
             {
                 param = p;
                 break;
@@ -775,6 +790,15 @@ int main (int argc, char* argv[])
         std::thread scanThread ([&] { testScanner (engine, found); scanned = true; });
         runUntil ([&] { return scanned.load(); }, 600000);
         scanThread.join();
+
+       #if ! JUCE_MAC
+        // Without Apple's effects, and with no plug-ins installed, the menu and rack are checked with SpectraBlade's own.
+        if (found.isEmpty())
+            for (auto& d : BuiltInEffects::getDescriptions())
+                if (! d.isInstrument)
+                    found.add (d);
+       #endif
+
         runPluginTests (engine);
         testPluginMenu (found);
 

@@ -4,3 +4,5 @@ build-debug/
 build-asan/
 dist/
 .DS_Store
+build-win/
+build-release-win/

@@ -1,11 +1,23 @@
 // Before JUCE's headers, whose juce::Point would clash with the Mac's own Point.
-#include <CoreFoundation/CoreFoundation.h>
+#if defined (__APPLE__)
+ #include <CoreFoundation/CoreFoundation.h>
+#elif defined (_WIN32)
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h>
+ #include <process.h>
+#endif
 
 #include "PluginScanner.h"
 
 #include <csignal>
 #include <cstdlib>
-#include <unistd.h>
+
+#if ! defined (_WIN32)
+ #include <unistd.h>
+#endif
 
 namespace
 {
@@ -16,8 +28,28 @@ namespace
         drop and marks the plug-in as not working. */
     void exitOnCrash (int)
     {
-        _exit (70);
+        std::_Exit (70);
     }
+
+   #if defined (_WIN32)
+    /** Windows reports a crash as a structured exception, not a signal, and would show its
+        "stopped working" dialog for it. */
+    LONG WINAPI exitOnException (EXCEPTION_POINTERS*)
+    {
+        std::_Exit (70);
+    }
+   #endif
+
+    int thisProcessId()
+    {
+       #if defined (_WIN32)
+        return (int) _getpid();
+       #else
+        return (int) getpid();
+       #endif
+    }
+
+   #if defined (__APPLE__)
 
     /** Releases a Core Foundation object when it goes. */
     template <typename Ref>
@@ -123,6 +155,61 @@ namespace
 
         return {};
     }
+   #else
+    /** True when the plug-in's code is for this processor: on Windows, an x64 DLL (a .vst3 file,
+        or in a bundle folder the one under Contents/x86_64-win). A 32-bit plug-in can't load here. */
+    bool hasCodeForThisMac (const juce::File& bundleFile)
+    {
+       #if defined (_WIN32)
+        auto binary = bundleFile;
+
+        if (bundleFile.isDirectory())
+        {
+            const auto contents = bundleFile.getChildFile ("Contents");
+            binary = contents.getChildFile ("x86_64-win").getChildFile (bundleFile.getFileName());
+
+            if (! binary.existsAsFile())
+                return ! contents.getChildFile ("x86-win").isDirectory();
+        }
+
+        juce::FileInputStream in (binary);
+
+        if (! in.openedOk() || in.readShort() != 0x5a4d)   // "MZ"
+            return true;
+
+        in.setPosition (0x3c);
+        const auto peOffset = (juce::int64) (juce::uint32) in.readInt();
+        in.setPosition (peOffset);
+
+        if (in.readInt() != 0x00004550)                    // the PE signature
+            return true;
+
+        return (juce::uint16) in.readShort() == 0x8664;    // IMAGE_FILE_MACHINE_AMD64
+       #else
+        juce::ignoreUnused (bundleFile);
+        return true;
+       #endif
+    }
+
+    /** The plug-in file itself (Audio Units are Mac only). */
+    juce::File bundleFor (const juce::String& formatName, const juce::String& identifier)
+    {
+        if (formatName == "AudioUnit")
+            return {};
+
+        return juce::File::isAbsolutePath (identifier) ? juce::File (identifier) : juce::File();
+    }
+   #endif
+
+    /** Why a plug-in with no code for this machine can't load. */
+    juce::String noCodeReason()
+    {
+       #if defined (_WIN32)
+        return "it has no 64-bit code (it is built only for 32-bit Windows)";
+       #else
+        return "it has no code for Apple silicon (it is built only for Intel Macs)";
+       #endif
+    }
 }
 
 //==============================================================================
@@ -136,10 +223,20 @@ bool ScannerWorker::initialiseFromCommandLine (const juce::String& commandLine, 
     if (! ChildProcessWorker::initialiseFromCommandLine (commandLine, uid))
         return false;
 
+   #if JUCE_MAC
     juce::Process::setDockIconVisible (false);
+   #endif
 
+   #if defined (_WIN32)
+    SetErrorMode (SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    SetUnhandledExceptionFilter (exitOnException);
+
+    for (auto sig : { SIGSEGV, SIGILL, SIGFPE, SIGABRT })
+        std::signal (sig, exitOnCrash);
+   #else
     for (auto sig : { SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGABRT, SIGTRAP })
         std::signal (sig, exitOnCrash);
+   #endif
 
     return true;
 }
@@ -217,7 +314,7 @@ void ScannerWorker::handleConnectionMade()
 {
     // Sent before any request is answered: the coordinator ends this process by its id.
     juce::XmlElement hello ("WORKER");
-    hello.setAttribute ("pid", (int) getpid());
+    hello.setAttribute ("pid", thisProcessId());
     reply (hello);
 }
 
@@ -271,7 +368,7 @@ void ScannerWorker::reply (const juce::XmlElement& xml)
 juce::String ScannerWorker::missingCodeReason (const juce::String& formatName, const juce::String& identifier)
 {
     if (const auto bundle = bundleFor (formatName, identifier); bundle.exists() && ! hasCodeForThisMac (bundle))
-        return "it has no code for Apple silicon (it is built only for Intel Macs)";
+        return noCodeReason();
 
     return {};
 }
@@ -369,9 +466,20 @@ public:
     {
         // A plug-in that hangs holds the worker's message thread, where JUCE's quit message
         // would arrive, so the worker is ended directly. It is still this process's unreaped
-        // child here, so the id can't belong to anything else.
+        // child here, so the id can't belong to anything else. (On Windows, JUCE's handle to the
+        // child keeps its id from being reused.)
         if (const auto pid = workerPid.load(); pid > 0)
+        {
+           #if defined (_WIN32)
+            if (const auto process = OpenProcess (PROCESS_TERMINATE, FALSE, (DWORD) pid))
+            {
+                TerminateProcess (process, 1);
+                CloseHandle (process);
+            }
+           #else
             ::kill (pid, SIGKILL);
+           #endif
+        }
 
         killWorkerProcess();
     }

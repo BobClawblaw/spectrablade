@@ -9,7 +9,8 @@
 namespace Ffmpeg
 {
     /** The ffmpeg program: the first found of Homebrew's (/opt/homebrew/bin, /usr/local/bin),
-        MacPorts' (/opt/local/bin) and the folders on the PATH. Nothing if there is none. */
+        MacPorts' (/opt/local/bin) and the folders on the PATH. On Windows, ffmpeg.exe on the PATH,
+        then where winget, Scoop and Chocolatey put the programs they install. Nothing if there is none. */
     juce::File find();
 
     /** File types offered to open through ffmpeg, besides those read directly. Video files give
@@ -73,9 +74,20 @@ namespace Ffmpeg
     /** The filter graph that cuts a video's picture to follow a sound by its map, ending in [v]. */
     juce::String recutFilter (const PictureMap&, double soundSeconds, const Picture&);
 
-    /** A preview of a video's picture that macOS can play, for videos it can't (MKV, WebM): the first
-        picture stream as H.264 in MP4, at most 1280 pixels wide, a keyframe every 12 frames so it
-        seeks quickly, no sound. Encoded with libx264, or VideoToolbox when ffmpeg has no libx264. */
+    /** A preview of a video's picture that the system can play, for videos it can't (MKV, WebM; on
+        Windows also MP4 and QuickTime): the first picture stream at most 1280 pixels wide, a keyframe
+        every 12 frames so it seeks quickly, no sound. On macOS H.264 in MP4, encoded with libx264, or
+        VideoToolbox when ffmpeg has no libx264; on Windows Windows Media Video, which DirectShow plays. */
     juce::String makePreview (const juce::File& ffmpeg, const juce::File& video, const juce::File& target,
                               const std::function<bool()>& keepGoing = {});
+
+    /** The file extension of the previews makePreview makes. */
+    inline juce::String previewExtension()
+    {
+       #if JUCE_WINDOWS
+        return ".wmv";
+       #else
+        return ".mp4";
+       #endif
+    }
 }

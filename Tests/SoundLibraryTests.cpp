@@ -1,4 +1,5 @@
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/SoundLibrary.h"
 #include "../Source/SoundLibraryView.h"
 #include "../Source/Surround.h"
@@ -61,7 +62,7 @@ namespace
     void testScan (const juce::File& dir)
     {
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
 
         const auto library = dir.getChildFile ("Library");
         writeWav (library.getChildFile ("Doors/DOORWood_Creak Old Barn_JD_SFX.wav"), 24000, 48000.0, 2, 24, "Old barn door creaking slowly");
@@ -270,10 +271,20 @@ namespace
             for (size_t j = i + 1; j < choices.size(); ++j)
                 twice = twice || choices[i].name == choices[j].name;
 
+       #if JUCE_MAC
         check (labelOf ("WAV file") == "WAV" && labelOf ("AIFF file") == "AIFF" && labelOf ("FLAC file") == "FLAC"
                    && labelOf ("CoreAudio supported file") == "Other" && labelOf ("MP3 file").isEmpty() && ! twice,
                "sound library formats: the choices are WAV, AIFF, FLAC and the rest with short labels, CoreAudio's as Other, each once, "
                "and MP3 is not offered on its own (CoreAudio reads every MP3 first)");
+       #else
+        check (labelOf ("WAV file") == "WAV" && labelOf ("AIFF file") == "AIFF" && labelOf ("FLAC file") == "FLAC"
+                   && labelOf ("MP3 file") == "MP3"
+                  #if JUCE_WINDOWS
+                   && labelOf ("M4A file") == "M4A"
+                  #endif
+                   && labelOf ("CoreAudio supported file").isEmpty() && ! twice,
+               "sound library formats: the choices are WAV, AIFF, FLAC, MP3 and the rest with short labels, each once");
+       #endif
 
         // A library with a sound as WAV and, in a folder of its own, as AIFF: WAV alone lists it once,
         // and so does leaving the folder out.
@@ -289,7 +300,7 @@ namespace
 
         {
             juce::AudioFormatManager formats;
-            formats.registerBasicFormats();
+            AudioFileIO::registerFormats (formats);
             Index index (dir.getChildFile ("formats/Index.sqlite"));
             index.addFolder (library);
             index.scan (formats);
@@ -447,7 +458,7 @@ namespace
         const auto oneRow = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::name) == "DOORWood_Creak Old Barn_JD_SFX"
                             && view.getText (0, SoundLibraryView::length) == "0.50 s" && view.getText (0, SoundLibraryView::rate) == "48 kHz"
                             && view.getText (0, SoundLibraryView::channels) == "2" && view.getText (0, SoundLibraryView::bits) == "24"
-                            && view.getText (0, SoundLibraryView::format) == "WAV" && view.getText (0, SoundLibraryView::location) == "View Library/Doors"
+                            && view.getText (0, SoundLibraryView::format) == "WAV" && view.getText (0, SoundLibraryView::location).replaceCharacter ('\\', '/') == "View Library/Doors"
                             && view.getText (0, SoundLibraryView::description) == "Old barn door creaking slowly"
                             && view.getSummary().startsWith ("1 of 10 sounds match");
         view.setSearch ({});
@@ -549,7 +560,7 @@ namespace
     juce::AudioBuffer<float> readBack (const juce::File& file, double* rate = nullptr, int* bits = nullptr)
     {
         juce::AudioFormatManager fm;
-        fm.registerBasicFormats();
+        AudioFileIO::registerFormats (fm);
         std::unique_ptr<juce::AudioFormatReader> r (fm.createReaderFor (file));
 
         if (r == nullptr)
@@ -622,7 +633,7 @@ namespace
 
         SoundLibrary::Index index (dir.getChildFile ("folders/Index.sqlite"));
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         index.addFolder (library);
         index.scan (formats);
 
@@ -889,7 +900,7 @@ namespace
     void testCategories (const juce::File& dir)
     {
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         const auto library = dir.getChildFile ("Categorised");
         writeWav (library.getChildFile ("DOORWood_Creak Old Barn_JD_SFX.wav"), 1000);
         writeWav (library.getChildFile ("DOORWood_Squeak_JD_SFX.wav"), 1100);
@@ -1030,7 +1041,7 @@ namespace
     void testTags (const juce::File& dir)
     {
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         const auto library = dir.getChildFile ("Tagged");
         writeWav (library.getChildFile ("Owl Hoot.wav"), 1000);
         writeWav (library.getChildFile ("Cricket Field.wav"), 1100);
@@ -1275,6 +1286,8 @@ namespace
         const auto original = folder.getChildFile ("original.copy");
         full.copyFileTo (original);
         std::filesystem::permissions (full.getFullPathName().toStdString(), std::filesystem::perms (0640));
+        // As the system keeps them: Windows has only a read-only flag, not the owner, group and others' bits.
+        const auto permsBefore = std::filesystem::status (full.getFullPathName().toStdString()).permissions();
 
         const auto written = SoundMetadata::write (full, { "DOORWood", { "Night", "Exterior" } });
         const auto doc = juce::parseXML (ixmlOf (full));
@@ -1287,7 +1300,7 @@ namespace
             ids.add (c.id);
 
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (full));
         const auto riffSize = (juce::int64) juce::ByteOrder::littleEndianInt (static_cast<const char*> (bytesOf (full).getData()) + 4);
         check (written.isEmpty() && keptButIXml (original, full) && ids.indexOf ("iXML") == ids.indexOf ("smed") + 1 && ids[ids.size() - 1] == "LIST" && ids.contains ("data")
@@ -1296,7 +1309,7 @@ namespace
                    && text (doc.get(), "PROJECT") == "Film" && text (aswg, "catId") == "DOORWood" && text (aswg, "subCategory") == "WOOD"
                    && Ucs::fromIXml (ixmlOf (full)) == Ucs::byCatId ("DOORWood") && reader != nullptr && reader->lengthInSamples == 3001
                    && riffSize == full.getSize() - 8 && noTemporaryFiles (folder)
-                   && std::filesystem::status (full.getFullPathName().toStdString()).permissions() == std::filesystem::perms (0640),
+                   && std::filesystem::status (full.getFullPathName().toStdString()).permissions() == permsBefore,
                "sound library writing: a category and tags go into a WAV file's iXML (USER CATID, CATEGORY, SUBCATEGORY, CATEGORYFULL, "
                "KEYWORDS; ASWG catId, category, subCategory), replacing the CatID there and keeping the rest of the iXML; every other "
                "chunk (fmt, data, bext, an odd-sized chunk, LIST) is kept byte for byte and in its place, the RIFF size is right, the "
@@ -1491,7 +1504,7 @@ void runSoundLibraryOn (const juce::File& folder)
 {
     const auto dir = juce::File::getSpecialLocation (juce::File::tempDirectory).getNonexistentChildFile ("SoundLibraryOn", {}, false);
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     const auto now = [] { return juce::Time::getMillisecondCounterHiRes() / 1000.0; };
     const auto database = dir.getChildFile ("Index.sqlite");
     SoundLibrary::Index index (database);

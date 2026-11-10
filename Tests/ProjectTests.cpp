@@ -152,7 +152,7 @@ void runProjectTests()
     juce::StringArray copied;
 
     for (auto& c : copies)
-        copied.add (c.target.getRelativePathFrom (work));
+        copied.add (c.target.getRelativePathFrom (work).replaceCharacter ('\\', '/'));   // the same on every system
 
     const auto bCopy = folder.getChildFile ("Take B.wav"), cCopy = folder.getChildFile ("Untitled.wav");
     const auto bBack = AudioFileIO::load (bCopy, engine.formatManager), cBack = AudioFileIO::load (cCopy, engine.formatManager);

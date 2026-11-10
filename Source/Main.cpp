@@ -1,3 +1,12 @@
+// Before JUCE's headers: letting the copy already running come to the front.
+#if defined (_WIN32)
+ #ifndef NOMINMAX
+  #define NOMINMAX
+ #endif
+ #define WIN32_LEAN_AND_MEAN
+ #include <windows.h>
+#endif
+
 #include <JuceHeader.h>
 #include "MainComponent.h"
 #include "PluginScanner.h"
@@ -10,8 +19,21 @@ public:
     const juce::String getApplicationName() override       { return JUCE_APPLICATION_NAME_STRING; }
     const juce::String getApplicationVersion() override    { return JUCE_APPLICATION_VERSION_STRING; }
 
-    // The plug-in scanner runs as a second copy of this executable.
-    bool moreThanOneInstanceAllowed() override              { return true; }
+    // The plug-in scanner runs as a second copy of this executable. On Windows, where opening a file
+    // from Explorer starts the program again, any other second copy hands its command line (the files
+    // to open) to the one already running and ends; macOS sends files to the running app itself.
+    bool moreThanOneInstanceAllowed() override
+    {
+       #if JUCE_WINDOWS
+        if (getCommandLineParameters().contains (scannerProcessUID))
+            return true;
+
+        AllowSetForegroundWindow (ASFW_ANY);   // so the running copy can come to the front
+        return false;
+       #else
+        return true;
+       #endif
+    }
 
     void initialise (const juce::String& commandLine) override
     {
@@ -23,7 +45,7 @@ public:
             return;
         }
 
-        // ~/Library/Logs/SpectraBlade/SpectraBlade.log
+        // ~/Library/Logs/SpectraBlade/SpectraBlade.log on macOS, %APPDATA%/SpectraBlade/SpectraBlade.log on Windows
         logger.reset (juce::FileLogger::createDefaultAppLogger ("SpectraBlade", "SpectraBlade.log",
                                                                getApplicationName() + " " + getApplicationVersion()));
         juce::Logger::setCurrentLogger (logger.get());
@@ -56,7 +78,8 @@ public:
         else
             quit();
     }
-    // Files opened from Finder or the Dock arrive here on macOS, as do any named on the command line.
+    // Files opened from Finder or the Dock arrive here on macOS, as do any named on the command line
+    // (on Windows, files opened from Explorer).
     // Each opens beside the files already open, the last one showing.
     void anotherInstanceStarted (const juce::String& commandLine) override
     {
@@ -64,6 +87,18 @@ public:
             return;
 
         mainWindow->getMainComponent().openDocuments (AudioFileIO::filesIn (commandLine));
+
+       #if JUCE_WINDOWS
+        // Started again from Explorer or the Start menu: this window comes forward, restored if minimised
+        // (not at start-up, when it shows once loading is done).
+        if (mainWindow->isVisible())
+        {
+            if (mainWindow->isMinimised())
+                mainWindow->setMinimised (false);
+
+            mainWindow->toFront (true);
+        }
+       #endif
     }
 
 private:
@@ -77,6 +112,9 @@ private:
             auto* content = new MainComponent();
             content->onTitleChanged = [this] (const juce::String& title) { setName (title); };
             setContentOwned (content, true);
+           #if ! JUCE_MAC
+            setMenuBar (content);   // the Mac's menus are at the top of the screen
+           #endif
             setResizable (true, true);
             setResizeLimits (800, 480, 10000, 10000);
             centreWithSize (getWidth(), getHeight());

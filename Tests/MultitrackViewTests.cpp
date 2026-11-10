@@ -1827,11 +1827,14 @@ void runMultitrackViewTests (AudioEngine& engine)
                    && std::abs (dragged.getStart() - (rate * 59.0 - span / 2.0)) < 1.0 && juce::exactlyEqual (atStart.getStart(), 0.0),
                "overview: clicking centres the lanes there, dragging follows, the start stops at zero, the zoom stays");
 
-        juce::Image strip (juce::Image::ARGB, 600, SessionOverview::height, true);
+        // A software image: Direct2D's, on Windows, holds what is drawn until the Graphics goes.
+        juce::Image strip (juce::Image::ARGB, 600, SessionOverview::height, true, juce::SoftwareImageType());
         juce::Graphics g (strip);
         overview.paint (g);
         check (strip.getPixelAt (30, 4) != strip.getPixelAt (300, 4),
-               "overview: the clip is drawn where it lies in the session");
+               "overview: the clip is drawn where it lies in the session (" + strip.getPixelAt (30, 4).toDisplayString (true) + " on it, "
+                   + strip.getPixelAt (300, 4).toDisplayString (true) + " past it; "
+                   + juce::String ((int) engine.session.getState()->tracks.size()) + " tracks)");
     }
 
     {

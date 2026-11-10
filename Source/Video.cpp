@@ -1,4 +1,5 @@
 #include "Video.h"
+#include "Platform.h"
 #include "Theme.h"
 #include "Ffmpeg.h"
 #include "OfflineRender.h"
@@ -65,7 +66,13 @@ juce::String saveMixInto (const SessionState& state, SessionMixer::Inserts* inse
 
 bool needsPreview (const juce::File& f)
 {
+   #if JUCE_WINDOWS
+    // DirectShow, which plays video on Windows, has no MP4 or QuickTime reader: AVI is tried as it is
+    // (one it can't play falls back to a preview too).
+    return f.hasFileExtension ("mp4;m4v;mov;mkv;webm");
+   #else
     return f.hasFileExtension ("mkv;webm");
+   #endif
 }
 
 namespace
@@ -82,7 +89,15 @@ juce::File previewFolder()
     if (previewFolderSetting() != juce::File())
         return previewFolderSetting();
 
+   #if JUCE_WINDOWS
+    // The local application data folder: a cache, not roamed with the user's settings.
+    if (const auto local = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {}); juce::File::isAbsolutePath (local))
+        return juce::File (local).getChildFile ("SpectraBlade/Video Previews");
+
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory).getChildFile ("SpectraBlade/Video Previews");
+   #else
     return juce::File::getSpecialLocation (juce::File::userHomeDirectory).getChildFile ("Library/Caches/SpectraBlade/Video Previews");
+   #endif
 }
 
 void setPreviewFolder (const juce::File& folder)
@@ -93,7 +108,8 @@ void setPreviewFolder (const juce::File& folder)
 juce::File previewFile (const juce::File& video)
 {
     const auto key = video.getFullPathName() + "|" + juce::String (video.getSize()) + "|" + juce::String (video.getLastModificationTime().toMilliseconds());
-    return previewFolder().getChildFile (video.getFileNameWithoutExtension() + " " + juce::String::toHexString (key.hashCode64()) + ".mp4");
+    return previewFolder().getChildFile (video.getFileNameWithoutExtension() + " " + juce::String::toHexString (key.hashCode64())
+                                         + Ffmpeg::previewExtension());
 }
 
 Follow Follower::next (double audio, bool audioPlaying, double picture, bool picturePlaying, double duration)
@@ -200,6 +216,7 @@ void Panel::setFile (const juce::File& f)
         return;
 
     file = f;
+    waitingForWindow = juce::File();
     caption.clear();
     follower.restart();
     ticksWaiting = 0;
@@ -234,6 +251,19 @@ void Panel::setFile (const juce::File& f)
 
 void Panel::load (const juce::File& played)
 {
+   #if JUCE_WINDOWS
+    // A player made off the screen can't open anything here: it waits for the panel's window.
+    if (getPeer() == nullptr)
+    {
+        waitingForWindow = played;
+        message = "Opening " + file.getFileName() + "...";
+        repaint();
+        return;
+    }
+
+    waitingForWindow = juce::File();
+   #endif
+
     ticksWaiting = 0;
     follower.restart();
     player = std::make_unique<juce::VideoComponent> (false);
@@ -274,7 +304,7 @@ void Panel::startPreview()
         return;
     }
 
-    message = "Making a preview of " + file.getFileName() + "'s picture, which macOS can't show itself...";
+    message = "Making a preview of " + file.getFileName() + "'s picture, which " + Platform::systemName() + " can't show itself...";
     repaint();
     maker = std::make_unique<PreviewMaker> (*this, ffmpeg, file, previewFile (file));
 }
@@ -300,7 +330,7 @@ void Panel::failed (const juce::String& why)
         player.reset();
     }
 
-    // macOS couldn't play it: a preview made by ffmpeg, if one hasn't been tried.
+    // The system couldn't play it: a preview made by ffmpeg, if one hasn't been tried.
     if (! usingPreview && file.existsAsFile() && Ffmpeg::find() != juce::File())
     {
         startPreview();
@@ -326,6 +356,9 @@ void Panel::update()
 {
     if (readVideo != nullptr)
         setFile (readVideo());
+
+    if (waitingForWindow != juce::File() && getPeer() != nullptr)
+        load (waitingForWindow);
 
     if (player == nullptr || ! player->isVideoOpen())
         return;

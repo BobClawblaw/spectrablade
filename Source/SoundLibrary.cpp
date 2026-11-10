@@ -1,5 +1,6 @@
 #include "SoundLibrary.h"
 #include "SoundCategories.h"
+#include "AudioFileIO.h"
 #include <sqlite3.h>
 #include <thread>
 
@@ -199,7 +200,7 @@ namespace
 std::vector<FormatChoice> formatChoices()
 {
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     std::vector<FormatChoice> choices;
     const auto sample = juce::File::getSpecialLocation (juce::File::tempDirectory);
 

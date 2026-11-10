@@ -1,4 +1,5 @@
 #include "BuiltInEffects.h"
+#include "AudioFileIO.h"
 #include "Theme.h"
 
 namespace BuiltInEffects
@@ -1185,7 +1186,7 @@ void ConvolutionEditor::chooseImpulse()
                                   return;
 
                               juce::AudioFormatManager formats;
-                              formats.registerBasicFormats();
+                              AudioFileIO::registerFormats (formats);
                               juce::String error;
                               auto impulse = Convolver::read (fc.getResult(), formats, error);
 

@@ -1094,6 +1094,10 @@ namespace
         const auto error = OfflineRender::processThroughRack (emptyRack, engine.pluginFormatManager, rate, audio, {});
         check (error.isEmpty() && identical (audio, signal), "rendering through an empty rack changes nothing");
 
+       #if ! JUCE_MAC
+        return;   // AUDelay is an Audio Unit, which only the Mac has
+       #endif
+
         // Apple's AUDelay, created and run off the message thread as in the app.
         juce::AudioPluginFormat* au = nullptr;
 

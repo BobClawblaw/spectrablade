@@ -1,4 +1,5 @@
 #include "RackView.h"
+#include "Platform.h"
 #include "Theme.h"
 #include "PluginMenu.h"
 
@@ -84,7 +85,7 @@ void RackView::paint (juce::Graphics& g)
     if (rows.isEmpty())
     {
         g.setColour (Theme::dimText);
-        g.drawFittedText ("No effects.\nScan your plug-ins, then add VST3 or Audio Unit effects here.",
+        g.drawFittedText ("No effects.\nScan your plug-ins, then add " + Platform::pluginFormats() + " effects here.",
                           getLocalBounds().reduced (16).withTrimmedTop (80), juce::Justification::centredTop, 4);
     }
 }
@@ -144,7 +145,7 @@ void RackView::showAddMenu()
     if (effects.isEmpty())
     {
         juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::InfoIcon, "No effects found",
-                                                "Use Plug-ins... to scan for VST3 and Audio Unit effects first.");
+                                                "Use Plug-ins... to scan for " + Platform::pluginFormats() + " effects first.");
         return;
     }
 

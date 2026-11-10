@@ -14,7 +14,12 @@ namespace
         check (script.existsAsFile(), "command table: the audit script is at Scripts/check_commands.py");
 
         juce::ChildProcess python;
+       #if JUCE_WINDOWS
+        // python.org's installer names it python; python3 on Windows is often the Store's stand-in.
+        const auto started = python.start (juce::StringArray { "python", "-I", script.getFullPathName() });
+       #else
         const auto started = python.start (juce::StringArray { "python3", "-I", script.getFullPathName() });
+       #endif
         const auto output = started ? python.readAllProcessOutput().trim() : juce::String();
         const auto finished = started && python.waitForProcessToFinish (60000);
         const auto exitCode = finished ? (int) python.getExitCode() : -1;

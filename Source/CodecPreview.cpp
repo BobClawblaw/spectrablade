@@ -1,4 +1,5 @@
 #include "CodecPreview.h"
+#include "AudioFileIO.h"
 #include "AudioEdits.h"
 #include "SampleRateConverter.h"
 
@@ -84,7 +85,7 @@ std::optional<Result> roundTrip (const AudioSnapshot& s, juce::int64 start, juce
     }
 
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     std::unique_ptr<juce::AudioFormatReader> reader (formats.createReaderFor (file));
 
     if (reader == nullptr || reader->lengthInSamples < 1)

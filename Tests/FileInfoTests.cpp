@@ -113,7 +113,7 @@ namespace
 void runFileInfoTests()
 {
     juce::AudioFormatManager formats;
-    formats.registerBasicFormats();
+    AudioFileIO::registerFormats (formats);
     juce::TemporaryFile folderTemp;
     const auto folder = folderTemp.getFile();
     folder.createDirectory();

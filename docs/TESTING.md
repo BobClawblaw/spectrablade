@@ -6,6 +6,15 @@ SpectraBlade's checks are one console program, built with the app, that runs aga
 ./build/SpectraBladeTests_artefacts/Release/SpectraBladeTests
 ```
 
+On Windows it is `build\SpectraBladeTests_artefacts\Release\SpectraBladeTests.exe`, and the same checks run, with these differences:
+- What only the Mac has is left out: Apple's AUDelay (an Audio Unit) in the render, mixdown and rack checks, and the Intel-only bundle; a bundle holding only 32-bit Windows code stands in for the last, reported as having no 64-bit code.
+- VST3 bundles are looked for in `C:\Program Files\Common Files\VST3` (and `%LOCALAPPDATA%\Programs\Common\VST3`). With none installed, the scan of installed bundles is skipped, and the plug-in menu and the rack are checked with SpectraBlade's built-in effects.
+- AAC is written by Windows' own encoder, held to its own levels against the sweeps (47.5 dB at 320 kbps, 48 at 256, 45 for mono at 128); MP3 and M4A are read by Windows' decoders (MP3 at 320 kbps to 76.5 dB).
+- The video panel shows AVI itself and MP4, M4V, MOV, MKV and WebM through previews, and is put on the screen for the check (Windows' player draws into a window of its own).
+- The command table audit runs `python`, as `python3` on Windows is often the Store's stand-in.
+
+The master rack checks on separate outputs need an interface with eight outputs, as the surround device checks need six; with fewer they are skipped, on either system.
+
 What they check:
 - The command table, read from the main window's source by `Scripts/check_commands.py` (the window is not in the test build; the check needs `python3`): every command described, performed and in a menu, and no default key claimed by two commands.
 - Editing and undo, bit for bit: cut and paste, crops across many segments, and peak tables against a brute-force scan.

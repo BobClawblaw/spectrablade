@@ -396,8 +396,14 @@ namespace SoundMetadata
         std::filesystem::permissions (temp.getFullPathName().toStdString(),
                                       std::filesystem::status (wav.getFullPathName().toStdString(), ignored).permissions(), ignored);
 
+       #if JUCE_WINDOWS
+        // rename won't replace a file on Windows; ReplaceFile does, in one step, keeping its attributes.
+        if (! temp.replaceFileIn (wav))
+            return failed ("it couldn't be replaced");
+       #else
         if (std::rename (temp.getFullPathName().toRawUTF8(), wav.getFullPathName().toRawUTF8()) != 0)
             return failed ("it couldn't be replaced");
+       #endif
 
         return {};
     }

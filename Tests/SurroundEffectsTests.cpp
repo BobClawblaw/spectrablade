@@ -788,6 +788,13 @@ void runSurroundEffectsTests (AudioEngine& engine)
 
 void runMasterRackDeviceTests (AudioEngine& engine)
 {
+    // A 7.1 master's six channels past L and R need eight outputs, as runSurroundDeviceTests needs six.
+    if (engine.deviceManager.getCurrentAudioDevice() == nullptr || engine.getDeviceOutputChannelNames().size() < 8)
+    {
+        std::cout << "      (master rack on separate outputs needs an interface with 8 outputs; skipped)" << std::endl;
+        return;
+    }
+
     // Played to separate outputs, a 5.1 master's C LFE and Ls Rs each get a copy of every rack
     // slot that doesn't link them (an EQ), and go through the ones that do (a compressor) themselves.
     juce::PluginDescription compressor, eq, limiter;

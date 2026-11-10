@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
 #include "../Source/TrackTemplate.h"
@@ -399,7 +400,7 @@ void runBusTests()
         auto dir = juce::File::createTempFile ("output");
         dir.createDirectory();
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         auto noClips = out;
 
         for (auto& t : noClips.tracks)
@@ -504,7 +505,7 @@ void runBusTests()
         auto dir = juce::File::createTempFile ("buschain");
         dir.createDirectory();
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         auto noClips = chain;
 
         for (auto& t : noClips.tracks)
@@ -529,7 +530,7 @@ void runBusTests()
         auto dir = juce::File::createTempFile ("bus");
         dir.createDirectory();
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
 
         auto noClips = s;
         for (auto& t : noClips.tracks)
@@ -613,7 +614,7 @@ void runBusTests()
         auto dir = juce::File::createTempFile ("pairs");
         dir.createDirectory();
         juce::AudioFormatManager formats;
-        formats.registerBasicFormats();
+        AudioFileIO::registerFormats (formats);
         auto noClips = both;
 
         for (auto& t : noClips.tracks)
