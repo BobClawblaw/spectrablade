@@ -35,6 +35,7 @@
 #include "InstrumentTests.h"
 #include "InstrumentTrackTests.h"
 #include "NoteEditorTests.h"
+#include "MidiInputTests.h"
 #include "LossyFilesTests.h"
 #include "FfmpegTests.h"
 #include "FileInfoTests.h"
@@ -784,6 +785,7 @@ int main (int argc, char* argv[])
         runInstrumentTests (engine);
         runInstrumentTrackTests (engine);
         runNoteEditorTests();
+        runMidiInputTests();
         runLossyFilesTests();
         runFfmpegTests();
         runFileInfoTests();

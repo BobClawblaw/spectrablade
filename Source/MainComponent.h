@@ -526,6 +526,18 @@ private:
     // Transport and windows
     void togglePlay();
     void toggleRecord();
+
+    /** Record Notes: plays (from the cursor when stopped) and keeps the notes played live into
+        the selected track's instrument, until stopped, as a note clip there. */
+    void toggleRecordNotes();
+    void finishRecordingNotes();
+    bool recordingNotes = false;
+    juce::int64 noteRecordStart = 0;
+
+    /** Standard MIDI Files into the session: each file's tracks with notes as note clips on new
+        tracks at the frame. */
+    void chooseMidiFiles();
+    void importMidiFiles (const juce::StringArray& files, juce::int64 frame);
     void startRecording();
     void stopRecording();
     void startSessionRecording();

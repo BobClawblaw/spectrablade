@@ -113,6 +113,10 @@ namespace SessionMixer
             or the thread rendering. */
         virtual juce::StringArray setWideChannels (const std::map<juce::uint32, int>&)   { return {}; }
 
+        /** Audio thread, before a block is mixed: MIDI played live this block (frames from 0) for
+            this track's instrument, or null for none. The buffer must outlive the block. */
+        virtual void setLiveMidi (juce::uint32 /*trackId*/, const juce::MidiBuffer* /*midi*/)   {}
+
         /** setWideChannels with these tracks all 5.1. */
         juce::StringArray setWideTracks (const std::set<juce::uint32>& tracks)
         {

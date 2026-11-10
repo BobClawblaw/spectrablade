@@ -19,8 +19,9 @@
     (earlier by the latency of the effects before it).
 
     A chain may start with an instrument (isInstrument): it is given the track's note clips as
-    MIDI, at the session frame of the audio going through it, and what it plays is added to that
-    audio; a reset turns every note off before the next block.
+    MIDI, at the session frame of the audio going through it, and the MIDI played live for the
+    track this block (setLiveMidi), and what it plays is added to that audio; a reset turns every
+    note off before the next block.
 
     Moves of the effects' parameters in their own windows are reported (onParameterTouched), so
     they can be written as automation. While a parameter is touched its envelope leaves it alone.
@@ -131,6 +132,7 @@ public:
     std::unique_ptr<juce::XmlElement> createXml (juce::uint32 trackId) const;
 
     // SessionMixer::Inserts, for the audio thread
+    void setLiveMidi (juce::uint32 trackId, const juce::MidiBuffer*) override;
     bool isActive (juce::uint32 trackId) override;
     int getLatency (juce::uint32 trackId) override;
     void reset (juce::uint32 trackId) override;
@@ -198,4 +200,10 @@ private:
     juce::SpinLock touchesLock;
     std::vector<ParameterTouch> touches;   // waiting for the message thread
     juce::MidiBuffer midi;
+
+    // Live MIDI for one track's instrument this block (audio thread): the buffer, the track, and
+    // how many of its frames the instrument has been given so far (a block mixed in runs).
+    const juce::MidiBuffer* liveMidi = nullptr;
+    juce::uint32 liveTrack = 0;
+    int liveFrom = 0;
 };

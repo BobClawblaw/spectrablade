@@ -7,6 +7,7 @@
 #include "Recorder.h"
 #include "Session.h"
 #include "TrackEffects.h"
+#include "MidiInput.h"
 
 //==============================================================================
 /** Reads the document's current snapshot for playback. Picks up edits on the fly. */
@@ -91,6 +92,10 @@ public:
     /** While stopped: the live input alone (the clips silent) through the session at the cursor. */
     void renderLive (const juce::AudioSourceChannelInfo&);
 
+    /** While stopped, with no live input: the clips silent through the session at the cursor, so
+        an instrument played live sounds. */
+    void renderIdle (const juce::AudioSourceChannelInfo&);
+
     /** Scrubbing the stopped session: adds the scrubber's sound of the mix to the first two channels
         of the buffer's first numFrames. The mix is the clips through their tracks' volume, pan,
         polarity, mute and solo, buses and folders, and with effects true their track and bus
@@ -157,7 +162,8 @@ private:
 class DocumentPlayerProcessor final : public juce::AudioProcessor
 {
 public:
-    DocumentPlayerProcessor (AudioDocument&, Session&, SessionMixer::Inserts&);
+    /** The live MIDI the session's instruments hear (the engine's); without one, its own, idle. */
+    DocumentPlayerProcessor (AudioDocument&, Session&, SessionMixer::Inserts&, MidiIn::Live* = nullptr);
     ~DocumentPlayerProcessor() override;
 
     enum class Mode { document, session };
@@ -282,9 +288,13 @@ private:
 
     AudioDocument& document;
     Session& session;
+    SessionMixer::Inserts& inserts;
+    MidiIn::Live ownLive;                  // before liveMidi, which may refer to it
+    MidiIn::Live& liveMidi;
     DocumentSource source { document };
     SessionSource sessionSource;
     Mode mode = Mode::document;
+    juce::MidiBuffer liveBlock;            // this block's live MIDI
 
 public:
     /** The player's channels: the mix (0 and 1), then one for each interface output (from
@@ -334,7 +344,8 @@ private:
 */
 class AudioEngine final : public juce::ChangeBroadcaster,
                           private juce::ChangeListener,
-                          private juce::AudioProcessorListener
+                          private juce::AudioProcessorListener,
+                          private juce::MidiInputCallback
 {
 public:
     AudioEngine();
@@ -513,6 +524,13 @@ public:
     /** Each session track's effects. Read them here; change them through the methods below. */
     const TrackEffects& getTrackEffects() const   { return trackEffects; }
 
+    /** MIDI played live (the MIDI inputs the audio settings turn on, and the on-screen keyboard),
+        heard by the instrument of the track set on it, and recorded by it. */
+    MidiIn::Live& getLiveMidi() noexcept       { return liveMidi; }
+
+    /** Turns on every MIDI input there is, unless the saved device state names any (then those). */
+    void enableMidiInputs (const juce::XmlElement* savedState);
+
     /** Creates the plug-in at the session's rate and adds it to the end of the track's chain. */
     void addTrackPlugin (juce::uint32 trackId, const juce::PluginDescription&, AddCallback onDone);
     void removeTrackPlugin (juce::uint32 trackId, int slot);
@@ -537,6 +555,7 @@ private:
     using Node = juce::AudioProcessorGraph::Node;
 
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
+    void handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage&) override;
     void audioProcessorParameterChanged (juce::AudioProcessor*, int, float) override {}
     void audioProcessorChanged (juce::AudioProcessor*, const ChangeDetails&) override;
     void rebuildConnections();
@@ -552,6 +571,7 @@ private:
     int currentBlockSize() const;
 
     TrackEffects trackEffects;   // before the graph: the player in it uses them
+    MidiIn::Live liveMidi;    // likewise
     juce::AudioProcessorGraph graph;
     juce::AudioProcessorPlayer graphPlayer;
     DocumentPlayerProcessor* player = nullptr;

@@ -79,11 +79,11 @@ namespace
                            clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
                            history { "history" }, notes { "notes" }, files { "files" }, levels { "levels" },
                                 spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" }, tonalBalance { "tonalBalance" }, statistics { "statistics" },
-                           pianoRoll { "pianoRoll" };
+                           pianoRoll { "pianoRoll" }, keyboard { "keyboard" };
 
         juce::StringArray all()
         {
-            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch, tonalBalance, statistics, pianoRoll };
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch, tonalBalance, statistics, pianoRoll, keyboard };
         }
     }
 
@@ -156,7 +156,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
-        cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll,
+        cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -1794,6 +1794,16 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                            info.setTicked (dock->isShown (Panels::pitch)); break;
         case cmdShowPianoRoll: info.setInfo ("Piano Roll", "Show or hide the panel for editing the selected note clip's notes on a grid of pitch and time", "Window", 0);
                            info.setTicked (dock->isShown (Panels::pianoRoll)); break;
+        case cmdShowKeyboard: info.setInfo ("Keyboard", "Show or hide the on-screen keyboard, which plays the selected track's instrument", "Window", 0);
+                           info.setTicked (dock->isShown (Panels::keyboard)); break;
+        case cmdRecordNotes: info.setInfo (recordingNotes ? "Stop Recording Notes" : "Record Notes",
+                                           "Play (from the cursor) and keep the notes played live, from a MIDI input or the keyboard, into the selected track's instrument as a note clip",
+                                           "Multitrack", 0);
+                           info.addDefaultKeypress ('r', juce::ModifierKeys::altModifier);
+                           info.setTicked (recordingNotes);
+                           info.setActive (multitrackMode && (recordingNotes || (multitrack.getSelectedTrack() >= 0 && ! isRecording()))); break;
+        case cmdImportMidi: info.setInfo ("Import MIDI File...", "Add a Standard MIDI File's tracks to the session as note clips, each on a new track, at the cursor", "Multitrack", 0);
+                           info.setActive (multitrackMode); break;
         case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's or session's video, following the playhead", "Window", 0);
                            info.setTicked (dock->isShown (Panels::video)); break;
         case cmdAttachVideo: info.setInfo ("Attach Video...", "Choose the video this file's sound goes with, to watch in the Video panel and to put the sound back into", "File", 0);
@@ -2712,6 +2722,9 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdShowVideo: dock->toggle (Panels::video); break;
         case cmdShowPitchEditor: dock->toggle (Panels::pitch); break;
         case cmdShowPianoRoll: dock->toggle (Panels::pianoRoll); break;
+        case cmdShowKeyboard: dock->toggle (Panels::keyboard); break;
+        case cmdRecordNotes: toggleRecordNotes(); break;
+        case cmdImportMidi: chooseMidiFiles(); break;
         case cmdOpenProject: chooseProject(); break;
         case cmdSaveProject: saveProject (false); break;
         case cmdSaveProjectAs: saveProject (true); break;
@@ -2918,13 +2931,13 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         }
         case 4:
             // The panels and Import at the top; the rest in groups by what they do.
-            add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, 0 });
+            add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, cmdImportMidi, 0 });
             group ("Tracks", { cmdAddTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, 0, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack,
                                0, cmdTrackAbove, cmdTrackBelow, 0, cmdUnsoloAll, cmdUnmuteAll });
             group ("Clips", { cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, 0, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines });
             group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
             group ("Time Range", { cmdClearRange, cmdDeleteTime, cmdInsertTime, 0, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime });
-            group ("Editing and Recording", { cmdSnapping, cmdZeroCrossings, cmdCrossfade, 0, cmdWriteAutomation, cmdInputMonitoring, cmdLoopRecording });
+            group ("Editing and Recording", { cmdSnapping, cmdZeroCrossings, cmdCrossfade, 0, cmdWriteAutomation, cmdInputMonitoring, cmdLoopRecording, cmdRecordNotes });
             group ("Tempo", { cmdMetronome, cmdCountIn, 0, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats });
             group ("Surround", { cmdSurroundMaster, cmdSevenOneMaster });
             group ("Render and Export", { cmdBounceTrack, cmdFreezeTrack, 0, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions });
@@ -2934,7 +2947,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowTonalBalance, cmdShowStatistics, cmdShowVideo, cmdShowPitchEditor, cmdShowPianoRoll, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowTonalBalance, cmdShowStatistics, cmdShowVideo, cmdShowPitchEditor, cmdShowPianoRoll, cmdShowKeyboard, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
 
             juce::PopupMenu workspaceMenu;
 
@@ -3045,6 +3058,16 @@ void MainComponent::timerCallback()
     auto& player = engine.getPlayer();
     auto& recorder = engine.getRecorder();
     keepRecoveryCopy();
+
+    // Live MIDI plays the selected track's instrument; a note recording ends with playback.
+    {
+        const auto state = engine.session.getState();
+        const auto track = multitrack.getSelectedTrack();
+        engine.getLiveMidi().setTrack (multitrackMode && juce::isPositiveAndBelow (track, (int) state->tracks.size()) ? state->tracks[(size_t) track].id : 0u);
+    }
+
+    if (recordingNotes && ! player.isPlaying())
+        finishRecordingNotes();
 
     if ((insideAudio != nullptr || insidePending)
         && ((insideAudio != nullptr && ! player.isPlaying()) || multitrackMode || engine.document.getVersion() != insideVersion || playRange() != insideRange))
@@ -4509,16 +4532,139 @@ void MainComponent::chooseFilesForSession()
                           preview);
 }
 
+void MainComponent::toggleRecordNotes()
+{
+    if (recordingNotes)
+    {
+        finishRecordingNotes();
+        return;
+    }
+
+    const auto state = engine.session.getState();
+    const auto track = multitrack.getSelectedTrack();
+
+    if (! multitrackMode || ! juce::isPositiveAndBelow (track, (int) state->tracks.size()) || ! state->tracks[(size_t) track].takesClips())
+    {
+        showError ("Record Notes", "Select a track to record notes onto (a track with an instrument plays them).");
+        return;
+    }
+
+    auto& player = engine.getPlayer();
+    engine.getLiveMidi().setTrack (state->tracks[(size_t) track].id);
+    noteRecordStart = player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor();
+    engine.getLiveMidi().startCapture();
+    recordingNotes = true;
+
+    if (! player.isPlaying())
+        togglePlay();
+
+    commands.commandStatusChanged();
+}
+
+void MainComponent::finishRecordingNotes()
+{
+    if (! recordingNotes)
+        return;
+
+    auto& player = engine.getPlayer();
+    const auto end = juce::jmax (noteRecordStart + 1, player.isPlaying() ? player.getPositionFrames() : multitrack.getCursor());
+    const auto notes = engine.getLiveMidi().stopCapture (end);
+    recordingNotes = false;
+    commands.commandStatusChanged();
+
+    if (notes.empty())
+    {
+        showNote ("Record Notes", "No notes were played, so no clip was made.");
+        return;
+    }
+
+    auto clip = MidiIn::clipOf (notes, noteRecordStart);
+    auto next = *engine.session.getState();
+
+    if (const auto id = SessionEdits::addNoteClip (next, engine.getLiveMidi().getTrack(), std::move (clip)); id != 0)
+    {
+        engine.session.apply (std::move (next), "Record Notes");
+        multitrack.selectNoteClip (id);
+    }
+}
+
+void MainComponent::chooseMidiFiles()
+{
+    chooser = std::make_unique<juce::FileChooser> ("Import MIDI file", engine.document.getFile().getParentDirectory(), "*.mid;*.midi");
+    chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles
+                              | juce::FileBrowserComponent::canSelectMultipleItems,
+                          [this] (const juce::FileChooser& fc)
+                          {
+                              juce::StringArray paths;
+
+                              for (auto& f : fc.getResults())
+                                  paths.add (f.getFullPathName());
+
+                              if (! paths.isEmpty())
+                                  importMidiFiles (paths, multitrack.getCursor());
+                          });
+}
+
+void MainComponent::importMidiFiles (const juce::StringArray& files, juce::int64 frame)
+{
+    auto next = *engine.session.getState();
+    juce::StringArray errors;
+    int added = 0;
+    juce::uint32 first = 0;
+
+    for (auto& path : files)
+    {
+        auto imported = MidiIn::importFile (juce::File (path), next.sampleRate);
+
+        if (imported.error.isNotEmpty())
+        {
+            errors.add (imported.error);
+            continue;
+        }
+
+        for (auto& clip : imported.clips)
+        {
+            auto& track = next.addTrack();
+            track.name = clip.name;
+            clip.position = juce::jmax ((juce::int64) 0, frame);
+
+            if (const auto id = SessionEdits::addNoteClip (next, track.id, std::move (clip)); id != 0)
+            {
+                first = first == 0 ? id : first;
+                ++added;
+            }
+        }
+    }
+
+    if (added > 0)
+    {
+        engine.session.apply (std::move (next), added == 1 ? "Import MIDI" : "Import " + juce::String (added) + " MIDI Tracks");
+        multitrack.selectNoteClip (first);
+    }
+
+    if (! errors.isEmpty())
+        showError ("Import MIDI File", errors.joinIntoString ("\n"));
+}
+
 juce::int64 MainComponent::addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame)
 {
     auto next = *engine.session.getState();
     juce::StringArray errors;
     int added = 0;
     juce::int64 firstEnd = -1;
+    juce::StringArray midiFiles;
 
     for (auto& path : files)
     {
         const juce::File file (path);
+
+        // MIDI files go in as note clips, after the audio.
+        if (file.hasFileExtension ("mid;midi"))
+        {
+            midiFiles.add (path);
+            continue;
+        }
+
         auto loaded = AudioFileIO::load (file, engine.formatManager);
 
         if (loaded.error.isNotEmpty())
@@ -4550,6 +4696,12 @@ juce::int64 MainComponent::addFilesToSession (const juce::StringArray& files, in
 
     if (! errors.isEmpty())
         showError ("Import Audio", errors.joinIntoString ("\n"));
+
+    if (! midiFiles.isEmpty())
+    {
+        setMultitrack (true);
+        importMidiFiles (midiFiles, frame);
+    }
 
     return firstEnd;
 }
@@ -11761,7 +11913,7 @@ Settings::Model MainComponent::makeSettingsModel()
                                if (! engine.isDeviceOpen())
                                    return std::make_unique<juce::Label> ("none", "No audio device is open.");
 
-                               return std::make_unique<juce::AudioDeviceSelectorComponent> (engine.deviceManager, 0, 0, 1, 256, false, false, true, false);
+                               return std::make_unique<juce::AudioDeviceSelectorComponent> (engine.deviceManager, 0, 0, 1, 256, true, false, true, false);
                            }) } });
 
     model.push_back ({ "Plug-ins", "VST3 and Audio Unit effects are found by a scan and listed in the Plug-ins window, where one that fails can be checked again.",
@@ -12277,7 +12429,7 @@ void MainComponent::showAudioSettings()
         return;
 
     auto* selector = new juce::AudioDeviceSelectorComponent (engine.deviceManager, 0, 0, 1, 256,
-                                                             false, false, true, false);
+                                                             true, false, true, false);
     selector->setSize (520, 520);
 
     juce::DialogWindow::LaunchOptions o;
@@ -12507,6 +12659,8 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
         };
         made = std::move (panel);
     }
+    else if (id == Panels::keyboard)
+        made = std::make_unique<MidiIn::KeyboardPanel> (engine.getLiveMidi());
     else if (id == Panels::pianoRoll)
     {
         auto panel = std::make_unique<NoteEditor>();
@@ -12645,6 +12799,7 @@ juce::String MainComponent::getTitle (const juce::String& id)
     if (id == Panels::video)           return "Video";
     if (id == Panels::pitch)           return "Pitch Editor";
     if (id == Panels::pianoRoll)       return "Piano Roll";
+    if (id == Panels::keyboard)        return "Keyboard";
     return id;
 }
 
@@ -12679,6 +12834,7 @@ std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::Str
     if (id == Panels::spectrum)    return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::statistics)  return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::pianoRoll)   return { Panels::editor, Dock::Side::bottom };
+    if (id == Panels::keyboard)    return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::phase)       return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,
                                             dock->getLayout().isDocked (Panels::spectrum) ? Dock::Side::right : Dock::Side::bottom };
     if (id == Panels::tonalBalance) return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,

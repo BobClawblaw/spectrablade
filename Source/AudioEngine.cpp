@@ -368,6 +368,22 @@ void SessionSource::renderLive (const juce::AudioSourceChannelInfo& info)
     scrubTo = -1;
 }
 
+void SessionSource::renderIdle (const juce::AudioSourceChannelInfo& info)
+{
+    refreshState();
+
+    if (state == nullptr)
+    {
+        info.clearActiveBufferRegion();
+        return;
+    }
+
+    static const SessionMixer::Live silent { {}, 0, nullptr, false };
+    SessionMixer::render (*state, position.load(), *info.buffer, info.startSample, info.numSamples, buffers, &inserts, &silent);
+    nextFrame = -1;
+    scrubTo = -1;
+}
+
 void SessionSource::getNextAudioBlock (const juce::AudioSourceChannelInfo& info)
 {
     ++blocksRead;
@@ -422,12 +438,13 @@ void SessionSource::renderRun (juce::int64 start, const juce::AudioSourceChannel
 }
 
 //==============================================================================
-DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s, SessionMixer::Inserts& inserts)
+DocumentPlayerProcessor::DocumentPlayerProcessor (AudioDocument& doc, Session& s, SessionMixer::Inserts& ins, MidiIn::Live* midi)
     : AudioProcessor (BusesProperties().withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                                        .withOutput ("Interface", juce::AudioChannelSet::discreteChannels (SessionTrack::maxDeviceOutputs), true)
                                        .withOutput ("Click", juce::AudioChannelSet::stereo(), true)),
-      document (doc), session (s), sessionSource (s, inserts)
+      document (doc), session (s), inserts (ins), liveMidi (midi != nullptr ? *midi : ownLive), sessionSource (s, ins)
 {
+    liveBlock.ensureSize (1024);
     sessionSource.setLevels (&levels);
     resetSource();
 }
@@ -567,6 +584,7 @@ juce::int64 DocumentPlayerProcessor::getHeardFrame() const
 void DocumentPlayerProcessor::prepareToPlay (double sampleRate, int blockSize)
 {
     deviceRate = sampleRate;
+    liveMidi.prepare (sampleRate);
     updateTail();
     monitorInput.setSize (2 * SessionMixer::Live::maxTracks, juce::jmax (8192, 4 * blockSize));
     monitorFrames = 0;
@@ -634,11 +652,27 @@ void DocumentPlayerProcessor::processBlock (juce::AudioBuffer<float>& buffer, ju
     juce::AudioSourceChannelInfo info (&buffer, 0, numFrames);
     const auto playing = transport.isPlaying();
     const auto blocksRead = sessionSource.getBlocksRead();
+
+    // Live MIDI for the chosen track's instrument this block; while playing a session at the
+    // device's rate, its notes are captured at their session frames.
+    const auto liveAny = liveMidi.takeBlock (liveBlock, numFrames);
+    const auto blockFrame = sessionSource.getNextReadPosition();
+    inserts.setLiveMidi (liveMidi.getTrack(), mode == Mode::session ? &liveBlock : nullptr);
+
+    if (liveAny && playing && mode == Mode::session && juce::exactlyEqual (sourceRate, deviceRate))
+        liveMidi.captureBlock (liveBlock, blockFrame);
+
     transport.getNextAudioBlock (info);
 
-    // Stopped (the transport read nothing and played silence): the input plays on its own.
-    if (monitoring && ! playing && sessionSource.getBlocksRead() == blocksRead)
-        sessionSource.renderLive (info);
+    // Stopped (the transport read nothing and played silence): the input plays on its own, or
+    // an instrument played live sounds through the session.
+    if (! playing && sessionSource.getBlocksRead() == blocksRead)
+    {
+        if (monitoring)
+            sessionSource.renderLive (info);
+        else if (mode == Mode::session && ! scrubber.isSounding() && liveMidi.getSoundingFrames() > 0)
+            sessionSource.renderIdle (info);
+    }
 
     // Scrubbing a stopped session: its mix's sound, through its effects unless they are playing
     // the input monitored.
@@ -824,7 +858,7 @@ AudioEngine::AudioEngine()
     };
 
     graph.addListener (this);
-    auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session, trackEffects);
+    auto playerProcessor = std::make_unique<DocumentPlayerProcessor> (document, session, trackEffects, &liveMidi);
     player = playerProcessor.get();
     playerNode = graph.addNode (std::move (playerProcessor));
 
@@ -843,6 +877,7 @@ AudioEngine::AudioEngine()
 AudioEngine::~AudioEngine()
 {
     *alive = false;
+    deviceManager.removeMidiInputDeviceCallback ({}, this);
     graph.removeListener (this);
     document.removeChangeListener (this);
     session.removeChangeListener (this);
@@ -874,8 +909,26 @@ juce::String AudioEngine::openDevice (const juce::XmlElement* savedState)
         deviceManager.addAudioCallback (extra.get());
 
     deviceOpen = true;
+    enableMidiInputs (savedState);
+    deviceManager.addMidiInputDeviceCallback ({}, this);
     rebuildConnections();
     return error;
+}
+
+void AudioEngine::enableMidiInputs (const juce::XmlElement* savedState)
+{
+    // The saved state turned on the inputs it names (the device manager restored them); with none
+    // named, every input there is plays, until Settings turns one off.
+    if (savedState != nullptr && savedState->getChildByName ("MIDIINPUT") != nullptr)
+        return;
+
+    for (auto& input : juce::MidiInput::getAvailableDevices())
+        deviceManager.setMidiInputDeviceEnabled (input.identifier, true);
+}
+
+void AudioEngine::handleIncomingMidiMessage (juce::MidiInput*, const juce::MidiMessage& m)
+{
+    liveMidi.addMessage (m);
 }
 
 const juce::XmlElement* AudioEngine::namingADevice (const juce::XmlElement* savedState)

@@ -112,6 +112,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Tap Tempo | `T` |
 | Input Monitoring | `I` |
 | Loop Recording | `L` |
+| Record Notes | `Option-R` |
 | Write Automation | `W` |
 | Crossfade Overlaps | `X` |
 | Mix Down... | `Shift-Cmd-E` |

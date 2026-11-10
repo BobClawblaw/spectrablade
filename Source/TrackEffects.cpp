@@ -518,6 +518,13 @@ std::unique_ptr<juce::XmlElement> TrackEffects::createXml (juce::uint32 trackId)
 }
 
 //==============================================================================
+void TrackEffects::setLiveMidi (juce::uint32 trackId, const juce::MidiBuffer* block)
+{
+    liveMidi = block != nullptr && ! block->isEmpty() ? block : nullptr;
+    liveTrack = trackId;
+    liveFrom = 0;
+}
+
 bool TrackEffects::isActive (juce::uint32 trackId)
 {
     const juce::ScopedTryLock sl (lock);
@@ -631,6 +638,16 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
             for (auto& clip : track.noteClips)
                 if (! clip.muted)
                     clip.addMidi (at, n, midi);
+
+            // What is played live for this track: the next n frames of this block's messages.
+            if (liveMidi != nullptr && track.id == liveTrack)
+            {
+                for (const auto meta : *liveMidi)
+                    if (meta.samplePosition >= liveFrom && meta.samplePosition < liveFrom + n)
+                        midi.addEvent (meta.getMessage(), meta.samplePosition - liveFrom);
+
+                liveFrom += n;
+            }
 
             p.processBlock (work, midi);
             const auto outs = p.getTotalNumOutputChannels();
