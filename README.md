@@ -64,13 +64,13 @@ File > Batch Process... puts many files through the same steps and writes each a
 
 ## Screenshots
 
-![The editor in the Editing workspace: two files open in the Files panel, a stereo file in the waveform and spectrogram view with its fade handles at the top corners and the time strip under it, the effects rack and undo history, the selection panel, and the levels meter](docs/screenshots/editor.png)
+![The editor in the Editing workspace: the Editor | Multitrack switch and the transport at the top, two files open in the Files panel, a stereo file in the waveform and spectrogram view with its fade handles at the top corners and the tool strip under it, the effects rack and undo history, the selection panel, and the levels meter](docs/screenshots/editor.png)
 
-The Editing workspace: two files open in the Files panel on the left (click one to work on it; Window > File Tabs adds tabs over the editor), the effects rack, undo history and selection panel on the right, and the levels meter below. The small handles at the waveform's top corners drag fades in and out; the strip under the waveform shows the cursor, selection and view and holds the zoom controls.
+The Editing workspace: the Editor | Multitrack switch at the top left, lit on the side in use, with the transport beside it; two files open in the Files panel on the left (click one to work on it; Window > File Tabs adds tabs over the editor); the effects rack, undo history and selection panel on the right; and the levels meter below. The small handles at the waveform's top corners drag fades in and out; the strip under the waveform holds the box, lasso, brush and heal tools, shows the cursor, selection and view, and holds the zoom controls. The status line at the bottom says which file is being edited.
 
-![A multitrack session: four tracks and a reverb bus, with clips, fades, sends, markers and the mixer](docs/screenshots/multitrack.png)
+![A multitrack session: the switch on Multitrack, four tracks and a reverb bus, with clips, fades, sends, markers and the mixer](docs/screenshots/multitrack.png)
 
-A multitrack session in the Multitrack workspace: four tracks and a reverb bus with clips, clip fades, a crossfade, sends and markers, the mixer underneath, and clip properties, the rack, markers and the clip list as tabs on the right.
+A multitrack session in the Multitrack workspace, the switch lit on Multitrack and the status line saying so: four tracks and a reverb bus with clips, clip fades, a crossfade, sends and markers, the mixer underneath, and clip properties, the rack, markers and the clip list as tabs on the right.
 
 ![The Analysis workspace in the Darker theme: the frequency analyzer and phase meter under the editor](docs/screenshots/analysis.png)
 

@@ -9824,13 +9824,19 @@ void MainComponent::showAbout()
     showNote ("About SpectraBlade",
               "SpectraBlade " + version + "\n"
               "Copyright (C) 2026 BobClawblaw\n\n"
+              "An audio editor for macOS 13 or later on Apple silicon and for 64-bit Windows 10 or later. There is no Linux or Intel Mac build.\n\n"
               "This program is free software: you can redistribute it and/or modify it under the terms of the "
               "GNU Affero General Public License, version 3, as published by the Free Software Foundation.\n\n"
               "It is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied "
               "warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the licence for more details: "
+             #if JUCE_WINDOWS
+              "LICENSE.txt beside SpectraBlade.exe, or https://www.gnu.org/licenses/agpl-3.0.html\n\n"
+             #else
               "LICENSE.txt in the disk image, or https://www.gnu.org/licenses/agpl-3.0.html\n\n"
-              "Source code: https://github.com/BobClawblaw/spectrablade\n"
-              "Built with JUCE, used under the AGPLv3.");
+             #endif
+              "Source code: https://github.com/BobClawblaw/spectrablade\n\n"
+              "Built with JUCE (under the AGPLv3), the LAME MP3 encoder (LGPL 2 or later), Signalsmith Stretch and Signalsmith Linear "
+              "(MIT licence), and the Universal Category System's list, v8.2.1 (public domain).");
 }
 
 void MainComponent::showGraphicEq (int numBands)
