@@ -16,7 +16,7 @@ A clean-room audio editor for macOS and Windows: waveform and spectral editing, 
 
 **[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon). For Windows 10 or later (64-bit), see [Windows](#windows). Every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
 
-**Status:** 0.14.11, a dogfooding release: feature work has stopped, the app is complete, and the releases from here to 1.0.0 fix what real use turns up. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
+**Status:** 0.14.12, a dogfooding release: feature work has stopped, the app is complete, and the releases from here to 1.0.0 fix what real use turns up. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
 ## Features
 
@@ -174,7 +174,7 @@ This finds Visual Studio with `vswhere`, builds a Release program for x64 in `bu
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.14.11/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.14.12/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Tests
