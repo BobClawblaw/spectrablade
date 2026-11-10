@@ -16,7 +16,7 @@ A clean-room audio editor for macOS and Windows: waveform and spectral editing, 
 
 **[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon). For Windows 10 or later (64-bit), see [Windows](#windows). Every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
 
-**Status:** 0.14.12 is the latest release, a dogfooding release. Feature work has started again on main for one line, 0.15: instrument plug-ins, MIDI and automation for sound design (the [roadmap](ROADMAP.md) has the steps); what real use turns up is still fixed alongside, and 1.0.0 follows once that line has had a round of use. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
+**Status:** 0.15.0 is the latest release: the first of the 0.15 line, instrument plug-ins, MIDI and automation for sound design (instrument tracks, note clips, a piano roll, live MIDI input, controller lanes), on top of the dogfooding releases before it. It is still a dogfooding release: none of the instrument work has been tried with a MIDI keyboard or listened to, so what real use turns up is fixed alongside, and 1.0.0 follows once that line has had a round of use. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
 ## Features
 
@@ -174,7 +174,7 @@ This finds Visual Studio with `vswhere`, builds a Release program for x64 in `bu
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.14.12/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.15.0/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Tests
