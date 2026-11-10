@@ -2012,8 +2012,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || ! track->clips.empty()));
             break;
         }
-        case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip right after it", "Multitrack", 0);
-                            info.addDefaultKeypress ('d', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
+        case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip (or note clip) right after it", "Multitrack", 0);
+                            info.addDefaultKeypress ('d', cmd); info.setActive (multitrackMode && multitrack.hasSelectedClip()); break;
         case cmdSurroundMaster: info.setInfo ("5.1 Master", "Mix the session to 5.1 (L R C LFE Ls Rs) instead of stereo, placing each track "
                                                     "and bus with the surround pad on its mixer strip", "Multitrack", 0);
                                 info.setTicked (engine.session.getState()->masterChannels() == 6); info.setActive (multitrackMode && ! isRecording()); break;
@@ -2113,8 +2113,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                                                            [] (auto& t) { return t.hidden; })); break;
         case cmdDuplicateTrack: info.setInfo ("Duplicate Track", "Copy the selected track or bus, with its clips, effects and settings", "Multitrack", 0);
                             info.setActive (multitrackMode && multitrack.getSelectedTrack() >= 0 && ! isRecording()); break;
-        case cmdSplitClip:  info.setInfo ("Split Clip", "Split the selected clip at the cursor", "Multitrack", 0);
-                            info.addDefaultKeypress ('k', cmd); info.setActive (multitrackMode && multitrack.getSelectedClip() != 0); break;
+        case cmdSplitClip:  info.setInfo ("Split Clip", "Split the selected clip (or note clip) at the cursor", "Multitrack", 0);
+                            info.addDefaultKeypress ('k', cmd); info.setActive (multitrackMode && multitrack.hasSelectedClip()); break;
         case cmdConvertRate: info.setInfo ("Convert Sample Rate...", "Resample the whole file to another rate", "Edit", 0);
                             info.setActive (hasAudio && backgroundJob == nullptr); break;
 
@@ -2188,11 +2188,11 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setActive (session.canUndo()); break;
             case cmdRedo:   info.shortName = session.canRedo() ? "Redo " + session.getRedoDescription() : juce::String ("Redo");
                             info.setActive (session.canRedo()); break;
-            case cmdDelete: info.shortName = "Delete Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdDelete: info.shortName = "Delete Clip"; info.setActive (multitrack.hasSelectedClip()); break;
             case cmdSelectAll: info.shortName = "Select All Clips"; info.setActive (hasClips); break;
             case cmdZoomSelection: info.shortName = "Zoom to Time Range"; info.setActive (! multitrack.getTimeSelection().isEmpty()); break;
-            case cmdCut:    info.shortName = "Cut Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
-            case cmdCopy:   info.shortName = "Copy Clip"; info.setActive (multitrack.getSelectedClip() != 0); break;
+            case cmdCut:    info.shortName = "Cut Clip"; info.setActive (multitrack.hasSelectedClip()); break;
+            case cmdCopy:   info.shortName = "Copy Clip"; info.setActive (multitrack.hasSelectedClip()); break;
             case cmdPaste:  info.shortName = "Paste Clip"; info.setActive (multitrack.canPaste()); break;
             case cmdPlayPause: case cmdGoToStart: case cmdGoToEnd: case cmdZoomIn: case cmdZoomOut: case cmdZoomFit:
                             info.setActive (hasClips); break;

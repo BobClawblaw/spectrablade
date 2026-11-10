@@ -174,19 +174,23 @@ namespace
         values.loopLength = 12000;
         values.notes = { { 60, 0, 6000, 0.5f }, { 64, 0, 6000, 0.5f } };
         values.colour = 3;
-        check (SessionEdits::replaceNoteClip (s, id, values) && SessionEdits::moveNoteClip (s, id, 700)
+        check (SessionEdits::replaceNoteClip (s, id, values) && SessionEdits::moveNoteClip (s, id, 0, 700)
                    && s.tracks[0].noteClips[0].name == "Chord" && s.tracks[0].noteClips[0].position == 700 && s.tracks[0].noteClips[0].length == 48000
                    && s.tracks[0].noteClips[0].loopLength == 12000 && s.tracks[0].noteClips[0].notes == values.notes && s.tracks[0].noteClips[0].colour == 3
-                   && s.tracks[0].noteClips[0].id == id && SessionEdits::moveNoteClip (s, id, -9) && s.tracks[0].noteClips[0].position == 0
-                   && s.getLength() == 48000 && ! SessionEdits::replaceNoteClip (s, 999999, values) && ! SessionEdits::moveNoteClip (s, 999999, 0),
-               "note clips: replaced (keeping its id and place) and moved (not before 0); the session's length counts it");
+                   && s.tracks[0].noteClips[0].id == id && SessionEdits::moveNoteClip (s, id, 0, -9) && s.tracks[0].noteClips[0].position == 0
+                   && s.getLength() == 48000 && ! SessionEdits::replaceNoteClip (s, 999999, values) && ! SessionEdits::moveNoteClip (s, 999999, 0, 0)
+                   && SessionEdits::moveNoteClip (s, id, 1, 5) && s.tracks[0].noteClips.size() == 1 && s.tracks[0].noteClips[0].position == 5
+                   && SessionEdits::moveNoteClip (s, id, 3, 9) && s.tracks.size() == 4 && s.tracks[3].noteClips.size() == 1 && s.tracks[0].noteClips.empty()
+                   && SessionEdits::moveNoteClip (s, id, 0, 0) && s.tracks[0].noteClips.size() == 1,
+               "note clips: replaced (keeping its id and place) and moved (not before 0; onto a bus only in time; past the last track onto a new one); "
+               "the session's length counts it");
 
         check (SessionEdits::setNoteClipMuted (s, id, true) && ! SessionEdits::setNoteClipMuted (s, id, true) && s.tracks[0].noteClips[0].muted
                    && SessionEdits::setNoteClipMuted (s, id, false) && ! s.tracks[0].noteClips[0].muted,
                "note clips: muted and unmuted, a repeat refused");
 
-        // Time edits: clips inside deleted time go, later ones move back, one across stays; inserted
-        // time moves the clips from it on.
+        // Time edits: clips inside deleted time go, later ones move back, one across it is cut back;
+        // inserted time splits a clip across it and moves the clips from it on.
         auto& track = s.tracks[0];
         track.noteClips.clear();
         NoteClip a;
@@ -203,16 +207,126 @@ namespace
         const auto across = SessionEdits::addNoteClip (s, trackId, a);
         const auto deleted = SessionEdits::deleteTime (s, 9500, 21000);
         const auto& after = s.tracks[0].noteClips;
-        check (deleted && after.size() == 2 && after[0].position == 18500 && after[1].id == across && after[1].position == 5000
-                   && SessionEdits::insertTime (s, 6000, 1000) && after[0].position == 19500 && after[1].position == 5000,
-               "note clips: deleting time removes the clips inside it and moves the later ones back, inserting time moves them on, "
-               "and one across the edit stays where it is");
+        const auto at = [&after] (juce::int64 position) -> const NoteClip*
+        {
+            for (auto& clip : after)
+                if (clip.position == position)
+                    return &clip;
+
+            return nullptr;
+        };
+        const auto cutBack = after.size() == 2 && at (18500) != nullptr && at (5000) != nullptr && at (5000)->id == across && at (5000)->length == 4500;
+        const auto inserted = SessionEdits::insertTime (s, 6000, 1000);
+        check (deleted && cutBack && inserted && after.size() == 3 && at (19500) != nullptr && at (5000) != nullptr && at (5000)->length == 1000
+                   && at (7000) != nullptr && at (7000)->offset == 1000 && at (7000)->length == 3500,
+               "note clips: deleting time removes the clips inside it, cuts back one across its edge and moves the later ones back; inserting "
+               "time splits a clip across it (the second part keeping its notes in time) and moves the clips from it on");
 
         const auto copyId = SessionEdits::duplicateTrack (s, 0);
-        check (copyId != 0 && s.tracks[1].noteClips.size() == 2 && s.tracks[1].noteClips[0].id != s.tracks[0].noteClips[0].id
-                   && s.tracks[1].noteClips[0].position == 19500 && SessionEdits::removeNoteClip (s, s.tracks[1].noteClips[0].id)
-                   && s.tracks[1].noteClips.size() == 1 && ! SessionEdits::removeNoteClip (s, 999999),
+        check (copyId != 0 && s.tracks[1].noteClips.size() == 3 && s.tracks[1].noteClips[0].id != s.tracks[0].noteClips[0].id
+                   && s.tracks[1].noteClips[0].position == s.tracks[0].noteClips[0].position && SessionEdits::removeNoteClip (s, s.tracks[1].noteClips[0].id)
+                   && s.tracks[1].noteClips.size() == 2 && ! SessionEdits::removeNoteClip (s, 999999),
                "note clips: a duplicated track's copies have ids of their own; removed by id");
+    }
+
+    /** The events a clip gives in [from, to), as (session frame, on, pitch). */
+    std::vector<Event> between (const NoteClip& c, juce::int64 from, juce::int64 to)
+    {
+        std::vector<Event> out;
+
+        for (auto& e : eventsOf (c, to, 64))
+            if (std::get<0> (e) >= from)
+                out.push_back (e);
+
+        return out;
+    }
+
+    void testClipEdits()
+    {
+        // A repeating clip trimmed at both ends, split and placed: the notes stay where they were in time.
+        SessionState s;
+        s.sampleRate = rate;
+        const auto trackId = s.addTrack().id;
+        NoteClip c;
+        c.position = 10000;
+        c.length = 8000;
+        c.loopLength = 2000;
+        c.notes = { { 60, 0, 500, 0.5f }, { 64, 1000, 500, 0.5f } };
+        const auto id = SessionEdits::addNoteClip (s, trackId, c);
+        const auto whole = eventsOf (s.tracks[0].noteClips[0], 20000, 64);
+
+        auto trimmed = s;
+        const auto trimOk = SessionEdits::trimNoteClip (trimmed, id, 11500, 16100);
+        const auto& t = trimmed.tracks[0].noteClips[0];
+        const auto kept = eventsOf (t, 20000, 64);
+        std::vector<Event> expected;
+
+        // What played from 11,500 on, the note at 11,000 (across the new start: its off at 11,500 too) left out, the last off at the new end.
+        for (auto& e : whole)
+            if (std::get<0> (e) >= 11500 && std::get<0> (e) < 16100 && e != Event { 11500, false, 64 })
+                expected.push_back (e);
+
+        expected.push_back ({ 16100, false, 60 });
+        check (trimOk && t.position == 11500 && t.offset == 1500 && t.length == 4600 && t.loopLength == 2000 && t.getOrigin() == 10000 && kept == expected,
+               "note clips: trimmed at both ends, the notes keep their place in time (the one across the new start left out, the one across the new end cut off there)");
+
+        // Not trimmed before the origin; a trim back out plays the same as before.
+        auto back = trimmed;
+        check (SessionEdits::trimNoteClip (back, id, 0, 18000) && back.tracks[0].noteClips[0].position == 10000 && back.tracks[0].noteClips[0].offset == 0
+                   && eventsOf (back.tracks[0].noteClips[0], 20000, 64) == whole,
+               "note clips: trimmed back out (not before the notes' origin) it plays as it did");
+
+        auto split = s;
+        const auto splitOk = SessionEdits::splitNoteClip (split, id, 13300);
+        const auto& left = split.tracks[0].noteClips[0];
+        const auto& right = split.tracks[0].noteClips[1];
+        auto both = eventsOf (left, 20000, 64);
+
+        for (auto& e : eventsOf (right, 20000, 64))
+            both.push_back (e);
+
+        std::sort (both.begin(), both.end(), [] (const Event& a, const Event& b) { return std::get<0> (a) < std::get<0> (b); });
+        auto sortedWhole = whole;
+        std::sort (sortedWhole.begin(), sortedWhole.end(), [] (const Event& a, const Event& b) { return std::get<0> (a) < std::get<0> (b); });
+
+        // Split inside a note: the left part turns it off at the split, the right part doesn't start it.
+        std::vector<Event> expectedSplit;
+
+        for (auto& e : sortedWhole)
+            if (std::get<0> (e) != 13500)
+                expectedSplit.push_back (e);
+
+        expectedSplit.insert (std::find_if (expectedSplit.begin(), expectedSplit.end(), [] (const Event& e) { return std::get<0> (e) > 13300; }), { 13300, false, 64 });
+        check (splitOk && split.tracks[0].noteClips.size() == 2 && left.position == 10000 && left.length == 3300 && right.position == 13300
+                   && right.offset == 3300 && right.length == 4700 && right.id != left.id && both == expectedSplit
+                   && ! SessionEdits::splitNoteClip (split, id, 10000) && ! SessionEdits::splitNoteClip (split, id, 13300),
+               "note clips: split in two, the parts play what the whole did (a note across the split cut off there), not at an edge");
+
+        const auto copyId = SessionEdits::placeNoteClip (s, 0, s.tracks[0].noteClips[0], 30000);
+        const auto newTrack = SessionEdits::placeNoteClip (s, 5, s.tracks[0].noteClips[0], 0);
+        check (copyId != 0 && s.tracks[0].noteClips.size() == 2 && s.tracks[0].noteClips[1].position == 30000 && s.tracks[0].noteClips[1].id == copyId
+                   && s.tracks[0].noteClips[1].notes == c.notes && newTrack != 0 && s.tracks.size() == 2 && s.tracks[1].noteClips.size() == 1,
+               "note clips: a copy placed on the track, or on a new track past the last");
+
+        // Copied time carries the note clips cut to it; pasting puts them in at the cursor, in time.
+        SessionState src;
+        src.sampleRate = rate;
+        const auto srcTrack = src.addTrack().id;
+        SessionEdits::addNoteClip (src, srcTrack, c);
+        const auto time = SessionEdits::copyTime (src, 11500, 16100);
+        SessionState dest;
+        dest.sampleRate = rate;
+        dest.addTrack();
+        const auto pasted = SessionEdits::pasteTime (dest, time, 40000);
+        const auto& p = dest.tracks[0].noteClips;
+        std::vector<Event> expectedPasted;
+
+        for (auto& e : expected)
+            expectedPasted.emplace_back (std::get<0> (e) + 40000 - 11500, std::get<1> (e), std::get<2> (e));
+
+        check (time.tracks.size() == 1 && time.tracks[0].noteClips.size() == 1 && time.tracks[0].noteClips[0].position == 0 && time.tracks[0].noteClips[0].offset == 1500
+                   && pasted && p.size() == 1 && p[0].position == 40000 && between (p[0], 40000, 60000) == expectedPasted,
+               "note clips: copied time carries them cut to it, and pasted time plays them in time where it is put");
     }
 
     void testFile (juce::AudioFormatManager& formats)
@@ -223,6 +337,7 @@ namespace
         NoteClip c;
         c.name = "Riff";
         c.position = 96000;
+        c.offset = 3000;
         c.length = 48000;
         c.loopLength = 24000;
         c.notes = { { 60, 0, 6000, 0.5f }, { 67, 12000, 6000, 0.25f } };
@@ -237,8 +352,8 @@ namespace
 
         const auto* back = loaded.state.tracks.size() == 1 && loaded.state.tracks[0].noteClips.size() == 1 ? &loaded.state.tracks[0].noteClips[0] : nullptr;
         check (id != 0 && error.isEmpty() && loaded.error.isEmpty() && back != nullptr && back->name == "Riff" && back->position == 96000
-                   && back->length == 48000 && back->loopLength == 24000 && back->notes == c.notes && back->muted && back->colour == 2,
-               "note clips: saved in the session file and read back (name, place, length, loop, notes, mute, colour)");
+                   && back->offset == 3000 && back->length == 48000 && back->loopLength == 24000 && back->notes == c.notes && back->muted && back->colour == 2,
+               "note clips: saved in the session file and read back (name, place, offset, length, loop, notes, mute, colour)");
     }
 
     /** A track with a constant stereo clip from 0 to 9,000 and a repeating note clip. */
@@ -413,6 +528,7 @@ void runInstrumentTrackTests (AudioEngine& engine)
 {
     testMidi();
     testEdits();
+    testClipEdits();
     testFile (engine.formatManager);
     testChain();
     testSynth (engine);

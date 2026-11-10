@@ -175,17 +175,21 @@ int NoteEditor::pitchAt (float y) const
     return juce::jlimit (0, 127, lowPitch + (int) std::floor (((float) rollArea().getBottom() - y) / rowHeight));
 }
 
+juce::int64 NoteEditor::wholeLength() const noexcept
+{
+    return shown.has_value() ? juce::jmax ((juce::int64) 1, shown->clip.offset + shown->clip.length) : (juce::int64) 1;
+}
+
 float NoteEditor::xOf (juce::int64 frame) const
 {
     const auto area = rollArea();
-    const auto length = shown.has_value() ? juce::jmax ((juce::int64) 1, shown->clip.length) : (juce::int64) 1;
-    return (float) area.getX() + (float) frame * (float) (area.getWidth() - 1) / (float) length;
+    return (float) area.getX() + (float) frame * (float) (area.getWidth() - 1) / (float) wholeLength();
 }
 
 juce::int64 NoteEditor::frameAt (float x) const
 {
     const auto area = rollArea();
-    const auto length = shown.has_value() ? juce::jmax ((juce::int64) 1, shown->clip.length) : (juce::int64) 1;
+    const auto length = wholeLength();
     return juce::jlimit ((juce::int64) 0, length, (juce::int64) std::llround ((x - (float) area.getX()) * (double) length / (double) juce::jmax (1, area.getWidth() - 1)));
 }
 
@@ -287,27 +291,36 @@ void NoteEditor::paint (juce::Graphics& g)
     // The grid: a line each step, stronger each beat; the repeats of the pattern.
     const auto step = gridStepFrames();
     const auto beat = juce::jmax ((juce::int64) 1, (juce::int64) std::llround (shown->beatSeconds * shown->sampleRate));
-    const auto period = c.loopLength > 0 ? juce::jmin (c.loopLength, c.length) : c.length;
+    const auto whole = wholeLength();
+    const auto period = juce::jmax ((juce::int64) 1, c.getPeriod());
 
     if (step > 0 && xOf (step) - xOf (0) >= 3.0f)
-        for (juce::int64 f = 0; f <= c.length; f += step)
+        for (juce::int64 f = 0; f <= whole; f += step)
         {
             g.setColour (f % beat == 0 ? Theme::lineStrong : Theme::line);
             g.drawVerticalLine ((int) xOf (f), (float) area.getY(), (float) area.getBottom());
         }
 
-    if (period > 0 && period < c.length)
-        for (auto f = period; f < c.length; f += period)
+    if (period < whole)
+        for (auto f = period; f < whole; f += period)
         {
-            g.setColour (Theme::accent.withAlpha (0.6f));
+            g.setColour (Theme::accent.withAlpha (f == period ? 0.9f : 0.6f));
             g.drawVerticalLine ((int) xOf (f), (float) area.getY(), (float) area.getBottom());
         }
 
-    // Past the pattern the notes don't play: washed out.
-    if (period > 0 && period < c.length)
+    // Before the clip's start, and past the pattern, the notes don't play: washed out.
+    g.setColour (Theme::overlay.withAlpha (0.25f));
+
+    if (c.offset > 0)
+        g.fillRect (juce::Rectangle<float> (xOf (0), (float) area.getY(), xOf (c.offset) - xOf (0), (float) area.getHeight()));
+
+    if (period < whole)
+        g.fillRect (juce::Rectangle<float> (xOf (period), (float) area.getY(), xOf (whole) - xOf (period), (float) area.getHeight()));
+
+    if (c.offset > 0)
     {
-        g.setColour (Theme::overlay.withAlpha (0.25f));
-        g.fillRect (juce::Rectangle<float> (xOf (period), (float) area.getY(), xOf (c.length) - xOf (period), (float) area.getHeight()));
+        g.setColour (Theme::cursor);
+        g.drawVerticalLine ((int) xOf (c.offset), (float) area.getY(), (float) area.getBottom());
     }
 
     // The notes: velocity as their depth of colour, the selected outlined.
@@ -319,7 +332,7 @@ void NoteEditor::paint (juce::Graphics& g)
         if (r.getBottom() < (float) area.getY() || r.getY() > (float) area.getBottom())
             continue;
 
-        const auto playing = n.start < period && shown->hasInstrument;
+        const auto playing = n.start < period && n.start >= c.offset && shown->hasInstrument;
         g.setColour ((playing ? Theme::accent : Theme::dimText).withAlpha (0.45f + 0.55f * juce::jlimit (0.0f, 1.0f, n.velocity)));
         g.fillRoundedRectangle (r.getIntersection (area.toFloat()), 2.0f);
 
@@ -414,6 +427,13 @@ void NoteEditor::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // The first repeat line: dragging it sets the loop length.
+    if (shown->clip.loopLength > 0 && shown->clip.loopLength < wholeLength() && std::abs (p.x - xOf (shown->clip.loopLength)) <= 4.0f)
+    {
+        drag = Drag::loop;
+        return;
+    }
+
     // Empty grid: a note here, or with Shift (or a drag) a box of notes.
     if (e.mods.isShiftDown())
     {
@@ -429,10 +449,10 @@ void NoteEditor::mouseDown (const juce::MouseEvent& e)
     n.length = step > 0 ? step : lastLength > 0 ? lastLength : juce::jmax ((juce::int64) 1, (juce::int64) std::llround (0.25 * shown->sampleRate));
     n.velocity = getVelocity();
 
-    if (n.start >= shown->clip.length)
+    if (n.start >= wholeLength())
         return;
 
-    n.length = juce::jmin (n.length, shown->clip.length - n.start);
+    n.length = juce::jmin (n.length, wholeLength() - n.start);
     shown->clip.notes.push_back (n);
     selected = { (int) shown->clip.notes.size() - 1 };
     dragNote = (int) shown->clip.notes.size() - 1;
@@ -450,6 +470,14 @@ void NoteEditor::mouseDrag (const juce::MouseEvent& e)
         return;
 
     const auto p = e.position;
+
+    if (drag == Drag::loop)
+    {
+        shown->clip.loopLength = juce::jlimit ((juce::int64) 1, wholeLength(), snapped (frameAt (p.x)));
+        dragged = true;
+        repaint();
+        return;
+    }
 
     if (drag == Drag::box)
     {
@@ -471,7 +499,7 @@ void NoteEditor::mouseDrag (const juce::MouseEvent& e)
 
     dragged = true;
     shown->clip.notes = base->clip.notes;
-    const auto length = shown->clip.length;
+    const auto length = wholeLength();
 
     if (drag == Drag::resize)
     {
@@ -527,8 +555,8 @@ void NoteEditor::mouseUp (const juce::MouseEvent&)
         return;
     }
 
-    if ((was == Drag::move || was == Drag::resize) && dragged && shown.has_value() && base.has_value() && ! (shown->clip == base->clip))
-        commit (was == Drag::move ? "Move Notes" : "Note Length");
+    if ((was == Drag::move || was == Drag::resize || was == Drag::loop) && dragged && shown.has_value() && base.has_value() && ! (shown->clip == base->clip))
+        commit (was == Drag::move ? "Move Notes" : was == Drag::loop ? "Loop Length" : "Note Length");
 
     base.reset();
     refreshControls();
@@ -577,7 +605,7 @@ void NoteEditor::moveSelected (int semitones, juce::int64 frames)
     if (! shown.has_value() || selected.empty())
         return;
 
-    const auto length = shown->clip.length;
+    const auto length = wholeLength();
 
     for (auto i : selected)
         if (juce::isPositiveAndBelow (i, (int) shown->clip.notes.size()))

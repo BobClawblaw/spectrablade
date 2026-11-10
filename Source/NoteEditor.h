@@ -9,11 +9,14 @@
     A click on empty grid puts a note there (step entry): at the grid line at or before the mouse
     when snapping, as long as one grid step, at the velocity the slider shows. Dragging a note
     moves it in pitch and time (the time snapped), dragging its right edge changes its length;
-    the selected notes move together. A click selects a note (Shift adds or takes it away), a
+    the selected notes move together; dragging the first repeat line sets the loop length. A
+    click selects a note (Shift adds or takes it away), a
     drag on empty grid selects a box of them, Option-click removes one, Delete and Backspace
     remove the selected, Cmd-A selects all; the arrow keys move the selected notes a semitone
     or a grid step (Shift: an octave, or a quarter step). The velocity slider sets the selected
-    notes'. The grid divides the beat at the clip's start by its choice, or is off.
+    notes'. The grid divides the beat at the clip's start by its choice, or is off. The time
+    across is the notes' whole timeline: the part before the clip's start (its offset, after a
+    trim or split) and the part past the pattern are washed out, as their notes don't play.
 
     Each change is handed back through `apply` as one undoable step. readClip gives what to show;
     the editor reads it ten times a second and redraws when it changed. */
@@ -60,7 +63,8 @@ public:
     /** The note under a point (-1: none), and the point of a note's grid cell: pitch and frame. */
     int noteAt (juce::Point<float>) const;
     int pitchAt (float y) const;
-    juce::int64 frameAt (float x) const;                           // frames from the clip's start, not snapped
+    juce::int64 frameAt (float x) const;                           // frames of the notes' timeline, not snapped
+    juce::int64 wholeLength() const noexcept;                      // the timeline: the clip's offset and length
     juce::Rectangle<float> noteBounds (const ClipNote&) const;
     juce::Rectangle<int> rollArea() const;
 
@@ -78,7 +82,7 @@ public:
     static constexpr int keyboardWidth = 44, rowHeight = 12, topBar = 30;
 
 private:
-    enum class Drag { none, move, resize, box, nothing };
+    enum class Drag { none, move, resize, box, loop, nothing };
 
     void timerCallback() override;
     void commit (const juce::String& description);

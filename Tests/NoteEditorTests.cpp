@@ -141,6 +141,18 @@ void runNoteEditorTests()
            "piano roll: a Shift-drag selects the notes in its box, a click past the clip's end adds nothing, and with the grid off a "
            "note goes where the mouse is at the length last dragged to");
 
+    // A trimmed clip shows its whole timeline, the offset washed; dragging the first repeat line sets the loop length.
+    rig.shown.clip.notes.clear();
+    rig.shown.clip.offset = 48000;
+    rig.shown.clip.loopLength = 48000;
+    e.refresh();
+    e.setGridDivision (4);
+    const auto whole = e.wholeLength();
+    const auto loopX = e.noteBounds ({ 60, 48000, 1, 1.0f }).getX();
+    rig.drag ({ loopX, rig.at (60, 0).y }, { e.noteBounds ({ 60, 96500, 1, 1.0f }).getX(), rig.at (60, 0).y });
+    check (whole == 240000 && rig.notes().empty() && rig.shown.clip.loopLength == 96000 && rig.last() == "Loop Length",
+           "piano roll: the timeline is the clip's offset and length, and dragging the first repeat line sets the loop length (snapped), one undo step");
+
     // Another clip shown drops the selection; nothing shown disables the controls.
     rig.shown.clip.id = 8;
     e.refresh();

@@ -61,6 +61,12 @@ public:
     void selectNoteClip (juce::uint32 clipId);
     void showNoteClipMenu (juce::uint32 clipId);
 
+    /** Puts a one-note clip (a hit: C4, a tenth of a second) at the cursor on the track, selected. */
+    void addTrigger (juce::uint32 trackId);
+
+    /** True when a clip or a note clip is selected (what Cut, Copy, Delete, Split and Duplicate work on). */
+    bool hasSelectedClip() const noexcept           { return selectedClip != 0 || selectedNoteClip != 0; }
+
     /** Adds an effect at the end of a track's chain (as its FX menu does) and, once it is in, asks
         for its window through onEditPlugin, so a new effect is in front without a click on Edit.
         A failure to load is shown. */
@@ -469,7 +475,7 @@ private:
     class SendsPanel;
 
     enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain, clipGainPoint, scrub,
-                      stretchStart, stretchEnd, moveNotes };
+                      stretchStart, stretchEnd, moveNotes, trimNotesStart, trimNotesEnd };
     juce::Range<juce::int64> stretchTo;   // while Option-dragging a clip's edge: where it would play, stretched
 
     /** A point of a clip's gain line, or a place on it. */
@@ -577,7 +583,8 @@ private:
     juce::uint32 selectedClip = 0, selectedTrackId = 0;
     std::set<juce::uint32> selectedClips;  // selectedClip among them
     juce::uint32 selectedNoteClip = 0;
-    NoteClip dragNoteClip;                 // the note clip being moved, as it was
+    NoteClip dragNoteClip;                 // the note clip being moved or trimmed, as it was
+    std::vector<std::pair<int, NoteClip>> copiedNoteClips;   // copied in place of audio clips, with their tracks counted from the topmost
     std::vector<std::pair<int, SessionClip>> copiedClips;   // with their tracks counted from the topmost
     double copiedRate = 0.0;               // the session rate the copied clips were at
     SessionTime copiedTime;

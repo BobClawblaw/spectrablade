@@ -220,27 +220,28 @@ std::optional<std::pair<int, int>> SessionState::findNoteClip (juce::uint32 clip
 //==============================================================================
 void NoteClip::addMidi (juce::int64 from, int count, juce::MidiBuffer& midi) const
 {
-    const auto to = from + count, end = getEnd();
+    const auto to = from + count, end = getEnd(), origin = getOrigin();
 
     // A note cut by the clip's end turns off at the end frame itself, so a block starting there still counts.
     if (count <= 0 || to <= position || from > end)
         return;
 
-    // Each pass of the notes (one, or every loopLength frames): its note-offs first, then its
-    // note-ons, so at one frame a note taking over from another is turned off before it is on.
-    const auto period = loopLength > 0 ? juce::jmin (loopLength, length) : length;
-    const auto firstPass = juce::jmax ((juce::int64) 0, (from - position) / period - 1);
+    // Each pass of the notes (one, or every loopLength frames from the origin): its note-offs
+    // first, then its note-ons, so at one frame a note taking over from another is turned off
+    // before it is on. A note starting before the clip isn't played.
+    const auto period = juce::jmax ((juce::int64) 1, getPeriod());
+    const auto firstPass = juce::jmax ((juce::int64) 0, (from - origin) / period - 1);
 
-    for (auto pass = firstPass; position + pass * period < juce::jmin (to, end); ++pass)
+    for (auto pass = firstPass; origin + pass * period < juce::jmin (to, end); ++pass)
     {
-        const auto passStart = position + pass * period;
+        const auto passStart = origin + pass * period;
 
         for (auto& n : notes)
         {
             const auto on = passStart + n.start;
             const auto off = juce::jmin (on + juce::jmax ((juce::int64) 1, n.length), end);
 
-            if (n.start >= period || on >= end || off <= on)
+            if (n.start >= period || on < position || on >= end || off <= on)
                 continue;
 
             if (off >= from && off < to)
@@ -251,7 +252,7 @@ void NoteClip::addMidi (juce::int64 from, int count, juce::MidiBuffer& midi) con
         {
             const auto on = passStart + n.start;
 
-            if (n.start < period && on < end && on >= from && on < to)
+            if (n.start < period && on >= position && on < end && on >= from && on < to)
                 midi.addEvent (juce::MidiMessage::noteOn (1, juce::jlimit (0, 127, n.pitch), juce::jlimit (0.0f, 1.0f, n.velocity)), (int) (on - from));
         }
     }
@@ -264,7 +265,8 @@ juce::Range<juce::int64> NoteClip::notesRange() const noexcept
 
     for (auto& n : notes)
     {
-        const juce::Range<juce::int64> span (juce::jlimit ((juce::int64) 0, length, n.start), juce::jlimit ((juce::int64) 0, length, n.start + n.length));
+        const auto whole = offset + length;
+        const juce::Range<juce::int64> span (juce::jlimit ((juce::int64) 0, whole, n.start), juce::jlimit ((juce::int64) 0, whole, n.start + n.length));
         r = first ? span : r.getUnionWith (span);
         first = false;
     }
@@ -1421,7 +1423,10 @@ bool clearTime (SessionState& s, juce::int64 start, juce::int64 end)
     auto changed = false;
 
     for (int t = 0; t < (int) s.tracks.size(); ++t)
+    {
         changed = clearRange (s, t, start, end) || changed;
+        changed = clearNoteRange (s, t, start, end) || changed;
+    }
 
     return changed;
 }
@@ -1533,24 +1538,14 @@ bool deleteTime (SessionState& s, juce::int64 start, juce::int64 end)
                 changed = true;
             }
 
-    // Note clips inside the time go; those after it move back; those across it stay as they are.
+    // Note clips: cleared by clearTime; the ones after the time move back.
     for (auto& track : s.tracks)
-    {
-        if (track.isFrozen())
-            continue;
-
-        const auto gone = std::remove_if (track.noteClips.begin(), track.noteClips.end(),
-                                          [=] (const NoteClip& c) { return c.position >= start && c.getEnd() <= end; });
-        changed = gone != track.noteClips.end() || changed;
-        track.noteClips.erase (gone, track.noteClips.end());
-
         for (auto& c : track.noteClips)
-            if (c.position >= end)
+            if (! track.isFrozen() && c.position >= end)
             {
                 c.position -= end - start;
                 changed = true;
             }
-    }
 
     changed = changeEnvelopes (s, [=] (const Envelope& e) { return withoutTime (e, start, end); }) || changed;
     return changeMarkers (s, MarkerEdits::afterReplace (s.markers, start, end, 0)) || changed;
@@ -1580,7 +1575,17 @@ bool insertTime (SessionState& s, juce::int64 at, juce::int64 length)
                 changed = true;
             }
 
-    // Note clips from `at` on move later; one across it stays as it is.
+    // Note clips across `at` are split there; from `at` on they move later.
+    std::vector<juce::uint32> notesAcross;
+
+    for (auto& track : s.tracks)
+        for (auto& c : track.noteClips)
+            if (! track.isFrozen() && c.position < at && at < c.getEnd())
+                notesAcross.push_back (c.id);
+
+    for (auto id : notesAcross)
+        changed = splitNoteClip (s, id, at) || changed;
+
     for (auto& track : s.tracks)
         for (auto& c : track.noteClips)
             if (! track.isFrozen() && c.position >= at)
@@ -1655,6 +1660,19 @@ SessionTime copyTime (const SessionState& s, juce::int64 start, juce::int64 end)
             copy.clips.push_back (std::move (cut));
         }
 
+        for (auto& c : track.noteClips)
+        {
+            if (c.getEnd() <= start || c.position >= end)
+                continue;
+
+            auto cut = c;
+            const auto from = juce::jmax (c.position, start), to = juce::jmin (c.getEnd(), end);
+            cut.offset += from - c.position;
+            cut.position = from - start;
+            cut.length = to - from;
+            copy.noteClips.push_back (std::move (cut));
+        }
+
         copy.volume = lineAcross (track.volumeEnvelope, start, end);
         copy.pan = lineAcross (track.panEnvelope, start, end);
 
@@ -1687,6 +1705,13 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
             c.groupId = 0;
             c.position += at;
             track.clips.push_back (std::move (c));
+        }
+
+        for (auto c : track.isFrozen() || ! track.takesClips() ? std::vector<NoteClip>() : copied.noteClips)
+        {
+            c.id = s.nextId++;
+            c.position += at;
+            track.noteClips.push_back (std::move (c));
         }
 
         if (! copied.volume.isEmpty())
@@ -2166,8 +2191,9 @@ NoteClip tidiedNoteClip (NoteClip c)
 {
     c.name = c.name.trim().isEmpty() ? juce::String ("Notes") : c.name.trim();
     c.position = juce::jmax ((juce::int64) 0, c.position);
+    c.offset = juce::jmax ((juce::int64) 0, c.offset);
     c.length = juce::jmax ((juce::int64) 1, c.length);
-    c.loopLength = juce::jlimit ((juce::int64) 0, c.length, c.loopLength);
+    c.loopLength = juce::jlimit ((juce::int64) 0, c.offset + c.length, c.loopLength);
     c.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, c.colour);
 
     for (auto& n : c.notes)
@@ -2202,7 +2228,9 @@ bool replaceNoteClip (SessionState& s, juce::uint32 clipId, const NoteClip& valu
         return false;
 
     auto& c = s.tracks[(size_t) where->first].noteClips[(size_t) where->second];
-    auto tidy = tidiedNoteClip (values);
+    auto tidy = values;
+    tidy.offset = c.offset;
+    tidy = tidiedNoteClip (std::move (tidy));
     c.name = tidy.name;
     c.length = tidy.length;
     c.loopLength = tidy.loopLength;
@@ -2211,15 +2239,132 @@ bool replaceNoteClip (SessionState& s, juce::uint32 clipId, const NoteClip& valu
     return true;
 }
 
-bool moveNoteClip (SessionState& s, juce::uint32 clipId, juce::int64 position)
+bool moveNoteClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int64 position)
+{
+    const auto where = s.findNoteClip (clipId);
+
+    if (! where.has_value() || toTrack < 0)
+        return false;
+
+    auto& from = s.tracks[(size_t) where->first].noteClips;
+    auto clip = from[(size_t) where->second];
+    clip.position = juce::jmax ((juce::int64) 0, position);
+
+    if (toTrack < (int) s.tracks.size() && ! s.tracks[(size_t) toTrack].takesClips())
+        toTrack = where->first;
+
+    if (toTrack == where->first)
+    {
+        from[(size_t) where->second] = std::move (clip);
+        return true;
+    }
+
+    from.erase (from.begin() + where->second);
+
+    if (toTrack >= (int) s.tracks.size())
+    {
+        s.addTrack();
+        toTrack = (int) s.tracks.size() - 1;
+    }
+
+    s.tracks[(size_t) toTrack].noteClips.push_back (std::move (clip));
+    return true;
+}
+
+bool trimNoteClip (SessionState& s, juce::uint32 clipId, juce::int64 start, juce::int64 end)
 {
     const auto where = s.findNoteClip (clipId);
 
     if (! where.has_value())
         return false;
 
-    s.tracks[(size_t) where->first].noteClips[(size_t) where->second].position = juce::jmax ((juce::int64) 0, position);
+    auto& c = s.tracks[(size_t) where->first].noteClips[(size_t) where->second];
+    start = juce::jmax (c.getOrigin(), juce::jmax ((juce::int64) 0, start));
+    end = juce::jmax (start + 1, end);
+    c.offset += start - c.position;
+    c.position = start;
+    c.length = end - start;
+    c.loopLength = juce::jlimit ((juce::int64) 0, c.offset + c.length, c.loopLength);
     return true;
+}
+
+bool splitNoteClip (SessionState& s, juce::uint32 clipId, juce::int64 frame)
+{
+    const auto where = s.findNoteClip (clipId);
+
+    if (! where.has_value())
+        return false;
+
+    auto& clips = s.tracks[(size_t) where->first].noteClips;
+    auto& c = clips[(size_t) where->second];
+
+    if (frame <= c.position || frame >= c.getEnd())
+        return false;
+
+    auto right = c;
+    right.id = s.nextId++;
+    right.offset += frame - c.position;
+    right.position = frame;
+    right.length = c.getEnd() - frame;
+    c.length = frame - c.position;
+    clips.push_back (std::move (right));
+    return true;
+}
+
+juce::uint32 placeNoteClip (SessionState& s, int track, const NoteClip& clip, juce::int64 position)
+{
+    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
+    {
+        s.addTrack();
+        track = (int) s.tracks.size() - 1;
+    }
+
+    auto copy = tidiedNoteClip (clip);
+    copy.id = s.nextId++;
+    copy.position = juce::jmax ((juce::int64) 0, position);
+    s.tracks[(size_t) track].noteClips.push_back (copy);
+    return copy.id;
+}
+
+bool clearNoteRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
+{
+    if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || end <= start || s.tracks[(size_t) track].isFrozen())
+        return false;
+
+    auto& clips = s.tracks[(size_t) track].noteClips;
+    std::vector<NoteClip> kept;
+    auto changed = false;
+
+    for (auto& c : clips)
+    {
+        if (end <= c.position || start >= c.getEnd())
+        {
+            kept.push_back (c);
+            continue;
+        }
+
+        changed = true;
+
+        if (start > c.position)
+        {
+            auto left = c;
+            left.length = start - c.position;
+            kept.push_back (std::move (left));
+        }
+
+        if (end < c.getEnd())
+        {
+            auto right = c;
+            right.id = start > c.position ? s.nextId++ : c.id;
+            right.offset += end - c.position;
+            right.length = c.getEnd() - end;
+            right.position = end;
+            kept.push_back (std::move (right));
+        }
+    }
+
+    clips = std::move (kept);
+    return changed;
 }
 
 bool removeNoteClip (SessionState& s, juce::uint32 clipId)
@@ -2740,6 +2885,10 @@ juce::String save (const SessionState& state, const juce::File& target,
             auto* clip = track->createNewChildElement ("NOTECLIP");
             clip->setAttribute ("name", c.name);
             clip->setAttribute ("position", juce::String (c.position));
+
+            if (c.offset > 0)
+                clip->setAttribute ("offset", juce::String (c.offset));
+
             clip->setAttribute ("length", juce::String (c.length));
 
             if (c.loopLength > 0)
@@ -2992,6 +3141,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             NoteClip clip;
             clip.name = clipXml->getStringAttribute ("name");
             clip.position = clipXml->getStringAttribute ("position").getLargeIntValue();
+            clip.offset = clipXml->getStringAttribute ("offset").getLargeIntValue();
             clip.length = clipXml->getStringAttribute ("length").getLargeIntValue();
             clip.loopLength = clipXml->getStringAttribute ("loop").getLargeIntValue();
             clip.muted = clipXml->getBoolAttribute ("muted");
