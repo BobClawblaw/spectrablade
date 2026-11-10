@@ -184,7 +184,7 @@ juce::StringArray TrackEffects::setWideChannels (const std::map<juce::uint32, in
                 if (have != want && have != 0)
                     dropped.push_back (std::move (s->copies));
 
-                if (want != 0 && have != want)
+                if (want != 0 && have != want && ! isInstrument (*s->plugin))
                     needed.emplace_back (id, s.get(), want);
             }
     }
@@ -361,15 +361,36 @@ juce::uint32 TrackEffects::add (juce::uint32 trackId, std::unique_ptr<juce::Audi
         count = copiesFor (trackId);
     }
 
-    if (count > 0)
+    const auto instrument = isInstrument (*slot->plugin);
+
+    if (count > 0 && ! instrument)
         slot->copies = copiesOf (*slot, count);
 
     const juce::ScopedLock sl (lock);
     slot->id = slotId != 0 ? slotId : nextSlotId;
     nextSlotId = juce::jmax (nextSlotId, slot->id + 1);
     slot->watcher = std::make_unique<Watcher> (*this, trackId, slot->id, slot->parameters);
-    chains[trackId].push_back (std::move (slot));
-    return chains[trackId].back()->id;
+    const auto id = slot->id;
+    auto& chain = chains[trackId];
+
+    if (instrument)
+        chain.insert (chain.begin(), std::move (slot));
+    else
+        chain.push_back (std::move (slot));
+
+    return id;
+}
+
+bool TrackEffects::isInstrument (const juce::AudioPluginInstance& p)
+{
+    return p.acceptsMidi() && p.getPluginDescription().isInstrument;
+}
+
+juce::AudioPluginInstance* TrackEffects::getInstrument (juce::uint32 trackId) const
+{
+    const juce::ScopedLock sl (lock);
+    const auto* chain = find (trackId);
+    return chain != nullptr && ! chain->empty() && isInstrument (*chain->front()->plugin) ? chain->front()->plugin.get() : nullptr;
 }
 
 juce::uint32 TrackEffects::getSlotId (juce::uint32 trackId, int slot) const
@@ -442,6 +463,10 @@ void TrackEffects::move (juce::uint32 trackId, int from, int to)
     auto* chain = find (trackId);
 
     if (chain == nullptr || ! juce::isPositiveAndBelow (from, (int) chain->size()) || ! juce::isPositiveAndBelow (to, (int) chain->size()))
+        return;
+
+    // An instrument stays first: it can't be moved, and nothing moves above it.
+    if (isInstrument (*(*chain)[(size_t) from]->plugin) || (to == 0 && isInstrument (*chain->front()->plugin)))
         return;
 
     auto slot = std::move ((*chain)[(size_t) from]);
@@ -554,6 +579,7 @@ void TrackEffects::reset (juce::uint32 trackId)
         for (auto& slot : *chain)
         {
             slot->plugin->reset();
+            slot->allOff = true;
 
             for (auto& c : slot->copies)
                 if (c != nullptr)
@@ -582,12 +608,41 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
         return std::any_of (chain->begin(), chain->end(), [&e] (auto& s) { return s->id == e.slotId && ! s->bypassed; });
     });
 
-    // One plug-in over one pair of the buffer's channels, from `first`.
-    const auto run = [&] (juce::AudioPluginInstance& p, Slot& s, int first, int done, int n)
+    // One plug-in over one pair of the buffer's channels, from `first`; `at` is the session frame
+    // of the audio it is given (what its notes, if it is an instrument, are taken at).
+    const auto run = [&] (juce::AudioPluginInstance& p, Slot& s, int first, int done, int n, juce::int64 at)
     {
         juce::AudioBuffer<float> work (s.work.getArrayOfWritePointers(), s.work.getNumChannels(), n);
         work.clear();
         const auto ins = juce::jmin (2, juce::jmax (1, p.getBusCount (true) > 0 ? p.getChannelCountOfBus (true, 0) : 0));
+
+        // An instrument: its notes from the track's note clips, after every note off when it was
+        // reset; what it plays is added to the track's audio.
+        if (isInstrument (p))
+        {
+            midi.clear();
+
+            if (s.allOff.exchange (false))
+            {
+                midi.addEvent (juce::MidiMessage::allNotesOff (1), 0);
+                midi.addEvent (juce::MidiMessage::allSoundOff (1), 0);
+            }
+
+            for (auto& clip : track.noteClips)
+                if (! clip.muted)
+                    clip.addMidi (at, n, midi);
+
+            p.processBlock (work, midi);
+            const auto outs = p.getTotalNumOutputChannels();
+
+            if (outs > 0)
+            {
+                buffer.addFrom (first, done, work, 0, 0, n);
+                buffer.addFrom (first + 1, done, work, outs >= 2 ? 1 : 0, 0, n);
+            }
+
+            return;
+        }
 
         // The key, if the slot has one, into the sidechain input (a mono one gets the average).
         if (takesSidechain (p))
@@ -665,6 +720,8 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
                                 found->second->setValue (e.envelope.valueAt (stepStart - delayed));
                             }
 
+            // The audio going into this slot is from `before` frames earlier than the chain's input.
+            const auto before = delayed;
             delayed += juce::jmax (0, s->plugin->getLatencySamples());
 
             // A built-in effect that can link them all (the compressor and the limiter) hears them as one.
@@ -677,7 +734,10 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
                         continue;
                 }
 
-            for (int pair = 0; pair < pairs; ++pair)
+            // An instrument plays into the first pair only (L and R on a wide track).
+            const auto runPairs = isInstrument (*s->plugin) ? 1 : pairs;
+
+            for (int pair = 0; pair < runPairs; ++pair)
             {
                 auto* p = pair == 0 ? s->plugin.get() : s->copies[(size_t) pair - 1].get();
 
@@ -691,7 +751,7 @@ void TrackEffects::process (const SessionTrack& track, juce::int64 frame, juce::
                 if (pair > 0)
                     followParameters (*s->plugin, *p);
 
-                run (*p, *s, 2 * pair, done, n);
+                run (*p, *s, 2 * pair, done, n, stepStart - before);
             }
         }
 

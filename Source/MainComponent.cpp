@@ -983,6 +983,7 @@ MainComponent::MainComponent()
         }, keepEnd);
     };
     multitrack.onEditPlugin = [this] (juce::AudioPluginInstance& p) { showEditor (p); };
+    multitrack.onEditNotes = [this] (juce::uint32 trackId, juce::uint32 clipId) { showNoteClipDialog (trackId, clipId); };
 
     waveform.getRecentFiles = [this]
     {
@@ -7444,6 +7445,128 @@ void MainComponent::showGenerateInstrument()
         if (dialog != nullptr)
             dialog->nudge();
     };
+}
+
+void MainComponent::showNoteClipDialog (juce::uint32 trackId, juce::uint32 clipId)
+{
+    const auto state = engine.session.getState();
+    const auto* track = state->findTrack (trackId);
+
+    if (track == nullptr)
+        return;
+
+    const auto rate = engine.session.getSampleRate();
+    const auto where = clipId != 0 ? state->findNoteClip (clipId) : std::nullopt;
+    const auto* existing = where.has_value() ? &state->tracks[(size_t) where->first].noteClips[(size_t) where->second] : nullptr;
+
+    if (clipId != 0 && existing == nullptr)
+        return;
+
+    // The dialog starts from the clip's notes as it can show them (pitches in order, one hold and
+    // velocity, the first note's), or from what it was last given.
+    auto notes = instrumentNotes;
+    auto play = instrumentPlay;
+    auto velocity = instrumentVelocity, hold = instrumentHold, seconds = instrumentSeconds;
+    auto repeats = 1.0;
+
+    if (existing != nullptr && ! existing->notes.empty())
+    {
+        juce::StringArray pitches;
+
+        for (auto& n : existing->notes)
+            pitches.add (Instrument::pitchName (n.pitch));
+
+        notes = pitches.joinIntoString (", ");
+        const auto& first = existing->notes.front();
+        play = std::all_of (existing->notes.begin(), existing->notes.end(), [&first] (const ClipNote& n) { return n.start == first.start; }) ? 0 : 1;
+        velocity = std::round (first.velocity * 127.0f);
+        hold = (double) first.length / rate;
+        const auto period = existing->loopLength > 0 ? existing->loopLength : existing->length;
+        seconds = (double) period / rate;
+        repeats = existing->loopLength > 0 ? std::round ((double) existing->length / (double) existing->loopLength) : 1.0;
+    }
+
+    const auto clipOf = [this, rate] (const EffectValues& v) -> std::optional<NoteClip>
+    {
+        const auto pitches = Instrument::parsePitches (effectTexts["notes"]);
+        const auto hold = v.at ("hold"), length = v.at ("length");
+
+        if (! pitches.has_value() || hold <= 0.0 || length <= 0.0)
+            return std::nullopt;
+
+        const auto phrase = v.at ("play") > 0.5 ? Instrument::inTurn (*pitches, hold, length, (float) (v.at ("velocity") / 127.0))
+                                                : Instrument::together (*pitches, hold, length, (float) (v.at ("velocity") / 127.0));
+        NoteClip clip;
+        const auto period = juce::jmax ((juce::int64) 1, (juce::int64) std::llround (length * rate));
+        const auto times = (juce::int64) juce::jlimit (1.0, 1000.0, std::round (v.at ("repeats")));
+        clip.length = period * times;
+        clip.loopLength = times > 1 ? period : 0;
+
+        for (auto& n : phrase.notes)
+            clip.notes.push_back ({ n.pitch, (juce::int64) std::llround (n.start * rate), juce::jmax ((juce::int64) 1, (juce::int64) std::llround (n.hold * rate)), n.velocity });
+
+        juce::StringArray names;
+
+        for (auto p : *pitches)
+            names.add (Instrument::pitchName (p));
+
+        clip.name = names.joinIntoString (", ");
+
+        if (clip.name.length() > 40)
+            clip.name = clip.name.substring (0, 37).trimEnd() + "...";
+
+        return clip;
+    };
+
+    showEffectDialog (
+        existing != nullptr ? "Edit Notes" : "Add Notes",
+        "Notes for the track's instrument (the first slot of its effects: Add Instrument in the FX menu), as a clip on the track"
+        + juce::String (existing != nullptr ? "." : " at the cursor.")
+        + " Notes by name (C4, F#3, Bb2: C4 is middle C) or MIDI number (60), separated by commas, played together or one after "
+          "another, each held for the hold time, within the pattern's length; the pattern plays once, or repeats that many times. "
+          "The clip plays nothing until the track has an instrument, and its notes move with it.",
+        { EffectField::textField ("notes", "Notes", notes, "ABCDEFGabcdefg#0123456789-,", 200),
+          { "play", "Play", (double) play, 0, { "Together", "One after another" } },
+          { "velocity", "Velocity (1 to 127)", velocity, 0, {}, 1, 127, 1 },
+          { "hold", "Hold each note (s)", hold, 3, {}, 0.001, 600, 0.1 },
+          { "length", "Pattern length (s)", seconds, 3, {}, 0.001, 600, 0.1 },
+          { "repeats", "Repeats", repeats, 0, {}, 1, 1000, 1 } },
+        "spectrablade:note-clip", PreviewOwner::none,
+        [clipOf] (const EffectValues& v) { return clipOf (v).has_value(); },
+        "The notes must be names (C4, F#3, Bb2) or MIDI numbers (0 to 127) separated by commas, the hold and the pattern length above 0.",
+        nullptr, nullptr,
+        [this, clipOf, trackId, clipId] (const EffectValues& v)
+        {
+            auto clip = clipOf (v);
+
+            if (! clip.has_value())
+                return;
+
+            instrumentNotes = effectTexts["notes"];
+            instrumentPlay = v.at ("play") > 0.5 ? 1 : 0;
+            instrumentVelocity = v.at ("velocity");
+            instrumentHold = v.at ("hold");
+            instrumentSeconds = v.at ("length");
+
+            auto next = *engine.session.getState();
+
+            if (clipId != 0)
+            {
+                if (SessionEdits::replaceNoteClip (next, clipId, *clip))
+                    engine.session.apply (std::move (next), "Edit Notes");
+
+                return;
+            }
+
+            clip->position = multitrack.getCursor();
+
+            if (const auto id = SessionEdits::addNoteClip (next, trackId, std::move (*clip)); id != 0)
+            {
+                engine.session.apply (std::move (next), "Add Notes");
+                multitrack.selectNoteClip (id);
+            }
+        },
+        nullptr, existing != nullptr ? "Change" : "Add");
 }
 
 void MainComponent::showGenerateTones()

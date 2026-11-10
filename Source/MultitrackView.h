@@ -49,6 +49,15 @@ public:
     /** Asks for a track effect's editor window. */
     std::function<void (juce::AudioPluginInstance&)> onEditPlugin;
 
+    /** Asks for the note clip dialog: for a new clip on the track (clipId 0), or to change this one. */
+    std::function<void (juce::uint32 trackId, juce::uint32 clipId)> onEditNotes;
+
+    /** The selected note clip's id, or 0. Selecting a note clip clears the clip selection and the
+        other way round, so Delete removes what was clicked last. */
+    juce::uint32 getSelectedNoteClip() const noexcept   { return selectedNoteClip; }
+    void selectNoteClip (juce::uint32 clipId);
+    void showNoteClipMenu (juce::uint32 clipId);
+
     /** Adds an effect at the end of a track's chain (as its FX menu does) and, once it is in, asks
         for its window through onEditPlugin, so a new effect is in front without a click on Edit.
         A failure to load is shown. */
@@ -457,7 +466,7 @@ private:
     class SendsPanel;
 
     enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain, clipGainPoint, scrub,
-                      stretchStart, stretchEnd };
+                      stretchStart, stretchEnd, moveNotes };
     juce::Range<juce::int64> stretchTo;   // while Option-dragging a clip's edge: where it would play, stretched
 
     /** A point of a clip's gain line, or a place on it. */
@@ -497,6 +506,9 @@ private:
     juce::int64 frameForX (float x) const;
     juce::Rectangle<int> clipBounds (int track, const SessionClip&) const;
     std::optional<std::pair<int, int>> clipAt (juce::Point<int>) const;
+    juce::Rectangle<int> noteClipBounds (int track, const NoteClip&) const;
+    std::optional<std::pair<int, int>> noteClipAt (juce::Point<int>) const;
+    void drawNoteClip (juce::Graphics&, int track, const NoteClip&) const;
 
     /** The fade handle under p, on the clip it belongs to: Drag::fadeIn, Drag::fadeOut or Drag::none. */
     Drag fadeHandleAt (juce::Point<int> p, int track, const SessionClip&) const;
@@ -561,6 +573,8 @@ private:
     juce::int64 cursor = 0;
     juce::uint32 selectedClip = 0, selectedTrackId = 0;
     std::set<juce::uint32> selectedClips;  // selectedClip among them
+    juce::uint32 selectedNoteClip = 0;
+    NoteClip dragNoteClip;                 // the note clip being moved, as it was
     std::vector<std::pair<int, SessionClip>> copiedClips;   // with their tracks counted from the topmost
     double copiedRate = 0.0;               // the session rate the copied clips were at
     SessionTime copiedTime;

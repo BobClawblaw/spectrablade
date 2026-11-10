@@ -525,6 +525,7 @@ public:
         {
             menu.addItem ("5.1 Track", ! t->isFrozen(), t->fiveOne, [this, on = t->fiveOne] { view.setTrackChannels (trackId, on ? 2 : 6); });
             menu.addItem ("7.1 Track", ! t->isFrozen(), t->sevenOne, [this, on = t->sevenOne] { view.setTrackChannels (trackId, on ? 2 : 8); });
+            menu.addItem ("Add Notes...", ! t->isFrozen() && view.onEditNotes != nullptr, false, [this] { view.onEditNotes (trackId, 0); });
         }
 
         menu.addSubMenu ("Colour", colours);
@@ -1136,18 +1137,25 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
     auto& effects = engine.getTrackEffects();
     const auto slots = effects.getNumSlots (trackId);
 
-    juce::Array<juce::PluginDescription> types;
+    // The effects, then (on a track) the instruments: one array, so a menu choice is an index into it.
+    juce::Array<juce::PluginDescription> types, instruments;
+    const auto* track = state->findTrack (trackId);
+    const auto takesInstrument = track != nullptr && ! track->isBus && ! track->isFolder;
 
     for (auto& type : engine.knownPlugins.getTypes())
-        if (! type.isInstrument)
-            types.add (type);
+        (type.isInstrument ? instruments : types).add (type);
+
+    const auto effectCount = types.size();
+
+    if (takesInstrument)
+        types.addArray (instruments);
 
     // Plug-in choices take ids from 1 (PluginMenu); each slot's actions sit above them.
     // Sidechain choices: sidechainBase + slot * keyChoices + 0 for none, or 1 + the key track's place.
     enum { slotBase = 1000000, editSlot = 0, bypassSlot, moveSlotUp, moveSlotDown, removeSlot, actions };
     enum { sidechainBase = 2000000, keyChoices = 10000 };
     juce::PopupMenu menu;
-    const auto* track = state->findTrack (trackId);
+    const auto hasInstrument = effects.getInstrument (trackId) != nullptr;
 
     for (int i = 0; i < slots; ++i)
     {
@@ -1156,11 +1164,12 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
         const auto id = slotBase + i * actions;
         const auto keyId = track != nullptr ? track->sidechainKey (effects.getSlotId (trackId, i)) : 0u;
         const auto* key = state->findTrack (keyId);
+        const auto instrument = hasInstrument && i == 0;   // it stays first: nothing moves above it
         juce::PopupMenu slot;
         slot.addItem (id + editSlot, "Edit...");
         slot.addItem (id + bypassSlot, "Bypass", true, bypassed);
-        slot.addItem (id + moveSlotUp, "Move Up", i > 0);
-        slot.addItem (id + moveSlotDown, "Move Down", i + 1 < slots);
+        slot.addItem (id + moveSlotUp, "Move Up", i > (hasInstrument ? 1 : 0));
+        slot.addItem (id + moveSlotDown, "Move Down", i + 1 < slots && ! instrument);
 
         // A track whose output goes into this plug-in's sidechain input: not this one, nor one
         // that listens to it.
@@ -1182,7 +1191,7 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
 
         slot.addSeparator();
         slot.addItem (id + removeSlot, "Remove");
-        menu.addSubMenu (juce::String (i + 1) + ". " + plugin->getName() + (bypassed ? " (bypassed)" : "")
+        menu.addSubMenu ((instrument ? juce::String ("Instrument: ") : juce::String (i + 1) + ". ") + plugin->getName() + (bypassed ? " (bypassed)" : "")
                              + (key != nullptr ? ", sidechain from " + key->name : juce::String()),
                          slot);
     }
@@ -1199,9 +1208,18 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
     }
     else
     {
+        juce::Array<juce::PluginDescription> effectsOnly (types.begin(), effectCount);
         juce::PopupMenu add;
-        PluginMenu::add (add, types);
-        menu.addSubMenu ("Add Effect", add);
+        PluginMenu::add (add, effectsOnly);
+        menu.addSubMenu ("Add Effect", add, effectCount > 0);
+
+        // An instrument (one a track): first in the chain, played by the track's note clips.
+        if (takesInstrument)
+        {
+            juce::PopupMenu addInstrument;
+            PluginMenu::add (addInstrument, instruments, effectCount + 1);
+            menu.addSubMenu (hasInstrument ? "Replace Instrument" : "Add Instrument", addInstrument, ! instruments.isEmpty());
+        }
     }
 
     menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (target),
@@ -1250,6 +1268,10 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
             if (! juce::isPositiveAndBelow (chosen, types.size()))
                 return;
 
+            // A new instrument takes the place of the one there.
+            if (types[chosen].isInstrument && engine.getTrackEffects().getInstrument (trackId) != nullptr)
+                engine.removeTrackPlugin (trackId, 0);
+
             addTrackEffect (trackId, types[chosen]);
         });
 }
@@ -1257,8 +1279,9 @@ void MultitrackView::showEffectsMenu (juce::uint32 trackId, juce::Component& tar
 void MultitrackView::addTrackEffect (juce::uint32 trackId, const juce::PluginDescription& description)
 {
     const auto name = description.name;
+    const auto instrument = description.isInstrument;
 
-    engine.addTrackPlugin (trackId, description, [this, trackId, name, safe = juce::Component::SafePointer<MultitrackView> (this)] (const juce::String& error)
+    engine.addTrackPlugin (trackId, description, [this, trackId, name, instrument, safe = juce::Component::SafePointer<MultitrackView> (this)] (const juce::String& error)
     {
         if (error.isNotEmpty())
         {
@@ -1270,8 +1293,9 @@ void MultitrackView::addTrackEffect (juce::uint32 trackId, const juce::PluginDes
             return;
 
         const auto& effects = engine.getTrackEffects();
+        const auto added = instrument ? 0 : effects.getNumSlots (trackId) - 1;
 
-        if (auto* plugin = effects.getPlugin (trackId, effects.getNumSlots (trackId) - 1))
+        if (auto* plugin = effects.getPlugin (trackId, added))
             onEditPlugin (*plugin);
     });
 }
@@ -1292,6 +1316,9 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
 
     if (const auto where = state->findClip (selectedClip); ! where.has_value() || ! state->isShown (state->tracks[(size_t) where->first]))
         selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
+
+    if (selectedNoteClip != 0 && ! state->findNoteClip (selectedNoteClip).has_value())
+        selectedNoteClip = 0;
 
     for (auto it = armed.begin(); it != armed.end();)
         it = state->findTrack (*it) == nullptr ? armed.erase (it) : std::next (it);
@@ -1592,6 +1619,117 @@ std::optional<std::pair<int, int>> MultitrackView::clipAt (juce::Point<int> p) c
             return std::pair<int, int> { t, c };
 
     return std::nullopt;
+}
+
+juce::Rectangle<int> MultitrackView::noteClipBounds (int track, const NoteClip& c) const
+{
+    const auto x0 = xForFrame (c.position), x1 = xForFrame (c.getEnd());
+    return juce::Rectangle<float> (x0, (float) laneTop (track) + 3.0f, juce::jmax (2.0f, x1 - x0), (float) laneHeight - 6.0f).toNearestInt();
+}
+
+std::optional<std::pair<int, int>> MultitrackView::noteClipAt (juce::Point<int> p) const
+{
+    const auto& tracks = shown().tracks;
+    const auto t = trackAt (p.y);
+
+    if (! juce::isPositiveAndBelow (t, (int) tracks.size()) || p.x < headerWidth)
+        return std::nullopt;
+
+    for (auto c = (int) tracks[(size_t) t].noteClips.size() - 1; c >= 0; --c)
+        if (noteClipBounds (t, tracks[(size_t) t].noteClips[(size_t) c]).expanded (2, 0).contains (p))
+            return std::pair<int, int> { t, c };
+
+    return std::nullopt;
+}
+
+void MultitrackView::drawNoteClip (juce::Graphics& g, int track, const NoteClip& c) const
+{
+    const auto r = noteClipBounds (track, c);
+    const auto& t = shown().tracks[(size_t) track];
+    const auto own = juce::isPositiveAndBelow (c.colour, (int) TrackColours::palette.size()) ? juce::Colour (TrackColours::palette[(size_t) c.colour].argb)
+                                                                                              : TrackColours::of (t, track);
+    const auto colour = c.muted ? Theme::faintText : own;
+    const auto selected = c.id == selectedNoteClip;
+    const auto playable = engine.getTrackEffects().getInstrument (t.id) != nullptr;
+
+    g.setColour (colour.withAlpha (0.14f));
+    g.fillRoundedRectangle (r.toFloat(), 3.0f);
+
+    auto body = r.reduced (1);
+    auto title = body.removeFromTop (16);
+    g.setColour (colour.withAlpha (0.45f));
+    g.fillRect (title);
+
+    g.setColour (juce::Colours::white);
+    g.setFont (12.0f);
+    auto name = c.name;
+
+    if (c.loopLength > 0 && c.loopLength < c.length)
+        name << "  (repeats)";
+
+    if (c.muted)
+        name << "  (muted)";
+    else if (! playable)
+        name << "  (no instrument)";
+
+    g.drawText (name, title.withTrimmedLeft (6).withTrimmedRight (6), juce::Justification::centredLeft, true);
+
+    // The notes as bars, the pitch up the body over the notes' own range (a lone pitch in the
+    // middle), each pass of a repeating clip drawn where it plays, with a line at each repeat.
+    const auto left = juce::jmax (body.getX(), headerWidth), right = juce::jmin (body.getRight(), timelineArea().getRight());
+
+    if (body.getHeight() < 6 || right <= left || c.notes.empty())
+        return;
+
+    int low = 127, high = 0;
+
+    for (auto& n : c.notes)
+    {
+        low = juce::jmin (low, n.pitch);
+        high = juce::jmax (high, n.pitch);
+    }
+
+    const auto rows = juce::jmax (1, high - low + 1);
+    const auto rowHeight = juce::jmin (6.0f, (float) (body.getHeight() - 2) / (float) rows);
+    const auto top = (float) body.getCentreY() - rowHeight * (float) rows * 0.5f;
+    const auto period = c.loopLength > 0 ? juce::jmin (c.loopLength, c.length) : c.length;
+    const auto clip = g.getClipBounds();
+
+    for (auto passStart = c.position; passStart < c.getEnd(); passStart += period)
+    {
+        if (passStart > c.position)
+        {
+            const auto x = xForFrame (passStart);
+
+            if (x >= (float) left && x <= (float) right)
+            {
+                g.setColour (colour.withAlpha (0.35f));
+                g.drawVerticalLine ((int) x, (float) body.getY(), (float) body.getBottom());
+            }
+        }
+
+        g.setColour (colour.withAlpha (playable && ! c.muted ? 0.95f : 0.5f));
+
+        for (auto& n : c.notes)
+        {
+            const auto start = passStart + n.start, end = juce::jmin (c.getEnd(), start + n.length);
+
+            if (n.start >= period || start >= c.getEnd())
+                continue;
+
+            const auto x0 = juce::jmax ((float) left, xForFrame (start)), x1 = juce::jmin ((float) right, xForFrame (end));
+            const auto y = top + rowHeight * (float) (high - n.pitch);
+
+            if (x1 > x0 && (int) y <= clip.getBottom())
+                g.fillRect (juce::Rectangle<float> (x0, y + 0.5f, juce::jmax (1.0f, x1 - x0), juce::jmax (1.0f, rowHeight - 1.0f)));
+        }
+    }
+
+    if (selected)
+    {
+        g.setColour (juce::Colours::white);
+        g.drawRoundedRectangle (r.toFloat().reduced (0.5f), 3.0f, 2.0f);
+    }
 }
 
 //==============================================================================
@@ -2347,6 +2485,9 @@ void MultitrackView::paint (juce::Graphics& g)
             for (auto& c : track.clips)
                 drawClip (g, t, c);
 
+            for (auto& c : track.noteClips)
+                drawNoteClip (g, t, c);
+
             // Where clips overlap, a later clip covers the fade out under it: draw the fade outs
             // again on top, so a crossfade shows both its curves.
             for (auto& c : track.clips)
@@ -2988,10 +3129,64 @@ std::vector<juce::uint32> MultitrackView::getSelectedClips() const
     return ids;
 }
 
+void MultitrackView::selectNoteClip (juce::uint32 clipId)
+{
+    if (clipId != 0)
+    {
+        selectedClips.clear();
+        selectedClip = 0;
+    }
+
+    selectedNoteClip = clipId;
+    repaint();
+}
+
+void MultitrackView::showNoteClipMenu (juce::uint32 clipId)
+{
+    const auto where = shown().findNoteClip (clipId);
+
+    if (! where.has_value())
+        return;
+
+    const auto& clip = shown().tracks[(size_t) where->first].noteClips[(size_t) where->second];
+    const auto trackId = shown().tracks[(size_t) where->first].id;
+    const juce::Component::SafePointer<MultitrackView> safe (this);
+    juce::PopupMenu menu;
+    menu.addItem ("Edit Notes...", onEditNotes != nullptr, false, [safe, trackId, clipId] { if (safe != nullptr && safe->onEditNotes != nullptr) safe->onEditNotes (trackId, clipId); });
+    menu.addItem ("Mute", true, clip.muted, [safe, clipId, muted = clip.muted]
+    {
+        if (safe == nullptr)
+            return;
+
+        auto next = *safe->engine.session.getState();
+
+        if (SessionEdits::setNoteClipMuted (next, clipId, ! muted))
+            safe->engine.session.apply (std::move (next), muted ? "Unmute Notes" : "Mute Notes");
+    });
+    menu.addSeparator();
+    menu.addItem ("Remove", [safe, clipId]
+    {
+        if (safe == nullptr)
+            return;
+
+        auto next = *safe->engine.session.getState();
+
+        if (SessionEdits::removeNoteClip (next, clipId))
+        {
+            safe->selectNoteClip (0);
+            safe->engine.session.apply (std::move (next), "Remove Notes");
+        }
+    });
+    menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
+}
+
 void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
 {
     // A clip in a group brings the rest of its group with it, into the selection or out of it.
     const auto group = SessionEdits::clipGroup (shown(), clipId);
+
+    if (clipId != 0)
+        selectedNoteClip = 0;
 
     if (! adding)
     {
@@ -3130,6 +3325,13 @@ void MultitrackView::deleteSelectedClip()
     auto next = *engine.session.getState();
     const auto ids = getSelectedClips();
     auto removed = 0;
+
+    if (selectedNoteClip != 0 && SessionEdits::removeNoteClip (next, selectedNoteClip))
+    {
+        selectNoteClip (0);
+        engine.session.apply (std::move (next), "Remove Notes");
+        return;
+    }
 
     for (auto id : ids)
         removed += SessionEdits::removeClip (next, id) ? 1 : 0;
@@ -4069,6 +4271,27 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // A note clip: right-click for its menu, a click selects it, a drag moves it in time.
+    if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
+    {
+        const auto& clip = shown().tracks[(size_t) hit->first].noteClips[(size_t) hit->second];
+        selectNoteClip (clip.id);
+        selectTrack (hit->first);
+
+        if (e.mods.isPopupMenu())
+        {
+            showNoteClipMenu (clip.id);
+            return;
+        }
+
+        dragNoteClip = clip;
+        dragTrack = hit->first;
+        dragFrame = frameForX ((float) p.x);
+        drag = Drag::moveNotes;
+        dragDescription = "Move Notes";
+        return;
+    }
+
     // A right-click on a clip opens its menu: the take it plays, its colour, locking and muting.
     // It keeps a selection the clip is in, so the menu works on all of them.
     if (const auto hit = clipAt (p); hit.has_value() && e.mods.isPopupMenu())
@@ -4295,6 +4518,17 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
 
             break;
         }
+        case Drag::moveNotes:
+        {
+            auto position = juce::jmax ((juce::int64) 0, dragNoteClip.position + delta);
+
+            if (snapping)
+                position = juce::jmax ((juce::int64) 0, position + SessionSnap::snapSpan (*state, { position, position + dragNoteClip.length },
+                                                                                          snapTolerance(), snapTargets (0, true)));
+
+            SessionEdits::moveNoteClip (next, dragNoteClip.id, position);
+            break;
+        }
         case Drag::trimStart:
             SessionEdits::trimClip (next, dragClip.id, toZeroCrossing (dragClip, snapped (dragClip.position + delta, dragClip.id)), dragClip.getEnd());
             break;
@@ -4416,6 +4650,10 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
     {
         cursorShape = gain->point >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::CrosshairCursor;
     }
+    else if (! clipAt (p).has_value() && noteClipAt (p).has_value())
+    {
+        cursorShape = juce::MouseCursor::DraggingHandCursor;
+    }
     else if (const auto hit = clipAt (p))
     {
         const auto& clip = shown().tracks[(size_t) hit->first].clips[(size_t) hit->second];
@@ -4450,6 +4688,14 @@ void MultitrackView::mouseDoubleClick (const juce::MouseEvent& e)
 
     if (envelopeAt (p).has_value() || clipGainAt (p).has_value())
         return;
+
+    // A note clip opens its dialog.
+    if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value() && onEditNotes != nullptr)
+    {
+        const auto& track = shown().tracks[(size_t) hit->first];
+        onEditNotes (track.id, track.noteClips[(size_t) hit->second].id);
+        return;
+    }
 
     if (const auto hit = clipAt (p); hit.has_value() && onOpenInEditor != nullptr)
     {

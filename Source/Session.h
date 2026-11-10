@@ -204,6 +204,55 @@ struct SurroundPan
     }
 };
 
+/** A note in a note clip: its MIDI pitch (60 is middle C), where it starts and how long it is
+    held, in frames from the clip's start, and how hard it is played, from 0 to 1. */
+struct ClipNote
+{
+    int pitch = 60;
+    juce::int64 start = 0, length = 0;
+    float velocity = 0.8f;
+
+    bool operator== (const ClipNote& o) const noexcept
+    {
+        return pitch == o.pitch && start == o.start && length == o.length && juce::exactlyEqual (velocity, o.velocity);
+    }
+};
+
+/** Notes placed on a track, played into its instrument (the first slot of its chain, when it
+    is one; a track without an instrument plays nothing from them): a clip at a session position,
+    length frames long, its notes at frames from its start. With a loop length the notes repeat
+    every that many frames up to the clip's end; a note the clip's end cuts turns off there. Notes
+    starting at or past the end, or at or past the loop length, play nothing. */
+struct NoteClip
+{
+    juce::uint32 id = 0;
+    juce::String name;
+    juce::int64 position = 0;              // session frame where the clip starts
+    juce::int64 length = 0;                // frames it plays
+    juce::int64 loopLength = 0;            // frames between repeats of the notes, or 0 to play them once
+    std::vector<ClipNote> notes;
+    bool muted = false;                    // stays in place but plays nothing
+    int colour = -1;                       // a place in TrackColours::palette, or -1 for its track's colour
+
+    juce::int64 getEnd() const noexcept    { return position + length; }
+
+    /** The MIDI the clip plays in session frames [from, from + count): each note's note-on at its
+        frame and note-off where it ends (or at the clip's end), as frames from 0, on channel 1.
+        At one frame note-offs come before note-ons, so a note taking over from another doesn't
+        lose its voice. The same whatever the blocks: a note's events fall in whichever block has
+        their frame. */
+    void addMidi (juce::int64 from, int count, juce::MidiBuffer&) const;
+
+    /** The frames the notes span, from the first start to the last end, within the clip. */
+    juce::Range<juce::int64> notesRange() const noexcept;
+
+    bool operator== (const NoteClip& o) const noexcept
+    {
+        return id == o.id && name == o.name && position == o.position && length == o.length && loopLength == o.loopLength
+            && notes == o.notes && muted == o.muted && colour == o.colour;
+    }
+};
+
 struct SessionTrack
 {
     juce::uint32 id = 0;
@@ -281,6 +330,10 @@ struct SessionTrack
 
     static constexpr int maxGroups = 8;
     std::vector<SessionClip> clips;
+
+    /** Notes for the track's instrument (tracks only; see NoteClip). They are not clips: they
+        play nothing without an instrument, aren't copied with time, and go with the track. */
+    std::vector<NoteClip> noteClips;
     std::vector<SessionSend> sends;
     Envelope volumeEnvelope, panEnvelope;  // dB, and -1 to +1
 
@@ -387,6 +440,9 @@ struct SessionState
 
     /** The track and index of the clip with this id, or nothing. */
     std::optional<std::pair<int, int>> findClip (juce::uint32 clipId) const;
+
+    /** The track and index of the note clip with this id, or nothing. */
+    std::optional<std::pair<int, int>> findNoteClip (juce::uint32 clipId) const;
 };
 
 //==============================================================================
@@ -714,6 +770,24 @@ namespace SessionEdits
         an effect parameter the value the pass starts from) stays as it was. */
     bool writeAutomation (SessionState&, juce::uint32 trackId, const AutomationTarget&,
                           const std::vector<AutomationPoint>& pass, juce::int64 returnFrames);
+
+    /** A note clip's values kept to what plays: the position from 0, the length at least 1, the
+        loop length from 0 (once) up to the length, pitches 0 to 127, each note's start from 0 and
+        length at least 1, velocities above 0 and up to 1, the name "Notes" when empty. */
+    NoteClip tidiedNoteClip (NoteClip);
+
+    /** Adds a note clip (its id given here, the rest tidied as above) to a track: not a bus, a
+        folder or a frozen track. Returns its id, or 0 when it can't be added. */
+    juce::uint32 addNoteClip (SessionState&, juce::uint32 trackId, NoteClip);
+
+    /** Replaces a note clip's name, length, loop length, notes and colour (tidied as above); it
+        keeps its id, track, position and mute. False when there is no such clip. */
+    bool replaceNoteClip (SessionState&, juce::uint32 clipId, const NoteClip&);
+
+    /** Moves a note clip in time on its track (not before 0). False when there is no such clip. */
+    bool moveNoteClip (SessionState&, juce::uint32 clipId, juce::int64 position);
+    bool removeNoteClip (SessionState&, juce::uint32 clipId);
+    bool setNoteClipMuted (SessionState&, juce::uint32 clipId, bool muted);
 }
 
 //==============================================================================

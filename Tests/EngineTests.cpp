@@ -33,6 +33,7 @@
 #include "RestorationTests.h"
 #include "GeneratorTests.h"
 #include "InstrumentTests.h"
+#include "InstrumentTrackTests.h"
 #include "LossyFilesTests.h"
 #include "FfmpegTests.h"
 #include "FileInfoTests.h"
@@ -780,6 +781,7 @@ int main (int argc, char* argv[])
         runRestorationTests();
         runGeneratorTests();
         runInstrumentTests (engine);
+        runInstrumentTrackTests (engine);
         runLossyFilesTests();
         runFfmpegTests();
         runFileInfoTests();

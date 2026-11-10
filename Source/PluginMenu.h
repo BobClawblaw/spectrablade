@@ -3,8 +3,9 @@
 #include <JuceHeader.h>
 
 /** Menus of plug-ins to add: a submenu a format (Audio Units, then VST3, then any other), each with
-    a submenu a maker, the plug-ins sorted by name. Items take ids from 1 (one more than the
-    plug-in's index in the list given), so a menu can put its own items above them. */
+    a submenu a maker, the plug-ins sorted by name. Items take ids from firstId (1: one more than
+    the plug-in's index in the list given), so a menu can put its own items above them, or list
+    the tail of a longer array (from its index firstId - 1) in a second menu. */
 namespace PluginMenu
 {
     inline juce::String formatTitle (const juce::String& format)
@@ -12,7 +13,7 @@ namespace PluginMenu
         return format == "AudioUnit" ? juce::String ("Audio Units") : format;
     }
 
-    inline void add (juce::PopupMenu& menu, const juce::Array<juce::PluginDescription>& types)
+    inline void add (juce::PopupMenu& menu, const juce::Array<juce::PluginDescription>& types, int firstId = 1)
     {
         juce::StringArray formats;
 
@@ -47,7 +48,7 @@ namespace PluginMenu
                 juce::PopupMenu plugins;
 
                 for (auto i : indices)
-                    plugins.addItem (i + 1, types.getReference (i).name);
+                    plugins.addItem (firstId + i, types.getReference (i).name);
 
                 byMaker.addSubMenu (maker, plugins);
             }

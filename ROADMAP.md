@@ -2,13 +2,11 @@
 
 What comes next, in order. Finished work moves to the [changelog](CHANGELOG.md).
 
-**Now: the 0.15 line, instruments for sound design.** Feature work stopped at 0.14.7 for dogfooding, and has started again on main for one line of work: instrument plug-ins (VST3, and Audio Units on the Mac) played from notes, patterns and sequences, with their parameters automated, so new sounds can be made from an instrument and its settings and then edited like any other audio. Not a DAW: no tempo map beyond the one the multitrack has, no bars-and-beats sequencing of a song, no MIDI routing between tracks. The first step is in (Milestone 362: Generate from Instrument, with the built-in Basic Synth); the rest, in order:
+**Now: the 0.15 line, instruments for sound design.** Feature work stopped at 0.14.7 for dogfooding, and has started again on main for one line of work: instrument plug-ins (VST3, and Audio Units on the Mac) played from notes, patterns and sequences, with their parameters automated, so new sounds can be made from an instrument and its settings and then edited like any other audio. Not a DAW: no tempo map beyond the one the multitrack has, no bars-and-beats sequencing of a song, no MIDI routing between tracks. The first two steps are in (Milestone 362: Generate from Instrument, with the built-in Basic Synth; Milestone 363: instrument tracks, with note clips that hold notes with pitch, velocity, start and length, once or repeating, undoable and saved in the session file, typed into a dialog for now); the rest, in order:
 
-1. **Instrument tracks** in the multitrack: a track whose chain starts with an instrument, its parameters automated with the envelopes and touch-to-write that effect parameters already have, bounced, frozen, mixed down and exported as stems like any track.
-2. **MIDI clips** in the session: notes with pitch, velocity, start and length, undoable and saved in the session file, played into the track's instrument at session time; a pattern clip that loops.
-3. **A clip editor:** a piano-roll grid with step entry, and a one-note trigger clip for hits.
-4. **Live input:** MIDI keyboards through the audio device settings, an on-screen keyboard, recording into a clip, and Standard MIDI File import.
-5. **Controller lanes:** pitch bend, the mod wheel and CCs as envelopes on a MIDI clip, for the parameters instruments expose that way.
+1. **A clip editor:** a piano-roll grid on a note clip with step entry, notes dragged in pitch and time, and a one-note trigger clip for hits; note clips trimmed, split, copied and pasted, and carried with copied time, as audio clips are.
+2. **Live input:** MIDI keyboards through the audio device settings, an on-screen keyboard, recording into a clip, and Standard MIDI File import.
+3. **Controller lanes:** pitch bend, the mod wheel and CCs as envelopes on a note clip, for the parameters instruments expose that way.
 
 The releases meanwhile are still dogfooding releases, and what real use turns up still goes into the [dogfooding log](docs/DOGFOODING.md) and its [issues](https://github.com/BobClawblaw/spectrablade/issues). 1.0.0 follows once the instrument line has had a round of use with nothing left in the log. The items below wait behind that.
 

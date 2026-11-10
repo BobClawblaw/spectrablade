@@ -17,8 +17,13 @@ juce::int64 SessionState::getLength() const
     juce::int64 length = 0;
 
     for (auto& t : tracks)
+    {
         for (auto& c : t.clips)
             length = juce::jmax (length, c.getEnd());
+
+        for (auto& c : t.noteClips)
+            length = juce::jmax (length, c.getEnd());
+    }
 
     return length;
 }
@@ -200,6 +205,71 @@ std::optional<std::pair<int, int>> SessionState::findClip (juce::uint32 clipId) 
                 return std::pair<int, int> { (int) t, (int) c };
 
     return std::nullopt;
+}
+
+std::optional<std::pair<int, int>> SessionState::findNoteClip (juce::uint32 clipId) const
+{
+    for (size_t t = 0; t < tracks.size(); ++t)
+        for (size_t c = 0; c < tracks[t].noteClips.size(); ++c)
+            if (tracks[t].noteClips[c].id == clipId)
+                return std::pair<int, int> { (int) t, (int) c };
+
+    return std::nullopt;
+}
+
+//==============================================================================
+void NoteClip::addMidi (juce::int64 from, int count, juce::MidiBuffer& midi) const
+{
+    const auto to = from + count, end = getEnd();
+
+    // A note cut by the clip's end turns off at the end frame itself, so a block starting there still counts.
+    if (count <= 0 || to <= position || from > end)
+        return;
+
+    // Each pass of the notes (one, or every loopLength frames): its note-offs first, then its
+    // note-ons, so at one frame a note taking over from another is turned off before it is on.
+    const auto period = loopLength > 0 ? juce::jmin (loopLength, length) : length;
+    const auto firstPass = juce::jmax ((juce::int64) 0, (from - position) / period - 1);
+
+    for (auto pass = firstPass; position + pass * period < juce::jmin (to, end); ++pass)
+    {
+        const auto passStart = position + pass * period;
+
+        for (auto& n : notes)
+        {
+            const auto on = passStart + n.start;
+            const auto off = juce::jmin (on + juce::jmax ((juce::int64) 1, n.length), end);
+
+            if (n.start >= period || on >= end || off <= on)
+                continue;
+
+            if (off >= from && off < to)
+                midi.addEvent (juce::MidiMessage::noteOff (1, juce::jlimit (0, 127, n.pitch)), (int) (off - from));
+        }
+
+        for (auto& n : notes)
+        {
+            const auto on = passStart + n.start;
+
+            if (n.start < period && on < end && on >= from && on < to)
+                midi.addEvent (juce::MidiMessage::noteOn (1, juce::jlimit (0, 127, n.pitch), juce::jlimit (0.0f, 1.0f, n.velocity)), (int) (on - from));
+        }
+    }
+}
+
+juce::Range<juce::int64> NoteClip::notesRange() const noexcept
+{
+    juce::Range<juce::int64> r;
+    auto first = true;
+
+    for (auto& n : notes)
+    {
+        const juce::Range<juce::int64> span (juce::jlimit ((juce::int64) 0, length, n.start), juce::jlimit ((juce::int64) 0, length, n.start + n.length));
+        r = first ? span : r.getUnionWith (span);
+        first = false;
+    }
+
+    return r;
 }
 
 //==============================================================================
@@ -1463,6 +1533,25 @@ bool deleteTime (SessionState& s, juce::int64 start, juce::int64 end)
                 changed = true;
             }
 
+    // Note clips inside the time go; those after it move back; those across it stay as they are.
+    for (auto& track : s.tracks)
+    {
+        if (track.isFrozen())
+            continue;
+
+        const auto gone = std::remove_if (track.noteClips.begin(), track.noteClips.end(),
+                                          [=] (const NoteClip& c) { return c.position >= start && c.getEnd() <= end; });
+        changed = gone != track.noteClips.end() || changed;
+        track.noteClips.erase (gone, track.noteClips.end());
+
+        for (auto& c : track.noteClips)
+            if (c.position >= end)
+            {
+                c.position -= end - start;
+                changed = true;
+            }
+    }
+
     changed = changeEnvelopes (s, [=] (const Envelope& e) { return withoutTime (e, start, end); }) || changed;
     return changeMarkers (s, MarkerEdits::afterReplace (s.markers, start, end, 0)) || changed;
 }
@@ -1486,6 +1575,15 @@ bool insertTime (SessionState& s, juce::int64 at, juce::int64 length)
     for (auto& track : s.tracks)
         for (auto& c : track.clips)
             if (! c.locked && ! track.isFrozen() && c.position >= at)
+            {
+                c.position += length;
+                changed = true;
+            }
+
+    // Note clips from `at` on move later; one across it stays as it is.
+    for (auto& track : s.tracks)
+        for (auto& c : track.noteClips)
+            if (! track.isFrozen() && c.position >= at)
             {
                 c.position += length;
                 changed = true;
@@ -1760,6 +1858,9 @@ juce::uint32 duplicateTrack (SessionState& s, int track)
         c.locked = false;
         c.groupId = 0;
     }
+
+    for (auto& c : copy.noteClips)
+        c.id = s.nextId++;
 
     s.tracks.insert (s.tracks.begin() + track + 1, std::move (copy));
     return s.tracks[(size_t) track + 1].id;
@@ -2059,6 +2160,94 @@ bool writeAutomation (SessionState& s, juce::uint32 trackId, const AutomationTar
             e.points.push_back (point);
 
     return setEnvelope (s, trackId, p, std::move (e));
+}
+
+NoteClip tidiedNoteClip (NoteClip c)
+{
+    c.name = c.name.trim().isEmpty() ? juce::String ("Notes") : c.name.trim();
+    c.position = juce::jmax ((juce::int64) 0, c.position);
+    c.length = juce::jmax ((juce::int64) 1, c.length);
+    c.loopLength = juce::jlimit ((juce::int64) 0, c.length, c.loopLength);
+    c.colour = juce::jlimit (-1, (int) TrackColours::palette.size() - 1, c.colour);
+
+    for (auto& n : c.notes)
+    {
+        n.pitch = juce::jlimit (0, 127, n.pitch);
+        n.start = juce::jmax ((juce::int64) 0, n.start);
+        n.length = juce::jmax ((juce::int64) 1, n.length);
+        n.velocity = n.velocity > 0.0f ? juce::jmin (1.0f, n.velocity) : 1.0f / 127.0f;
+    }
+
+    return c;
+}
+
+juce::uint32 addNoteClip (SessionState& s, juce::uint32 trackId, NoteClip clip)
+{
+    const auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
+
+    if (track == s.tracks.end() || ! track->takesClips())
+        return 0;
+
+    clip = tidiedNoteClip (std::move (clip));
+    clip.id = s.nextId++;
+    track->noteClips.push_back (clip);
+    return clip.id;
+}
+
+bool replaceNoteClip (SessionState& s, juce::uint32 clipId, const NoteClip& values)
+{
+    const auto where = s.findNoteClip (clipId);
+
+    if (! where.has_value())
+        return false;
+
+    auto& c = s.tracks[(size_t) where->first].noteClips[(size_t) where->second];
+    auto tidy = tidiedNoteClip (values);
+    c.name = tidy.name;
+    c.length = tidy.length;
+    c.loopLength = tidy.loopLength;
+    c.notes = std::move (tidy.notes);
+    c.colour = tidy.colour;
+    return true;
+}
+
+bool moveNoteClip (SessionState& s, juce::uint32 clipId, juce::int64 position)
+{
+    const auto where = s.findNoteClip (clipId);
+
+    if (! where.has_value())
+        return false;
+
+    s.tracks[(size_t) where->first].noteClips[(size_t) where->second].position = juce::jmax ((juce::int64) 0, position);
+    return true;
+}
+
+bool removeNoteClip (SessionState& s, juce::uint32 clipId)
+{
+    const auto where = s.findNoteClip (clipId);
+
+    if (! where.has_value())
+        return false;
+
+    auto& clips = s.tracks[(size_t) where->first].noteClips;
+    clips.erase (clips.begin() + where->second);
+    return true;
+}
+
+bool setNoteClipMuted (SessionState& s, juce::uint32 clipId, bool muted)
+{
+    const auto where = s.findNoteClip (clipId);
+
+    if (! where.has_value())
+        return false;
+
+    auto& c = s.tracks[(size_t) where->first].noteClips[(size_t) where->second];
+
+    if (c.muted == muted)
+        return false;
+
+    c.muted = muted;
+    return true;
 }
 }
 
@@ -2545,6 +2734,32 @@ juce::String save (const SessionState& state, const juce::File& target,
                 }
             }
         }
+
+        for (auto& c : t.noteClips)
+        {
+            auto* clip = track->createNewChildElement ("NOTECLIP");
+            clip->setAttribute ("name", c.name);
+            clip->setAttribute ("position", juce::String (c.position));
+            clip->setAttribute ("length", juce::String (c.length));
+
+            if (c.loopLength > 0)
+                clip->setAttribute ("loop", juce::String (c.loopLength));
+
+            if (c.muted)
+                clip->setAttribute ("muted", true);
+
+            if (c.colour >= 0)
+                clip->setAttribute ("colour", c.colour);
+
+            for (auto& n : c.notes)
+            {
+                auto* note = clip->createNewChildElement ("NOTE");
+                note->setAttribute ("pitch", n.pitch);
+                note->setAttribute ("start", juce::String (n.start));
+                note->setAttribute ("length", juce::String (n.length));
+                note->setAttribute ("velocity", n.velocity);
+            }
+        }
     }
 
     for (auto& c : state.tempoChanges)
@@ -2770,6 +2985,28 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             }
 
             track.clips.push_back (std::move (clip));
+        }
+
+        for (auto* clipXml : trackXml->getChildWithTagNameIterator ("NOTECLIP"))
+        {
+            NoteClip clip;
+            clip.name = clipXml->getStringAttribute ("name");
+            clip.position = clipXml->getStringAttribute ("position").getLargeIntValue();
+            clip.length = clipXml->getStringAttribute ("length").getLargeIntValue();
+            clip.loopLength = clipXml->getStringAttribute ("loop").getLargeIntValue();
+            clip.muted = clipXml->getBoolAttribute ("muted");
+            clip.colour = clipXml->getIntAttribute ("colour", -1);
+
+            for (auto* noteXml : clipXml->getChildWithTagNameIterator ("NOTE"))
+                clip.notes.push_back ({ noteXml->getIntAttribute ("pitch"), noteXml->getStringAttribute ("start").getLargeIntValue(),
+                                        noteXml->getStringAttribute ("length").getLargeIntValue(), (float) noteXml->getDoubleAttribute ("velocity") });
+
+            if (! track.isBus)
+            {
+                clip = SessionEdits::tidiedNoteClip (std::move (clip));
+                clip.id = state.nextId++;
+                track.noteClips.push_back (std::move (clip));
+            }
         }
     }
 

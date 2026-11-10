@@ -396,6 +396,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/RestorationTests.cpp
     Tests/GeneratorTests.cpp
     Tests/InstrumentTests.cpp
+    Tests/InstrumentTrackTests.cpp
     Tests/LossyFilesTests.cpp
     Tests/FfmpegTests.cpp
     Tests/FileInfoTests.cpp

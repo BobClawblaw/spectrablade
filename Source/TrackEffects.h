@@ -18,6 +18,10 @@
     its envelope at the start of each step, at the frame of the audio its effect is working on
     (earlier by the latency of the effects before it).
 
+    A chain may start with an instrument (isInstrument): it is given the track's note clips as
+    MIDI, at the session frame of the audio going through it, and what it plays is added to that
+    audio; a reset turns every note off before the next block.
+
     Moves of the effects' parameters in their own windows are reported (onParameterTouched), so
     they can be written as automation. While a parameter is touched its envelope leaves it alone.
 
@@ -90,9 +94,19 @@ public:
     /** Frames between parameter changes from envelopes. */
     static constexpr int automationStep = 64;
 
-    /** Prepares the plug-in and adds it to the end of the track's chain, as slot slotId (a new
-        id when 0). Returns the slot's id. */
+    /** Prepares the plug-in and adds it to the end of the track's chain (an instrument to its
+        start, before any other), as slot slotId (a new id when 0). Returns the slot's id. */
     juce::uint32 add (juce::uint32 trackId, std::unique_ptr<juce::AudioPluginInstance>, juce::uint32 slotId = 0);
+
+    /** True for an instrument: a plug-in that takes MIDI and describes itself as one. In a chain
+        it is played by the track's note clips (its MIDI the notes at the session frame of the
+        audio it is working on), its output added to the track's audio there, and on a 5.1 or 7.1
+        track it plays into L and R alone, with no copies. It stays first in the chain: move()
+        leaves it there. */
+    static bool isInstrument (const juce::AudioPluginInstance&);
+
+    /** The instrument first in the track's chain, or null. */
+    juce::AudioPluginInstance* getInstrument (juce::uint32 trackId) const;
 
     /** The id of the slot at this place in the track's chain, or 0. */
     juce::uint32 getSlotId (juce::uint32 trackId, int slot) const;
@@ -154,6 +168,7 @@ private:
         Copies copies;                         // on a 5.1 track: for C LFE and Ls Rs (7.1: and Lss Rss)
         juce::uint32 id = 0;
         bool bypassed = false;
+        std::atomic<bool> allOff { false };   // an instrument: every note off before its next block (after a reset)
         juce::AudioBuffer<float> work;
         std::map<juce::String, juce::AudioProcessorParameter*> parameters;
         std::unique_ptr<Watcher> watcher;      // after the plug-in, so it goes first

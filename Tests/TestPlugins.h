@@ -91,7 +91,8 @@ private:
 
 /** An instrument: no input, one output channel, and a latency it reports. Each note-on puts one
     full-scale sample out, `latency` frames after the note (as a plug-in with that latency would),
-    and every note it is given is kept with the frame it came at. */
+    and every note it is given is kept with the frame it came at. All Notes Off and All Sound Off
+    are counted, and drop the clicks still to come. */
 class ClickInstrument final : public juce::AudioPluginInstance
 {
 public:
@@ -100,6 +101,11 @@ public:
           latency (latencyFrames)
     {
         setLatencySamples (latency);
+    }
+
+    bool isBusesLayoutSupported (const BusesLayout& layout) const override
+    {
+        return layout.getMainOutputChannelSet() == juce::AudioChannelSet::mono();
     }
 
     void fillInPluginDescription (juce::PluginDescription& d) const override
@@ -143,6 +149,11 @@ public:
             {
                 offs.push_back ({ m.getNoteNumber(), frame + meta.samplePosition });
             }
+            else if (m.isAllNotesOff() || m.isAllSoundOff())
+            {
+                ++allOff;
+                pending.clear();
+            }
         }
 
         for (auto it = pending.begin(); it != pending.end();)
@@ -177,6 +188,7 @@ public:
 
     std::vector<std::pair<int, juce::int64>> notes, offs;   // (pitch, frame) of each note-on and note-off
     int prepared = 0, released = 0;
+    int allOff = 0;                                         // All Notes Off or All Sound Off messages (each drops the clicks pending)
     double preparedRate = 0.0;
     bool wasNonRealtime = false;
 

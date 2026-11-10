@@ -205,6 +205,10 @@ private:
     void showGenerateNoise();
     void showGenerateTones();
     void showGenerateInstrument();
+
+    /** The note clip dialog: notes for a track's instrument as a new clip at the cursor (clipId 0),
+        or this clip's notes changed. */
+    void showNoteClipDialog (juce::uint32 trackId, juce::uint32 clipId);
     void exportLossy();
     void askLossySettings (const juce::File&, juce::Range<juce::int64> selection);
     void exportWithFfmpeg();
