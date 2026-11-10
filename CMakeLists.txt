@@ -268,6 +268,7 @@ target_sources(SpectraBlade PRIVATE
     Source/PluginScanner.cpp
     Source/MainComponent.cpp
     Source/PitchEditor.cpp
+    Source/NoteEditor.cpp
     Source/WaveformView.cpp
     Source/MixerView.cpp
     Source/SurroundPad.cpp
@@ -397,6 +398,7 @@ target_sources(SpectraBladeTests PRIVATE
     Tests/GeneratorTests.cpp
     Tests/InstrumentTests.cpp
     Tests/InstrumentTrackTests.cpp
+    Tests/NoteEditorTests.cpp
     Tests/LossyFilesTests.cpp
     Tests/FfmpegTests.cpp
     Tests/FileInfoTests.cpp
@@ -474,6 +476,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/PhaseCorrection.cpp
     Source/PitchCorrection.cpp
     Source/PitchEditor.cpp
+    Source/NoteEditor.cpp
     Source/Leveller.cpp
     Source/Scrubber.cpp
     Source/ClickRepair.cpp

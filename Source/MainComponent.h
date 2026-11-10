@@ -54,6 +54,7 @@
 #include "Batch.h"
 #include "EditorBar.h"
 #include "PitchEditor.h"
+#include "NoteEditor.h"
 #include "Delivery.h"
 #include "SoundLibraryView.h"
 #include "SettingsPanel.h"

@@ -52,6 +52,9 @@ public:
     /** Asks for the note clip dialog: for a new clip on the track (clipId 0), or to change this one. */
     std::function<void (juce::uint32 trackId, juce::uint32 clipId)> onEditNotes;
 
+    /** A note clip double-clicked: asks for it in the piano roll. */
+    std::function<void (juce::uint32 clipId)> onOpenNotes;
+
     /** The selected note clip's id, or 0. Selecting a note clip clears the clip selection and the
         other way round, so Delete removes what was clicked last. */
     juce::uint32 getSelectedNoteClip() const noexcept   { return selectedNoteClip; }

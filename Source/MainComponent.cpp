@@ -78,11 +78,12 @@ namespace
         const juce::String editor { "editor" }, rack { "rack" }, selection { "selection" }, mixer { "mixer" },
                            clipProperties { "clipProperties" }, clipList { "clipList" }, markers { "markers" },
                            history { "history" }, notes { "notes" }, files { "files" }, levels { "levels" },
-                                spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" }, tonalBalance { "tonalBalance" }, statistics { "statistics" };
+                                spectrum { "spectrum" }, phase { "phase" }, video { "video" }, pitch { "pitch" }, tonalBalance { "tonalBalance" }, statistics { "statistics" },
+                           pianoRoll { "pianoRoll" };
 
         juce::StringArray all()
         {
-            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch, tonalBalance, statistics };
+            return { editor, rack, selection, mixer, clipProperties, clipList, markers, history, notes, files, levels, spectrum, phase, video, pitch, tonalBalance, statistics, pianoRoll };
         }
     }
 
@@ -155,7 +156,7 @@ namespace
         cmdSevenOneMaster, cmdMeetDeliverySpec, cmdShowSoundLibrary, cmdDynamicEq, cmdMultibandWidth, cmdExciter, cmdMaximizer, cmdTransientShaper, cmdCaptureMatchReference, cmdCaptureMatchReferenceFromFile, cmdMatchEq, cmdShowTonalBalance, cmdDither, cmdDialogueIsolation, cmdAdaptiveDenoise, cmdMouthDeClick, cmdDeCrackle, cmdDePlosive, cmdBreathControl, cmdSpill, cmdWowFlutter, cmdSpectralRecovery, cmdRebalance, cmdCaptureAmbience, cmdAmbienceMatch, cmdDialogueContour, cmdAzimuth, cmdCodecPreview,
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
-        cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument,
+        cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -984,6 +985,14 @@ MainComponent::MainComponent()
     };
     multitrack.onEditPlugin = [this] (juce::AudioPluginInstance& p) { showEditor (p); };
     multitrack.onEditNotes = [this] (juce::uint32 trackId, juce::uint32 clipId) { showNoteClipDialog (trackId, clipId); };
+    multitrack.onOpenNotes = [this] (juce::uint32 clipId)
+    {
+        multitrack.selectNoteClip (clipId);
+        dock->show (Panels::pianoRoll);
+
+        if (auto* panel = dynamic_cast<NoteEditor*> (getPanel (Panels::pianoRoll)))
+            panel->refresh();
+    };
 
     waveform.getRecentFiles = [this]
     {
@@ -1783,6 +1792,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                     info.setTicked (appProperties.getUserSettings()->getBoolValue (projectHistoryKey, true)); break;
         case cmdShowPitchEditor: info.setInfo ("Pitch Editor", "Show or hide the panel for moving the notes of a voice or solo line by hand, in a file or a session clip", "Window", 0);
                            info.setTicked (dock->isShown (Panels::pitch)); break;
+        case cmdShowPianoRoll: info.setInfo ("Piano Roll", "Show or hide the panel for editing the selected note clip's notes on a grid of pitch and time", "Window", 0);
+                           info.setTicked (dock->isShown (Panels::pianoRoll)); break;
         case cmdShowVideo: info.setInfo ("Video", "Show or hide the panel with the file's or session's video, following the playhead", "Window", 0);
                            info.setTicked (dock->isShown (Panels::video)); break;
         case cmdAttachVideo: info.setInfo ("Attach Video...", "Choose the video this file's sound goes with, to watch in the Video panel and to put the sound back into", "File", 0);
@@ -2700,6 +2711,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNewFromChannels: newFileFromChannels(); break;
         case cmdShowVideo: dock->toggle (Panels::video); break;
         case cmdShowPitchEditor: dock->toggle (Panels::pitch); break;
+        case cmdShowPianoRoll: dock->toggle (Panels::pianoRoll); break;
         case cmdOpenProject: chooseProject(); break;
         case cmdSaveProject: saveProject (false); break;
         case cmdSaveProjectAs: saveProject (true); break;
@@ -2922,7 +2934,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
         case 7:
         {
             add ({ cmdPlugins, cmdAudioSettings, cmdKeyShortcuts, 0, cmdSaveRack, cmdLoadRack, 0,
-                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowTonalBalance, cmdShowStatistics, cmdShowVideo, cmdShowPitchEditor, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
+                   cmdMaximizeEditor, 0, cmdShowFiles, cmdShowFileTabs, cmdShowRack, cmdShowSelectionPanel, cmdShowLevels, cmdShowSpectrum, cmdShowPhase, cmdShowTonalBalance, cmdShowStatistics, cmdShowVideo, cmdShowPitchEditor, cmdShowPianoRoll, cmdUndoHistory, cmdMarkerList, cmdMixer, cmdClipProperties, cmdClipList, cmdSessionNotes, 0, cmdShowSoundLibrary });
 
             juce::PopupMenu workspaceMenu;
 
@@ -7489,15 +7501,15 @@ void MainComponent::showNoteClipDialog (juce::uint32 trackId, juce::uint32 clipI
     const auto clipOf = [this, rate] (const EffectValues& v) -> std::optional<NoteClip>
     {
         const auto pitches = Instrument::parsePitches (effectTexts["notes"]);
-        const auto hold = v.at ("hold"), length = v.at ("length");
+        const auto holdSeconds = v.at ("hold"), patternSeconds = v.at ("length");
 
-        if (! pitches.has_value() || hold <= 0.0 || length <= 0.0)
+        if (! pitches.has_value() || holdSeconds <= 0.0 || patternSeconds <= 0.0)
             return std::nullopt;
 
-        const auto phrase = v.at ("play") > 0.5 ? Instrument::inTurn (*pitches, hold, length, (float) (v.at ("velocity") / 127.0))
-                                                : Instrument::together (*pitches, hold, length, (float) (v.at ("velocity") / 127.0));
+        const auto phrase = v.at ("play") > 0.5 ? Instrument::inTurn (*pitches, holdSeconds, patternSeconds, (float) (v.at ("velocity") / 127.0))
+                                                : Instrument::together (*pitches, holdSeconds, patternSeconds, (float) (v.at ("velocity") / 127.0));
         NoteClip clip;
-        const auto period = juce::jmax ((juce::int64) 1, (juce::int64) std::llround (length * rate));
+        const auto period = juce::jmax ((juce::int64) 1, (juce::int64) std::llround (patternSeconds * rate));
         const auto times = (juce::int64) juce::jlimit (1.0, 1000.0, std::round (v.at ("repeats")));
         clip.length = period * times;
         clip.loopLength = times > 1 ? period : 0;
@@ -12495,6 +12507,39 @@ juce::Component* MainComponent::getPanel (const juce::String& id)
         };
         made = std::move (panel);
     }
+    else if (id == Panels::pianoRoll)
+    {
+        auto panel = std::make_unique<NoteEditor>();
+        panel->readClip = [this]() -> std::optional<NoteEditor::Shown>
+        {
+            if (! multitrackMode)
+                return std::nullopt;
+
+            const auto state = engine.session.getState();
+            const auto where = state->findNoteClip (multitrack.getSelectedNoteClip());
+
+            if (! where.has_value())
+                return std::nullopt;
+
+            const auto& track = state->tracks[(size_t) where->first];
+            const auto& clip = track.noteClips[(size_t) where->second];
+            NoteEditor::Shown shown;
+            shown.clip = clip;
+            shown.sampleRate = state->sampleRate;
+            shown.beatSeconds = 60.0 / juce::jmax (1.0, state->tempoMap().tempoAt (clip.position));
+            shown.trackName = track.name;
+            shown.hasInstrument = engine.getTrackEffects().getInstrument (track.id) != nullptr;
+            return shown;
+        };
+        panel->apply = [this] (const NoteClip& clip, const juce::String& description)
+        {
+            auto next = *engine.session.getState();
+
+            if (SessionEdits::replaceNoteClip (next, clip.id, clip))
+                engine.session.apply (std::move (next), description);
+        };
+        made = std::move (panel);
+    }
     else if (id == Panels::pitch)
     {
         auto panel = std::make_unique<PitchEditor>();
@@ -12599,6 +12644,7 @@ juce::String MainComponent::getTitle (const juce::String& id)
     if (id == Panels::statistics)      return "Amplitude Statistics";
     if (id == Panels::video)           return "Video";
     if (id == Panels::pitch)           return "Pitch Editor";
+    if (id == Panels::pianoRoll)       return "Piano Roll";
     return id;
 }
 
@@ -12632,6 +12678,7 @@ std::pair<juce::String, Dock::Side> MainComponent::defaultPlace (const juce::Str
     if (id == Panels::video)       return { Panels::rack, Dock::Side::top };
     if (id == Panels::spectrum)    return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::statistics)  return { Panels::editor, Dock::Side::bottom };
+    if (id == Panels::pianoRoll)   return { Panels::editor, Dock::Side::bottom };
     if (id == Panels::phase)       return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,
                                             dock->getLayout().isDocked (Panels::spectrum) ? Dock::Side::right : Dock::Side::bottom };
     if (id == Panels::tonalBalance) return { dock->getLayout().isDocked (Panels::spectrum) ? Panels::spectrum : Panels::editor,

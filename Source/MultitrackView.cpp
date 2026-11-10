@@ -3152,6 +3152,7 @@ void MultitrackView::showNoteClipMenu (juce::uint32 clipId)
     const auto trackId = shown().tracks[(size_t) where->first].id;
     const juce::Component::SafePointer<MultitrackView> safe (this);
     juce::PopupMenu menu;
+    menu.addItem ("Piano Roll", onOpenNotes != nullptr, false, [safe, clipId] { if (safe != nullptr && safe->onOpenNotes != nullptr) safe->onOpenNotes (clipId); });
     menu.addItem ("Edit Notes...", onEditNotes != nullptr, false, [safe, trackId, clipId] { if (safe != nullptr && safe->onEditNotes != nullptr) safe->onEditNotes (trackId, clipId); });
     menu.addItem ("Mute", true, clip.muted, [safe, clipId, muted = clip.muted]
     {
@@ -4689,11 +4690,10 @@ void MultitrackView::mouseDoubleClick (const juce::MouseEvent& e)
     if (envelopeAt (p).has_value() || clipGainAt (p).has_value())
         return;
 
-    // A note clip opens its dialog.
-    if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value() && onEditNotes != nullptr)
+    // A note clip opens in the piano roll.
+    if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value() && onOpenNotes != nullptr)
     {
-        const auto& track = shown().tracks[(size_t) hit->first];
-        onEditNotes (track.id, track.noteClips[(size_t) hit->second].id);
+        onOpenNotes (shown().tracks[(size_t) hit->first].noteClips[(size_t) hit->second].id);
         return;
     }
 
