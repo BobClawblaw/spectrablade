@@ -151,7 +151,20 @@ namespace
         const auto padding = gap.has_value() ? (juce::int64) gap->padding : (juce::int64) windowsDecoderDelay;
         s.stream.skip = delay + windowsDecoderDelay;
         s.stream.length = juce::jmax ((juce::int64) 0, time - delay - padding);
-        s.stream.preroll = 10;   // the bit reservoir reaches back up to 511 bytes, and frames overlap
+        // Frames decoded before the one a read starts in: enough that the bit reservoir (which reaches
+        // back 511 bytes of audio data in MPEG-1, 255 in MPEG-2 and 2.5) has all it needs for the frame
+        // before it, whose output overlaps the first one's, counting what this stream's smallest frames
+        // hold besides their header and side information, and a few over. A 22.05 kHz V9 file's 26-byte
+        // frames hold 13 bytes: 23 frames, where 10 do at 44.1 kHz.
+        auto smallest = s.stream.packets.front().size;
+
+        for (const auto& p : s.stream.packets)
+            smallest = juce::jmin (smallest, p.size);
+
+        const auto reservoir = first->version == 1 ? 511 : 255;
+        const auto sideInfo = first->version == 1 ? (first->channels == 1 ? 17 : 32) : (first->channels == 1 ? 9 : 17);
+        const auto audioBytes = juce::jmax (1, (int) smallest - 4 - sideInfo);
+        s.stream.preroll = juce::jmax (10, (reservoir + audioBytes - 1) / audioBytes + 3);
         return s;
     }
 }
