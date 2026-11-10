@@ -9,7 +9,7 @@ Nothing yet.
 ## Released
 
 **Release 0.14.11: a new file, settings in one place, and the Sound Library by format**
-- `SpectraBlade-0.14.11.dmg` on the repository's Releases page, with its SHA-256: Milestones 349 to 356 below on top of 0.14.10, six of them fixes from the [dogfooding log](docs/DOGFOODING.md) (rows 4 to 9) and two things asked for while dogfooding (File > New File and File > Settings). A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- `SpectraBlade-0.14.11.dmg` on the repository's Releases page, with its SHA-256: Milestones 349 to 356 below on top of 0.14.10, six of them fixes from the [dogfooding log](docs/DOGFOODING.md) (rows 4 to 9) and two things asked for while dogfooding (File > New File and File > Settings). A dogfooding release, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
 - Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1511 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.11, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. Nothing in this release has been listened to; the parts of each milestone not tried by hand are listed with it below.
 
 **Milestone 356: WAV first, and folders left out of the list**
@@ -53,7 +53,7 @@ Nothing yet.
 - Not tried by hand: the dialog in the running app.
 
 **Release 0.14.10: F5 for the Sound Library**
-- `SpectraBlade-0.14.10.dmg` on the repository's Releases page, with its SHA-256: Milestone 348 below on top of 0.14.9. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- `SpectraBlade-0.14.10.dmg` on the repository's Releases page, with its SHA-256: Milestone 348 below on top of 0.14.9. A dogfooding release, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
 - Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1498 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.10, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for the milestone. Nothing in this release has been listened to; the key was not tried by hand in the running app.
 
 **Milestone 348: F5 shows and hides the Sound Library**
@@ -62,7 +62,7 @@ Nothing yet.
 - Not tried by hand: the key in the running app.
 
 **Release 0.14.9: the mode said, dialogs heard from the start, and a dogfooding log**
-- `SpectraBlade-0.14.9.dmg` on the repository's Releases page, with its SHA-256: Milestones 345 to 347 below on top of 0.14.8, and a new [dogfooding log](docs/DOGFOODING.md) of what use has found and what fixed it. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- `SpectraBlade-0.14.9.dmg` on the repository's Releases page, with its SHA-256: Milestones 345 to 347 below on top of 0.14.8, and a new [dogfooding log](docs/DOGFOODING.md) of what use has found and what fixed it. A dogfooding release, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
 - Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1498 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.9, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for each milestone. Nothing in this release has been listened to; the parts of each milestone not tried by hand are listed with it below.
 
 **Milestone 347: The other four dialogs preview from the start too**
@@ -81,7 +81,7 @@ Nothing yet.
 - Not tried by hand: the preview coming on by itself, and the message, in the running app.
 
 **Release 0.14.8: the first dogfood fix, a selection changed while looping**
-- `SpectraBlade-0.14.8.dmg` on the repository's Releases page, with its SHA-256: Milestone 344 below on top of 0.14.7. A pre-release for dogfooding, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
+- `SpectraBlade-0.14.8.dmg` on the repository's Releases page, with its SHA-256: Milestone 344 below on top of 0.14.7. A dogfooding release, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
 - Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64, signed it, and the whole suite (1498 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.14.8, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for the milestone. Nothing in this release has been listened to; the fix was not tried by hand in the running app.
 
 **Milestone 344: A selection changed while looping keeps playing**
