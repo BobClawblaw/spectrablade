@@ -239,6 +239,93 @@ namespace
                    + "; counting those rated 4 stars or more " + ms (countRated) + ", the favourites " + ms (countFavourites) + ", the tagged "
                    + ms (countKept) + " (with \"creak\" " + ms (countKeptCreaks) + "), the first page of the tagged " + ms (keptFirst));
     }
+
+    /** An AIFF of `frames` frames of silence. */
+    void writeAiff (const juce::File& file, int frames)
+    {
+        file.getParentDirectory().createDirectory();
+        file.deleteFile();
+        juce::AiffAudioFormat aiff;
+        std::unique_ptr<juce::OutputStream> out (file.createOutputStream());
+        auto writer = aiff.createWriterFor (out, juce::AudioFormatWriterOptions().withSampleRate (48000.0).withNumChannels (2).withBitsPerSample (24));
+        juce::AudioBuffer<float> b (2, frames);
+        b.clear();
+        writer->writeFromAudioSampleBuffer (b, 0, frames);
+    }
+
+    void testFormats (const juce::File& dir)
+    {
+        const auto choices = SoundLibrary::formatChoices();
+        const auto labelOf = [&choices] (const juce::String& name)
+        {
+            for (const auto& c : choices)
+                if (c.name == name)
+                    return c.label;
+
+            return juce::String();
+        };
+        auto twice = false;
+
+        for (size_t i = 0; i < choices.size(); ++i)
+            for (size_t j = i + 1; j < choices.size(); ++j)
+                twice = twice || choices[i].name == choices[j].name;
+
+        check (labelOf ("WAV file") == "WAV" && labelOf ("AIFF file") == "AIFF" && labelOf ("FLAC file") == "FLAC"
+                   && labelOf ("CoreAudio supported file") == "Other" && labelOf ("MP3 file").isEmpty() && ! twice,
+               "sound library formats: the choices are WAV, AIFF, FLAC and the rest with short labels, CoreAudio's as Other, each once, "
+               "and MP3 is not offered on its own (CoreAudio reads every MP3 first)");
+
+        // A library with a sound as WAV and as AIFF: hiding AIFF lists it once.
+        const auto library = dir.getChildFile ("Twins");
+        writeWav (library.getChildFile ("Owl Hoot.wav"), 1000);
+        writeWav (library.getChildFile ("Rain on Roof.wav"), 1200);
+        writeAiff (library.getChildFile ("Owl Hoot.aif"), 1000);
+
+        {
+            juce::AudioFormatManager formats;
+            formats.registerBasicFormats();
+            Index index (dir.getChildFile ("formats/Index.sqlite"));
+            index.addFolder (library);
+            index.scan (formats);
+            SoundLibrary::Query q;
+            q.hiddenFormats = { "AIFF file" };
+            const auto found = index.find (q);
+            auto wavs = found.size() == 2;
+
+            for (const auto& s : found)
+                wavs = wavs && s.format == "WAV file";
+
+            SoundLibrary::Query owls;
+            owls.text = "owl";
+            owls.hiddenFormats = { "AIFF file" };
+            check (index.find ({}).size() == 3 && wavs && index.count (q) == 2 && index.find (owls).size() == 1 && index.count (owls) == 1,
+                   "sound library formats: a query leaving AIFF out finds and counts only the WAVs, with a search too");
+        }
+
+        {
+            SoundLibraryView view (dir.getChildFile ("formats view/Index.sqlite"));
+            view.setSize (1300, 700);
+            view.addFolder (library);
+            TestUtils::runUntil ([&view] { return ! view.isScanning() && view.getSummary().contains ("Last scan"); }, 20000);
+            int told = 0;
+            juce::StringArray lastTold;
+            view.onHiddenFormatsChanged = [&] (const juce::StringArray& f) { ++told; lastTold = f; };
+
+            view.hideFormats ({ "AIFF file", "Nothing file" });
+            const auto hidden = view.getNumRows() == 2 && view.getHiddenFormats() == juce::StringArray { "AIFF file" } && told == 0
+                                && view.getSummary().startsWith ("2 of 3 sounds match");
+            view.toggleFormat ("AIFF file");
+            const auto shown = view.getNumRows() == 3 && view.getHiddenFormats().isEmpty() && told == 1 && lastTold.isEmpty()
+                               && view.getSummary().startsWith ("3 sounds in 1 folder");
+            view.toggleFormat ("WAV file");
+            const auto aiffs = view.getNumRows() == 1 && view.getText (0, SoundLibraryView::format) == "AIFF" && told == 2
+                               && lastTold == juce::StringArray { "WAV file" };
+            view.toggleFormat ({});
+            check (hidden && shown && aiffs && view.getNumRows() == 3 && told == 3,
+                   "sound library window: formats hidden by the app list the rest (a name not offered dropped, no report back); the menu's "
+                   "toggles report each change, show every format again, and can leave only the AIFFs");
+        }
+    }
 }
 
 namespace
@@ -1362,6 +1449,7 @@ void runSoundLibraryTests()
     testCategoriesView (dir);
     testTags (dir);
     testTagsView (dir);
+    testFormats (dir);
     testMetadata (dir);
     testInsert (dir);
     testLarge (dir);

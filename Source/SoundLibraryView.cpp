@@ -354,6 +354,9 @@ SoundLibraryView::SoundLibraryView (const juce::File& db)
         showTag (juce::isPositiveAndBelow (i, (int) tagCounts.size()) ? tagCounts[(size_t) i].first : juce::String());
     };
     addAndMakeVisible (tagChoice);
+    formatsButton.setTooltip ("Which formats to list: hide one when the same sounds are there twice, as WAV and AIFF, say");
+    formatsButton.onClick = [this] { showFormatsMenu(); };
+    addAndMakeVisible (formatsButton);
     header.setSortColumnId (name, true);
     Theme::follow (table, juce::ListBox::backgroundColourId, Theme::surface);
     table.setRowHeight (22);
@@ -580,7 +583,7 @@ void SoundLibraryView::updateSummary()
     if (folders == 0)
         line = "No folders yet: Add Folder... chooses the folders of sounds to scan. Nothing else is scanned.";
     else if (text.isEmpty() && filterCategory.isEmpty() && filterCatId.isEmpty() && ! filterWithout && ! filterFavourites
-             && filterRating == 0 && filterTag.isEmpty() && filterWithin == juce::File())
+             && filterRating == 0 && filterTag.isEmpty() && filterWithin == juce::File() && hiddenFormats.isEmpty())
         line = number (total) + (total == 1 ? " sound in " : " sounds in ") + juce::String (folders) + (folders == 1 ? " folder" : " folders");
     else
         line = number (rows) + " of " + number (total) + " sounds match";
@@ -772,6 +775,7 @@ SoundLibrary::Query SoundLibraryView::query (int offset, int limit) const
     q.minRating = filterRating;
     q.tag = filterTag;
     q.within = filterWithin;
+    q.hiddenFormats = hiddenFormats;
     return q;
 }
 
@@ -948,6 +952,68 @@ void SoundLibraryView::showTag (const juce::String& tag)
 {
     filterTag = tag;
     refresh();
+}
+
+void SoundLibraryView::hideFormats (const juce::StringArray& formatNames)
+{
+    const auto choices = SoundLibrary::formatChoices();
+    juce::StringArray kept, labels;
+
+    for (const auto& choice : choices)
+    {
+        if (formatNames.contains (choice.name))
+        {
+            kept.add (choice.name);
+            labels.add (choice.label);
+        }
+    }
+
+    hiddenFormats = kept;
+    formatsButton.setButtonText (kept.isEmpty() ? juce::String ("All Formats")
+                                                : kept.size() == 1 ? "Hiding " + labels[0]
+                                                                   : "Hiding " + juce::String (kept.size()) + " Formats");
+    refresh();
+}
+
+void SoundLibraryView::toggleFormat (const juce::String& formatName)
+{
+    auto wanted = hiddenFormats;
+
+    if (formatName.isEmpty())
+        wanted.clear();
+    else if (wanted.contains (formatName))
+        wanted.removeString (formatName);
+    else
+        wanted.add (formatName);
+
+    hideFormats (wanted);
+
+    if (onHiddenFormatsChanged != nullptr)
+        onHiddenFormatsChanged (hiddenFormats);
+}
+
+void SoundLibraryView::showFormatsMenu()
+{
+    juce::PopupMenu menu;
+    const auto choices = SoundLibrary::formatChoices();
+    menu.addItem (1, "All Formats", true, hiddenFormats.isEmpty());
+    menu.addSeparator();
+
+    for (size_t i = 0; i < choices.size(); ++i)
+        menu.addItem ((int) i + 2, choices[i].label + (choices[i].detail.isEmpty() ? juce::String() : " (" + choices[i].detail + ")"),
+                      true, ! hiddenFormats.contains (choices[i].name));
+
+    menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&formatsButton),
+                        [safe = juce::Component::SafePointer<SoundLibraryView> (this), choices] (int result)
+    {
+        if (safe == nullptr || result == 0)
+            return;
+
+        if (result == 1)
+            safe->toggleFormat ({});
+        else if (juce::isPositiveAndBelow (result - 2, (int) choices.size()))
+            safe->toggleFormat (choices[(size_t) (result - 2)].name);
+    });
 }
 
 juce::StringArray SoundLibraryView::getTagChoices() const
@@ -1269,6 +1335,8 @@ void SoundLibraryView::resized()
     ratingChoice.setBounds (filters.removeFromLeft (150));
     filters.removeFromLeft (6);
     tagChoice.setBounds (filters.removeFromLeft (220));
+    filters.removeFromLeft (6);
+    formatsButton.setBounds (filters.removeFromLeft (150));
     summary.setBounds (r.removeFromBottom (24).reduced (4, 0));
     preview.setBounds (r.removeFromBottom (juce::jlimit (110, 220, r.getHeight() / 3)));
     const auto widest = juce::jmax (120, r.getWidth() - 320);

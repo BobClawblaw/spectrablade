@@ -66,6 +66,7 @@ namespace
     constexpr const char* accentKey       = "accent";
     constexpr const char* waveformColourKey = "waveformColour";
     constexpr const char* timeFormatKey   = "timeFormat";
+    constexpr const char* libraryHiddenFormatsKey = "libraryHiddenFormats";
 
     // The dock's panels.
     namespace Panels
@@ -5412,11 +5413,26 @@ void MainComponent::showSoundLibrary()
         soundLibrary->getView().setAudioDevice (&engine.deviceManager);
         soundLibrary->getView().setPaneWidth (appProperties.getUserSettings()->getIntValue ("libraryPaneWidth", 0));
         soundLibrary->getView().onPaneWidthChanged = [this] (int width) { appProperties.getUserSettings()->setValue ("libraryPaneWidth", width); };
+        soundLibrary->getView().hideFormats (getLibraryHiddenFormats());
+        soundLibrary->getView().onHiddenFormatsChanged = [this] (const juce::StringArray& formats) { setLibraryHiddenFormats (formats); };
         rememberPlace (*soundLibrary, "Sound Library");
     }
 
     soundLibrary->setVisible (true);
     soundLibrary->toFront (true);
+}
+
+juce::StringArray MainComponent::getLibraryHiddenFormats()
+{
+    return juce::StringArray::fromTokens (appProperties.getUserSettings()->getValue (libraryHiddenFormatsKey), "|", {});
+}
+
+void MainComponent::setLibraryHiddenFormats (const juce::StringArray& formats)
+{
+    appProperties.getUserSettings()->setValue (libraryHiddenFormatsKey, formats.joinIntoString ("|"));
+
+    if (soundLibrary != nullptr && soundLibrary->getView().getHiddenFormats() != formats)
+        soundLibrary->getView().hideFormats (formats);
 }
 
 void MainComponent::toggleSoundLibrary()
@@ -11286,8 +11302,26 @@ Settings::Model MainComponent::makeSettingsModel()
     model.push_back ({ "Keys", "Every command's keys, to change, export and import, or to take from another key set.",
         { Item::button ("Keyboard Shortcuts...", "See and change the keys for every command", [this] { showKeyShortcuts(); }) } });
 
-    model.push_back ({ "Sound Library", "The folders the Sound Library indexes are chosen in its own window (F5).",
-        { Item::button ("Sound Library...", "Show the Sound Library", [this] { showSoundLibrary(); }) } });
+    Settings::Section library { "Sound Library", "The folders the Sound Library indexes are chosen in its own window (F5). Leave a format out "
+                                                 "of its list when the same sounds are there twice, as WAV and AIFF, say.", {} };
+
+    for (const auto& choice : SoundLibrary::formatChoices())
+        library.items.push_back (Item::toggle ("Show " + choice.label + " files", choice.detail,
+                                               [this, name = choice.name] { return ! getLibraryHiddenFormats().contains (name); },
+                                               [this, name = choice.name] (bool on)
+                                               {
+                                                   auto hidden = getLibraryHiddenFormats();
+
+                                                   if (on)
+                                                       hidden.removeString (name);
+                                                   else
+                                                       hidden.addIfNotAlreadyThere (name);
+
+                                                   setLibraryHiddenFormats (hidden);
+                                               }));
+
+    library.items.push_back (Item::button ("Sound Library...", "Show the Sound Library", [this] { showSoundLibrary(); }));
+    model.push_back (std::move (library));
 
     return model;
 }

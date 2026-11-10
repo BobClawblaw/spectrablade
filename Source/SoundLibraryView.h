@@ -93,6 +93,15 @@ public:
     void showMinRating (int stars);
     void showTag (const juce::String&);
 
+    /** Lists no sound of these formats (names as SoundLibrary::formatChoices() gives them, e.g.
+        "AIFF file"; others are dropped), so a library with every sound as a WAV and an AIFF shows
+        each once. Empty: every format. The Formats menu above the list chooses, through
+        toggleFormat, and reports the choice through onHiddenFormatsChanged for the app to keep. */
+    void hideFormats (const juce::StringArray& formatNames);
+    juce::StringArray getHiddenFormats() const          { return hiddenFormats; }
+    void toggleFormat (const juce::String& formatName);  // as the Formats menu does; empty: show every format
+    std::function<void (const juce::StringArray&)> onHiddenFormatsChanged;
+
     /** What the tag filter offers: "Any Tag", then each tag with its count. */
     juce::StringArray getTagChoices() const;
 
@@ -188,6 +197,7 @@ private:
     void updateSummary();
     void chooseFolder();
     void showFoldersMenu();
+    void showFormatsMenu();
 
     SoundLibrary::Index index;
     juce::File database;
@@ -199,6 +209,7 @@ private:
     int filterRating = 0;
     juce::String filterTag;
     juce::File filterWithin;
+    juce::StringArray hiddenFormats;
     std::vector<std::pair<juce::String, juce::int64>> tagCounts;
     std::map<juce::String, juce::int64> counts;               // by CatID, of the sounds the search finds
     std::map<juce::String, juce::int64> categoryCounts;       // by category
@@ -215,6 +226,7 @@ private:
     juce::TextButton addButton { "Add Folder..." }, foldersButton { "Folders" };
     juce::ToggleButton favouritesButton { "Favourites" };
     juce::ComboBox ratingChoice, tagChoice;
+    juce::TextButton formatsButton { "All Formats" };
     juce::TableListBox table { {}, this };
     std::unique_ptr<Categories> categories;
     std::unique_ptr<Folders> folderTree;

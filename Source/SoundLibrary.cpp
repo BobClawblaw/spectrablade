@@ -120,6 +120,19 @@ namespace
             values.add (to);
         }
 
+        if (! q.hiddenFormats.isEmpty())
+        {
+            juce::StringArray marks;
+
+            for (const auto& format : q.hiddenFormats)
+            {
+                values.add (format);
+                marks.add ("?");
+            }
+
+            conditions.add ("(s.format IS NULL OR s.format NOT IN (" + marks.joinIntoString (", ") + "))");
+        }
+
         return { conditions.joinIntoString (" AND "), values };
     }
 
@@ -173,6 +186,47 @@ namespace
     constexpr const char* soundColumns = "s.id, s.path, s.folder, s.name, s.size, s.modified, s.frames, s.rate, s.channels, s.bits, s.format, "
                                          "s.description, s.catId, s.catFrom, s.rating, s.favourite,"
                                          " (SELECT group_concat (tag, char (9)) FROM (SELECT tag FROM tags t WHERE t.sound = s.id ORDER BY tag COLLATE NOCASE))";
+}
+
+std::vector<FormatChoice> formatChoices()
+{
+    juce::AudioFormatManager formats;
+    formats.registerBasicFormats();
+    std::vector<FormatChoice> choices;
+    const auto sample = juce::File::getSpecialLocation (juce::File::tempDirectory);
+
+    for (int i = 0; i < formats.getNumKnownFormats(); ++i)
+    {
+        auto* format = formats.getKnownFormat (i);
+        auto reachable = false;
+
+        for (const auto& extension : format->getFileExtensions())
+        {
+            auto taken = false;
+
+            for (int j = 0; j < i && ! taken; ++j)
+                taken = formats.getKnownFormat (j)->canHandleFile (sample.getChildFile ("sound" + extension));
+
+            reachable = reachable || ! taken;
+        }
+
+        if (! reachable)
+            continue;
+
+        FormatChoice choice;
+        choice.name = format->getFormatName();
+        choice.label = choice.name.upToFirstOccurrenceOf (" file", false, true).replace ("Ogg-Vorbis", "Ogg Vorbis");
+
+        if (choice.name.startsWith ("CoreAudio"))
+        {
+            choice.label = "Other";
+            choice.detail = "MP3, M4A, CAF and whatever else CoreAudio reads";
+        }
+
+        choices.push_back (std::move (choice));
+    }
+
+    return choices;
 }
 
 juce::StringArray wordsOf (const juce::String& name)
