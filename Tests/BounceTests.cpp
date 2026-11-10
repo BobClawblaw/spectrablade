@@ -1135,6 +1135,23 @@ void runBounceTests()
         const auto ids = Bounce::stemTracks (s);
         check (ids == std::vector<juce::uint32> { s.tracks[0].id, s.tracks[3].id, s.tracks[4].id },
                "stems: one for each track with clips, buses and empty tracks left out");
+
+        // A track with only note clips (an instrument track) is a stem too, reaches as far as its
+        // last note clip, and keeps them when isolated for a bounce.
+        NoteClip notes;
+        notes.position = 30000;
+        notes.length = 9000;
+        notes.notes = { { 60, 0, 9000, 0.8f } };
+        const auto noteTrack = s.tracks[1].id;
+        SessionEdits::addNoteClip (s, noteTrack, notes);
+        const auto withNotes = Bounce::stemTracks (s);
+        const auto onlyNotes = Bounce::isolate (s, noteTrack);
+        const auto* isolated = onlyNotes.findTrack (noteTrack);
+        check (withNotes == std::vector<juce::uint32> { s.tracks[0].id, noteTrack, s.tracks[3].id, s.tracks[4].id }
+                   && s.tracks[1].hasClips() && s.tracks[1].clipsEnd() == 39000 && ! s.tracks[2].hasClips() && s.tracks[2].clipsEnd() == 0
+                   && s.tracks[0].clipsEnd() == 12000 && isolated != nullptr && isolated->noteClips.size() == 1,
+               "stems: a track with only note clips is a stem, reaches to its last note clip, and keeps them isolated for a bounce");
+        SessionEdits::removeNoteClip (s, s.tracks[1].noteClips[0].id);
         check (Bounce::stemFileName ("Song", 2, "Bass/DI") == juce::File::createLegalFileName ("Song - 02 Bass/DI") + ".wav"
                    && Bounce::stemFileName ("Song", 2, "Bass/DI").startsWith ("Song - 02 Bass") && ! Bounce::stemFileName ("Song", 2, "Bass/DI").containsChar ('/')
                    && Bounce::stemFileName ("Song", 12, "Pad") == "Song - 12 Pad.wav",

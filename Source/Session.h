@@ -369,6 +369,12 @@ struct SessionTrack
     /** False for a bus or a frozen track: clips meant for it go onto a new track instead. */
     bool takesClips() const noexcept              { return ! isBus && ! isFolder && ! isFrozen(); }
 
+    /** True when the track has anything to play: audio clips or note clips. */
+    bool hasClips() const noexcept                { return ! clips.empty() || ! noteClips.empty(); }
+
+    /** The end of the last audio or note clip (0 with none): how far a bounce, freeze or stem of the track reaches. */
+    juce::int64 clipsEnd() const noexcept;
+
     static constexpr int maxGroups = 8;
     std::vector<SessionClip> clips;
 

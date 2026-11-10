@@ -207,6 +207,19 @@ std::optional<std::pair<int, int>> SessionState::findClip (juce::uint32 clipId) 
     return std::nullopt;
 }
 
+juce::int64 SessionTrack::clipsEnd() const noexcept
+{
+    juce::int64 end = 0;
+
+    for (auto& c : clips)
+        end = juce::jmax (end, c.getEnd());
+
+    for (auto& c : noteClips)
+        end = juce::jmax (end, c.getEnd());
+
+    return end;
+}
+
 std::optional<std::pair<int, int>> SessionState::findNoteClip (juce::uint32 clipId) const
 {
     for (size_t t = 0; t < tracks.size(); ++t)

@@ -95,7 +95,7 @@ std::vector<juce::uint32> stemFolders (const SessionState& s)
     std::vector<juce::uint32> ids;
 
     for (auto& f : s.tracks)
-        if (f.isFolder && std::any_of (s.tracks.begin(), s.tracks.end(), [&f] (auto& t) { return t.folderId == f.id && ! t.clips.empty(); }))
+        if (f.isFolder && std::any_of (s.tracks.begin(), s.tracks.end(), [&f] (auto& t) { return t.folderId == f.id && t.hasClips(); }))
             ids.push_back (f.id);
 
     return ids;
@@ -106,7 +106,7 @@ std::vector<juce::uint32> stemTracks (const SessionState& s)
     std::vector<juce::uint32> ids;
 
     for (auto& t : s.tracks)
-        if (! t.isBus && ! t.clips.empty())
+        if (! t.isBus && t.hasClips())
             ids.push_back (t.id);
 
     return ids;

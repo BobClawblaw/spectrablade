@@ -2008,7 +2008,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdBounceTrack: info.setInfo ("Bounce Track", "Render the selected track through its effects onto a new track, and mute it", "Multitrack", 0);
                             info.setActive (multitrackMode && backgroundJob == nullptr && multitrack.getSelectedTrack() >= 0
                                             && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].isBus
-                                            && ! engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].clips.empty());
+                                            && engine.session.getState()->tracks[(size_t) multitrack.getSelectedTrack()].hasClips());
                             break;
         case cmdFreezeTrack:
         {
@@ -2019,7 +2019,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
             info.setInfo (frozen ? "Unfreeze Track" : "Freeze Track",
                           "Render the selected track through its effects to a file it plays instead, freeing the CPU; or play its clips live again", "Multitrack", 0);
             info.setTicked (frozen);
-            info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || ! track->clips.empty()));
+            info.setActive (multitrackMode && backgroundJob == nullptr && track != nullptr && ! track->isBus && (frozen || track->hasClips()));
             break;
         }
         case cmdDuplicateClip: info.setInfo ("Duplicate Clip", "Place a copy of the selected clip (or note clip) right after it", "Multitrack", 0);
@@ -3879,11 +3879,7 @@ void MainComponent::bounceTrack()
     const auto& track = state->tracks[(size_t) index];
     const auto trackId = track.id;
     const auto timeRange = multitrack.getTimeSelection();
-    juce::int64 end = 0;
-
-    for (auto& c : track.clips)
-        end = juce::jmax (end, c.getEnd());
-
+    const auto end = track.clipsEnd();
     const auto range = ! timeRange.isEmpty() ? timeRange : juce::Range<juce::int64> (0, end);
     const auto rate = engine.session.getSampleRate();
     const auto file = recordingsFolder().getNonexistentChildFile (juce::File::createLegalFileName (track.name) + " Bounce "
@@ -3967,12 +3963,9 @@ void MainComponent::freezeOrUnfreezeTrack()
         return;
     }
 
-    // From frame 0, so the frozen audio lines up with the session, to the last clip's end
-    // plus a tail for reverbs and delays to ring out.
-    juce::int64 end = 0;
-
-    for (auto& c : track.clips)
-        end = juce::jmax (end, c.getEnd());
+    // From frame 0, so the frozen audio lines up with the session, to the last clip's end (an
+    // audio or a note clip) plus a tail for reverbs, delays and releases to ring out.
+    const auto end = track.clipsEnd();
 
     if (end == 0)
         return;

@@ -20,7 +20,7 @@ namespace Bounce
         Returns the new track's id, or 0 when the source track is no longer there. */
     juce::uint32 land (SessionState&, juce::uint32 trackId, const juce::File&, AudioDocument::Snapshot, juce::int64 position);
 
-    /** The tracks (not buses) that have clips, in the session's order: what Export Stems writes. */
+    /** The tracks (not buses) that have clips, audio or note clips, in the session's order: what Export Stems writes. */
     std::vector<juce::uint32> stemTracks (const SessionState&);
 
     /** A folder and what is in it alone, as Export Folder Stems renders it: its tracks and buses
