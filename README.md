@@ -14,7 +14,7 @@ A clean-room audio editor for macOS and Windows: waveform and spectral editing, 
 
 ![SpectraBlade](Art/spectrablade-banner.png)
 
-**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon). For Windows 10 or later (64-bit), see [Windows](#windows). Every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
+**[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon; Windows 10 or later, 64-bit). Every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
 
 **Status:** 0.15.2 is the latest release: the 0.15 line, instrument plug-ins, MIDI and automation for sound design (instrument tracks, note clips, a piano roll, live MIDI input, controller lanes), on top of the dogfooding releases before it. It is still a dogfooding release: none of the instrument work has been tried with a MIDI keyboard or listened to, so what real use turns up is fixed alongside, and 1.0.0 follows once that line has had a round of use. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
@@ -86,7 +86,7 @@ The audio in all of them was generated for the screenshots.
 
 ## Download and install
 
-The newest build is at [Releases > Latest](https://github.com/BobClawblaw/spectrablade/releases/latest); every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page, as `SpectraBlade-<version>.dmg`, with a `.sha256` beside each. They are built for Apple silicon and need macOS 13 or later. There is no Intel build (releases up to 0.14.0 were universal, but their Intel half was never tried).
+The newest build is at [Releases > Latest](https://github.com/BobClawblaw/spectrablade/releases/latest); every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page, as `SpectraBlade-<version>.dmg` for the Mac and `SpectraBlade-<version>-windows-x64-setup.exe` and `SpectraBlade-<version>-windows-x64.zip` for Windows (see [Windows](#windows)), with a `.sha256` beside each. The Mac builds are for Apple silicon and need macOS 13 or later. There is no Intel build (releases up to 0.14.0 were universal, but their Intel half was never tried).
 
 Open `SpectraBlade-<version>.dmg` and drag SpectraBlade to Applications; the licence is beside it as `LICENSE.txt`. The app is signed ad hoc, not with a Developer ID, so macOS blocks it the first time: open it once, then choose Open Anyway under System Settings > Privacy & Security. After that it opens normally. macOS asks for microphone access the first time you choose a recording input.
 
@@ -94,7 +94,7 @@ Then choose Window > Plug-ins... and Scan for Plug-ins. The first scan of a larg
 
 ## Windows
 
-SpectraBlade runs on 64-bit Windows from the same source: tried on Windows 11, and set up for Windows 10 or later. Windows builds aren't on the Releases page yet: build them with `Scripts/package-windows.ps1` (see [Packaging](#packaging)), or take the `SpectraBlade-windows-x64` artifact of the latest run of the Windows workflow on the repository's Actions page.
+SpectraBlade runs on 64-bit Windows from the same source: tried on Windows 11, and set up for Windows 10 or later. Each release from 0.14.12 on has its Windows packages on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page beside the Mac disk image; to build them yourself, use `Scripts/package-windows.ps1` (see [Packaging](#packaging)).
 
 - `SpectraBlade-<version>-windows-x64-setup.exe` installs it for you alone, needing no administrator rights (run it with `/ALLUSERS` to install it for everyone), adds it to the Start menu, offers it in Explorer's Open With list for WAV, AIFF, FLAC, Ogg, MP3 and M4A files, and can open sessions and projects with it. Uninstall it from Settings > Apps.
 - `SpectraBlade-<version>-windows-x64.zip` is the same program to run from any folder, without an installer.
@@ -170,7 +170,7 @@ On Windows, in PowerShell:
 Scripts/package-windows.ps1
 ```
 
-This finds Visual Studio with `vswhere`, builds a Release program for x64 in `build-release-win/`, runs the tests with it as the plug-in scan worker, and writes `dist/SpectraBlade-<version>-windows-x64.zip` (the program and the same licences) and `dist/SpectraBlade-<version>-windows-x64-setup.exe` (from `Scripts/SpectraBlade.iss`, with [Inno Setup 6](https://jrsoftware.org/isinfo.php)), each with its SHA-256. Options: `-Juce <dir>`, `-Jobs <n>`, `-SkipTests`, and `-NoInstaller` for the zip alone. The Windows workflow (`.github/workflows/windows.yml`) runs it on every push, without the tests (they need an audio device), and keeps the packages as an artifact.
+This finds Visual Studio with `vswhere`, builds a Release program for x64 in `build-release-win/`, runs the tests with it as the plug-in scan worker, and writes `dist/SpectraBlade-<version>-windows-x64.zip` (the program and the same licences) and `dist/SpectraBlade-<version>-windows-x64-setup.exe` (from `Scripts/SpectraBlade.iss`, with [Inno Setup 6](https://jrsoftware.org/isinfo.php)), each with its SHA-256. Options: `-Juce <dir>`, `-Jobs <n>`, `-SkipTests`, and `-NoInstaller` for the zip alone. The Windows workflow (`.github/workflows/windows.yml`) runs it on every push, without the tests (they need an audio device), and keeps the packages as an artifact; when a release is published, it builds that release's tag and attaches the packages to the release (run it by hand with a tag to do that for a release already out).
 
 To check a disk image's app on its own, mount it and point the tests at it:
 
