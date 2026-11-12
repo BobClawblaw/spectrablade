@@ -372,6 +372,13 @@ struct SessionTrack
         of the right kind instead, or leaves it where it is. Never a bus or a folder. */
     bool isInstrument = false;
 
+    /** The musical timebase: the track's clips keep their place in bars and beats when the tempo
+        changes (each moved to the beat it started on; a note clip's notes, lanes, loop and
+        length scaled with its bars; an audio clip's audio as long as it was, a locked one left),
+        rather than their place in time. New instrument tracks start musical, audio tracks in
+        time; never a bus or a folder. */
+    bool musical = false;
+
     /** False for a bus, a folder or a frozen track: clips meant for it go onto a new track instead. */
     bool takesClips() const noexcept              { return ! isBus && ! isFolder && ! isFrozen(); }
 
@@ -543,6 +550,10 @@ namespace SessionEdits
         on an audio track) onto a new track of the right kind after it, named like it. Returns how
         many tracks were added. For sessions saved before tracks had kinds. */
     int separateClipKinds (SessionState&);
+
+    /** Gives a track the musical timebase or the time one (see SessionTrack::musical); false for
+        a bus or a folder, when it has that already, or with no such track. */
+    bool setTrackMusical (SessionState&, juce::uint32 trackId, bool musical);
 
     /** Moves a clip to a track (a new one when past the last) and a position (not before 0).
         Onto a bus, it only moves in time. */
@@ -774,6 +785,11 @@ namespace SessionEdits
         it is already so. Clips and markers stay where they are in time. */
     bool setTempoChange (SessionState&, Metronome::TempoChange);
     bool removeTempoChange (SessionState&, juce::int64 bar);
+
+    /** Sets the session's tempo (20 to 400) and beats in a bar (1 to 16) from the start; false
+        outside those or when they are as given. The clips on musical tracks keep their bars and
+        beats through this, setTempoChange and removeTempoChange (see SessionTrack::musical). */
+    bool setTempo (SessionState&, double tempo, int beatsPerBar);
 
     /** Copies [start, end) from every track: the clips across it cut to it (losing their fades
         on the cut sides), each envelope's line across it, and the markers in it as

@@ -158,7 +158,7 @@ namespace
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
         cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi, cmdAddInstrumentTrack,
         cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue, cmdTrackToolRange, cmdTrackToolMute,   // one a MultitrackView::Tool, in its order
-        cmdTimeWithBars,
+        cmdTimeWithBars, cmdMusicalTimebase,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -2065,6 +2065,16 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
         case cmdTimeWithBars: info.setInfo ("Time with Bars", "With the ruler counting bars and beats, show the time as well, in a row under them", "Multitrack", 0);
                             info.setTicked (multitrack.isShowingTimeWithBars()); info.setActive (multitrackMode && multitrack.isShowingBars()); break;
+        case cmdMusicalTimebase:
+        {
+            info.setInfo ("Musical Timebase", "Keep the selected track's clips on their bars and beats when the tempo changes, a note clip's notes scaled with them, or (off) at their times", "Multitrack", 0);
+            const auto state = engine.session.getState();
+            const auto index = multitrack.getSelectedTrack();
+            const auto* t = multitrackMode && juce::isPositiveAndBelow (index, (int) state->tracks.size()) ? &state->tracks[(size_t) index] : nullptr;
+            info.setTicked (t != nullptr && t->musical);
+            info.setActive (t != nullptr && ! t->isBus && ! t->isFolder && ! isRecording());
+            break;
+        }
         case cmdTempoChange: info.setInfo ("Tempo Change at Cursor...", "Change the tempo or beats in a bar from the bar the cursor is in, or remove a change there", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
         case cmdTempo:      info.setInfo ("Tempo...", "The session's tempo and beats in a bar", "Multitrack", 0);
@@ -2715,6 +2725,16 @@ bool MainComponent::perform (const InvocationInfo& info)
             multitrack.setShowTimeWithBars (! multitrack.isShowingTimeWithBars());
             commands.commandStatusChanged();
             break;
+        case cmdMusicalTimebase:
+        {
+            const auto state = engine.session.getState();
+            const auto index = multitrack.getSelectedTrack();
+
+            if (juce::isPositiveAndBelow (index, (int) state->tracks.size()))
+                multitrack.setTrackMusical (state->tracks[(size_t) index].id, ! state->tracks[(size_t) index].musical);
+
+            break;
+        }
         case cmdMixer:      dock->toggle (Panels::mixer); break;
         case cmdInputMonitoring:
             inputMonitoring = ! inputMonitoring;
@@ -2987,7 +3007,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
             group ("Time Range", { cmdClearRange, cmdDeleteTime, cmdInsertTime, 0, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime });
             group ("Editing and Recording", { cmdSnapping, cmdZeroCrossings, cmdCrossfade, 0, cmdWriteAutomation, cmdInputMonitoring, cmdLoopRecording, cmdRecordNotes });
-            group ("Tempo", { cmdMetronome, cmdCountIn, 0, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, cmdTimeWithBars });
+            group ("Tempo", { cmdMetronome, cmdCountIn, 0, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, cmdTimeWithBars, 0, cmdMusicalTimebase });
             group ("Surround", { cmdSurroundMaster, cmdSevenOneMaster });
             group ("Render and Export", { cmdBounceTrack, cmdFreezeTrack, 0, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions });
             break;
@@ -3803,9 +3823,8 @@ void MainComponent::showTempoDialog (bool atCursor)
                 return;
             }
 
-            next.tempo = tempo;
-            next.beatsPerBar = beats;
-            engine.session.apply (std::move (next), "Tempo");
+            if (SessionEdits::setTempo (next, tempo, beats))
+                engine.session.apply (std::move (next), "Tempo");
         }), true);
 }
 

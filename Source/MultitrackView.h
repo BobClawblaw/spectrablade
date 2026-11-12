@@ -115,6 +115,10 @@ public:
     /** Makes a track an instrument track (one with no audio clips) or an audio track (one with no
         note clips; its instrument is removed), as one undo step. */
     void setTrackKind (juce::uint32 trackId, bool instrument);
+
+    /** Gives a track the musical timebase or the time one (SessionEdits::setTrackMusical) as one
+        undo step ("Musical Timebase", "Linear Timebase"). */
+    void setTrackMusical (juce::uint32 trackId, bool musical);
     void showInstrumentWindow (juce::uint32 trackId);
 
     /** Adds a track named after the instrument, selects it and gives it the instrument. */

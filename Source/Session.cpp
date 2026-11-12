@@ -163,6 +163,7 @@ SessionTrack& SessionState::addInstrumentTrack()
 {
     auto& t = addTrack();
     t.isInstrument = true;
+    t.musical = true;
     return t;
 }
 
@@ -652,6 +653,21 @@ bool setTrackKind (SessionState& s, juce::uint32 trackId, bool instrument)
         return false;
 
     t->isInstrument = instrument;
+
+    if (instrument)
+        t->musical = true;
+
+    return true;
+}
+
+bool setTrackMusical (SessionState& s, juce::uint32 trackId, bool musical)
+{
+    const auto t = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& x) { return x.id == trackId; });
+
+    if (t == s.tracks.end() || t->isBus || t->isFolder || t->musical == musical)
+        return false;
+
+    t->musical = musical;
     return true;
 }
 
@@ -1915,6 +1931,82 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
     return true;
 }
 
+namespace
+{
+    /** Where a musical track's clip is in beats, to put it back there once the tempo has changed. */
+    struct MusicalPlace
+    {
+        juce::uint32 id = 0;
+        bool notes = false;
+        double start = 0.0, end = 0.0;     // beats
+    };
+
+    std::vector<MusicalPlace> musicalPlaces (const SessionState& s)
+    {
+        std::vector<MusicalPlace> places;
+        const auto map = s.tempoMap();
+
+        for (auto& t : s.tracks)
+        {
+            if (! t.musical)
+                continue;
+
+            for (auto& c : t.clips)
+                places.push_back ({ c.id, false, map.beatPosition (c.position), 0.0 });
+
+            for (auto& c : t.noteClips)
+                places.push_back ({ c.id, true, map.beatPosition (c.position), map.beatPosition (c.getEnd()) });
+        }
+
+        return places;
+    }
+
+    /** Each clip back on its beat under the tempo as it is now: an audio clip moved (a locked one
+        left), a note clip scaled to its bars' new length and moved. */
+    void keepMusicalPlaces (SessionState& s, const std::vector<MusicalPlace>& places)
+    {
+        const auto map = s.tempoMap();
+
+        for (auto& p : places)
+        {
+            const auto start = map.frameAtBeatPosition (p.start);
+
+            if (! p.notes)
+            {
+                if (const auto where = s.findClip (p.id))
+                    moveClip (s, p.id, where->first, start);
+
+                continue;
+            }
+
+            const auto where = s.findNoteClip (p.id);
+
+            if (! where.has_value())
+                continue;
+
+            const auto length = juce::jmax ((juce::int64) 1, map.frameAtBeatPosition (p.end) - start);
+            const auto was = s.tracks[(size_t) where->first].noteClips[(size_t) where->second].length;
+
+            if (length != was)
+                stretchNoteClip (s, p.id, (double) length / (double) was, false);
+
+            moveNoteClip (s, p.id, where->first, start);
+        }
+    }
+}
+
+bool setTempo (SessionState& s, double tempo, int beatsPerBar)
+{
+    if (tempo < 20.0 || tempo > 400.0 || beatsPerBar < 1 || beatsPerBar > 16 || (juce::exactlyEqual (tempo, s.tempo) && beatsPerBar == s.beatsPerBar))
+        return false;
+
+    const auto places = musicalPlaces (s);
+    s.tempo = tempo;
+    s.beatsPerBar = beatsPerBar;
+    keepMusicalPlaces (s, places);
+    return true;
+}
+
 bool setTempoChange (SessionState& s, Metronome::TempoChange change)
 {
     if (change.bar < 1 || change.tempo < 20.0 || change.tempo > 400.0 || change.beatsPerBar < 1 || change.beatsPerBar > 16)
@@ -1922,19 +2014,19 @@ bool setTempoChange (SessionState& s, Metronome::TempoChange change)
 
     auto& changes = s.tempoChanges;
     const auto at = std::lower_bound (changes.begin(), changes.end(), change.bar, [] (auto& c, juce::int64 bar) { return c.bar < bar; });
+    const auto replacing = at != changes.end() && at->bar == change.bar;
 
-    if (at != changes.end() && at->bar == change.bar)
-    {
-        if (*at == change)
-            return false;
+    if (replacing && *at == change)
+        return false;
 
+    const auto places = musicalPlaces (s);
+
+    if (replacing)
         *at = change;
-    }
     else
-    {
         changes.insert (at, change);
-    }
 
+    keepMusicalPlaces (s, places);
     return true;
 }
 
@@ -1942,8 +2034,14 @@ bool removeTempoChange (SessionState& s, juce::int64 bar)
 {
     auto& changes = s.tempoChanges;
     const auto before = changes.size();
+    const auto places = musicalPlaces (s);
     changes.erase (std::remove_if (changes.begin(), changes.end(), [bar] (auto& c) { return c.bar == bar; }), changes.end());
-    return changes.size() != before;
+
+    if (changes.size() == before)
+        return false;
+
+    keepMusicalPlaces (s, places);
+    return true;
 }
 
 bool freezeTrack (SessionState& s, juce::uint32 trackId, const juce::File& file, AudioDocument::Snapshot audio)
@@ -3052,7 +3150,10 @@ juce::String save (const SessionState& state, const juce::File& target,
             track->setAttribute ("folder", true);
 
         if (! t.isBus && ! t.isFolder)
+        {
             track->setAttribute ("instrument", t.isInstrument);
+            track->setAttribute ("musical", t.musical);
+        }
 
         if (t.isFolder && t.collapsed)
             track->setAttribute ("collapsed", true);
@@ -3368,6 +3469,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
         track.fiveOne = ! track.isBus && ! track.isFolder && trackXml->getBoolAttribute ("fiveOne");
         track.sevenOne = ! track.isBus && ! track.isFolder && ! track.fiveOne && trackXml->getBoolAttribute ("sevenOne");
         track.isInstrument = ! track.isBus && ! track.isFolder && trackXml->getBoolAttribute ("instrument");
+        track.musical = ! track.isBus && ! track.isFolder && trackXml->getBoolAttribute ("musical");
 
         if (! track.isBus && ! track.isFolder && ! trackXml->hasAttribute ("instrument"))
             undecided.emplace_back (state.tracks.size() - 1, hasInstrumentPlugin (*trackXml));

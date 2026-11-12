@@ -51,6 +51,11 @@ namespace Metronome
         juce::int64 beatFrame (juce::int64 beat) const;
         juce::int64 beatAt (juce::int64 frame) const;
 
+        /** A frame's place in beats, fractional: the beat it is in and how far through it; and
+            the frame of such a place (a whole beat's is beatFrame's). */
+        double beatPosition (juce::int64 frame) const;
+        juce::int64 frameAtBeatPosition (double beats) const;
+
         /** The bar (from 0) a beat is in and the beat's place in it (from 0). */
         std::pair<juce::int64, int> barAndBeat (juce::int64 beat) const;
         juce::int64 barStartBeat (juce::int64 bar) const;

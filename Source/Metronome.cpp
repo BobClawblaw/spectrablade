@@ -85,6 +85,20 @@ juce::int64 TempoMap::beatAt (juce::int64 frame) const
     return beat;
 }
 
+double TempoMap::beatPosition (juce::int64 frame) const
+{
+    const auto beat = beatAt (frame);
+    const auto start = beatFrame (beat), next = beatFrame (beat + 1);
+    return (double) beat + (next > start ? (double) (frame - start) / (double) (next - start) : 0.0);
+}
+
+juce::int64 TempoMap::frameAtBeatPosition (double beats) const
+{
+    const auto beat = (juce::int64) std::floor (beats);
+    const auto start = beatFrame (beat), next = beatFrame (beat + 1);
+    return start + (juce::int64) std::llround ((beats - (double) beat) * (double) (next - start));
+}
+
 std::pair<juce::int64, int> TempoMap::barAndBeat (juce::int64 beat) const
 {
     const auto s = find ([beat] (const Segment& next) { return beat < next.beat; });

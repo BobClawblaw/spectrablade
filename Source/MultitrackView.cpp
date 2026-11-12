@@ -544,6 +544,7 @@ public:
             // with no clips of its own kind can become the other kind.
             const auto canTurn = ! t->isFrozen() && ! t->isWide() && (t->isInstrument ? t->noteClips.empty() : t->clips.empty());
             menu.addItem ("Instrument Track", canTurn, t->isInstrument, [this, on = t->isInstrument] { view.setTrackKind (trackId, ! on); });
+            menu.addItem ("Musical Timebase", true, t->musical, [this, on = t->musical] { view.setTrackMusical (trackId, ! on); });
 
             if (t->isInstrument)
             {
@@ -1339,6 +1340,14 @@ void MultitrackView::setTrackKind (juce::uint32 trackId, bool instrument)
         removeTrackInstrument (trackId);
 
     engine.session.apply (std::move (next), instrument ? "Instrument Track" : "Audio Track");
+}
+
+void MultitrackView::setTrackMusical (juce::uint32 trackId, bool musical)
+{
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::setTrackMusical (next, trackId, musical))
+        engine.session.apply (std::move (next), musical ? "Musical Timebase" : "Linear Timebase");
 }
 
 void MultitrackView::showInstrumentWindow (juce::uint32 trackId)

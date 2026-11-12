@@ -14,6 +14,7 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
     xml->setAttribute ("name", t->name);
     xml->setAttribute ("bus", t->isBus);
     xml->setAttribute ("instrument", t->isInstrument);
+    xml->setAttribute ("musical", t->musical);
     xml->setAttribute ("gainDb", t->gainDb);
     xml->setAttribute ("pan", t->pan);
 
@@ -73,6 +74,7 @@ Added add (SessionState& s, const juce::XmlElement& xml)
         return added;
 
     auto& t = xml.getBoolAttribute ("bus") ? s.addBus() : xml.getBoolAttribute ("instrument") ? s.addInstrumentTrack() : s.addTrack();
+    t.musical = ! t.isBus && xml.getBoolAttribute ("musical", t.musical);
     t.name = xml.getStringAttribute ("name", t.name);
     t.gainDb = (float) xml.getDoubleAttribute ("gainDb");
     t.pan = juce::jlimit (-1.0f, 1.0f, (float) xml.getDoubleAttribute ("pan"));

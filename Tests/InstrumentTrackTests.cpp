@@ -883,6 +883,90 @@ namespace
     }
 }
 
+namespace
+{
+    /** The musical timebase: clips on a musical track keep their bars and beats through tempo
+        edits, a note clip's notes, lanes, loop and length scaled with its bars; a track in time
+        keeps its clips where they are. */
+    void testMusicalTimebase()
+    {
+        // At 120 a minute (a beat 24000 frames, a bar 96000): an audio track in time, an
+        // instrument track (musical, as new ones are) with a clip over bar 2 (notes at its start
+        // and halfway, a lane point halfway, repeating every bar), and an audio track made
+        // musical with a clip at bar 2.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addInstrumentTrack();
+        s.addTrack();
+        const auto wav = juce::File ("/tmp/beat.wav");
+        SessionEdits::addClip (s, 0, wav, constant (48000, 0.25f), 96000);
+        NoteClip pattern;
+        pattern.length = 96000;
+        pattern.loopLength = 96000;
+        pattern.notes = { { 60, 0, 24000, 0.8f }, { 64, 48000, 24000, 0.8f } };
+        pattern.lanes = { { 1, Envelope { { { 48000, 0.5f } } } } };
+        SessionEdits::placeNoteClip (s, 1, pattern, 96000);
+        SessionEdits::addClip (s, 2, wav, constant (48000, 0.25f), 96000);
+        const auto made = s.tracks[1].musical && ! s.tracks[0].musical && ! s.tracks[2].musical
+                          && SessionEdits::setTrackMusical (s, s.tracks[2].id, true) && ! SessionEdits::setTrackMusical (s, s.tracks[2].id, true);
+
+        // The tempo halved: bar 2 starts at 192000. The musical tracks' clips move there, the
+        // note clip's notes, lane, loop and length doubled, the audio clip as long as it was;
+        // the track in time keeps its clip at 96000. Refused: the same again, or out of range.
+        auto half = s;
+        const auto changed = SessionEdits::setTempo (half, 60.0, 4) && ! SessionEdits::setTempo (half, 60.0, 4) && ! SessionEdits::setTempo (half, 10.0, 4);
+        const auto& n = half.tracks[1].noteClips[0];
+        const auto followed = n.position == 192000 && n.length == 192000 && n.loopLength == 192000
+                              && n.notes == std::vector<ClipNote> { { 60, 0, 48000, 0.8f }, { 64, 96000, 48000, 0.8f } }
+                              && n.lanes.size() == 1 && n.lanes[0].envelope.points == std::vector<AutomationPoint> { { 96000, 0.5f } }
+                              && half.tracks[2].clips[0].position == 192000 && half.tracks[2].clips[0].length == 48000
+                              && half.tracks[0].clips[0].position == 96000;
+        check (made && changed && followed,
+               "musical timebase: new instrument tracks are musical, audio tracks in time (one made musical, once); the tempo halved moves a musical track's clips to their bars, "
+               "doubling a note clip's notes, lane, loop and length and keeping an audio clip's length, while a track in time keeps its clips where they were");
+
+        // A tempo change at the clip's bar to 240 a minute: the note clip still starts where its
+        // bar does and spans the bar, now half as long; the change removed, it is as it was.
+        auto later = s;
+        const auto faster = SessionEdits::setTempoChange (later, { 1, 240.0, 4 });
+        const auto& n2 = later.tracks[1].noteClips[0];
+        const auto squeezed = faster && n2.position == 96000 && n2.length == 48000 && n2.loopLength == 48000
+                              && n2.notes == std::vector<ClipNote> { { 60, 0, 12000, 0.8f }, { 64, 24000, 12000, 0.8f } }
+                              && n2.lanes[0].envelope.points == std::vector<AutomationPoint> { { 24000, 0.5f } }
+                              && later.tracks[2].clips[0].position == 96000 && later.tracks[2].clips[0].length == 48000;
+        const auto removed = SessionEdits::removeTempoChange (later, 1);
+        const auto& n3 = later.tracks[1].noteClips[0];
+        check (squeezed && removed && n3.position == 96000 && n3.length == 96000 && n3.loopLength == 96000 && n3.notes == pattern.notes
+                   && n3.lanes[0].envelope.points == std::vector<AutomationPoint> { { 48000, 0.5f } },
+               "musical timebase: a tempo change at a note clip's bar squeezes it to the bar's new length, notes and lane with it, and removing the change puts it back");
+
+        // Never a bus or a folder. The timebase is kept in the session file; a file from before
+        // it loads every track in time.
+        auto withBus = s;
+        withBus.addBus();
+        withBus.addFolder();
+        const auto refused = ! SessionEdits::setTrackMusical (withBus, withBus.tracks[3].id, true) && ! SessionEdits::setTrackMusical (withBus, withBus.tracks[4].id, true);
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto saved = SessionFile::save (s, file).isEmpty();
+        const auto reloaded = SessionFile::load (file, formats);
+        auto xml = juce::XmlDocument::parse (file);
+
+        for (auto* t : xml->getChildWithTagNameIterator ("TRACK"))
+            t->removeAttribute ("musical");
+
+        xml->writeTo (file);
+        const auto old = SessionFile::load (file, formats);
+        file.deleteFile();
+        check (refused && saved && reloaded.error.isEmpty() && reloaded.state.tracks.size() == 3
+                   && ! reloaded.state.tracks[0].musical && reloaded.state.tracks[1].musical && reloaded.state.tracks[2].musical
+                   && old.error.isEmpty() && old.state.tracks.size() == 3 && ! old.state.tracks[1].musical && ! old.state.tracks[2].musical,
+               "musical timebase: never a bus or a folder; kept in the session file, and a file from before it loads every track in time");
+    }
+}
+
 void runInstrumentTrackTests (AudioEngine& engine)
 {
     testMidi();
@@ -894,4 +978,5 @@ void runInstrumentTrackTests (AudioEngine& engine)
     testChain();
     testSynth (engine);
     testAddInstrumentTrack (engine);
+    testMusicalTimebase();
 }

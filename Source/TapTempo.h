@@ -57,7 +57,10 @@ inline bool tapSessionTempo (Session& session, TapTempo& tapper, double seconds)
         return false;
 
     auto next = *session.getState();
-    next.tempo = *tempo;
+
+    if (! SessionEdits::setTempo (next, *tempo, next.beatsPerBar))
+        return false;
+
     session.apply (std::move (next), "Tap Tempo", tapper.getNumIntervals() > 1 && session.getUndoDescription() == "Tap Tempo");
     return true;
 }

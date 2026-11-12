@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 381: The musical timebase**
+- Asked for during the round of use: clips were placed in time alone, so a tempo change left them where they were, the beats moving under them. Now each track has a timebase. On a **musical** track (**Musical Timebase** in the track's menu, or Multitrack > Tempo > Musical Timebase for the selected track; on for new instrument tracks, off for audio tracks and sessions saved before this) the clips keep their place in bars and beats when the tempo or a tempo change is set, tapped or removed: each moves to the beat it started on, a note clip's notes, lanes, loop and length scaled with its bars, an audio clip moved with its audio as long as it was (a locked one left). A track in time keeps its clips where they are. The timebase is saved in session files and track templates.
+- Measured by the tests (3 new checks): new instrument tracks musical and audio tracks in time, one made musical once and never a bus or a folder; the tempo halved moves a musical track's clips to their bars, doubling a note clip's notes, lane, loop and length and keeping an audio clip's length, while a track in time keeps its clips; a tempo change at a note clip's bar squeezes it to the bar's new length and removing the change puts it back; the timebase round-trips the session file and an old file loads in time. The whole suite passed (1,610 checks; 327 commands, 104 default keys); the app launched and quit cleanly.
+- Not tried by hand: the menu item and a tempo change on screen; nothing listened to.
 
 ## Released
 
