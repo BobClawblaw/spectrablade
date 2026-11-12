@@ -215,6 +215,64 @@ namespace
         view.setShowBars (false);
     }
 
+    /** The Select tool's rubber band over empty lane space, and the Range tool. */
+    void testRangeAndRubberBand (AudioEngine& engine)
+    {
+        using Tool = MultitrackView::Tool;
+
+        // An audio track (clips 1-3 s and 9-10 s) and an instrument track with note clips at 1-2 s and 3-4 s.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack();
+        s.addInstrumentTrack();
+        const auto c1 = SessionEdits::addClip (s, 0, juce::File ("/tmp/a.wav"), silence (96000), 48000);
+        SessionEdits::addClip (s, 0, juce::File ("/tmp/b.wav"), silence (48000), 432000);
+        NoteClip a;
+        a.length = 48000;
+        a.notes = { { 60, 0, 24000, 0.8f } };
+        const auto aId = SessionEdits::placeNoteClip (s, 1, a, 48000);
+        const auto bId = SessionEdits::placeNoteClip (s, 1, a, 144000);
+        engine.session.reset (s, {});
+
+        MultitrackView view (engine);
+        view.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 3 * MultitrackView::trackHeight + 12);
+        view.zoomToFit();
+        view.setSnapping (false);
+        Mouse mouse { view };
+        Mouse::settle();
+        const auto framesPerPixel = rate * 10.0 * 1.05 / timelineWidth;
+        const auto x = [&] (juce::int64 frame) { return (float) MultitrackView::headerWidth + (float) ((double) frame / framesPerPixel); };
+        const auto laneY = [] (int track) { return (float) MultitrackView::rulerHeight + (float) (track * MultitrackView::trackHeight) + 60.0f; };
+        const auto tolerance = (juce::int64) framesPerPixel * 2;
+        const auto near = [tolerance] (juce::int64 p, juce::int64 q) { return std::abs (p - q) <= tolerance; };
+        const auto shift = juce::ModifierKeys::shiftModifier;
+        using Ids = std::vector<juce::uint32>;
+
+        // A band from empty lane across both lanes over the first audio clip and the first note
+        // clip selects both without a time range; with Shift, a band over the second note clip
+        // adds it; without, it is selected alone.
+        mouse.drag ({ x (10000), laneY (0) - 30.0f }, { x (100000), laneY (1) + 20.0f });
+        const auto banded = view.getSelectedClips() == Ids { c1 } && view.getSelectedNoteClips() == Ids { aId } && view.getTimeSelection().isEmpty();
+        mouse.drag ({ x (200000), laneY (1) + 20.0f }, { x (150000), laneY (1) - 20.0f }, shift);   // backwards, with Shift
+        const auto added = view.getSelectedClips() == Ids { c1 } && view.getSelectedNoteClips() == Ids { aId, bId };
+        mouse.drag ({ x (200000), laneY (1) + 20.0f }, { x (150000), laneY (1) - 20.0f });
+        check (banded && added && view.getSelectedClips().empty() && view.getSelectedNoteClips() == Ids { bId },
+               "tools: a drag across empty lane with the Select tool selects the clips the band crosses, audio and notes, without a time range; Shift adds them to the selection");
+
+        // The Range tool: a drag over a clip selects a time range and moves nothing, the cursor
+        // at its start, the clip selection as it was; a click sets the cursor and clears the range.
+        view.setTool (Tool::range);
+        mouse.drag ({ x (60000), laneY (0) }, { x (120000), laneY (0) });
+        const auto range = view.getTimeSelection();
+        const auto ranged = near (range.getStart(), 60000) && near (range.getEnd(), 120000) && view.getCursor() == range.getStart()
+                            && engine.session.getState()->tracks[0].clips[0].position == 48000 && view.getSelectedNoteClips() == Ids { bId };
+        mouse.click ({ x (300000), laneY (0) });
+        check (ranged && view.getTimeSelection().isEmpty() && near (view.getCursor(), 300000) && engine.session.getState()->tracks[0].clips[0].position == 48000,
+               "tools: the Range tool's drag selects a time range over the clips (" + juce::String (range.getStart()) + " to " + juce::String (range.getEnd())
+                   + ") moving nothing, and its click sets the cursor");
+        view.setTool (Tool::select);
+    }
+
     /** The tools and the toolbar: Draw, Split, Stretch and Glue on clips in the lanes, and the
         strip's buttons lit for the tool in hand, each running its command. */
     void testTrackTools (AudioEngine& engine)
@@ -310,16 +368,16 @@ namespace
         // The toolbar: a button a tool, the one in hand lit, each running its command; the tempo
         // shown (a click runs Tempo...); Bars lit while the ruler counts bars.
         juce::ApplicationCommandManager commands;
-        TrackTools strip (commands, view, engine, { 1, 2, 3, 4, 5, 6, 7 });
+        TrackTools strip (commands, view, engine, { 1, 2, 3, 4, 5, 6, 7, 8 });
         juce::Array<int> ran;
         strip.run = [&ran] (int id) { ran.add (id); };
         strip.setSize (900, TrackTools::height);
         view.setTool (Tool::draw);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
-        const auto lit = [&] { juce::String t; for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue }) t << (strip.getToolButton (tool).getToggleState() ? "1" : "0"); return t; };
+        const auto lit = [&] { juce::String t; for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue, Tool::range }) t << (strip.getToolButton (tool).getToggleState() ? "1" : "0"); return t; };
         const auto drawLit = lit();
 
-        for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue })
+        for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue, Tool::range })
             strip.getToolButton (tool).triggerClick();
 
         strip.getTempoButton().triggerClick();
@@ -331,8 +389,9 @@ namespace
         view.setShowBars (true);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
         const auto leftToRight = strip.getToolButton (Tool::select).getX() < strip.getToolButton (Tool::draw).getX()
-                                 && strip.getToolButton (Tool::glue).getRight() < strip.getTempoButton().getX() && strip.getTempoButton().getRight() < strip.getBarsButton().getX();
-        check (drawLit == "01000" && ran == juce::Array<int> { 1, 2, 3, 4, 5, 6, 7 } && leftToRight && strip.getTempoButton().getButtonText() == "98.5 bpm, 3/4"
+                                 && strip.getToolButton (Tool::glue).getRight() < strip.getToolButton (Tool::range).getX()
+                                 && strip.getToolButton (Tool::range).getRight() < strip.getTempoButton().getX() && strip.getTempoButton().getRight() < strip.getBarsButton().getX();
+        check (drawLit == "010000" && ran == juce::Array<int> { 1, 2, 3, 4, 5, 6, 7, 8 } && leftToRight && strip.getTempoButton().getButtonText() == "98.5 bpm, 3/4"
                    && strip.getBarsButton().getToggleState() && TrackTools::tempoText (120.0, 4) == "120 bpm, 4/4" && TrackTools::hintFor (Tool::draw).startsWith ("Draw:"),
                "toolbar: a button a tool, left to right, the one in hand lit, each running its command, then the tempo (" + strip.getTempoButton().getButtonText() + ") and Bars, lit while the ruler counts bars");
 
@@ -347,6 +406,7 @@ void runMultitrackViewTests (AudioEngine& engine)
 {
     testTrackTools (engine);
     testNoteClipSelection (engine);
+    testRangeAndRubberBand (engine);
     // Two clips on one track: A from 1 s to 3 s, B from 5 s to 6 s, in a 10 s view.
     SessionState initial;
     initial.sampleRate = rate;

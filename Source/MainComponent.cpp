@@ -157,7 +157,7 @@ namespace
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
         cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi, cmdAddInstrumentTrack,
-        cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue,   // one a MultitrackView::Tool, in its order
+        cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue, cmdTrackToolRange,   // one a MultitrackView::Tool, in its order
         cmdTimeWithBars,
         cmdCount   // one past the last command: every id before it is registered
     };
@@ -960,7 +960,7 @@ MainComponent::MainComponent()
                                                                    cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdSpectralHeal });
     trackTools = std::make_unique<TrackTools> (commands, multitrack, engine,
                                                TrackTools::Commands { cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue,
-                                                                      cmdTempo, cmdBarsAndBeats });
+                                                                      cmdTrackToolRange, cmdTempo, cmdBarsAndBeats });
     editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, *editorBar, overview, multitrack, *trackTools);
     fileTabs.onChoose = [this] (int index) { switchToFile (index); };
     fileTabs.onClose = [this] (int index) { closeFile (index); };
@@ -1911,18 +1911,20 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('i', cmd); info.setActive (multitrackMode); break;
         case cmdAddInstrumentTrack: info.setInfo ("Add Instrument Track...", "Add a track with an instrument plug-in (chosen from a menu), named after it, for note clips and live MIDI to play", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
-        case cmdTrackToolSelect: case cmdTrackToolDraw: case cmdTrackToolSplit: case cmdTrackToolStretch: case cmdTrackToolGlue:
+        case cmdTrackToolSelect: case cmdTrackToolDraw: case cmdTrackToolSplit: case cmdTrackToolStretch: case cmdTrackToolGlue: case cmdTrackToolRange:
         {
             const auto t = (MultitrackView::Tool) (id - cmdTrackToolSelect);
             info.setInfo (t == MultitrackView::Tool::select ? "Select Tool" : t == MultitrackView::Tool::draw ? "Draw Tool" : t == MultitrackView::Tool::split ? "Split Tool"
-                          : t == MultitrackView::Tool::stretch ? "Stretch Tool" : "Glue Tool",
-                          t == MultitrackView::Tool::select ? "Click and drag clips in the multitrack view to select, move and trim them"
+                          : t == MultitrackView::Tool::stretch ? "Stretch Tool" : t == MultitrackView::Tool::glue ? "Glue Tool" : "Range Tool",
+                          t == MultitrackView::Tool::select ? "Click and drag clips in the multitrack view to select, move and trim them, or drag across empty lane to select the clips the band crosses"
                           : t == MultitrackView::Tool::draw ? "Drag along an instrument track's lane in the multitrack view to make a note clip there"
                           : t == MultitrackView::Tool::split ? "Click a clip in the multitrack view to cut it there"
                           : t == MultitrackView::Tool::stretch ? "Drag a clip's edge in the multitrack view to stretch what it plays, audio or notes"
-                          : "Click a note clip in the multitrack view to join it with the next one on its track",
+                          : t == MultitrackView::Tool::glue ? "Click a note clip in the multitrack view to join it with the next one on its track"
+                          : "Drag across the lanes in the multitrack view to select a time range, leaving the clips as they are",
                           "Multitrack", 0);
-            info.addDefaultKeypress (id == cmdTrackToolSelect ? '1' : id == cmdTrackToolDraw ? '2' : id == cmdTrackToolSplit ? '3' : id == cmdTrackToolStretch ? '4' : '5', 0);
+            info.addDefaultKeypress (id == cmdTrackToolSelect ? '1' : id == cmdTrackToolDraw ? '2' : id == cmdTrackToolSplit ? '3' : id == cmdTrackToolStretch ? '4'
+                                     : id == cmdTrackToolGlue ? '5' : '6', 0);
             info.setTicked (multitrack.getTool() == t);
             info.setActive (multitrackMode);
             break;
@@ -2600,7 +2602,7 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNewSession: confirmDiscardSession ([this] { newSession(); }); break;
         case cmdOpenSession: confirmDiscardSession ([this] { chooseSession(); }); break;
         case cmdImportToSession: chooseFilesForSession(); break;
-        case cmdTrackToolSelect: case cmdTrackToolDraw: case cmdTrackToolSplit: case cmdTrackToolStretch: case cmdTrackToolGlue:
+        case cmdTrackToolSelect: case cmdTrackToolDraw: case cmdTrackToolSplit: case cmdTrackToolStretch: case cmdTrackToolGlue: case cmdTrackToolRange:
             multitrack.setTool ((MultitrackView::Tool) (info.commandID - cmdTrackToolSelect));
             commands.commandStatusChanged();
             break;
@@ -2979,7 +2981,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, cmdImportMidi, 0 });
             group ("Tracks", { cmdAddTrack, cmdAddInstrumentTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, 0, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack,
                                0, cmdTrackAbove, cmdTrackBelow, 0, cmdUnsoloAll, cmdUnmuteAll });
-            group ("Tools", { cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue });
+            group ("Tools", { cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue, cmdTrackToolRange });
             group ("Clips", { cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, 0, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines });
             group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
             group ("Time Range", { cmdClearRange, cmdDeleteTime, cmdInsertTime, 0, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime });

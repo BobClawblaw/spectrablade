@@ -101,6 +101,17 @@ public:
                 g.fillRect (box.getX() + 6.0f, box.getY() + 6.5f, 4.0f, 3.0f);
                 break;
             }
+
+            case Tool::range:
+            {
+                // A dashed box: a span picked out of the lanes.
+                juce::Path outline, dashed;
+                outline.addRectangle (box.reduced (1.5f, 2.5f));
+                const float dashes[] = { 2.5f, 2.0f };
+                juce::PathStrokeType (1.5f).createDashedStroke (dashed, outline, dashes, 2);
+                g.fillPath (dashed);
+                break;
+            }
         }
     }
 
@@ -114,7 +125,7 @@ TrackTools::TrackTools (juce::ApplicationCommandManager& c, MultitrackView& v, A
     run = [this] (int id) { commands.invokeDirectly (id, true); };
 
     for (auto [tool, id] : { std::pair (Tool::select, ids.select), std::pair (Tool::draw, ids.draw), std::pair (Tool::split, ids.split),
-                             std::pair (Tool::stretch, ids.stretch), std::pair (Tool::glue, ids.glue) })
+                             std::pair (Tool::stretch, ids.stretch), std::pair (Tool::glue, ids.glue), std::pair (Tool::range, ids.range) })
     {
         auto* b = tools.add (new ToolButton (tool, id));
         b->onClick = [this, id] { if (run) run (id); update(); };
@@ -147,11 +158,12 @@ juce::String TrackTools::hintFor (Tool tool)
 {
     switch (tool)
     {
-        case Tool::select:  return "Select: click or drag clips; drag a clip's edge to trim it, Option-drag the edge to stretch it";
+        case Tool::select:  return "Select: click or drag clips, or drag across empty lane to select what the band crosses; drag a clip's edge to trim it";
         case Tool::draw:    return "Draw: drag along an instrument track's lane to make a note clip there (below the tracks makes a track)";
         case Tool::split:   return "Split: click a clip to cut it there";
         case Tool::stretch: return "Stretch: drag a clip's edge to stretch what it plays, audio or notes";
         case Tool::glue:    return "Glue: click a note clip to join it with the next one on its track";
+        case Tool::range:   return "Range: drag across the lanes to select a time range, leaving the clips as they are";
     }
 
     return {};
@@ -176,7 +188,7 @@ void TrackTools::update()
 
     for (auto [button, name] : { std::pair (tools[(int) Tool::select], "Select"), std::pair (tools[(int) Tool::draw], "Draw"),
                                  std::pair (tools[(int) Tool::split], "Split"), std::pair (tools[(int) Tool::stretch], "Stretch"),
-                                 std::pair (tools[(int) Tool::glue], "Glue") })
+                                 std::pair (tools[(int) Tool::glue], "Glue"), std::pair (tools[(int) Tool::range], "Range") })
     {
         const auto keys = commands.getKeyMappings() != nullptr ? commands.getKeyMappings()->getKeyPressesAssignedToCommand (button->getComponentID().getIntValue()) : juce::Array<juce::KeyPress>();
         button->setTooltip (juce::String (name) + " tool" + (keys.isEmpty() ? juce::String() : " (" + keys[0].getTextDescription() + ")"));

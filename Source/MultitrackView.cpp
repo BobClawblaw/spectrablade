@@ -2733,6 +2733,15 @@ void MultitrackView::paint (juce::Graphics& g)
         if (x1 > x0)
             g.fillRect (juce::Rectangle<float> (x0, (float) timeRulerHeight - 5.0f, x1 - x0, 5.0f));
     }
+    // A rubber band, over what it has crossed.
+    if (drag == Drag::rubberBand && ! rubberBand.isEmpty())
+    {
+        g.setColour (Theme::accent.withAlpha (0.15f));
+        g.fillRect (rubberBand);
+        g.setColour (Theme::accent);
+        g.drawRect (rubberBand, 1);
+    }
+
     // A note clip being drawn: where it would go, outlined.
     if (drag == Drag::drawNotes && drawEnd != drawStart && drawTrack >= 0 && ! s.tracks.empty())
     {
@@ -4659,6 +4668,17 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // The Range tool: a drag anywhere across the lanes selects a time range; the clips stay as they are.
+    if (! e.mods.isPopupMenu() && tool == Tool::range)
+    {
+        drag = Drag::range;
+        dragFrame = snapped (frameForX ((float) p.x), 0, false);
+        setCursor (dragFrame);
+        setTimeSelection ({});
+        selectTrack (trackAt (p.y));
+        return;
+    }
+
     // A note clip: right-click for its menu, a click selects it, a drag moves it in time (with
     // the Stretch tool, a drag on an edge stretches it).
     if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
@@ -4857,8 +4877,18 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    selectClip (0, false);
-    drag = Drag::range;
+    // Empty lane space: a click sets the cursor (and drops the selected audio clips); a drag
+    // rubber-bands the clips it crosses, with Shift adding them to the selection it began with.
+    if (! e.mods.isShiftDown())
+        selectClip (0, false);
+
+    // A band replaces the selection, note clips included (Shift adds to it); a click alone
+    // leaves the note clips as they were.
+    rubberClips = e.mods.isShiftDown() ? selectedClips : std::set<juce::uint32>();
+    rubberNoteClips = e.mods.isShiftDown() ? selectedNoteClips : std::set<juce::uint32>();
+    rubberStart = p;
+    rubberBand = {};
+    drag = Drag::rubberBand;
     dragFrame = snapped (frameForX ((float) p.x), 0, false);
     setCursor (dragFrame);
     setTimeSelection ({});
@@ -4874,6 +4904,46 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         const auto frame = juce::jlimit ((juce::int64) 0, shown().getLength(), frameForX ((float) juce::jmax (headerWidth, p.x)));
         engine.getPlayer().getScrubber().moveTo (frame);
         setCursor (frame);
+        return;
+    }
+
+    if (drag == Drag::rubberBand)
+    {
+        // The band from where the mouse went down to here: the clips it crosses (a grouped clip
+        // with its group) join the selection it began with.
+        const auto lanes = juce::Rectangle<int> (headerWidth, rulerHeight, juce::jmax (0, getWidth() - headerWidth), juce::jmax (0, getHeight() - rulerHeight));
+        rubberBand = juce::Rectangle<int>::leftTopRightBottom (juce::jmin (rubberStart.x, p.x), juce::jmin (rubberStart.y, p.y),
+                                                               juce::jmax (rubberStart.x, p.x), juce::jmax (rubberStart.y, p.y))
+                         .getIntersection (lanes);
+        selectedClips = rubberClips;
+        selectedNoteClips = rubberNoteClips;
+        const auto& s = shown();
+
+        for (int t = 0; t < (int) s.tracks.size(); ++t)
+        {
+            if (! s.isShown (s.tracks[(size_t) t]))
+                continue;
+
+            for (auto& c : s.tracks[(size_t) t].clips)
+                if (clipBounds (t, c).intersects (rubberBand))
+                {
+                    selectedClips.insert (c.id);
+                    const auto group = SessionEdits::clipGroup (s, c.id);
+                    selectedClips.insert (group.begin(), group.end());
+                }
+
+            for (auto& c : s.tracks[(size_t) t].noteClips)
+                if (noteClipBounds (t, c).intersects (rubberBand))
+                    selectedNoteClips.insert (c.id);
+        }
+
+        if (! isClipSelected (selectedClip))
+            selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
+
+        if (! isNoteClipSelected (selectedNoteClip))
+            selectedNoteClip = selectedNoteClips.empty() ? 0 : *selectedNoteClips.begin();
+
+        repaint();
         return;
     }
 
@@ -5069,6 +5139,7 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         }
         case Drag::none:
         case Drag::range:
+        case Drag::rubberBand:
         case Drag::scrub:
         case Drag::stretchStart:
         case Drag::stretchEnd:
@@ -5154,6 +5225,15 @@ void MultitrackView::mouseUp (const juce::MouseEvent&)
         engine.session.apply (std::move (next), dragDescription);
     }
 
+    if (drag == Drag::rubberBand)
+    {
+        rubberBand = {};
+        repaint();
+
+        if (onSelectionChanged != nullptr)
+            onSelectionChanged();
+    }
+
     drag = Drag::none;
 }
 
@@ -5195,8 +5275,11 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
                           : juce::MouseCursor::DraggingHandCursor;
     }
 
-    // The tools say what a click would do: Split and Draw a crosshair where they act, Glue a hand over a note clip.
-    if (tool == Tool::split && (overNotes || clipAt (p).has_value()))
+    // The tools say what a click would do: Split and Draw a crosshair where they act, Glue a hand
+    // over a note clip, Range a text cursor over the lanes.
+    if (tool == Tool::range && p.x >= headerWidth && p.y >= rulerHeight)
+        cursorShape = juce::MouseCursor::IBeamCursor;
+    else if (tool == Tool::split && (overNotes || clipAt (p).has_value()))
         cursorShape = juce::MouseCursor::CrosshairCursor;
     else if (tool == Tool::glue && overNotes)
         cursorShape = juce::MouseCursor::PointingHandCursor;

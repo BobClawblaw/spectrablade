@@ -74,12 +74,15 @@ public:
     void addTrigger (juce::uint32 trackId);
 
     /** The tool in hand, for the toolbar under the view. Select is the usual mouse: clicks and
-        drags select, move and trim clips. Draw: a drag along an instrument track's lane makes a
-        note clip there (below the last track, on a new instrument track); on clips it works as
-        Select. Split: a click on a clip (audio or notes) cuts it at the click. Stretch: a drag on
-        a clip's edge stretches it, audio (as Option-drag does) or notes. Glue: a click on a note
-        clip joins it with the next one on its track. */
-    enum class Tool { select, draw, split, stretch, glue };
+        drags select, move and trim clips, and a drag across empty lane space rubber-bands the
+        clips it crosses, audio and notes (Shift adds them to the selection). Draw: a drag along
+        an instrument track's lane makes a note clip there (below the last track, on a new
+        instrument track); on clips it works as Select. Split: a click on a clip (audio or notes)
+        cuts it at the click. Stretch: a drag on a clip's edge stretches it, audio (as Option-drag
+        does) or notes. Glue: a click on a note clip joins it with the next one on its track.
+        Range: a drag anywhere across the lanes selects a time range (as a drag along the marker
+        lane under the ruler does with any tool), leaving the clips as they are. */
+    enum class Tool { select, draw, split, stretch, glue, range };
     void setTool (Tool);
     Tool getTool() const noexcept                 { return tool; }
 
@@ -529,8 +532,11 @@ private:
     class SendsPanel;
 
     enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain, clipGainPoint, scrub,
-                      stretchStart, stretchEnd, moveNotes, trimNotesStart, trimNotesEnd, stretchNotesStart, stretchNotesEnd, drawNotes };
+                      stretchStart, stretchEnd, moveNotes, trimNotesStart, trimNotesEnd, stretchNotesStart, stretchNotesEnd, drawNotes, rubberBand };
     Tool tool = Tool::select;
+    juce::Point<int> rubberStart;             // where a rubber band began
+    juce::Rectangle<int> rubberBand;          // the band so far (empty between drags)
+    std::set<juce::uint32> rubberClips, rubberNoteClips;   // the selection as the band began (Shift keeps it)
     juce::int64 drawStart = 0, drawEnd = 0;   // while drawing a note clip: the frames it would span
     int drawTrack = -1;                       // the track it would go on (past the last: a new one)
     juce::Range<juce::int64> stretchTo;   // while Option-dragging a clip's edge: where it would play, stretched
