@@ -172,6 +172,7 @@ public:
         isSelected = selected;
         isBus = t.isBus;
         isFolder = t.isFolder;
+        isInstrument = t.isInstrument;
         collapsed = t.collapsed;
         inFolder = t.folderId != 0;
         members = (int) std::count_if (view.shown().tracks.begin(), view.shown().tracks.end(), [&t] (auto& m) { return m.folderId == t.id; });
@@ -181,10 +182,12 @@ public:
             c->setVisible (! isFolder);
 
         sendsButton.setVisible (! isFolder);
-        arm.setVisible (! isBus && ! isFolder);
+        // An instrument track plays its instrument, so it has no input to record or monitor; an
+        // audio track has no instrument.
+        arm.setVisible (! isBus && ! isFolder && ! isInstrument);
         arm.setToggleState (view.isArmed (trackId), juce::dontSendNotification);
-        inputButton.setVisible (! isBus && ! isFolder);
-        instrumentButton.setVisible (! isBus && ! isFolder);
+        inputButton.setVisible (! isBus && ! isFolder && ! isInstrument);
+        instrumentButton.setVisible (isInstrument);
         inputButton.setButtonText (t.input.isDefault() ? juce::String ("In")
                                    : t.input.channels == 2 ? juce::String (t.input.first + 1) + "/" + juce::String (t.input.first + 2)
                                                            : juce::String (t.input.first + 1));
@@ -428,7 +431,7 @@ public:
             return;
         }
 
-        if (! isBus)
+        if (! isBus && ! isInstrument)
         {
             arm.setBounds (top.removeFromRight (26));
             top.removeFromRight (4);
@@ -454,7 +457,7 @@ public:
         sendsButton.setBounds (bottom.removeFromRight (56));
         bottom.removeFromRight (4);
 
-        if (! isBus)
+        if (! isBus && ! isInstrument)
         {
             inputButton.setBounds (bottom.removeFromRight (40));
             bottom.removeFromRight (4);
@@ -536,11 +539,22 @@ public:
 
         if (! t->isFolder && ! t->isBus)
         {
-            menu.addItem ("5.1 Track", ! t->isFrozen(), t->fiveOne, [this, on = t->fiveOne] { view.setTrackChannels (trackId, on ? 2 : 6); });
-            menu.addItem ("7.1 Track", ! t->isFrozen(), t->sevenOne, [this, on = t->sevenOne] { view.setTrackChannels (trackId, on ? 2 : 8); });
-            menu.addSubMenu ("Instrument", view.instrumentMenuFor (trackId), ! t->isFrozen());
-            menu.addItem ("Add Notes...", ! t->isFrozen() && view.onEditNotes != nullptr, false, [this] { view.onEditNotes (trackId, 0); });
-            menu.addItem ("Add Trigger", ! t->isFrozen(), false, [this] { view.addTrigger (trackId); });
+            // An instrument track holds note clips alone, an audio track audio clips alone: one
+            // with no clips of its own kind can become the other kind.
+            const auto canTurn = ! t->isFrozen() && ! t->isWide() && (t->isInstrument ? t->noteClips.empty() : t->clips.empty());
+            menu.addItem ("Instrument Track", canTurn, t->isInstrument, [this, on = t->isInstrument] { view.setTrackKind (trackId, ! on); });
+
+            if (t->isInstrument)
+            {
+                menu.addSubMenu ("Instrument", view.instrumentMenuFor (trackId), ! t->isFrozen());
+                menu.addItem ("Add Notes...", ! t->isFrozen() && view.onEditNotes != nullptr, false, [this] { view.onEditNotes (trackId, 0); });
+                menu.addItem ("Add Trigger", ! t->isFrozen(), false, [this] { view.addTrigger (trackId); });
+            }
+            else
+            {
+                menu.addItem ("5.1 Track", ! t->isFrozen(), t->fiveOne, [this, on = t->fiveOne] { view.setTrackChannels (trackId, on ? 2 : 6); });
+                menu.addItem ("7.1 Track", ! t->isFrozen(), t->sevenOne, [this, on = t->sevenOne] { view.setTrackChannels (trackId, on ? 2 : 8); });
+            }
         }
 
         menu.addSubMenu ("Colour", colours);
@@ -589,7 +603,7 @@ private:
     juce::TextButton effectsButton { "FX" }, instrumentButton { "Inst" }, arm { "R" }, mute { "M" }, solo { "S" }, sendsButton { "Sends" }, inputButton { "In" }, automationButton { "A" };
     juce::Slider gain, pan;
     juce::Colour colour;
-    bool isSelected = false, isBus = false, isFolder = false, collapsed = false, inFolder = false, soloSafe = false, inverted = false;
+    bool isSelected = false, isBus = false, isFolder = false, isInstrument = false, collapsed = false, inFolder = false, soloSafe = false, inverted = false;
     int members = 0;
     float levels[2] {}, holds[2] {};
     int holdLeft[2] {};
@@ -1313,6 +1327,19 @@ void MultitrackView::removeTrackInstrument (juce::uint32 trackId)
         engine.removeTrackPlugin (trackId, 0);
 }
 
+void MultitrackView::setTrackKind (juce::uint32 trackId, bool instrument)
+{
+    auto next = *engine.session.getState();
+
+    if (! SessionEdits::setTrackKind (next, trackId, instrument))
+        return;
+
+    if (! instrument)
+        removeTrackInstrument (trackId);
+
+    engine.session.apply (std::move (next), instrument ? "Instrument Track" : "Audio Track");
+}
+
 void MultitrackView::showInstrumentWindow (juce::uint32 trackId)
 {
     if (auto* instrument = engine.getTrackEffects().getInstrument (trackId); instrument != nullptr && onEditPlugin != nullptr)
@@ -1322,7 +1349,7 @@ void MultitrackView::showInstrumentWindow (juce::uint32 trackId)
 void MultitrackView::addInstrumentTrack (const juce::PluginDescription& description)
 {
     auto next = *engine.session.getState();
-    auto& track = next.addTrack();
+    auto& track = next.addInstrumentTrack();
     track.name = description.name;
     const auto id = track.id;
     engine.session.apply (std::move (next), "Add Instrument Track");
@@ -3524,7 +3551,7 @@ void MultitrackView::pasteClip()
         auto next = *engine.session.getState();
         auto track = getSelectedTrack();
 
-        if (! juce::isPositiveAndBelow (track, (int) next.tracks.size()) || ! next.tracks[(size_t) track].takesClips())
+        if (! juce::isPositiveAndBelow (track, (int) next.tracks.size()) || ! next.tracks[(size_t) track].takesNoteClips())
             track = (int) next.tracks.size();
 
         const auto& copied = copiedNoteClips.front().second;

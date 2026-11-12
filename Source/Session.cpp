@@ -159,6 +159,13 @@ SessionTrack& SessionState::addTrack()
     return tracks.back();
 }
 
+SessionTrack& SessionState::addInstrumentTrack()
+{
+    auto& t = addTrack();
+    t.isInstrument = true;
+    return t;
+}
+
 SessionTrack& SessionState::addFolder()
 {
     SessionTrack t;
@@ -616,7 +623,7 @@ namespace
 
 juce::uint32 addClip (SessionState& s, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position)
 {
-    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
+    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesAudioClips())
     {
         // Six- or eight-channel audio makes a 5.1 or 7.1 track, in a surround master.
         auto& added = s.addTrack();
@@ -636,6 +643,52 @@ juce::uint32 addClip (SessionState& s, int track, const juce::File& source, Audi
     return s.tracks[(size_t) track].clips.back().id;
 }
 
+bool setTrackKind (SessionState& s, juce::uint32 trackId, bool instrument)
+{
+    const auto t = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& x) { return x.id == trackId; });
+
+    if (t == s.tracks.end() || ! t->takesClips() || t->isWide() || t->isInstrument == instrument
+        || (instrument ? ! t->clips.empty() : ! t->noteClips.empty()))
+        return false;
+
+    t->isInstrument = instrument;
+    return true;
+}
+
+int separateClipKinds (SessionState& s)
+{
+    int added = 0;
+
+    for (size_t i = 0; i < s.tracks.size(); ++i)
+    {
+        auto& t = s.tracks[i];
+        const auto wrongAudio = t.isInstrument && ! t.clips.empty();
+        const auto wrongNotes = ! t.isInstrument && ! t.isBus && ! t.isFolder && ! t.noteClips.empty();
+
+        if (! wrongAudio && ! wrongNotes)
+            continue;
+
+        SessionTrack moved;
+        moved.id = s.nextId++;
+        moved.name = t.name;
+        moved.isInstrument = wrongNotes;
+        moved.folderId = t.folderId;
+        moved.colour = t.colour;
+
+        if (wrongAudio)
+            std::swap (moved.clips, t.clips);
+
+        if (wrongNotes)
+            std::swap (moved.noteClips, t.noteClips);
+
+        s.tracks.insert (s.tracks.begin() + (long) i + 1, std::move (moved));
+        ++added;
+        ++i;
+    }
+
+    return added;
+}
+
 bool moveClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int64 position)
 {
     const auto where = s.findClip (clipId);
@@ -647,7 +700,7 @@ bool moveClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int64 po
     auto clip = from[(size_t) where->second];
     clip.position = juce::jmax ((juce::int64) 0, position);
 
-    if (toTrack < (int) s.tracks.size() && ! s.tracks[(size_t) toTrack].takesClips())
+    if (toTrack < (int) s.tracks.size() && ! s.tracks[(size_t) toTrack].takesAudioClips())
         toTrack = where->first;
 
     if (toTrack == where->first)
@@ -992,7 +1045,7 @@ bool setClipFades (SessionState& s, juce::uint32 clipId, juce::int64 fadeIn, juc
 
 juce::uint32 placeClip (SessionState& s, int track, const SessionClip& clip, juce::int64 position)
 {
-    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
+    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesAudioClips())
     {
         s.addTrack();
         track = (int) s.tracks.size() - 1;
@@ -1381,7 +1434,7 @@ bool clearRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
 
 juce::uint32 recordClip (SessionState& s, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position)
 {
-    if (audio != nullptr && juce::isPositiveAndBelow (track, (int) s.tracks.size()) && s.tracks[(size_t) track].takesClips())
+    if (audio != nullptr && juce::isPositiveAndBelow (track, (int) s.tracks.size()) && s.tracks[(size_t) track].takesAudioClips())
         clearRange (s, track, position, position + audio->getNumFrames());
 
     return addClip (s, track, source, std::move (audio), position);
@@ -1393,7 +1446,7 @@ juce::uint32 recordTakes (SessionState& s, int track, const juce::File& source, 
     if (audio == nullptr || offsets.empty() || length <= 0)
         return 0;
 
-    if (juce::isPositiveAndBelow (track, (int) s.tracks.size()) && s.tracks[(size_t) track].takesClips())
+    if (juce::isPositiveAndBelow (track, (int) s.tracks.size()) && s.tracks[(size_t) track].takesAudioClips())
         clearRange (s, track, position, position + length);
 
     const auto id = addClip (s, track, source, audio, position);
@@ -1794,7 +1847,7 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
         auto& track = s.tracks[i];
         const auto& copied = t.tracks[i];
 
-        for (auto c : track.isFrozen() ? std::vector<SessionClip>() : copied.clips)
+        for (auto c : ! track.takesAudioClips() ? std::vector<SessionClip>() : copied.clips)
         {
             c.id = s.nextId++;
             c.groupId = 0;
@@ -1802,7 +1855,7 @@ bool pasteTime (SessionState& s, const SessionTime& t, juce::int64 at)
             track.clips.push_back (std::move (c));
         }
 
-        for (auto c : track.isFrozen() || ! track.takesClips() ? std::vector<NoteClip>() : copied.noteClips)
+        for (auto c : ! track.takesNoteClips() ? std::vector<NoteClip>() : copied.noteClips)
         {
             c.id = s.nextId++;
             c.position += at;
@@ -2326,7 +2379,7 @@ juce::uint32 addNoteClip (SessionState& s, juce::uint32 trackId, NoteClip clip)
 {
     const auto track = std::find_if (s.tracks.begin(), s.tracks.end(), [trackId] (auto& t) { return t.id == trackId; });
 
-    if (track == s.tracks.end() || ! track->takesClips())
+    if (track == s.tracks.end() || ! track->takesNoteClips())
         return 0;
 
     clip = tidiedNoteClip (std::move (clip));
@@ -2366,7 +2419,7 @@ bool moveNoteClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int6
     auto clip = from[(size_t) where->second];
     clip.position = juce::jmax ((juce::int64) 0, position);
 
-    if (toTrack < (int) s.tracks.size() && ! s.tracks[(size_t) toTrack].takesClips())
+    if (toTrack < (int) s.tracks.size() && ! s.tracks[(size_t) toTrack].takesNoteClips())
         toTrack = where->first;
 
     if (toTrack == where->first)
@@ -2379,7 +2432,7 @@ bool moveNoteClip (SessionState& s, juce::uint32 clipId, int toTrack, juce::int6
 
     if (toTrack >= (int) s.tracks.size())
     {
-        s.addTrack();
+        s.addInstrumentTrack();
         toTrack = (int) s.tracks.size() - 1;
     }
 
@@ -2429,9 +2482,9 @@ bool splitNoteClip (SessionState& s, juce::uint32 clipId, juce::int64 frame)
 
 juce::uint32 placeNoteClip (SessionState& s, int track, const NoteClip& clip, juce::int64 position)
 {
-    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesClips())
+    if (track < 0 || track >= (int) s.tracks.size() || ! s.tracks[(size_t) track].takesNoteClips())
     {
-        s.addTrack();
+        s.addInstrumentTrack();
         track = (int) s.tracks.size() - 1;
     }
 
@@ -2840,6 +2893,9 @@ juce::String save (const SessionState& state, const juce::File& target,
         if (t.isFolder)
             track->setAttribute ("folder", true);
 
+        if (! t.isBus && ! t.isFolder)
+            track->setAttribute ("instrument", t.isInstrument);
+
         if (t.isFolder && t.collapsed)
             track->setAttribute ("collapsed", true);
 
@@ -3102,6 +3158,18 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
     state.sevenOne = state.surround && root->getBoolAttribute ("sevenOne");
     std::map<juce::String, AudioDocument::Snapshot> audio;   // by full path: each file read once
     std::map<int, juce::uint32> groups;                      // a clip group's saved id, and its id now
+    std::vector<std::pair<size_t, bool>> undecided;          // tracks saved before tracks had kinds: index, and whether an instrument heads the chain
+
+    // Before kinds, an instrument sat first in any track's chain: that marks an instrument track.
+    const auto hasInstrumentPlugin = [] (const juce::XmlElement& trackXml)
+    {
+        if (auto* effects = trackXml.getChildByName ("EFFECTS"))
+            for (auto* slot : effects->getChildWithTagNameIterator ("SLOT"))
+                if (auto* plugin = slot->getChildByName ("PLUGIN"); plugin != nullptr && plugin->getBoolAttribute ("isInstrument"))
+                    return true;
+
+        return false;
+    };
 
     // The relative path first, so a session moved with its audio still finds it.
     const auto locate = [&] (const juce::XmlElement& xml)
@@ -3141,6 +3209,10 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
 
         track.fiveOne = ! track.isBus && ! track.isFolder && trackXml->getBoolAttribute ("fiveOne");
         track.sevenOne = ! track.isBus && ! track.isFolder && ! track.fiveOne && trackXml->getBoolAttribute ("sevenOne");
+        track.isInstrument = ! track.isBus && ! track.isFolder && trackXml->getBoolAttribute ("instrument");
+
+        if (! track.isBus && ! track.isFolder && ! trackXml->hasAttribute ("instrument"))
+            undecided.emplace_back (state.tracks.size() - 1, hasInstrumentPlugin (*trackXml));
 
         if (! track.isFolder)
             SessionEdits::setSurroundPan (state, track.id, { (float) trackXml->getDoubleAttribute ("surroundX", 0.0),
@@ -3331,6 +3403,12 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
                                                juce::jlimit (20.0, 400.0, changeXml->getDoubleAttribute ("tempo", 120.0)),
                                                juce::jlimit (1, 16, changeXml->getIntAttribute ("beatsPerBar", 4)) });
 
+    // A track saved before tracks had kinds is an instrument track when an instrument heads its
+    // chain, or it has note clips and no audio clips; clips on the wrong kind of track go onto a
+    // track of their own after it, once the indices below are resolved.
+    for (const auto& [index, instrument] : undecided)
+        state.tracks[index].isInstrument = instrument || (state.tracks[index].clips.empty() && ! state.tracks[index].noteClips.empty());
+
     // Indices to ids; sends and outputs to anything but a bus, and places in anything but a folder, are dropped.
     const auto pending = state.tracks;
 
@@ -3375,6 +3453,7 @@ Loaded load (const juce::File& file, juce::AudioFormatManager& formats)
             if (chain.keyTrackId < pending.size())
                 SessionEdits::setSidechain (state, state.tracks[i].id, chain.slotId, pending[chain.keyTrackId].id);
 
+    SessionEdits::separateClipKinds (state);
     return result;
 }
 }

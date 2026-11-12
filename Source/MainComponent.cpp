@@ -4546,9 +4546,9 @@ void MainComponent::toggleRecordNotes()
     const auto state = engine.session.getState();
     const auto track = multitrack.getSelectedTrack();
 
-    if (! multitrackMode || ! juce::isPositiveAndBelow (track, (int) state->tracks.size()) || ! state->tracks[(size_t) track].takesClips())
+    if (! multitrackMode || ! juce::isPositiveAndBelow (track, (int) state->tracks.size()) || ! state->tracks[(size_t) track].takesNoteClips())
     {
-        showError ("Record Notes", "Select a track to record notes onto (a track with an instrument plays them).");
+        showError ("Record Notes", "Select an instrument track to record notes onto (Multitrack > Add Instrument Track... makes one).");
         return;
     }
 
@@ -4627,7 +4627,7 @@ void MainComponent::importMidiFiles (const juce::StringArray& files, juce::int64
 
         for (auto& clip : imported.clips)
         {
-            auto& track = next.addTrack();
+            auto& track = next.addInstrumentTrack();
             track.name = clip.name;
             clip.position = juce::jmax ((juce::int64) 0, frame);
 

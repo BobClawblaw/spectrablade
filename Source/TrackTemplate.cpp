@@ -13,6 +13,7 @@ std::unique_ptr<juce::XmlElement> create (const SessionState& s, juce::uint32 tr
     auto xml = std::make_unique<juce::XmlElement> ("TRACKTEMPLATE");
     xml->setAttribute ("name", t->name);
     xml->setAttribute ("bus", t->isBus);
+    xml->setAttribute ("instrument", t->isInstrument);
     xml->setAttribute ("gainDb", t->gainDb);
     xml->setAttribute ("pan", t->pan);
 
@@ -71,7 +72,7 @@ Added add (SessionState& s, const juce::XmlElement& xml)
     if (! xml.hasTagName ("TRACKTEMPLATE"))
         return added;
 
-    auto& t = xml.getBoolAttribute ("bus") ? s.addBus() : s.addTrack();
+    auto& t = xml.getBoolAttribute ("bus") ? s.addBus() : xml.getBoolAttribute ("instrument") ? s.addInstrumentTrack() : s.addTrack();
     t.name = xml.getStringAttribute ("name", t.name);
     t.gainDb = (float) xml.getDoubleAttribute ("gainDb");
     t.pan = juce::jlimit (-1.0f, 1.0f, (float) xml.getDoubleAttribute ("pan"));

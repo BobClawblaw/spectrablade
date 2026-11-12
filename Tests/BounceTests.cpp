@@ -1121,7 +1121,7 @@ void runBounceTests()
         SessionState s;
         s.sampleRate = rate;
         s.addTrack().name = "Drums";
-        s.addTrack().name = "Empty";
+        s.addInstrumentTrack().name = "Empty";
         s.addBus();
         s.addTrack().name = "Bass/DI";
         s.addTrack().name = "Pad";

@@ -2,6 +2,7 @@
 #pragma clang diagnostic ignored "-Wfloat-equal"
 
 #include <JuceHeader.h>
+#include "../Source/AudioFileIO.h"
 #include "../Source/Session.h"
 #include "../Source/SessionMixer.h"
 #include "../Source/TrackEffects.h"
@@ -227,9 +228,10 @@ namespace
     {
         SessionState s;
         s.sampleRate = rate;
-        const auto trackId = s.addTrack().id;
+        const auto trackId = s.addInstrumentTrack().id;
         const auto busId = s.addBus().id;
         const auto folderId = s.addFolder().id;
+        const auto audioId = s.addTrack().id;
 
         NoteClip raw;
         raw.position = -5;
@@ -240,14 +242,15 @@ namespace
 
         const auto id = SessionEdits::addNoteClip (s, trackId, raw);
         const auto onBus = SessionEdits::addNoteClip (s, busId, raw), onFolder = SessionEdits::addNoteClip (s, folderId, raw);
+        const auto onAudio = SessionEdits::addNoteClip (s, audioId, raw);
         const auto where = s.findNoteClip (id);
         const auto* c = where.has_value() ? &s.tracks[(size_t) where->first].noteClips[(size_t) where->second] : nullptr;
-        check (id != 0 && onBus == 0 && onFolder == 0 && c != nullptr && c->name == "Notes" && c->position == 0 && c->length == 1
+        check (id != 0 && onBus == 0 && onFolder == 0 && onAudio == 0 && c != nullptr && c->name == "Notes" && c->position == 0 && c->length == 1
                    && c->loopLength == 1 && c->notes.size() == 2 && c->notes[0] == ClipNote { 127, 0, 1, 1.0f }
                    && c->notes[1].pitch == 0 && c->notes[1].start == 10 && c->notes[1].length == 5 && c->notes[1].velocity > 0.0f
                    && c->lanes.size() == 1 && c->lanes[0].controller == ControllerLane::pitchBend && c->lanes[0].envelope.points.size() == 2
                    && c->lanes[0].envelope.points[0] == AutomationPoint { 10, 0.0f } && c->lanes[0].envelope.points[1] == AutomationPoint { 50, 1.0f },
-               "note clips: added to a track (not a bus or folder) with its values kept to what plays (a lane's points in order and from 0 to 1, "
+               "note clips: added to an instrument track (not a bus, a folder or an audio track) with its values kept to what plays (a lane's points in order and from 0 to 1, "
                "a second lane for the same controller and an empty one dropped)");
 
         NoteClip values;
@@ -263,7 +266,7 @@ namespace
                    && s.tracks[0].noteClips[0].id == id && SessionEdits::moveNoteClip (s, id, 0, -9) && s.tracks[0].noteClips[0].position == 0
                    && s.getLength() == 48000 && ! SessionEdits::replaceNoteClip (s, 999999, values) && ! SessionEdits::moveNoteClip (s, 999999, 0, 0)
                    && SessionEdits::moveNoteClip (s, id, 1, 5) && s.tracks[0].noteClips.size() == 1 && s.tracks[0].noteClips[0].position == 5
-                   && SessionEdits::moveNoteClip (s, id, 3, 9) && s.tracks.size() == 4 && s.tracks[3].noteClips.size() == 1 && s.tracks[0].noteClips.empty()
+                   && SessionEdits::moveNoteClip (s, id, 4, 9) && s.tracks.size() == 5 && s.tracks[4].isInstrument && s.tracks[4].noteClips.size() == 1 && s.tracks[0].noteClips.empty()
                    && SessionEdits::moveNoteClip (s, id, 0, 0) && s.tracks[0].noteClips.size() == 1,
                "note clips: replaced (keeping its id and place) and moved (not before 0; onto a bus only in time; past the last track onto a new one); "
                "the session's length counts it");
@@ -329,7 +332,7 @@ namespace
         // A repeating clip trimmed at both ends, split and placed: the notes stay where they were in time.
         SessionState s;
         s.sampleRate = rate;
-        const auto trackId = s.addTrack().id;
+        const auto trackId = s.addInstrumentTrack().id;
         NoteClip c;
         c.position = 10000;
         c.length = 8000;
@@ -388,18 +391,18 @@ namespace
         const auto copyId = SessionEdits::placeNoteClip (s, 0, s.tracks[0].noteClips[0], 30000);
         const auto newTrack = SessionEdits::placeNoteClip (s, 5, s.tracks[0].noteClips[0], 0);
         check (copyId != 0 && s.tracks[0].noteClips.size() == 2 && s.tracks[0].noteClips[1].position == 30000 && s.tracks[0].noteClips[1].id == copyId
-                   && s.tracks[0].noteClips[1].notes == c.notes && newTrack != 0 && s.tracks.size() == 2 && s.tracks[1].noteClips.size() == 1,
-               "note clips: a copy placed on the track, or on a new track past the last");
+                   && s.tracks[0].noteClips[1].notes == c.notes && newTrack != 0 && s.tracks.size() == 2 && s.tracks[1].noteClips.size() == 1 && s.tracks[1].isInstrument,
+               "note clips: a copy placed on the track, or on a new instrument track past the last");
 
         // Copied time carries the note clips cut to it; pasting puts them in at the cursor, in time.
         SessionState src;
         src.sampleRate = rate;
-        const auto srcTrack = src.addTrack().id;
+        const auto srcTrack = src.addInstrumentTrack().id;
         SessionEdits::addNoteClip (src, srcTrack, c);
         const auto time = SessionEdits::copyTime (src, 11500, 16100);
         SessionState dest;
         dest.sampleRate = rate;
-        dest.addTrack();
+        dest.addInstrumentTrack();
         const auto pasted = SessionEdits::pasteTime (dest, time, 40000);
         const auto& p = dest.tracks[0].noteClips;
         std::vector<Event> expectedPasted;
@@ -412,11 +415,130 @@ namespace
                "note clips: copied time carries them cut to it, and pasted time plays them in time where it is put");
     }
 
+    void testTrackKinds()
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        const auto audioId = s.addTrack().id;
+        const auto instId = s.addInstrumentTrack().id;
+        NoteClip notes;
+        notes.length = 1000;
+        notes.notes = { { 60, 0, 1000, 0.8f } };
+
+        // Each kind of clip goes on its kind of track: an audio clip meant for the instrument
+        // track lands on a new audio track, a note clip meant for the audio track is refused or
+        // placed on a new instrument track, and a move onto the wrong kind leaves the clip where it is.
+        SessionEdits::addClip (s, 1, juce::File ("/takes/a.wav"), constant (1000, 0.5f), 0);
+        const auto onNew = s.tracks.size() == 3 && ! s.tracks[2].isInstrument && s.tracks[2].clips.size() == 1 && s.tracks[1].clips.empty();
+        const auto refused = SessionEdits::addNoteClip (s, audioId, notes) == 0 && s.tracks[0].noteClips.empty();
+        const auto placed = SessionEdits::placeNoteClip (s, 0, notes, 0);
+        const auto onNewInstrument = placed != 0 && s.tracks.size() == 4 && s.tracks[3].isInstrument && s.tracks[3].noteClips.size() == 1 && s.tracks[0].noteClips.empty();
+        const auto clipId = s.tracks[2].clips[0].id;
+        const auto stays = SessionEdits::moveClip (s, clipId, 1, 500) && s.tracks[2].clips.size() == 1 && s.tracks[2].clips[0].position == 500 && s.tracks[1].clips.empty();
+        const auto noteStays = SessionEdits::moveNoteClip (s, placed, 0, 700) && s.tracks[3].noteClips.size() == 1 && s.tracks[3].noteClips[0].position == 700
+                               && s.tracks[0].noteClips.empty();
+        const auto pastEnd = SessionEdits::moveNoteClip (s, placed, 9, 0) && s.tracks.size() == 5 && s.tracks[4].isInstrument && s.tracks[4].noteClips.size() == 1
+                             && s.tracks[3].noteClips.empty();
+        check (onNew && refused && onNewInstrument && stays && noteStays && pastEnd,
+               "track kinds: an audio clip meant for an instrument track goes on a new audio track, a note clip meant for an audio track is refused "
+               "or placed on a new instrument track, a move onto the wrong kind leaves the clip where it is, and past the last track a note clip makes an instrument track");
+
+        // A kind changes only on a track with no clips of its own kind, never a bus or a folder.
+        const auto turned = SessionEdits::setTrackKind (s, audioId, true) && s.tracks[0].isInstrument && SessionEdits::setTrackKind (s, audioId, false) && ! s.tracks[0].isInstrument;
+        const auto kept = ! SessionEdits::setTrackKind (s, s.tracks[2].id, true) && ! SessionEdits::setTrackKind (s, s.tracks[4].id, false)
+                          && ! SessionEdits::setTrackKind (s, instId, true) && ! SessionEdits::setTrackKind (s, s.addBus().id, true)
+                          && ! SessionEdits::setTrackKind (s, s.addFolder().id, true);
+        check (turned && kept, "track kinds: a track with no clips of its own kind becomes the other kind, and back; one with clips, one already of that kind, a bus or a folder does not");
+
+        // Copied time pastes audio clips onto audio tracks and note clips onto instrument tracks,
+        // by index; a clip meant for the wrong kind is dropped.
+        const auto time = SessionEdits::copyTime (s, 0, 1000);
+        SessionState audioOnly, instrumentsOnly;
+        audioOnly.sampleRate = instrumentsOnly.sampleRate = rate;
+
+        for (int i = 0; i < 5; ++i)
+        {
+            audioOnly.addTrack();
+            instrumentsOnly.addInstrumentTrack();
+        }
+
+        SessionEdits::pasteTime (audioOnly, time, 0);
+        SessionEdits::pasteTime (instrumentsOnly, time, 0);
+        check (audioOnly.tracks[2].clips.size() == 1 && audioOnly.tracks[4].noteClips.empty() && instrumentsOnly.tracks[2].clips.empty() && instrumentsOnly.tracks[4].noteClips.size() == 1,
+               "track kinds: pasted time puts audio clips on audio tracks alone and note clips on instrument tracks alone");
+
+        // Files keep the kind. One saved before tracks had kinds reads a track with an instrument
+        // heading its chain, or with note clips and no audio clips, as an instrument track, and
+        // clips on the wrong kind of track go to a track of their own after it, named like it.
+        juce::AudioFormatManager formats;
+        formats.registerBasicFormats();
+        const auto wav = juce::File::createTempFile (".wav");
+        AudioFileIO::save (*constant (1000, 0.25f), rate, wav, 24, formats);
+        SessionState f;
+        f.sampleRate = rate;
+        f.addTrack().name = "Synth";            // an instrument heads its chain
+        f.addTrack().name = "Both";             // an audio clip and a note clip
+        f.addTrack().name = "Notes";            // note clips alone
+        f.addInstrumentTrack().name = "Keys";
+        f.addTrack().name = "Plain";
+        SessionEdits::addClip (f, 1, wav, constant (1000, 0.25f), 0);
+
+        for (auto index : { 1, 2 })   // straight in, past the edits' rule, as an old file could hold them
+        {
+            auto old = notes;
+            old.id = f.nextId++;
+            f.tracks[(size_t) index].noteClips.push_back (old);
+        }
+
+        SessionEdits::addNoteClip (f, f.tracks[3].id, notes);
+        const auto synthId = f.tracks[0].id;
+        const auto effectsFor = [synthId] (juce::uint32 id) -> std::unique_ptr<juce::XmlElement>
+        {
+            if (id != synthId)
+                return nullptr;
+
+            auto xml = std::make_unique<juce::XmlElement> ("EFFECTS");
+            juce::PluginDescription d;
+            d.name = "Old Synth";
+            d.isInstrument = true;
+            xml->createNewChildElement ("SLOT")->addChildElement (d.createXml().release());
+            return xml;
+        };
+
+        const auto file = juce::File::createTempFile (".sbsession");
+        const auto saved = SessionFile::save (f, file, effectsFor).isEmpty();
+        const auto reloaded = SessionFile::load (file, formats);
+        const auto names = [] (const SessionState& state)
+        {
+            juce::StringArray list;
+
+            for (auto& t : state.tracks)
+                list.add (t.name + (t.isInstrument ? " (inst)" : "") + " " + juce::String ((int) t.clips.size()) + "/" + juce::String ((int) t.noteClips.size()));
+
+            return list.joinIntoString (", ");
+        };
+        const auto keptKinds = names (reloaded.state) == "Synth 0/0, Both 1/0, Both (inst) 0/1, Notes 0/0, Notes (inst) 0/1, Keys (inst) 0/1, Plain 0/0";
+
+        auto xml = juce::XmlDocument::parse (file);
+
+        for (auto* t : xml->getChildWithTagNameIterator ("TRACK"))
+            t->removeAttribute ("instrument");
+
+        xml->writeTo (file);
+        const auto old = SessionFile::load (file, formats);
+        const auto oldKinds = names (old.state) == "Synth (inst) 0/0, Both 1/0, Both (inst) 0/1, Notes (inst) 0/1, Keys (inst) 0/1, Plain 0/0";
+        file.deleteFile();
+        wav.deleteFile();
+        check (saved && reloaded.error.isEmpty() && keptKinds && old.error.isEmpty() && oldKinds,
+               "track kinds: a file keeps each track's kind, clips on the wrong kind going to a track of their own after it; a file from before kinds "
+               "makes a track with an instrument in its chain, or note clips alone, an instrument track (" + names (reloaded.state) + "; " + names (old.state) + ")");
+    }
+
     void testFile (juce::AudioFormatManager& formats)
     {
         SessionState s;
         s.sampleRate = rate;
-        auto& t = s.addTrack();
+        auto& t = s.addInstrumentTrack();
         NoteClip c;
         c.name = "Riff";
         c.position = 96000;
@@ -446,7 +568,7 @@ namespace
     {
         SessionState s;
         s.sampleRate = rate;
-        auto& t = s.addTrack();
+        auto& t = s.addInstrumentTrack();   // the audio clip below goes straight in beside the notes, past the kinds, so the chain's sum can be checked
         trackId = t.id;
         SessionClip clip;
         clip.id = s.nextId++;
@@ -581,7 +703,7 @@ namespace
 
         SessionState s;
         s.sampleRate = rate;
-        auto& t = s.addTrack();
+        auto& t = s.addInstrumentTrack();
         const auto trackId = t.id;
         NoteClip notes;
         notes.length = 48000;
@@ -648,7 +770,7 @@ namespace
 
         // The view hears of the new track by a change message, and the instrument is made asynchronously.
         const auto selected = TestUtils::runUntil ([&] { return view.getSelectedTrack() == 1; }, 5000);
-        const auto added = state->tracks.size() == 2 && state->tracks[1].name == "Basic Synth" && selected;
+        const auto added = state->tracks.size() == 2 && state->tracks[1].name == "Basic Synth" && state->tracks[1].isInstrument && selected;
         const auto loaded = TestUtils::runUntil ([&] { return engine.getTrackEffects().getInstrument (trackId) != nullptr; }, 10000);
         view.removeTrackInstrument (trackId);
         // The menu: few scanned instruments flat with their format and maker in the name, many in
@@ -705,6 +827,7 @@ void runInstrumentTrackTests (AudioEngine& engine)
     testMidi();
     testEdits();
     testClipEdits();
+    testTrackKinds();
     testFile (engine.formatManager);
     testChain();
     testSynth (engine);

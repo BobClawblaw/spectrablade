@@ -366,8 +366,18 @@ struct SessionTrack
 
     bool isFrozen() const noexcept                { return frozenAudio != nullptr; }
 
-    /** False for a bus or a frozen track: clips meant for it go onto a new track instead. */
+    /** An instrument track holds note clips (with their controller lanes), played by the
+        instrument first in its chain; an audio track holds audio clips. Neither holds the
+        other's: an edit that would put a clip on the wrong kind of track puts it on a new track
+        of the right kind instead, or leaves it where it is. Never a bus or a folder. */
+    bool isInstrument = false;
+
+    /** False for a bus, a folder or a frozen track: clips meant for it go onto a new track instead. */
     bool takesClips() const noexcept              { return ! isBus && ! isFolder && ! isFrozen(); }
+
+    /** Which clips the track takes: audio clips on an audio track, note clips on an instrument track. */
+    bool takesAudioClips() const noexcept         { return takesClips() && ! isInstrument; }
+    bool takesNoteClips() const noexcept          { return takesClips() && isInstrument; }
 
     /** True when the track has anything to play: audio clips or note clips. */
     bool hasClips() const noexcept                { return ! clips.empty() || ! noteClips.empty(); }
@@ -465,6 +475,9 @@ struct SessionState
     /** Adds an empty track named "Track n" and returns it. */
     SessionTrack& addTrack();
 
+    /** Adds an empty instrument track named "Track n" and returns it. */
+    SessionTrack& addInstrumentTrack();
+
     /** Adds a bus named "Bus n" and returns it. */
     SessionTrack& addBus();
 
@@ -520,6 +533,16 @@ namespace SessionEdits
         last or a bus; in a 5.1 master, a new track for six-channel audio is a 5.1 track). Returns
         the clip's id. */
     juce::uint32 addClip (SessionState&, int track, const juce::File& source, AudioDocument::Snapshot audio, juce::int64 position);
+
+    /** Makes a track an instrument track or an audio track. Refused for a bus, a folder, a frozen
+        or a 5.1 or 7.1 track, one already of that kind, or one holding clips of the kind it would
+        no longer take. */
+    bool setTrackKind (SessionState&, juce::uint32 trackId, bool instrument);
+
+    /** Moves the clips on the wrong kind of track (audio clips on an instrument track, note clips
+        on an audio track) onto a new track of the right kind after it, named like it. Returns how
+        many tracks were added. For sessions saved before tracks had kinds. */
+    int separateClipKinds (SessionState&);
 
     /** Moves a clip to a track (a new one when past the last) and a position (not before 0).
         Onto a bus, it only moves in time. */
