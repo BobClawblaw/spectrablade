@@ -158,6 +158,7 @@ namespace
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
         cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi, cmdAddInstrumentTrack,
         cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue,   // one a MultitrackView::Tool, in its order
+        cmdTimeWithBars,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -2059,6 +2060,8 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                                 info.setTicked (engine.session.getState()->masterChannels() == 8); info.setActive (multitrackMode && ! isRecording()); break;
         case cmdBarsAndBeats: info.setInfo ("Bars and Beats", "Count the ruler in bars and beats of the tempo, and snap to its beats", "Multitrack", 0);
                             info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
+        case cmdTimeWithBars: info.setInfo ("Time with Bars", "With the ruler counting bars and beats, show the time as well, in a row under them", "Multitrack", 0);
+                            info.setTicked (multitrack.isShowingTimeWithBars()); info.setActive (multitrackMode && multitrack.isShowingBars()); break;
         case cmdTempoChange: info.setInfo ("Tempo Change at Cursor...", "Change the tempo or beats in a bar from the bar the cursor is in, or remove a change there", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
         case cmdTempo:      info.setInfo ("Tempo...", "The session's tempo and beats in a bar", "Multitrack", 0);
@@ -2705,6 +2708,10 @@ bool MainComponent::perform (const InvocationInfo& info)
             multitrack.setShowBars (! multitrack.isShowingBars());
             commands.commandStatusChanged();
             break;
+        case cmdTimeWithBars:
+            multitrack.setShowTimeWithBars (! multitrack.isShowingTimeWithBars());
+            commands.commandStatusChanged();
+            break;
         case cmdMixer:      dock->toggle (Panels::mixer); break;
         case cmdInputMonitoring:
             inputMonitoring = ! inputMonitoring;
@@ -2977,7 +2984,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
             group ("Time Range", { cmdClearRange, cmdDeleteTime, cmdInsertTime, 0, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime });
             group ("Editing and Recording", { cmdSnapping, cmdZeroCrossings, cmdCrossfade, 0, cmdWriteAutomation, cmdInputMonitoring, cmdLoopRecording, cmdRecordNotes });
-            group ("Tempo", { cmdMetronome, cmdCountIn, 0, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats });
+            group ("Tempo", { cmdMetronome, cmdCountIn, 0, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, cmdTimeWithBars });
             group ("Surround", { cmdSurroundMaster, cmdSevenOneMaster });
             group ("Render and Export", { cmdBounceTrack, cmdFreezeTrack, 0, cmdMixDown, cmdExportStems, cmdExportFolderStems, cmdExportRegions });
             break;

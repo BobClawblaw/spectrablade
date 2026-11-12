@@ -54,7 +54,7 @@ What they check:
 - The session overview: its span, clicking and dragging to scroll, and drawing.
 - Time edits: clearing, deleting and inserting time across every track, with envelopes, markers and locked clips.
 - Copying and pasting time: the mix, envelopes, markers, rates and tracks.
-- The tempo map: beats and bars across changes, the grid, snapping, nudging, the ruler, the click and the session file.
+- The tempo map: beats and bars across changes, the grid, snapping, nudging, the ruler (and the time under the bars with Time with Bars), the click and the session file.
 - The marker list and markers as CSV.
 - Export Regions: which regions, and their files.
 - Quantizing clips to seconds and to beats, and snapping dropped files.

@@ -3,6 +3,7 @@
 #include "../Source/AudioFileIO.h"
 #include "../Source/MultitrackView.h"
 #include "../Source/SessionOverview.h"
+#include "../Source/Theme.h"
 #include "../Source/TrackColours.h"
 #include "../Source/TrackEffects.h"
 #include "../Source/TrackTools.h"
@@ -2032,9 +2033,37 @@ void runMultitrackViewTests (AudioEngine& engine)
         for (auto px = changeX - 1; px <= changeX + 1; ++px)
             marked = marked || (ruler.getPixelAt (px, 2).getRed() > 200 && ruler.getPixelAt (px, 2).getBlue() < 140);
 
+        // Time with Bars: the time labels join the bar numbers in the ruler, so the ruler holds more
+        // ink (pixels nearer the text colour than the surface; antialiasing leaves few exact ones).
+        const auto textPixels = [] (const juce::Image& shot)
+        {
+            int count = 0;
+            const auto nearer = [] (juce::Colour c, juce::Colour a, juce::Colour b)
+            {
+                const auto d = [c] (juce::Colour o) { return std::abs (c.getRed() - o.getRed()) + std::abs (c.getGreen() - o.getGreen()) + std::abs (c.getBlue() - o.getBlue()); };
+                return d (a) < d (b);
+            };
+
+            for (int y = 0; y < MultitrackView::timeRulerHeight; ++y)
+                for (int col = MultitrackView::headerWidth; col < shot.getWidth(); ++col)
+                    if (nearer (shot.getPixelAt (col, y), Theme::text, Theme::surface))
+                        ++count;
+
+            return count;
+        };
+        view.setShowTimeWithBars (true);
+        juce::Image both (juce::Image::ARGB, view.getWidth(), view.getHeight(), true);
+        {
+            juce::Graphics g (both);
+            view.paintEntireComponent (g, false);
+        }
+        const auto timeToo = view.isShowingTimeWithBars() && textPixels (both) > textPixels (ruler);
+        view.setShowTimeWithBars (false);
+
         view.setShowBars (false);
-        check (steps == std::vector<juce::int64> { 320000, 288000, 256000, 168000 } && marked,
-               "tempo map: nudging steps by the beats either side of a tempo change, and the ruler marks the change");
+        check (steps == std::vector<juce::int64> { 320000, 288000, 256000, 168000 } && marked && timeToo,
+               "tempo map: nudging steps by the beats either side of a tempo change, the ruler marks the change, and Time with Bars adds the time labels under the bars ("
+                   + juce::String (textPixels (ruler)) + " to " + juce::String (textPixels (both)) + " text pixels)");
 
         // Quantizing: to the ruler's marks (two seconds apart here), or in bars and beats to the beats.
         SessionState loose;

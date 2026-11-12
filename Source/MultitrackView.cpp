@@ -2296,7 +2296,8 @@ void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area
     {
         return std::find_if (s.tempoChanges.begin(), s.tempoChanges.end(), [bar] (auto& c) { return c.bar == bar; });
     };
-    g.setFont (11.0f);
+    const auto full = area.getHeight() >= 20;   // the ruler to itself, or the row above the time
+    g.setFont (full ? 11.0f : 9.5f);
 
     map.forEachLine (first, last, mark, [&] (juce::int64 frame, juce::int64 beat)
     {
@@ -2305,7 +2306,7 @@ void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area
         const auto labelled = label.bars == 0 || (inBar == 0 && bar % label.bars == 0);
         const auto change = inBar == 0 ? changeAt (bar) : s.tempoChanges.end();
         g.setColour (change != s.tempoChanges.end() ? juce::Colour (0xfff2cc60) : Theme::dimText);
-        g.drawVerticalLine ((int) x, change != s.tempoChanges.end() ? (float) area.getY() : (float) area.getBottom() - (labelled ? 8.0f : 4.0f),
+        g.drawVerticalLine ((int) x, change != s.tempoChanges.end() ? (float) area.getY() : (float) area.getBottom() - (labelled ? (full ? 8.0f : 5.0f) : (full ? 4.0f : 3.0f)),
                             (float) area.getBottom());
 
         if (! labelled && change == s.tempoChanges.end())
@@ -2314,7 +2315,7 @@ void MultitrackView::drawBarsRuler (juce::Graphics& g, juce::Rectangle<int> area
         // Bars count from 1, and a beat within a bar from 1: "5" is bar 5, "5.3" its third beat.
         // A bar where the tempo changes shows the new tempo and time signature after its number.
         const auto text = inBar == 0 ? juce::String (bar + 1) : juce::String (bar + 1) + "." + juce::String (inBar + 1);
-        const auto box = juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 120.0f, (float) area.getHeight() - 4.0f);
+        const auto box = juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 120.0f, (float) area.getHeight() - (full ? 4.0f : 1.0f));
         g.setColour (Theme::text);
         g.drawText (text, box, juce::Justification::centredLeft, false);
 
@@ -2341,17 +2342,31 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
     g.setColour (Theme::surface);
     g.fillRect (area);
 
+    // Bars and beats; with the time too, in a second, smaller row under them.
+    if (showBars && timeWithBars)
+    {
+        drawBarsRuler (g, area.removeFromTop (area.getHeight() * 7 / 12));
+        drawTimeRuler (g, area);
+        return;
+    }
+
     if (showBars)
     {
         drawBarsRuler (g, area);
         return;
     }
 
+    drawTimeRuler (g, area);
+}
+
+void MultitrackView::drawTimeRuler (juce::Graphics& g, juce::Rectangle<int> area) const
+{
     const auto rate = shown().sampleRate;
     const auto secondsPerPixel = framesPerPixel / rate;
     const auto tick = rulerTick();
+    const auto full = area.getHeight() >= 20;   // the ruler to itself, or a row under the bars
 
-    g.setFont (11.0f);
+    g.setFont (full ? 11.0f : 9.0f);
     const auto startSeconds = viewStart / rate;
     const auto endSeconds = startSeconds + area.getWidth() * secondsPerPixel;
 
@@ -2359,9 +2374,9 @@ void MultitrackView::drawRuler (juce::Graphics& g, juce::Rectangle<int> area) co
     {
         const auto x = xForFrame ((juce::int64) std::llround (t * rate));
         g.setColour (Theme::dimText);
-        g.drawVerticalLine ((int) x, (float) area.getBottom() - 6.0f, (float) area.getBottom());
+        g.drawVerticalLine ((int) x, (float) area.getBottom() - (full ? 6.0f : 3.0f), (float) area.getBottom());
         g.setColour (Theme::text);
-        g.drawText (TimeFormat::rulerLabel (t, tick, rate), juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 96.0f, (float) area.getHeight() - 4.0f),
+        g.drawText (TimeFormat::rulerLabel (t, tick, rate), juce::Rectangle<float> (x + 3.0f, (float) area.getY(), 96.0f, (float) area.getHeight() - (full ? 4.0f : 1.0f)),
                     juce::Justification::centredLeft, false);
     }
 }

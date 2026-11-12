@@ -434,6 +434,10 @@ public:
     void setShowBars (bool show)                  { showBars = show; repaint(); }
     bool isShowingBars() const noexcept           { return showBars; }
 
+    /** With bars shown, the time as well, in a second row under the bar numbers. */
+    void setShowTimeWithBars (bool show)          { timeWithBars = show; repaint(); }
+    bool isShowingTimeWithBars() const noexcept   { return timeWithBars; }
+
     /** Shows each clip's gain line across its body, 0 dB half way up, for editing: a click on
         a line adds a point, dragging moves one, Alt-click removes it. Hidden, a clip with points
         still shows its line, fainter. */
@@ -600,6 +604,7 @@ private:
     juce::int64 snapTolerance() const;
 
     void drawRuler (juce::Graphics&, juce::Rectangle<int>) const;
+    void drawTimeRuler (juce::Graphics&, juce::Rectangle<int> area) const;
 
     /** The marker (or region) under p in the marker lane, or -1. Point markers win, then the
         shortest region, so nested regions stay reachable. */
@@ -637,7 +642,7 @@ private:
     double copiedRate = 0.0;               // the session rate the copied clips were at
     SessionTime copiedTime;
     std::set<juce::uint32> armed;
-    bool showBars = false;
+    bool showBars = false, timeWithBars = false;
     bool showClipGain = false;
     juce::Range<juce::int64> timeSelection, recording;
 
