@@ -497,6 +497,8 @@ private:
     /** Adds the files as clips at the frame, the first on the track (or a new one) and the rest on
         new tracks, as one undo step; returns where the first one ends, or -1 when none could be read. */
     juce::int64 addFilesToSession (const juce::StringArray& files, int track, juce::int64 frame);
+    /** Adds an open file (a row of the Files panel) as a clip at the frame, on the track or a new one. */
+    void addOpenFileToSession (int index, int track, juce::int64 frame);
     void chooseMixDownFile();
     void askForMixDownFormat (const juce::File&);
     void mixDown (const juce::File&, int bitDepth, juce::Range<juce::int64>, std::optional<Delivery::Spec> spec = std::nullopt);

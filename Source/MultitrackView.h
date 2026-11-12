@@ -26,6 +26,7 @@
     moved or trimmed so that it partly overlaps another on its track crossfades with it. */
 class MultitrackView final : public juce::Component,
                              public juce::FileDragAndDropTarget,
+                             public juce::DragAndDropTarget,
                              private juce::ChangeListener,
                              private juce::ScrollBar::Listener,
                              private juce::Timer
@@ -36,6 +37,8 @@ public:
 
     std::function<void (const juce::File&)> onOpenInEditor;
     std::function<void (const juce::StringArray& files, int track, juce::int64 frame)> onFilesDropped;
+    /** A row of the Files panel dropped: that open file to add as a clip, on the track (or past the last) at the frame. */
+    std::function<void (int openFile, int track, juce::int64 frame)> onOpenFileDropped;
     std::function<void()> onSelectionChanged;
 
     /** Option-dragging a clip's end (or start) and letting go: stretch the clip to this length, by
@@ -479,6 +482,8 @@ public:
 
     bool isInterestedInFileDrag (const juce::StringArray&) override;
     void filesDropped (const juce::StringArray&, int x, int y) override;
+    bool isInterestedInDragSource (const SourceDetails&) override;
+    void itemDropped (const SourceDetails&) override;
 
     /** How much a clip's gain changes for each pixel it is Command-dragged. */
     static constexpr float clipGainPerPixel = 0.25f;

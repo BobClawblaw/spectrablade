@@ -1,4 +1,5 @@
 #include "OpenFiles.h"
+#include "SampleRateConverter.h"
 #include "Theme.h"
 
 OpenFiles::OpenFiles (AudioEngine& e) : engine (e)
@@ -36,6 +37,28 @@ juce::String OpenFiles::nameAt (int index) const
 {
     const auto file = documentAt (index).getFile();
     return file == juce::File() ? juce::String ("Untitled") : file.getFileName();
+}
+
+juce::uint32 OpenFiles::addToSession (SessionState& s, int index, int track, juce::int64 position) const
+{
+    if (! juce::isPositiveAndBelow (index, size()) || ! documentAt (index).hasAudio())
+        return 0;
+
+    const auto& doc = documentAt (index);
+    auto audio = doc.getSnapshot();
+
+    if (s.getLength() == 0)
+        s.sampleRate = doc.getSampleRate();
+    else if (! juce::exactlyEqual (doc.getSampleRate(), s.sampleRate))
+        audio = SampleRateConverter::convert (*audio, doc.getSampleRate(), s.sampleRate);
+
+    const auto id = SessionEdits::addClip (s, track, doc.getFile(), std::move (audio), position);
+
+    if (const auto where = s.findClip (id))
+        s.tracks[(size_t) where->first].clips[(size_t) where->second].name = doc.getFile() != juce::File() ? doc.getFile().getFileNameWithoutExtension()
+                                                                                                             : nameAt (index);
+
+    return id;
 }
 
 int OpenFiles::indexOf (const juce::File& file) const
@@ -151,6 +174,7 @@ FilesPanel::FilesPanel (OpenFiles& f) : files (f)
     openButton.setTooltip ("Open another file (it opens beside these)");
     openButton.onClick = [this] { if (onOpen != nullptr) onOpen(); };
     list.setRowHeight (rowHeight);
+    list.setRowSelectedOnMouseDown (false);   // a click switches on mouse up, so a drag does not switch
     list.setColour (juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
     list.setOutlineThickness (0);
     addAndMakeVisible (list);
@@ -193,6 +217,30 @@ void FilesPanel::clickRow (int row, bool close)
     {
         onChoose (row);
     }
+}
+
+juce::var FilesPanel::dragDescription (int row)
+{
+    return "openfile:" + juce::String (row);
+}
+
+int FilesPanel::rowOfDrag (const juce::var& description)
+{
+    const auto text = description.toString();
+
+    if (! description.isString() || ! text.startsWith ("openfile:"))
+        return -1;
+
+    const auto rest = text.fromFirstOccurrenceOf ("openfile:", false, false);
+    return rest.containsOnly ("0123456789") && rest.isNotEmpty() ? rest.getIntValue() : -1;
+}
+
+juce::var FilesPanel::getDragSourceDescription (const juce::SparseSet<int>& rows)
+{
+    if (rows.size() != 1 || ! juce::isPositiveAndBelow (rows[0], files.size()) || ! files.documentAt (rows[0]).hasAudio())
+        return {};
+
+    return dragDescription (rows[0]);
 }
 
 void FilesPanel::resized()

@@ -59,6 +59,14 @@ public:
     /** The open files with unsaved changes, by index. */
     juce::Array<int> unsaved() const;
 
+    /** Adds an open file's audio, as it is in the editor (unsaved changes and all), as a clip at
+        the position on a track of a session state (a new track when the track is past the last),
+        named after the file: an empty session takes the file's sample rate, otherwise the audio
+        is converted to the session's. The clip's file is the one on disk, so a saved session
+        reloads the file as saved there (none for a file never saved). Returns the clip's id, or
+        0 for an empty file or an index out of range. */
+    juce::uint32 addToSession (SessionState&, int index, int track, juce::int64 position) const;
+
 private:
     struct Entry
     {
@@ -77,7 +85,8 @@ private:
 };
 
 /** The Files panel: every open file with its length and format, the one in the editor marked and
-    unsaved ones dotted. Click one to switch to it; its × (or right-click) closes it. */
+    unsaved ones dotted. Click one to switch to it; its × (or right-click) closes it. Drag one
+    into the multitrack view to add it there as a clip, on the track it lands on or a new one. */
 class FilesPanel final : public juce::Component,
                          private juce::ListBoxModel,
                          private juce::ChangeListener
@@ -95,6 +104,11 @@ public:
     /** Clicks a row (on its × when close is true), as the mouse does. */
     void clickRow (int row, bool close);
 
+    /** What a drag of a row carries (the multitrack view takes it as the file to add), and the
+        row a drag's description names, or -1 when the drag is not a row's. */
+    static juce::var dragDescription (int row);
+    static int rowOfDrag (const juce::var& description);
+
     void resized() override;
     void paint (juce::Graphics&) override;
 
@@ -104,6 +118,7 @@ private:
     int getNumRows() override                       { return files.size(); }
     void paintListBoxItem (int row, juce::Graphics&, int width, int height, bool selected) override;
     void listBoxItemClicked (int row, const juce::MouseEvent&) override;
+    juce::var getDragSourceDescription (const juce::SparseSet<int>& rows) override;
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
     juce::Rectangle<int> closeBounds (int width) const   { return { width - 26, (rowHeight - 18) / 2, 18, 18 }; }
 

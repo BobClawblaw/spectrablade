@@ -970,6 +970,7 @@ MainComponent::MainComponent()
     rolls.postroll = juce::jlimit (0.0, SessionRecording::Rolls::longest, settings->getDoubleValue (postrollKey, rolls.postroll));
     multitrack.onOpenInEditor = [this] (const juce::File& f) { openFile (f); };
     multitrack.onFilesDropped = [this] (const juce::StringArray& files, int track, juce::int64 frame) { addFilesToSession (files, track, frame); };
+    multitrack.onOpenFileDropped = [this] (int index, int track, juce::int64 frame) { addOpenFileToSession (index, track, frame); };
     multitrack.onSelectionChanged = [this] { commands.commandStatusChanged(); timerCallback(); };
 
     // Option-dragging a clip's edge: the clip (selected by the drag) stretched to where it was let go.
@@ -4706,6 +4707,27 @@ juce::int64 MainComponent::addFilesToSession (const juce::StringArray& files, in
     }
 
     return firstEnd;
+}
+
+void MainComponent::addOpenFileToSession (int index, int track, juce::int64 frame)
+{
+    if (! juce::isPositiveAndBelow (index, openFiles.size()))
+        return;
+
+    if (! openFiles.documentAt (index).hasAudio())
+    {
+        showError ("Add to Session", openFiles.nameAt (index) + " is empty: there is nothing to add.");
+        return;
+    }
+
+    auto next = *engine.session.getState();
+
+    if (openFiles.addToSession (next, index, track, frame) == 0)
+        return;
+
+    engine.getPlayer().pause();
+    engine.session.apply (std::move (next), "Add " + openFiles.nameAt (index));
+    setMultitrack (true);
 }
 
 void MainComponent::openDocument (const juce::File& file)

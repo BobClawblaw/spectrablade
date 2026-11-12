@@ -1,5 +1,6 @@
 #include "MultitrackView.h"
 #include "Instrument.h"
+#include "OpenFiles.h"
 #include "Theme.h"
 #include "TimeFormat.h"
 #include "Surround.h"
@@ -4881,4 +4882,18 @@ void MultitrackView::filesDropped (const juce::StringArray& files, int x, int y)
 {
     if (onFilesDropped != nullptr)
         onFilesDropped (files, trackAt (y), x < headerWidth ? 0 : snapped (frameForX ((float) x)));
+}
+
+bool MultitrackView::isInterestedInDragSource (const SourceDetails& details)
+{
+    return FilesPanel::rowOfDrag (details.description) >= 0;
+}
+
+void MultitrackView::itemDropped (const SourceDetails& details)
+{
+    const auto row = FilesPanel::rowOfDrag (details.description);
+    const auto x = details.localPosition.x;
+
+    if (row >= 0 && onOpenFileDropped != nullptr)
+        onOpenFileDropped (row, trackAt (details.localPosition.y), x < headerWidth ? 0 : snapped (frameForX ((float) x)));
 }

@@ -1,6 +1,7 @@
 #include <JuceHeader.h>
 #include "../Source/AudioEdits.h"
 #include "../Source/AudioEngine.h"
+#include "../Source/MultitrackView.h"
 #include "../Source/OpenFiles.h"
 #include "../Source/WaveformView.h"
 #include "TestUtils.h"
@@ -153,6 +154,47 @@ namespace
         panel.clickRow (1, true);
         panel.clickRow (7, false);
         check (chosen == 0 && closed == 1, "Files panel: clicking a row asks to show it, its x to close it; a row that isn't there does nothing");
+
+        // A row dragged into the multitrack view: the view takes a row's description, nothing else,
+        // and names the row, the track and the frame it was dropped at.
+        MultitrackView view (engine);
+        view.setSize (1000, 400);
+        view.setSnapping (false);
+        int droppedRow = -1, droppedTrack = -2;
+        juce::int64 droppedFrame = -1;
+        view.onOpenFileDropped = [&] (int row, int track, juce::int64 frame) { droppedRow = row; droppedTrack = track; droppedFrame = frame; };
+        const juce::DragAndDropTarget::SourceDetails rowDrag (FilesPanel::dragDescription (1), &panel, { MultitrackView::headerWidth + 300, 100 });
+        const juce::DragAndDropTarget::SourceDetails otherDrag ("something else", &panel, { 10, 10 });
+        const auto interested = view.isInterestedInDragSource (rowDrag) && ! view.isInterestedInDragSource (otherDrag)
+                                && FilesPanel::rowOfDrag ("openfile:x") == -1 && FilesPanel::rowOfDrag (juce::var (3)) == -1;
+        view.itemDropped (otherDrag);
+        const auto ignored = droppedRow == -1;
+        view.itemDropped (rowDrag);
+        check (interested && ignored && droppedRow == 1 && droppedTrack == 0 && droppedFrame > 0,
+               "Files panel: a row dragged into the multitrack view names the file, the track and the frame it lands on; other drags are not taken");
+
+        // The file goes in as it is in the editor: an empty session takes its rate; one at another
+        // rate converts it; the clip is named after the file, or Untitled for one never saved.
+        SessionState s;
+        const auto first = files.addToSession (s, 1, 0, 1000);
+        const auto& voice = s.tracks[0].clips[0];
+        const auto asEdited = first != 0 && juce::exactlyEqual (s.sampleRate, 48000.0) && voice.name == "voice" && voice.position == 1000
+                              && voice.length == 24000 && voice.audio == engine.document.getSnapshot() && voice.source == fileNamed ("voice.wav");
+
+        SessionState other;
+        other.sampleRate = 96000.0;
+        SessionEdits::addClip (other, -1, {}, AudioEdits::fromBuffer (juce::AudioBuffer<float> (1, 10)), 0);   // not empty, so the file is converted
+        files.addToSession (other, 1, -1, 0);
+        files.addToSession (other, 0, -1, 0);
+        const auto converted = other.tracks.size() == 3 && juce::exactlyEqual (other.sampleRate, 96000.0) && other.tracks[1].clips[0].length == 48000
+                               && other.tracks[2].clips[0].length == 48000 * 75 * 2 && other.tracks[2].clips[0].name == "song";
+
+        files.prepareForAnother ({});
+        const auto nothing = files.addToSession (s, 2, 0, 0) == 0 && files.addToSession (s, 9, 0, 0) == 0 && s.tracks[0].clips.size() == 1;
+        engine.document.reset (AudioEdits::fromBuffer (juce::AudioBuffer<float> (1, 500)), 48000.0, {}, 24);   // never saved
+        files.addToSession (s, 2, 0, 0);
+        check (asEdited && converted && nothing && s.tracks[0].clips.size() == 2 && s.tracks[0].clips[1].name == "Untitled" && s.tracks[0].clips[1].source == juce::File(),
+               "Files panel: a file added to a session goes in as it is in the editor, named after its file (Untitled for one never saved), converted to the session's rate; an empty file adds nothing");
     }
 }
 

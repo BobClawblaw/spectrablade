@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 372: Open files dragged into the multitrack view**
+- From use of 0.15.2: a file in the Files panel could not be dragged into the multitrack view. Now a row of the panel dragged into the view adds that file as a clip where it lands, on the track there or a new one past the last, at the frame it is dropped at (on the grid when snapping is on): the audio as it is in the editor, unsaved changes and all, named after the file (Untitled for one never saved); an empty session takes the file's sample rate, otherwise the audio is converted to the session's; one undo step, "Add <file>". The clip's file is the one on disk, so a session saved to disk reloads the file as saved there: save the file first for a session to find it again as heard. A click in the panel now switches files on mouse up, so a drag does not switch.
+- Measured by the tests (2 new checks): the view takes a row's drag, nothing else, and names the row, the track and the frame; a file added to a session carries the editor's audio, its name, the rate conversion, and Untitled for a file never saved; an empty file adds nothing. The whole suite passed (1,582 checks; 318 commands, 97 default keys); the app launched and quit cleanly.
+- In the [dogfooding log](docs/DOGFOODING.md) as row 13. Not tried by hand: the drag on screen.
 
 ## Released
 
