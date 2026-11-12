@@ -158,7 +158,7 @@ namespace
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
         cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi, cmdAddInstrumentTrack,
         cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue, cmdTrackToolRange, cmdTrackToolMute,   // one a MultitrackView::Tool, in its order
-        cmdTimeWithBars, cmdMusicalTimebase,
+        cmdTimeWithBars, cmdMusicalTimebase, cmdTransposeNotes, cmdNoteVelocity, cmdQuantizeNotes,
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -2065,6 +2065,12 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('b', 0); info.setTicked (multitrack.isShowingBars()); info.setActive (multitrackMode); break;
         case cmdTimeWithBars: info.setInfo ("Time with Bars", "With the ruler counting bars and beats, show the time as well, in a row under them", "Multitrack", 0);
                             info.setTicked (multitrack.isShowingTimeWithBars()); info.setActive (multitrackMode && multitrack.isShowingBars()); break;
+        case cmdTransposeNotes: info.setInfo ("Transpose Notes...", "Move the notes of the selected note clips up or down by semitones", "Multitrack", 0);
+                            info.setActive (multitrackMode && ! multitrack.getSelectedNoteClips().empty() && ! isRecording()); break;
+        case cmdNoteVelocity: info.setInfo ("Note Velocity...", "Set the velocity of the selected note clips' notes, or scale it", "Multitrack", 0);
+                            info.setActive (multitrackMode && ! multitrack.getSelectedNoteClips().empty() && ! isRecording()); break;
+        case cmdQuantizeNotes: info.setInfo ("Quantize Notes...", "Move the selected note clips' notes to the nearest line of a grid of the beat", "Multitrack", 0);
+                            info.setActive (multitrackMode && ! multitrack.getSelectedNoteClips().empty() && ! isRecording()); break;
         case cmdMusicalTimebase:
         {
             info.setInfo ("Musical Timebase", "Keep the selected track's clips on their bars and beats when the tempo changes, a note clip's notes scaled with them, or (off) at their times", "Multitrack", 0);
@@ -2725,6 +2731,9 @@ bool MainComponent::perform (const InvocationInfo& info)
             multitrack.setShowTimeWithBars (! multitrack.isShowingTimeWithBars());
             commands.commandStatusChanged();
             break;
+        case cmdTransposeNotes: showTransposeNotesDialog(); break;
+        case cmdNoteVelocity: showNoteVelocityDialog(); break;
+        case cmdQuantizeNotes: showQuantizeNotesDialog(); break;
         case cmdMusicalTimebase:
         {
             const auto state = engine.session.getState();
@@ -3005,6 +3014,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             group ("Tools", { cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue, cmdTrackToolRange, cmdTrackToolMute });
             group ("Clips", { cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, 0, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines });
             group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
+            group ("Notes", { cmdTransposeNotes, cmdNoteVelocity, cmdQuantizeNotes });
             group ("Time Range", { cmdClearRange, cmdDeleteTime, cmdInsertTime, 0, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime });
             group ("Editing and Recording", { cmdSnapping, cmdZeroCrossings, cmdCrossfade, 0, cmdWriteAutomation, cmdInputMonitoring, cmdLoopRecording, cmdRecordNotes });
             group ("Tempo", { cmdMetronome, cmdCountIn, 0, cmdTempo, cmdTapTempo, cmdTempoChange, cmdBarsAndBeats, cmdTimeWithBars, 0, cmdMusicalTimebase });
@@ -3728,6 +3738,93 @@ void MainComponent::chooseClipsCsv()
                               if (file != juce::File() && ! file.replaceWithText (csv))
                                   showError ("Export Clip List", "Couldn't write " + file.getFullPathName() + ".");
                           });
+}
+
+void MainComponent::showTransposeNotesDialog()
+{
+    auto* box = new juce::AlertWindow ("Transpose Notes", "Move the notes of the selected note clips up or down, in semitones (12 an octave).",
+                                       juce::MessageBoxIconType::NoIcon);
+    box->addTextEditor ("semitones", "0", "Semitones (-48 to 48)");
+    box->getTextEditor ("semitones")->setInputRestrictions (3, "-0123456789");
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto semitones = box->getTextEditorContents ("semitones").trim().getIntValue();
+
+        if (semitones < -48 || semitones > 48)
+        {
+            showError ("Transpose Notes", "The transpose must be from -48 to 48 semitones.");
+            return;
+        }
+
+        multitrack.transposeSelectedNotes (semitones);
+    }), true);
+}
+
+void MainComponent::showNoteVelocityDialog()
+{
+    auto* box = new juce::AlertWindow ("Note Velocity", "Give every note of the selected note clips a velocity, or leave that blank and scale the velocities they have.",
+                                       juce::MessageBoxIconType::NoIcon);
+    box->addTextEditor ("velocity", "", "Set to (1 to 127)");
+    box->addTextEditor ("scale", "100", "Or scale by (%)");
+    box->getTextEditor ("velocity")->setInputRestrictions (3, "0123456789");
+    box->getTextEditor ("scale")->setInputRestrictions (6, ".0123456789");
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        const auto velocity = box->getTextEditorContents ("velocity").trim();
+        const auto scale = box->getTextEditorContents ("scale").trim().getDoubleValue();
+
+        if (velocity.isNotEmpty())
+        {
+            if (velocity.getIntValue() < 1 || velocity.getIntValue() > 127)
+            {
+                showError ("Note Velocity", "The velocity must be from 1 to 127.");
+                return;
+            }
+
+            multitrack.setSelectedNotesVelocity (velocity.getIntValue(), 1.0);
+            return;
+        }
+
+        if (scale <= 0.0 || scale > 1000.0)
+        {
+            showError ("Note Velocity", "The scale must be above 0 and up to 1000 percent.");
+            return;
+        }
+
+        multitrack.setSelectedNotesVelocity (0, scale / 100.0);
+    }), true);
+}
+
+void MainComponent::showQuantizeNotesDialog()
+{
+    auto* box = new juce::AlertWindow ("Quantize Notes", "Move the selected note clips' notes to the nearest line of a grid of the beat.",
+                                       juce::MessageBoxIconType::NoIcon);
+    box->addComboBox ("grid", { "1 beat", "1/2 beat", "1/3 beat", "1/4 beat", "1/6 beat", "1/8 beat", "1/12 beat", "1/16 beat" }, "Grid");
+    box->getComboBoxComponent ("grid")->setSelectedItemIndex (3);
+    box->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    box->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    box->enterModalState (true, juce::ModalCallbackFunction::create ([this, box] (int result)
+    {
+        if (result != 1)
+            return;
+
+        static constexpr int divisions[] = { 1, 2, 3, 4, 6, 8, 12, 16 };
+        const auto chosen = juce::jlimit (0, 7, box->getComboBoxComponent ("grid")->getSelectedItemIndex());
+        multitrack.quantizeSelectedNotes (divisions[chosen]);
+    }), true);
 }
 
 void MainComponent::showRecordingOptions()

@@ -967,6 +967,46 @@ namespace
     }
 }
 
+namespace
+{
+    /** Notes across clips: transposed (kept to 0 to 127), given a velocity or scaled (kept to
+        1 to 127), and quantized to lines of the session (never before the clip's timeline start). */
+    void testNoteFunctions()
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        s.addInstrumentTrack();
+        NoteClip pattern;
+        pattern.length = 48000;
+        pattern.notes = { { 60, 0, 24000, 0.8f }, { 120, 6500, 12000, 0.5f }, { 64, 11000, 24000, 1.0f } };
+        const auto id = SessionEdits::placeNoteClip (s, 0, pattern, 96000);
+        const auto notes = [&] { return s.tracks[0].noteClips[0].notes; };
+        const auto pitches = [&] { juce::String t; for (auto& n : notes()) t << n.pitch << " "; return t.trim(); };
+
+        const auto up = SessionEdits::transposeNotes (s, { id }, 12) == 1 && pitches() == "72 127 76";
+        const auto still = SessionEdits::transposeNotes (s, { id }, 0) == 0 && SessionEdits::transposeNotes (s, { 999 }, 5) == 0;
+        const auto down = SessionEdits::transposeNotes (s, { id }, -80) == 1 && pitches() == "0 47 0";
+        check (up && still && down, "notes across clips: transposed by semitones, each pitch kept to 0 to 127 (" + pitches() + "); nothing by 0 or for no such clip");
+
+        const auto velocities = [&] { juce::String t; for (auto& n : notes()) t << juce::roundToInt (n.velocity * 127.0f) << " "; return t.trim(); };
+        const auto set = SessionEdits::setNotesVelocity (s, { id }, 100, 1.0) == 1 && velocities() == "100 100 100";
+        const auto scaled = SessionEdits::setNotesVelocity (s, { id }, 0, 0.5) == 1 && velocities() == "50 50 50";
+        const auto clamped = SessionEdits::setNotesVelocity (s, { id }, 0, 4.0) == 1 && velocities() == "127 127 127"
+                             && SessionEdits::setNotesVelocity (s, { id }, 0, 0.001) == 1 && velocities() == "1 1 1";
+        check (set && scaled && clamped, "notes across clips: velocity set to a value, or scaled, kept to 1 to 127 (" + velocities() + ")");
+
+        // Lines every 6000 session frames: a note at 6500 of a clip at 96000 goes to 6000, one at
+        // 11000 to 12000; a line before the timeline's start is not crossed.
+        const auto lines = [] (juce::int64 frame) { return (juce::int64) std::llround ((double) frame / 6000.0) * 6000; };
+        const auto quantized = SessionEdits::quantizeNotes (s, { id }, lines) == 1;
+        const auto starts = [&] { juce::String t; for (auto& n : notes()) t << n.start << " "; return t.trim(); };
+        const auto onLines = starts() == "0 6000 12000" && SessionEdits::quantizeNotes (s, { id }, lines) == 0;
+        SessionEdits::moveNoteClip (s, id, 0, 2000);   // the clip's origin at 2000: a note at 0 (frame 2000) rounds to 0, kept at the start
+        const auto kept = SessionEdits::quantizeNotes (s, { id }, lines) == 1 && starts() == "0 4000 10000";
+        check (quantized && onLines && kept, "notes across clips: quantized to the nearest session line (" + starts() + "), a note never before the clip's timeline start");
+    }
+}
+
 void runInstrumentTrackTests (AudioEngine& engine)
 {
     testMidi();
@@ -979,4 +1019,5 @@ void runInstrumentTrackTests (AudioEngine& engine)
     testSynth (engine);
     testAddInstrumentTrack (engine);
     testMusicalTimebase();
+    testNoteFunctions();
 }

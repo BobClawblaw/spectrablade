@@ -327,6 +327,14 @@ public:
         "Quantize 3 Clips"). Locked clips stay. Returns how many moved. */
     int quantizeSelectedClips();
 
+    /** On the selected note clips' notes, each as one undo step: moved up or down by semitones
+        ("Transpose Notes"); given a velocity (1 to 127) or, with `to` 0, scaled ("Note
+        Velocity"); their starts moved to the nearest line of the beat divided by `division`
+        ("Quantize Notes"), the beats the tempo map's. Each returns how many clips changed. */
+    int transposeSelectedNotes (int semitones);
+    int setSelectedNotesVelocity (int to, double scale);
+    int quantizeSelectedNotes (int division);
+
     /** Clears the time range on every track (SessionEdits::clearTime) as one undo step ("Clear
         Range"). False with no range or nothing there. */
     bool clearTimeSelection();

@@ -2646,6 +2646,91 @@ bool stretchNoteClip (SessionState& s, juce::uint32 clipId, double ratio, bool k
     return true;
 }
 
+int transposeNotes (SessionState& s, const std::vector<juce::uint32>& clipIds, int semitones)
+{
+    auto changed = 0;
+
+    for (auto id : clipIds)
+    {
+        const auto where = s.findNoteClip (id);
+
+        if (! where.has_value() || semitones == 0)
+            continue;
+
+        auto moved = false;
+
+        for (auto& n : s.tracks[(size_t) where->first].noteClips[(size_t) where->second].notes)
+        {
+            const auto pitch = juce::jlimit (0, 127, n.pitch + semitones);
+            moved = moved || pitch != n.pitch;
+            n.pitch = pitch;
+        }
+
+        changed += moved ? 1 : 0;
+    }
+
+    return changed;
+}
+
+int setNotesVelocity (SessionState& s, const std::vector<juce::uint32>& clipIds, int to, double scale)
+{
+    auto changed = 0;
+    const auto velocityOf = [to, scale] (float v)
+    {
+        const auto steps = to > 0 ? (double) to : std::round ((double) v * 127.0 * scale);
+        return (float) (juce::jlimit (1.0, 127.0, steps) / 127.0);
+    };
+
+    for (auto id : clipIds)
+    {
+        const auto where = s.findNoteClip (id);
+
+        if (! where.has_value())
+            continue;
+
+        auto moved = false;
+
+        for (auto& n : s.tracks[(size_t) where->first].noteClips[(size_t) where->second].notes)
+        {
+            const auto velocity = velocityOf (n.velocity);
+            moved = moved || ! juce::exactlyEqual (velocity, n.velocity);
+            n.velocity = velocity;
+        }
+
+        changed += moved ? 1 : 0;
+    }
+
+    return changed;
+}
+
+int quantizeNotes (SessionState& s, const std::vector<juce::uint32>& clipIds, const std::function<juce::int64 (juce::int64)>& nearestLine)
+{
+    auto changed = 0;
+
+    for (auto id : clipIds)
+    {
+        const auto where = s.findNoteClip (id);
+
+        if (! where.has_value())
+            continue;
+
+        auto& c = s.tracks[(size_t) where->first].noteClips[(size_t) where->second];
+        const auto origin = c.getOrigin();
+        auto moved = false;
+
+        for (auto& n : c.notes)
+        {
+            const auto start = juce::jmax ((juce::int64) 0, nearestLine (origin + n.start) - origin);
+            moved = moved || start != n.start;
+            n.start = start;
+        }
+
+        changed += moved ? 1 : 0;
+    }
+
+    return changed;
+}
+
 NoteClip flattenedNoteClip (const NoteClip& c)
 {
     auto flat = c;

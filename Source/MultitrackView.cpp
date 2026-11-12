@@ -4173,6 +4173,44 @@ int MultitrackView::quantizeSelectedClips()
     return moved;
 }
 
+int MultitrackView::transposeSelectedNotes (int semitones)
+{
+    auto next = *engine.session.getState();
+    const auto changed = SessionEdits::transposeNotes (next, getSelectedNoteClips(), semitones);
+
+    if (changed > 0)
+        engine.session.apply (std::move (next), "Transpose Notes");
+
+    return changed;
+}
+
+int MultitrackView::setSelectedNotesVelocity (int to, double scale)
+{
+    auto next = *engine.session.getState();
+    const auto changed = SessionEdits::setNotesVelocity (next, getSelectedNoteClips(), to, scale);
+
+    if (changed > 0)
+        engine.session.apply (std::move (next), "Note Velocity");
+
+    return changed;
+}
+
+int MultitrackView::quantizeSelectedNotes (int division)
+{
+    auto next = *engine.session.getState();
+    const auto map = next.tempoMap();
+    const auto steps = (double) juce::jmax (1, division);
+    const auto changed = SessionEdits::quantizeNotes (next, getSelectedNoteClips(), [&map, steps] (juce::int64 frame)
+    {
+        return map.frameAtBeatPosition (std::round (map.beatPosition (frame) * steps) / steps);
+    });
+
+    if (changed > 0)
+        engine.session.apply (std::move (next), "Quantize Notes");
+
+    return changed;
+}
+
 bool MultitrackView::clearTimeSelection()
 {
     auto next = *engine.session.getState();

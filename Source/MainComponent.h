@@ -550,6 +550,12 @@ private:
     /** Asks for the session's tempo and beats in a bar from the start, or with atCursor, for a
         tempo change at the bar the cursor is in (offering to remove one there). */
     void showTempoDialog (bool atCursor);
+
+    /** The Notes dialogs, each on the selected note clips' notes: Transpose Notes (semitones),
+        Note Velocity (set to a value, or scale by a percentage) and Quantize Notes (a grid of the beat). */
+    void showTransposeNotesDialog();
+    void showNoteVelocityDialog();
+    void showQuantizeNotesDialog();
     void showRecordingOptions();
     void showKeyShortcuts();
 

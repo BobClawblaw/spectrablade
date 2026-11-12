@@ -213,6 +213,27 @@ namespace
                    && engine.session.getUndoDescription() == "Quantize 3 Clips",
                "note clips: Quantize moves every selected clip, notes and audio, onto the grid");
         view.setShowBars (false);
+
+        // The Notes commands on the selected note clips: transposed, given a velocity, their
+        // notes quantized to a quarter of the beat (6000 frames at 120 a minute).
+        SessionState tune;
+        tune.sampleRate = rate;
+        tune.addInstrumentTrack();
+        NoteClip riff;
+        riff.length = 48000;
+        riff.notes = { { 60, 0, 6000, 0.8f }, { 62, 7000, 6000, 0.4f } };
+        const auto riffA = SessionEdits::placeNoteClip (tune, 0, riff, 0);
+        const auto riffB = SessionEdits::placeNoteClip (tune, 0, riff, 96000);
+        engine.session.reset (tune, {});
+        Mouse::settle();
+        view.selectAllClips();
+        const auto transposed = view.transposeSelectedNotes (2) == 2 && engine.session.getUndoDescription() == "Transpose Notes";
+        const auto velocity = view.setSelectedNotesVelocity (100, 1.0) == 2 && engine.session.getUndoDescription() == "Note Velocity";
+        const auto quantizedNotes = view.quantizeSelectedNotes (4) == 2 && engine.session.getUndoDescription() == "Quantize Notes";
+        const auto after = [&] (juce::uint32 id) { const auto st = state(); const auto w = st->findNoteClip (id); return st->tracks[(size_t) w->first].noteClips[(size_t) w->second].notes; };
+        const auto expected = std::vector<ClipNote> { { 62, 0, 6000, (float) (100.0 / 127.0) }, { 64, 6000, 6000, (float) (100.0 / 127.0) } };
+        check (transposed && velocity && quantizedNotes && after (riffA) == expected && after (riffB) == expected,
+               "note clips: Transpose Notes, Note Velocity and Quantize Notes work on every selected note clip's notes, each as one undo step");
     }
 
     /** The Select tool's rubber band over empty lane space, and the Range tool. */

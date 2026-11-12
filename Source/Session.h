@@ -900,6 +900,19 @@ namespace SessionEdits
         or the ratio is not a number above 0. */
     bool stretchNoteClip (SessionState&, juce::uint32 clipId, double ratio, bool keepEnd);
 
+    /** Moves every note of the note clips up (or, negative, down) by semitones, each kept to
+        0 to 127. Returns how many clips changed. */
+    int transposeNotes (SessionState&, const std::vector<juce::uint32>& clipIds, int semitones);
+
+    /** Sets every note's velocity in the note clips to `to` (1 to 127, kept as a fraction of
+        127), or with `to` 0 scales each by `scale`, kept to 1 to 127. Returns how many clips changed. */
+    int setNotesVelocity (SessionState&, const std::vector<juce::uint32>& clipIds, int to, double scale);
+
+    /** Moves each note's start in the note clips to nearestLine (a session frame in, the line's
+        session frame out), its length kept, never before the clip's timeline start. Returns how
+        many clips changed. */
+    int quantizeNotes (SessionState&, const std::vector<juce::uint32>& clipIds, const std::function<juce::int64 (juce::int64)>& nearestLine);
+
     /** The notes and lane points a clip plays, laid out once from its start (every pass of a
         repeating clip written out, notes cut at its end, each lane starting with its value at the
         clip's start): the same clip with no offset and no loop. */
