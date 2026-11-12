@@ -147,6 +147,7 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Select a band of frequencies | Option-drag in the spectrogram |
 | Draw round frequencies (lasso tool) | Drag in the spectrogram; Shift-drag adds |
 | Paint over frequencies (brush tool) | Drag in the spectrogram; Shift-drag adds |
+| Select several clips, audio or notes, to move, nudge, quantize, mute, copy, duplicate or delete together | Shift-click each clip in the multitrack view (a drag on one of them moves them all) |
 | Draw a note clip (Draw tool) | Drag along an instrument track's lane in the multitrack view (below the tracks makes a track) |
 | Cut a clip where it is clicked (Split tool) | Click the clip in the multitrack view |
 | Stretch a clip, audio or notes (Stretch tool) | Drag the clip's edge in the multitrack view (Option-drag does it with the Select tool, for audio) |

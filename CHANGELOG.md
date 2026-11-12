@@ -4,6 +4,11 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+**Milestone 378: Several note clips selected at once**
+- Asked for during the round of use: only one note clip could be selected, so note clips could not be moved, copied or deleted together. Now Shift-click adds a note clip to the selection or takes it out, as it does an audio clip, and the two kinds share one selection: a drag on any selected clip moves them all in time, each keeping its track; Nudge, Quantize Clips to Grid, Move Clips to Cursor, Mute Clip, Cut, Copy, Paste, Duplicate and Delete work on the lot (pasted note clips go onto the selected track, or one new instrument track when it takes no notes, keeping their spacing); Select All and the other Select commands take note clips too. A plain click still selects one clip alone, and the piano roll follows the note clip clicked last.
+- Measured by the tests (5 new checks): Shift-click adds and removes a note clip and an audio clip joins the same selection; a drag moves every selected clip by the same time, stopping at the session's start, tracks kept; a nudge moves them by one step; Mute Clip mutes and unmutes them all; two copied note clips paste onto one new instrument track keeping their spacing, duplicate after themselves and delete together, and Select All takes both kinds; Quantize moves every selected clip of either kind onto the grid. The whole suite passed (1,603 checks; 324 commands, 102 default keys); the app launched and quit cleanly.
+- Not tried by hand: Shift-click and group drags on screen.
+
 **Milestone 377: The ruler in time, in bars, or both**
 - Asked for during the round of use: the ruler showed the time, or bars and beats, never both. Multitrack > Tempo > **Time with Bars** (with Bars and Beats on) adds a second, smaller row of time labels under the bar numbers, so a session is read in bars and in seconds at once; snapping and the grid stay on the beats.
 - Measured by the tests (1 check extended): with Time with Bars on, the ruler holds more ink in the text colour than with the bars alone (counted over the whole ruler band, antialiasing allowed for). The whole suite passed (1,597 checks; 324 commands, 102 default keys); the app launched and quit cleanly.

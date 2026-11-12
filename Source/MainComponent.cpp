@@ -2010,7 +2010,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.setTicked (dock->isShown (Panels::clipList)); break;
         case cmdMuteClip:   info.setInfo ("Mute Clip", "Keep the selected clips in place but silent, or let them be heard again", "Multitrack", 0);
                             info.setTicked (multitrack.areSelectedClipsMuted());
-                            info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
+                            info.setActive (multitrackMode && multitrack.hasSelectedClip()); break;
         case cmdClipProperties: info.setInfo ("Clip Properties", "A panel with the selected clip's name, start, length, gain and fades", "Multitrack", 0);
                             info.addDefaultKeypress ('i', cmd | shift); info.setTicked (dock->isShown (Panels::clipProperties)); break;
         case cmdExportFolderStems: info.setInfo ("Export Folder Stems...", "Write each folder's tracks and buses, mixed together through their effects, to a file of its own", "Multitrack", 0);
@@ -2098,7 +2098,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdSelectClipsInRange: info.setInfo ("Select Clips in Time Range", "Select every clip that plays part of the time range", "Edit", 0);
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
         case cmdMoveClipsToCursor: info.setInfo ("Move Clips to Cursor", "Move the selected clips together so the earliest starts at the cursor", "Multitrack", 0);
-                            info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
+                            info.setActive (multitrackMode && multitrack.hasSelectedClip()); break;
         case cmdTrimStartToCursor: info.setInfo ("Trim Start to Cursor", "Make the selected clips the cursor is in start at the cursor", "Multitrack", 0);
                             info.addDefaultKeypress ('[', alt); info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
         case cmdTrimEndToCursor: info.setInfo ("Trim End to Cursor", "Make the selected clips the cursor is in end at the cursor", "Multitrack", 0);
@@ -2135,7 +2135,7 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
         case cmdExportClips: info.setInfo ("Export Clip List as CSV...", "Write every clip in the session, with its track, times and file, to a CSV file", "File", 0);
                             info.setActive (multitrackMode && engine.session.getState()->getLength() > 0); break;
         case cmdQuantize:   info.setInfo ("Quantize Clips to Grid", "Move each selected clip so it starts on the nearest grid line", "Multitrack", 0);
-                            info.setActive (multitrackMode && ! multitrack.getSelectedClips().empty()); break;
+                            info.setActive (multitrackMode && multitrack.hasSelectedClip()); break;
         case cmdCutTime:    info.setInfo ("Cut Time", "Copy the time range from every track, then take it out of the session", "Multitrack", 0);
                             info.setActive (multitrackMode && ! multitrack.getTimeSelection().isEmpty()); break;
         case cmdCopyTime:   info.setInfo ("Copy Time", "Copy the time range from every track: clips, envelopes and markers", "Multitrack", 0);

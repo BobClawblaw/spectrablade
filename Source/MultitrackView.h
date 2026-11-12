@@ -58,10 +58,16 @@ public:
     /** A note clip double-clicked: asks for it in the piano roll. */
     std::function<void (juce::uint32 clipId)> onOpenNotes;
 
-    /** The selected note clip's id, or 0. Selecting a note clip clears the clip selection and the
-        other way round, so Delete removes what was clicked last. */
+    /** The note clip clicked last, or 0: what the piano roll and Clip Properties follow. A plain
+        click selects one clip, audio or notes, alone; Shift-click adds a clip of either kind to
+        the selection or takes it out, so a selection can hold both kinds, moved, nudged,
+        quantized, muted, copied, pasted, duplicated and deleted together. */
     juce::uint32 getSelectedNoteClip() const noexcept   { return selectedNoteClip; }
-    void selectNoteClip (juce::uint32 clipId);
+    void selectNoteClip (juce::uint32 clipId, bool adding = false);
+
+    /** Every selected note clip, in the session's order. */
+    std::vector<juce::uint32> getSelectedNoteClips() const;
+    bool isNoteClipSelected (juce::uint32 clipId) const  { return selectedNoteClips.count (clipId) > 0; }
     void showNoteClipMenu (juce::uint32 clipId);
 
     /** Puts a one-note clip (a hit: C4, a tenth of a second) at the cursor on the track, selected. */
@@ -87,7 +93,7 @@ public:
     juce::uint32 nextNoteClip (juce::uint32 clipId) const;
 
     /** True when a clip or a note clip is selected (what Cut, Copy, Delete, Split and Duplicate work on). */
-    bool hasSelectedClip() const noexcept           { return selectedClip != 0 || selectedNoteClip != 0; }
+    bool hasSelectedClip() const noexcept           { return ! selectedClips.empty() || ! selectedNoteClips.empty(); }
 
     /** Adds an effect at the end of a track's chain (as its FX menu does) and, once it is in, asks
         for its window through onEditPlugin, so a new effect is in front without a click on Edit.
@@ -188,7 +194,7 @@ public:
         which commands for a single clip (split, gain, takes) work on. */
     std::vector<juce::uint32> getSelectedClips() const;
     bool isClipSelected (juce::uint32 clipId) const  { return selectedClips.count (clipId) > 0; }
-    void selectAllClips();         // on the shown tracks
+    void selectAllClips();         // audio and note clips on the shown tracks
 
     /** Selects every clip on the selected track; false with none selected. */
     bool selectClipsOnTrack();
@@ -550,7 +556,12 @@ private:
 
     const SessionState& shown() const             { return preview.has_value() ? *preview : *state; }
     bool moveSelectedClips (juce::int64 delta, const juce::String& description, bool merge);
-    void selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted);
+    void selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted,
+                           const std::function<bool (const SessionTrack&, const NoteClip&)>& wantedNotes);
+
+    /** Fills dragGroup and dragNoteGroup with the other selected clips, which move with the one
+        dragged (exceptClip or exceptNoteClip, whichever was clicked). */
+    void gatherDragGroups (juce::uint32 exceptClip, juce::uint32 exceptNoteClip);
     void setSelectedClipsFlag (bool (*set) (SessionState&, juce::uint32, bool), bool on, const juce::String& verb);
     void rebuildHeaders();
     void layoutHeaders();
@@ -636,6 +647,7 @@ private:
     juce::uint32 selectedClip = 0, selectedTrackId = 0;
     std::set<juce::uint32> selectedClips;  // selectedClip among them
     juce::uint32 selectedNoteClip = 0;
+    std::set<juce::uint32> selectedNoteClips;  // selectedNoteClip among them
     NoteClip dragNoteClip;                 // the note clip being moved or trimmed, as it was
     std::vector<std::pair<int, NoteClip>> copiedNoteClips;   // copied in place of audio clips, with their tracks counted from the topmost
     std::vector<std::pair<int, SessionClip>> copiedClips;   // with their tracks counted from the topmost
@@ -650,6 +662,7 @@ private:
     juce::int64 dragFrame = 0;             // frame under the mouse when the drag began (or the range's anchor)
     SessionClip dragClip;                  // the clip as it was
     std::vector<SessionClip> dragGroup;    // the other selected clips being moved with it, as they were
+    std::vector<NoteClip> dragNoteGroup;   // the other selected note clips, moving with the dragged clip
     int trackDropIndex = -1;               // where a track whose header is being dragged would go
     int dragMarker = -1;                   // the marker being dragged, and the frames from its start to the mouse
     juce::int64 dragMarkerGrab = 0;

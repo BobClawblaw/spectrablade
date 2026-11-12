@@ -69,6 +69,152 @@ namespace
 
 namespace
 {
+    /** Several note clips selected at once: Shift-click adds and removes them, audio clips join
+        the same selection, and the lot is moved, nudged, quantized, muted, copied, pasted,
+        duplicated and deleted together. */
+    void testNoteClipSelection (AudioEngine& engine)
+    {
+        // An instrument track with note clips at 1-2 s and 3-4 s, and an audio track with a clip at 5-6 s.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addInstrumentTrack();
+        s.addTrack();
+        NoteClip a;
+        a.length = 48000;
+        a.notes = { { 60, 0, 24000, 0.8f } };
+        const auto aId = SessionEdits::placeNoteClip (s, 0, a, 48000);
+        const auto bId = SessionEdits::placeNoteClip (s, 0, a, 144000);
+        const auto cId = SessionEdits::addClip (s, 1, juce::File ("/tmp/c.wav"), silence (48000), 240000);
+        engine.session.reset (s, {});
+
+        MultitrackView view (engine);
+        view.setSize (MultitrackView::headerWidth + timelineWidth + 12, MultitrackView::rulerHeight + 3 * MultitrackView::trackHeight + 12);
+        view.zoomToRange ({ 0, 480000 });
+        view.setSnapping (false);
+        Mouse mouse { view };
+        Mouse::settle();
+        const auto x = [&] (juce::int64 frame)
+        {
+            const auto visible = view.getVisibleFrames();
+            const auto fraction = ((double) frame - visible.getStart()) / visible.getLength();
+            return (float) MultitrackView::headerWidth + (float) (fraction * timelineWidth);
+        };
+        const auto laneY = [] (int track) { return (float) MultitrackView::rulerHeight + (float) (track * MultitrackView::trackHeight) + 60.0f; };
+        const auto shift = juce::ModifierKeys::shiftModifier;
+        const auto state = [&] { return engine.session.getState(); };
+        const auto notePos = [&] (juce::uint32 id) { const auto st = state(); const auto w = st->findNoteClip (id); return w ? st->tracks[(size_t) w->first].noteClips[(size_t) w->second].position : (juce::int64) -1; };
+        const auto noteTrack = [&] (juce::uint32 id) { const auto w = state()->findNoteClip (id); return w ? w->first : -1; };
+        const auto noteMuted = [&] (juce::uint32 id) { const auto st = state(); const auto w = st->findNoteClip (id); return w && st->tracks[(size_t) w->first].noteClips[(size_t) w->second].muted; };
+        const auto clipPos = [&] (juce::uint32 id) { const auto st = state(); const auto w = st->findClip (id); return w ? st->tracks[(size_t) w->first].clips[(size_t) w->second].position : (juce::int64) -1; };
+        const auto clipTrack = [&] (juce::uint32 id) { const auto w = state()->findClip (id); return w ? w->first : -1; };
+        using Ids = std::vector<juce::uint32>;
+
+        // Shift-click adds and removes; an audio clip joins the same selection; a plain click selects one alone.
+        mouse.click ({ x (72000), laneY (0) });
+        mouse.click ({ x (168000), laneY (0) }, shift);
+        const auto both = view.getSelectedNoteClips();
+        const auto last = view.getSelectedNoteClip();
+        mouse.click ({ x (264000), laneY (1) }, shift);
+        const auto acrossKinds = view.getSelectedNoteClips() == Ids { aId, bId } && view.getSelectedClips() == Ids { cId } && view.hasSelectedClip();
+        mouse.click ({ x (72000), laneY (0) }, shift);
+        const auto justB = view.getSelectedNoteClips();
+        mouse.click ({ x (72000), laneY (0) });
+        check (both == Ids { aId, bId } && last == bId && acrossKinds && justB == Ids { bId }
+                   && view.getSelectedNoteClips() == Ids { aId } && view.getSelectedClips().empty() && view.getSelectedNoteClip() == aId,
+               "note clips: Shift-click adds a note clip to the selection and takes it out again, an audio clip joins the same selection, and a plain click selects one alone");
+
+        // Dragging one of them moves every selected clip, notes and audio, by the same time, each on its own track.
+        mouse.click ({ x (168000), laneY (0) }, shift);
+        mouse.click ({ x (264000), laneY (1) }, shift);
+        mouse.drag ({ x (72000), laneY (0) }, { x (72000) + 50.0f, laneY (0) });
+        const auto movedA = notePos (aId) - 48000, movedB = notePos (bId) - 144000, movedC = clipPos (cId) - 240000;
+        const auto moved = movedA > 0 && movedA == movedB && movedA == movedC && noteTrack (aId) == 0 && noteTrack (bId) == 0 && clipTrack (cId) == 1
+                           && engine.session.getUndoDescription() == "Move Notes";
+        engine.session.undo();
+        Mouse::settle();
+        mouse.drag ({ x (72000), laneY (0) }, { x (72000) - 400.0f, laneY (1) });
+        check (moved && notePos (aId) == 0 && notePos (bId) == 96000 && clipPos (cId) == 192000 && noteTrack (aId) == 0 && noteTrack (bId) == 0 && clipTrack (cId) == 1,
+               "note clips: dragging a selected note clip moves every selected clip, notes and audio, by the same time (" + juce::String (movedA)
+                   + "), stopping when the earliest reaches the start, each keeping its track");
+        engine.session.undo();
+        Mouse::settle();
+
+        // Nudged together, by the grid step from the clip clicked last.
+        view.nudge (true);
+        Mouse::settle();
+        const auto nudgedA = notePos (aId) - 48000;
+        check (nudgedA > 0 && notePos (bId) - 144000 == nudgedA && clipPos (cId) - 240000 == nudgedA && engine.session.getUndoDescription() == "Nudge Clips",
+               "note clips: nudged, every selected clip moves by the same step (" + juce::String (nudgedA) + ")");
+        engine.session.undo();
+        Mouse::settle();
+
+        // Muted and unmuted together.
+        view.setSelectedClipsMuted (true);
+        Mouse::settle();
+        const auto muted = noteMuted (aId) && noteMuted (bId) && view.areSelectedClipsMuted() && engine.session.getUndoDescription() == "Mute 3 Clips";
+        view.setSelectedClipsMuted (false);
+        Mouse::settle();
+        check (muted && ! noteMuted (aId) && ! noteMuted (bId) && ! view.areSelectedClipsMuted(),
+               "note clips: Mute Clip mutes every selected clip, notes and audio, and unmutes them again");
+
+        // The two note clips copied and pasted with the audio track selected: both onto one new
+        // instrument track, keeping their spacing from the cursor; duplicated after themselves;
+        // deleted together; Select All takes both kinds. (A click on a selected clip keeps the
+        // selection, so it is emptied first: a click on the lane drops the audio clips, and
+        // selecting no note clip the note clips.)
+        mouse.click ({ x (400000), laneY (1) });
+        view.selectNoteClip (0);
+        mouse.click ({ x (72000), laneY (0) });
+        mouse.click ({ x (168000), laneY (0) }, shift);
+        view.copySelectedClip();
+        mouse.click ({ x (400000), laneY (1) });
+        view.setCursor (300000);
+        view.pasteClip();
+        Mouse::settle();
+        const auto pasted = view.getSelectedNoteClips();
+        const auto pastedOk = pasted.size() == 2 && state()->tracks.size() == 3 && state()->tracks[2].isInstrument
+                              && noteTrack (pasted[0]) == 2 && noteTrack (pasted[1]) == 2 && notePos (pasted[0]) == 300000 && notePos (pasted[1]) == 396000
+                              && view.getCursor() == 444000 && engine.session.getUndoDescription() == "Paste 2 Clips";
+        view.duplicateSelectedClip();
+        Mouse::settle();
+        const auto duplicated = view.getSelectedNoteClips();
+        const auto duplicatedOk = duplicated.size() == 2 && noteTrack (duplicated[0]) == 2 && noteTrack (duplicated[1]) == 2
+                                  && notePos (duplicated[0]) == 444000 && notePos (duplicated[1]) == 540000
+                                  && engine.session.getUndoDescription() == "Duplicate 2 Clips";
+        view.deleteSelectedClip();
+        Mouse::settle();
+        const auto deletedOk = engine.session.getUndoDescription() == "Delete 2 Clips" && notePos (duplicated[0]) == -1 && notePos (duplicated[1]) == -1
+                               && view.getSelectedNoteClips().empty();
+        view.selectAllClips();
+        const auto all = view.getSelectedNoteClips().size() == 4 && view.getSelectedClips() == Ids { cId };
+        view.deleteSelectedClip();
+        Mouse::settle();
+        check (pastedOk && duplicatedOk && deletedOk && all && engine.session.getUndoDescription() == "Delete 5 Clips"
+                   && state()->tracks[0].noteClips.empty() && state()->tracks[2].noteClips.empty() && state()->tracks[1].clips.empty(),
+               "note clips: two copied note clips paste onto one new instrument track keeping their spacing, duplicate after themselves, and delete together; Select All takes both kinds");
+
+        // Quantized to the grid, every selected clip of either kind.
+        SessionState off;
+        off.sampleRate = rate;
+        off.addInstrumentTrack();
+        off.addTrack();
+        const auto offA = SessionEdits::placeNoteClip (off, 0, a, 50000);
+        const auto offB = SessionEdits::placeNoteClip (off, 0, a, 146000);
+        const auto offC = SessionEdits::addClip (off, 1, juce::File ("/tmp/c.wav"), silence (48000), 242000);
+        engine.session.reset (off, {});
+        view.setShowBars (true);
+        Mouse::settle();
+        view.selectAllClips();
+        const auto quantized = view.quantizeSelectedClips();
+        Mouse::settle();
+        const auto onGrid = [&] (juce::int64 p) { return p >= 0 && view.gridStepFrom (p - 1, true) == p; };
+        check (quantized == 3 && onGrid (notePos (offA)) && onGrid (notePos (offB)) && onGrid (clipPos (offC))
+                   && notePos (offA) != 50000 && notePos (offB) != 146000 && clipPos (offC) != 242000
+                   && engine.session.getUndoDescription() == "Quantize 3 Clips",
+               "note clips: Quantize moves every selected clip, notes and audio, onto the grid");
+        view.setShowBars (false);
+    }
+
     /** The tools and the toolbar: Draw, Split, Stretch and Glue on clips in the lanes, and the
         strip's buttons lit for the tool in hand, each running its command. */
     void testTrackTools (AudioEngine& engine)
@@ -200,6 +346,7 @@ namespace
 void runMultitrackViewTests (AudioEngine& engine)
 {
     testTrackTools (engine);
+    testNoteClipSelection (engine);
     // Two clips on one track: A from 1 s to 3 s, B from 5 s to 6 s, in a 10 s view.
     SessionState initial;
     initial.sampleRate = rate;

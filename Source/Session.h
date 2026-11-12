@@ -749,6 +749,9 @@ namespace SessionEdits
         its start (nearestLine gives it). Locked clips stay. Returns how many moved. */
     int quantizeClips (SessionState&, const std::vector<juce::uint32>& clipIds, const std::function<juce::int64 (juce::int64)>& nearestLine);
 
+    /** The same for note clips: each moved on its track to nearestLine (its start), never before 0. Returns how many moved. */
+    int quantizeNoteClips (SessionState&, const std::vector<juce::uint32>& clipIds, const std::function<juce::int64 (juce::int64)>& nearestLine);
+
     /** Clears [start, end) on every track, hidden ones too, as clearRange and clearNoteRange do.
         False when nothing was there. */
     bool clearTime (SessionState&, juce::int64 start, juce::int64 end);

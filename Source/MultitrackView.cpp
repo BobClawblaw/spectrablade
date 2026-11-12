@@ -6,6 +6,7 @@
 #include "Surround.h"
 #include "TimeStretch.h"
 #include "PluginMenu.h"
+#include <map>
 #include "Metronome.h"
 #include "TrackColours.h"
 
@@ -1408,8 +1409,14 @@ void MultitrackView::changeListenerCallback (juce::ChangeBroadcaster*)
     if (const auto where = state->findClip (selectedClip); ! where.has_value() || ! state->isShown (state->tracks[(size_t) where->first]))
         selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
 
-    if (selectedNoteClip != 0 && ! state->findNoteClip (selectedNoteClip).has_value())
-        selectedNoteClip = 0;
+    for (auto it = selectedNoteClips.begin(); it != selectedNoteClips.end();)
+    {
+        const auto where = state->findNoteClip (*it);
+        it = where.has_value() && state->isShown (state->tracks[(size_t) where->first]) ? std::next (it) : selectedNoteClips.erase (it);
+    }
+
+    if (! isNoteClipSelected (selectedNoteClip))
+        selectedNoteClip = selectedNoteClips.empty() ? 0 : *selectedNoteClips.begin();
 
     for (auto it = armed.begin(); it != armed.end();)
         it = state->findTrack (*it) == nullptr ? armed.erase (it) : std::next (it);
@@ -1740,7 +1747,7 @@ void MultitrackView::drawNoteClip (juce::Graphics& g, int track, const NoteClip&
     const auto own = juce::isPositiveAndBelow (c.colour, (int) TrackColours::palette.size()) ? juce::Colour (TrackColours::palette[(size_t) c.colour].argb)
                                                                                               : TrackColours::of (t, track);
     const auto colour = c.muted ? Theme::faintText : own;
-    const auto selected = c.id == selectedNoteClip;
+    const auto selected = isNoteClipSelected (c.id);
     const auto playable = engine.getTrackEffects().getInstrument (t.id) != nullptr;
 
     g.setColour (colour.withAlpha (0.14f));
@@ -3262,15 +3269,50 @@ std::vector<juce::uint32> MultitrackView::getSelectedClips() const
     return ids;
 }
 
-void MultitrackView::selectNoteClip (juce::uint32 clipId)
+std::vector<juce::uint32> MultitrackView::getSelectedNoteClips() const
 {
-    if (clipId != 0)
+    std::vector<juce::uint32> ids;
+
+    for (auto& t : shown().tracks)
+        for (auto& c : t.noteClips)
+            if (isNoteClipSelected (c.id))
+                ids.push_back (c.id);
+
+    return ids;
+}
+
+void MultitrackView::selectNoteClip (juce::uint32 clipId, bool adding)
+{
+    if (! adding)
     {
-        selectedClips.clear();
-        selectedClip = 0;
+        // One note clip alone (or none, leaving any audio clips selected).
+        if (clipId != 0)
+        {
+            selectedClips.clear();
+            selectedClip = 0;
+        }
+
+        selectedNoteClips.clear();
+        selectedNoteClip = clipId;
+    }
+    else if (selectedNoteClips.count (clipId) > 0)
+    {
+        selectedNoteClips.erase (clipId);
+
+        if (selectedNoteClip == clipId)
+            selectedNoteClip = selectedNoteClips.empty() ? 0 : *selectedNoteClips.begin();
+
+        repaint();
+        return;
+    }
+    else
+    {
+        selectedNoteClip = clipId;
     }
 
-    selectedNoteClip = clipId;
+    if (clipId != 0)
+        selectedNoteClips.insert (clipId);
+
     repaint();
 }
 
@@ -3331,18 +3373,36 @@ void MultitrackView::showNoteClipMenu (juce::uint32 clipId)
     menu.showMenuAsync (juce::PopupMenu::Options().withMousePosition());
 }
 
+void MultitrackView::gatherDragGroups (juce::uint32 exceptClip, juce::uint32 exceptNoteClip)
+{
+    dragGroup.clear();
+    dragNoteGroup.clear();
+
+    for (auto id : selectedClips)
+        if (const auto where = shown().findClip (id); id != exceptClip && where.has_value())
+            dragGroup.push_back (shown().tracks[(size_t) where->first].clips[(size_t) where->second]);
+
+    for (auto id : selectedNoteClips)
+        if (const auto where = shown().findNoteClip (id); id != exceptNoteClip && where.has_value())
+            dragNoteGroup.push_back (shown().tracks[(size_t) where->first].noteClips[(size_t) where->second]);
+}
+
 void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
 {
     // A clip in a group brings the rest of its group with it, into the selection or out of it.
     const auto group = SessionEdits::clipGroup (shown(), clipId);
 
-    if (clipId != 0)
-        selectedNoteClip = 0;
-
     if (! adding)
     {
+        // One clip alone (or none, leaving any note clips selected).
         selectedClips.clear();
         selectedClip = clipId;
+
+        if (clipId != 0)
+        {
+            selectedNoteClips.clear();
+            selectedNoteClip = 0;
+        }
     }
     else if (selectedClips.count (clipId) > 0)
     {
@@ -3411,7 +3471,7 @@ void MultitrackView::ungroupSelectedClips()
 
 void MultitrackView::selectAllClips()
 {
-    selectClipsWhere ([] (const SessionTrack&, const SessionClip&) { return true; });
+    selectClipsWhere ([] (const SessionTrack&, const SessionClip&) { return true; }, [] (const SessionTrack&, const NoteClip&) { return true; });
 }
 
 bool MultitrackView::selectClipsOnTrack()
@@ -3421,13 +3481,15 @@ bool MultitrackView::selectClipsOnTrack()
     if (track == nullptr)
         return false;
 
-    selectClipsWhere ([id = track->id] (const SessionTrack& t, const SessionClip&) { return t.id == id; });
+    selectClipsWhere ([id = track->id] (const SessionTrack& t, const SessionClip&) { return t.id == id; },
+                      [id = track->id] (const SessionTrack& t, const NoteClip&) { return t.id == id; });
     return true;
 }
 
 void MultitrackView::selectClipsAfterCursor()
 {
-    selectClipsWhere ([from = cursor] (const SessionTrack&, const SessionClip& c) { return c.position >= from; });
+    selectClipsWhere ([from = cursor] (const SessionTrack&, const SessionClip& c) { return c.position >= from; },
+                      [from = cursor] (const SessionTrack&, const NoteClip& c) { return c.position >= from; });
 }
 
 bool MultitrackView::selectClipsInRange()
@@ -3436,6 +3498,8 @@ bool MultitrackView::selectClipsInRange()
         return false;
 
     selectClipsWhere ([range = timeSelection] (const SessionTrack&, const SessionClip& c)
+                      { return c.position < range.getEnd() && c.getEnd() > range.getStart(); },
+                      [range = timeSelection] (const SessionTrack&, const NoteClip& c)
                       { return c.position < range.getEnd() && c.getEnd() > range.getStart(); });
     return true;
 }
@@ -3451,19 +3515,33 @@ bool MultitrackView::selectClipsInRegion()
     return selectClipsInRange();
 }
 
-void MultitrackView::selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted)
+void MultitrackView::selectClipsWhere (const std::function<bool (const SessionTrack&, const SessionClip&)>& wanted,
+                                       const std::function<bool (const SessionTrack&, const NoteClip&)>& wantedNotes)
 {
     // Never clips on hidden or folded-away tracks, which can't be seen.
     selectedClips.clear();
+    selectedNoteClips.clear();
     const auto& s = *engine.session.getState();
 
     for (auto& t : s.tracks)
+    {
+        if (! s.isShown (t))
+            continue;
+
         for (auto& c : t.clips)
-            if (s.isShown (t) && wanted (t, c))
+            if (wanted (t, c))
                 selectedClips.insert (c.id);
+
+        for (auto& c : t.noteClips)
+            if (wantedNotes (t, c))
+                selectedNoteClips.insert (c.id);
+    }
 
     if (! isClipSelected (selectedClip))
         selectedClip = selectedClips.empty() ? 0 : *selectedClips.begin();
+
+    if (! isNoteClipSelected (selectedNoteClip))
+        selectedNoteClip = selectedNoteClips.empty() ? 0 : *selectedNoteClips.begin();
 
     repaint();
 
@@ -3473,41 +3551,31 @@ void MultitrackView::selectClipsWhere (const std::function<bool (const SessionTr
 
 void MultitrackView::deleteSelectedClip()
 {
+    // Every selected clip of either kind goes (locked audio clips stay).
     auto next = *engine.session.getState();
-    const auto ids = getSelectedClips();
-    auto removed = 0;
+    auto removed = 0, notesRemoved = 0;
 
-    if (selectedNoteClip != 0 && SessionEdits::removeNoteClip (next, selectedNoteClip))
-    {
-        selectNoteClip (0);
-        engine.session.apply (std::move (next), "Remove Notes");
-        return;
-    }
-
-    for (auto id : ids)
+    for (auto id : getSelectedClips())
         removed += SessionEdits::removeClip (next, id) ? 1 : 0;
 
-    if (removed > 0)
-    {
-        selectClip (0, false);
-        engine.session.apply (std::move (next), removed > 1 ? "Delete " + juce::String (removed) + " Clips" : juce::String ("Delete Clip"));
-    }
+    for (auto id : getSelectedNoteClips())
+        notesRemoved += SessionEdits::removeNoteClip (next, id) ? 1 : 0;
+
+    if (removed + notesRemoved == 0)
+        return;
+
+    selectClip (0, false);
+    selectNoteClip (0);
+    engine.session.apply (std::move (next), removed + notesRemoved > 1 ? "Delete " + juce::String (removed + notesRemoved) + " Clips"
+                                            : removed == 1 ? juce::String ("Delete Clip") : juce::String ("Remove Notes"));
 }
 
 bool MultitrackView::copySelectedClip()
 {
+    // Every selected clip of either kind, each with its track counted from the topmost copied.
     const auto current = engine.session.getState();
-
-    // A selected note clip is copied in place of audio clips.
-    if (const auto where = current->findNoteClip (selectedNoteClip))
-    {
-        copiedNoteClips = { { 0, current->tracks[(size_t) where->first].noteClips[(size_t) where->second] } };
-        copiedClips.clear();
-        copiedRate = current->sampleRate;
-        return true;
-    }
-
     std::vector<std::pair<int, SessionClip>> copied;
+    std::vector<std::pair<int, NoteClip>> copiedNotes;
     auto topmost = std::numeric_limits<int>::max();
 
     for (auto id : getSelectedClips())
@@ -3517,14 +3585,24 @@ bool MultitrackView::copySelectedClip()
         topmost = juce::jmin (topmost, where->first);
     }
 
-    if (copied.empty())
+    for (auto id : getSelectedNoteClips())
+    {
+        const auto where = current->findNoteClip (id);
+        copiedNotes.emplace_back (where->first, current->tracks[(size_t) where->first].noteClips[(size_t) where->second]);
+        topmost = juce::jmin (topmost, where->first);
+    }
+
+    if (copied.empty() && copiedNotes.empty())
         return false;
 
     for (auto& [track, clip] : copied)
         track -= topmost;
 
+    for (auto& [track, clip] : copiedNotes)
+        track -= topmost;
+
     copiedClips = std::move (copied);
-    copiedNoteClips.clear();
+    copiedNoteClips = std::move (copiedNotes);
     copiedRate = current->sampleRate;
     return true;
 }
@@ -3536,23 +3614,20 @@ bool MultitrackView::cutSelectedClip()
 
     // Locked clips are copied but stay where they are.
     auto next = *engine.session.getState();
-    auto removed = 0;
-
-    for (auto& copied : copiedNoteClips)
-        if (SessionEdits::removeNoteClip (next, copied.second.id))
-        {
-            selectNoteClip (0);
-            engine.session.apply (std::move (next), "Cut Notes");
-            return true;
-        }
+    auto removed = 0, notesRemoved = 0;
 
     for (auto& copied : copiedClips)
         removed += SessionEdits::removeClip (next, copied.second.id) ? 1 : 0;
 
-    if (removed > 0)
+    for (auto& copied : copiedNoteClips)
+        notesRemoved += SessionEdits::removeNoteClip (next, copied.second.id) ? 1 : 0;
+
+    if (removed + notesRemoved > 0)
     {
         selectClip (0, false);
-        engine.session.apply (std::move (next), removed > 1 ? "Cut " + juce::String (removed) + " Clips" : juce::String ("Cut Clip"));
+        selectNoteClip (0);
+        engine.session.apply (std::move (next), removed + notesRemoved > 1 ? "Cut " + juce::String (removed + notesRemoved) + " Clips"
+                                                : removed == 1 ? juce::String ("Cut Clip") : juce::String ("Cut Notes"));
     }
 
     return true;
@@ -3588,26 +3663,15 @@ void MultitrackView::pasteClip()
     if (! canPaste())
         return;
 
-    // A copied note clip goes onto the selected track at the cursor (a new track without one).
-    if (! copiedNoteClips.empty())
-    {
-        auto next = *engine.session.getState();
-        auto track = getSelectedTrack();
-
-        if (! juce::isPositiveAndBelow (track, (int) next.tracks.size()) || ! next.tracks[(size_t) track].takesNoteClips())
-            track = (int) next.tracks.size();
-
-        const auto& copied = copiedNoteClips.front().second;
-        const auto id = SessionEdits::placeNoteClip (next, track, copied, cursor);
-        engine.session.apply (std::move (next), "Paste Notes");
-        selectNoteClip (id);
-        setCursor (cursor + copied.length);
-        return;
-    }
-
-    auto earliest = copiedClips.front().second.position;
+    // Everything copied goes from the cursor, the earliest clip of either kind at it, each on the
+    // selected track plus its own offset; note clips whose track takes no notes go on a new
+    // instrument track (one for each offset), as a note clip alone does without a selected track.
+    auto earliest = std::numeric_limits<juce::int64>::max();
 
     for (auto& c : copiedClips)
+        earliest = juce::jmin (earliest, c.second.position);
+
+    for (auto& c : copiedNoteClips)
         earliest = juce::jmin (earliest, c.second.position);
 
     auto next = *engine.session.getState();
@@ -3620,7 +3684,29 @@ void MultitrackView::pasteClip()
     if (firstTrack < 0)
         firstTrack = (int) next.tracks.size();
 
-    const auto ids = placeClips (next, copiedClips, firstTrack, cursor - earliest);
+    const auto shift = cursor - earliest;
+    const auto ids = placeClips (next, copiedClips, firstTrack, shift);
+    std::vector<juce::uint32> noteIds;
+    std::map<int, int> noteTracks;   // by offset: the track its note clips went on
+
+    for (auto& [offset, clip] : copiedNoteClips)
+    {
+        auto found = noteTracks.find (offset);
+
+        if (found == noteTracks.end())
+        {
+            const auto target = firstTrack + offset;
+
+            if (target >= (int) next.tracks.size() || ! next.tracks[(size_t) target].takesNoteClips())
+                next.addInstrumentTrack();
+
+            found = noteTracks.emplace (offset, target < (int) next.tracks.size() && next.tracks[(size_t) target].takesNoteClips()
+                                                    ? target : (int) next.tracks.size() - 1).first;
+        }
+
+        noteIds.push_back (SessionEdits::placeNoteClip (next, found->second, clip, clip.position + shift));
+    }
+
     auto end = cursor;
 
     for (auto id : ids)
@@ -3629,10 +3715,21 @@ void MultitrackView::pasteClip()
         end = juce::jmax (end, next.tracks[(size_t) where->first].clips[(size_t) where->second].getEnd());
     }
 
+    for (auto id : noteIds)
+    {
+        const auto where = next.findNoteClip (id);
+        end = juce::jmax (end, next.tracks[(size_t) where->first].noteClips[(size_t) where->second].getEnd());
+    }
+
     selectedClips = { ids.begin(), ids.end() };
-    selectedClip = ids.front();
-    selectedTrackId = next.tracks[(size_t) next.findClip (ids.front())->first].id;
-    engine.session.apply (std::move (next), ids.size() > 1 ? "Paste " + juce::String ((int) ids.size()) + " Clips" : juce::String ("Paste Clip"));
+    selectedClip = ids.empty() ? 0 : ids.front();
+    selectedNoteClips = { noteIds.begin(), noteIds.end() };
+    selectedNoteClip = noteIds.empty() ? 0 : noteIds.front();
+    const auto first = ! ids.empty() ? next.findClip (ids.front())->first : next.findNoteClip (noteIds.front())->first;
+    selectedTrackId = next.tracks[(size_t) first].id;
+    const auto count = (int) (ids.size() + noteIds.size());
+    engine.session.apply (std::move (next), count > 1 ? "Paste " + juce::String (count) + " Clips"
+                                            : ids.size() == 1 ? juce::String ("Paste Clip") : juce::String ("Paste Notes"));
     setCursor (end);
 }
 
@@ -3650,18 +3747,10 @@ bool MultitrackView::repeatSelectedClip()
 
 void MultitrackView::duplicateSelectedClip()
 {
+    // The copies go right after the selection's end, each on its own track.
     auto next = *engine.session.getState();
-
-    if (const auto where = next.findNoteClip (selectedNoteClip))
-    {
-        const auto copied = next.tracks[(size_t) where->first].noteClips[(size_t) where->second];
-        const auto id = SessionEdits::placeNoteClip (next, where->first, copied, copied.getEnd());
-        engine.session.apply (std::move (next), "Duplicate Notes");
-        selectNoteClip (id);
-        return;
-    }
-
     std::vector<std::pair<int, SessionClip>> clips;
+    std::vector<std::pair<int, NoteClip>> noteClips;
     juce::int64 start = std::numeric_limits<juce::int64>::max(), end = 0;
 
     for (auto id : getSelectedClips())
@@ -3673,13 +3762,31 @@ void MultitrackView::duplicateSelectedClip()
         end = juce::jmax (end, c.getEnd());
     }
 
-    if (clips.empty())
+    for (auto id : getSelectedNoteClips())
+    {
+        const auto where = next.findNoteClip (id);
+        const auto& c = next.tracks[(size_t) where->first].noteClips[(size_t) where->second];
+        noteClips.emplace_back (where->first, c);
+        start = juce::jmin (start, c.position);
+        end = juce::jmax (end, c.getEnd());
+    }
+
+    if (clips.empty() && noteClips.empty())
         return;
 
     const auto ids = placeClips (next, clips, 0, end - start);
+    std::vector<juce::uint32> noteIds;
+
+    for (auto& [track, clip] : noteClips)
+        noteIds.push_back (SessionEdits::placeNoteClip (next, track, clip, clip.position + end - start));
+
     selectedClips = { ids.begin(), ids.end() };
-    selectedClip = ids.front();
-    engine.session.apply (std::move (next), ids.size() > 1 ? "Duplicate " + juce::String ((int) ids.size()) + " Clips" : juce::String ("Duplicate Clip"));
+    selectedClip = ids.empty() ? 0 : ids.front();
+    selectedNoteClips = { noteIds.begin(), noteIds.end() };
+    selectedNoteClip = noteIds.empty() ? 0 : noteIds.front();
+    const auto count = (int) (ids.size() + noteIds.size());
+    engine.session.apply (std::move (next), count > 1 ? "Duplicate " + juce::String (count) + " Clips"
+                                            : ids.size() == 1 ? juce::String ("Duplicate Clip") : juce::String ("Duplicate Notes"));
 }
 
 void MultitrackView::splitSelectedClip()
@@ -3726,7 +3833,22 @@ namespace
 }
 
 bool MultitrackView::areSelectedClipsLocked() const   { return allSelected (shown(), getSelectedClips(), &SessionClip::locked); }
-bool MultitrackView::areSelectedClipsMuted() const    { return allSelected (shown(), getSelectedClips(), &SessionClip::muted); }
+bool MultitrackView::areSelectedClipsMuted() const
+{
+    const auto ids = getSelectedClips();
+    const auto noteIds = getSelectedNoteClips();
+    const auto& s = shown();
+
+    if (ids.empty() && noteIds.empty())
+        return false;
+
+    return (ids.empty() || allSelected (s, ids, &SessionClip::muted))
+        && std::all_of (noteIds.begin(), noteIds.end(), [&s] (auto id)
+           {
+               const auto where = s.findNoteClip (id);
+               return s.tracks[(size_t) where->first].noteClips[(size_t) where->second].muted;
+           });
+}
 
 void MultitrackView::setSelectedClipsLocked (bool locked)
 {
@@ -3735,7 +3857,17 @@ void MultitrackView::setSelectedClipsLocked (bool locked)
 
 void MultitrackView::setSelectedClipsMuted (bool muted)
 {
-    setSelectedClipsFlag (SessionEdits::setClipMuted, muted, muted ? "Mute " : "Unmute ");
+    auto next = *engine.session.getState();
+    auto changed = 0;
+
+    for (auto id : getSelectedClips())
+        changed += SessionEdits::setClipMuted (next, id, muted) ? 1 : 0;
+
+    for (auto id : getSelectedNoteClips())
+        changed += SessionEdits::setNoteClipMuted (next, id, muted) ? 1 : 0;
+
+    if (changed > 0)
+        engine.session.apply (std::move (next), juce::String (muted ? "Mute " : "Unmute ") + (changed > 1 ? juce::String (changed) + " Clips" : juce::String ("Clip")));
 }
 
 bool MultitrackView::showMarker (int index)
@@ -3997,7 +4129,7 @@ int MultitrackView::quantizeSelectedClips()
     const auto targets = snapTargets (0, false);
     const auto map = next.tempoMap();
 
-    const auto moved = SessionEdits::quantizeClips (next, getSelectedClips(), [&] (juce::int64 frame)
+    const auto nearest = [&] (juce::int64 frame)
     {
         if (targets.beatGrid.has_value())
         {
@@ -4007,7 +4139,9 @@ int MultitrackView::quantizeSelectedClips()
 
         const auto step = juce::jmax ((juce::int64) 1, targets.gridStep);
         return (juce::int64) std::llround ((double) frame / (double) step) * step;
-    });
+    };
+    const auto moved = SessionEdits::quantizeClips (next, getSelectedClips(), nearest)
+                     + SessionEdits::quantizeNoteClips (next, getSelectedNoteClips(), nearest);
 
     if (moved > 0)
         engine.session.apply (std::move (next), moved > 1 ? "Quantize " + juce::String (moved) + " Clips" : juce::String ("Quantize Clip"));
@@ -4162,23 +4296,31 @@ juce::int64 MultitrackView::gridStepFrom (juce::int64 frame, bool later) const
 void MultitrackView::nudge (bool later)
 {
     const auto ids = getSelectedClips();
+    const auto noteIds = getSelectedNoteClips();
 
-    if (ids.empty())
+    if (ids.empty() && noteIds.empty())
     {
         setCursor (gridStepFrom (cursor, later));
         return;
     }
 
+    // By the step from the clip clicked last (audio or notes); the rest keep their distance from it.
     const auto current = engine.session.getState();
     const auto& s = *current;
-    const auto primary = s.findClip (isClipSelected (selectedClip) ? selectedClip : ids.front());
-    const auto start = s.tracks[(size_t) primary->first].clips[(size_t) primary->second].position;
-    moveSelectedClips (gridStepFrom (start, later) - start, ids.size() > 1 ? "Nudge Clips" : "Nudge Clip", true);
+    juce::int64 start = 0;
+
+    if (const auto primary = s.findClip (isClipSelected (selectedClip) ? selectedClip : ids.empty() ? 0 : ids.front()))
+        start = s.tracks[(size_t) primary->first].clips[(size_t) primary->second].position;
+    else if (const auto notes = s.findNoteClip (isNoteClipSelected (selectedNoteClip) ? selectedNoteClip : noteIds.front()))
+        start = s.tracks[(size_t) notes->first].noteClips[(size_t) notes->second].position;
+
+    moveSelectedClips (gridStepFrom (start, later) - start, ids.size() + noteIds.size() > 1 ? "Nudge Clips" : "Nudge Clip", true);
 }
 
 bool MultitrackView::moveSelectedClipsToCursor()
 {
     const auto ids = getSelectedClips();
+    const auto noteIds = getSelectedNoteClips();
     const auto current = engine.session.getState();
     const auto& s = *current;
     auto earliest = std::numeric_limits<juce::int64>::max();
@@ -4189,7 +4331,14 @@ bool MultitrackView::moveSelectedClipsToCursor()
         earliest = juce::jmin (earliest, s.tracks[(size_t) where->first].clips[(size_t) where->second].position);
     }
 
-    return ! ids.empty() && moveSelectedClips (cursor - earliest, ids.size() > 1 ? "Move Clips to Cursor" : "Move Clip to Cursor", false);
+    for (auto id : noteIds)
+    {
+        const auto where = s.findNoteClip (id);
+        earliest = juce::jmin (earliest, s.tracks[(size_t) where->first].noteClips[(size_t) where->second].position);
+    }
+
+    return (! ids.empty() || ! noteIds.empty())
+        && moveSelectedClips (cursor - earliest, ids.size() + noteIds.size() > 1 ? "Move Clips to Cursor" : "Move Clip to Cursor", false);
 }
 
 int MultitrackView::trimSelectedClipsToCursor (bool start)
@@ -4216,10 +4365,11 @@ int MultitrackView::trimSelectedClipsToCursor (bool start)
 bool MultitrackView::moveSelectedClips (juce::int64 delta, const juce::String& description, bool merge)
 {
     const auto ids = getSelectedClips();
+    const auto noteIds = getSelectedNoteClips();
     auto next = *engine.session.getState();
     auto earliest = std::numeric_limits<juce::int64>::max();
 
-    // The clips move together or not at all, and none before the session's start.
+    // The clips, audio and notes, move together or not at all, and none before the session's start.
     for (auto id : ids)
     {
         const auto where = next.findClip (id);
@@ -4231,15 +4381,27 @@ bool MultitrackView::moveSelectedClips (juce::int64 delta, const juce::String& d
         earliest = juce::jmin (earliest, c.position);
     }
 
+    for (auto id : noteIds)
+    {
+        const auto where = next.findNoteClip (id);
+        earliest = juce::jmin (earliest, next.tracks[(size_t) where->first].noteClips[(size_t) where->second].position);
+    }
+
     delta = juce::jmax (delta, -earliest);
 
-    if (ids.empty() || delta == 0)
+    if ((ids.empty() && noteIds.empty()) || delta == 0)
         return false;
 
     for (auto id : ids)
     {
         const auto where = next.findClip (id);
         SessionEdits::moveClip (next, id, where->first, next.tracks[(size_t) where->first].clips[(size_t) where->second].position + delta);
+    }
+
+    for (auto id : noteIds)
+    {
+        const auto where = next.findNoteClip (id);
+        SessionEdits::moveNoteClip (next, id, where->first, next.tracks[(size_t) where->first].noteClips[(size_t) where->second].position + delta);
     }
 
     engine.session.apply (std::move (next), description, merge);
@@ -4502,7 +4664,20 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
     if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
     {
         const auto& clip = shown().tracks[(size_t) hit->first].noteClips[(size_t) hit->second];
-        selectNoteClip (clip.id);
+
+        if (e.mods.isShiftDown() && ! e.mods.isPopupMenu())
+        {
+            // Shift-click adds the clip to the selection or takes it out; no drag.
+            selectNoteClip (clip.id, true);
+            selectTrack (hit->first);
+            return;
+        }
+
+        // A click on a selected clip keeps the selection, to drag it all.
+        if (! isNoteClipSelected (clip.id))
+            selectNoteClip (clip.id);
+
+        selectedNoteClip = clip.id;
         selectTrack (hit->first);
 
         if (e.mods.isPopupMenu())
@@ -4521,6 +4696,12 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
              : Drag::moveNotes;
         stretchTo = {};
         dragDescription = drag == Drag::moveNotes ? "Move Notes" : stretching ? "Stretch Notes" : "Trim Notes";
+        gatherDragGroups (0, clip.id);
+
+        // A locked audio clip among the selected keeps them all where they are.
+        if (drag == Drag::moveNotes && std::any_of (dragGroup.begin(), dragGroup.end(), [] (auto& c) { return c.locked; }))
+            drag = Drag::none;
+
         return;
     }
 
@@ -4649,12 +4830,7 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
 
         selectedClip = clip.id;
         dragClip = clip;
-        dragGroup.clear();
-
-        for (auto id : selectedClips)
-            if (const auto where = shown().findClip (id); id != clip.id && where.has_value())
-                dragGroup.push_back (shown().tracks[(size_t) where->first].clips[(size_t) where->second]);
-
+        gatherDragGroups (clip.id, 0);
         dragTrack = hit->first;
         dragFrame = frameForX ((float) p.x);
         drag = e.mods.isCommandDown() ? Drag::clipGain : fadeHandleAt (p, hit->first, clip);
@@ -4768,8 +4944,11 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
             for (auto& c : dragGroup)
                 earliest = juce::jmin (earliest, c.position);
 
-            const auto target = dragGroup.empty() ? juce::jlimit (0, (int) next.tracks.size(), trackAt (juce::jmax (rulerHeight, p.y)))
-                                                  : dragTrack;
+            for (auto& c : dragNoteGroup)
+                earliest = juce::jmin (earliest, c.position);
+
+            const auto target = dragGroup.empty() && dragNoteGroup.empty() ? juce::jlimit (0, (int) next.tracks.size(), trackAt (juce::jmax (rulerHeight, p.y)))
+                                                                           : dragTrack;
             auto position = dragClip.position + juce::jmax (delta, -earliest);
 
             if (snapping)
@@ -4789,17 +4968,41 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
                 if (const auto where = next.findClip (c.id))
                     SessionEdits::moveClip (next, c.id, where->first, c.position + position - dragClip.position);
 
+            for (auto& c : dragNoteGroup)
+                if (const auto where = next.findNoteClip (c.id))
+                    SessionEdits::moveNoteClip (next, c.id, where->first, c.position + position - dragClip.position);
+
             break;
         }
         case Drag::moveNotes:
         {
-            auto position = juce::jmax ((juce::int64) 0, dragNoteClip.position + delta);
+            // With other clips selected, they all move in time by the same amount and keep their tracks.
+            auto earliest = dragNoteClip.position;
+
+            for (auto& c : dragNoteGroup)
+                earliest = juce::jmin (earliest, c.position);
+
+            for (auto& c : dragGroup)
+                earliest = juce::jmin (earliest, c.position);
+
+            const auto alone = dragNoteGroup.empty() && dragGroup.empty();
+            const auto target = alone ? juce::jlimit (0, (int) next.tracks.size(), trackAt (juce::jmax (rulerHeight, p.y))) : dragTrack;
+            auto position = dragNoteClip.position + juce::jmax (delta, -earliest);
 
             if (snapping)
-                position = juce::jmax ((juce::int64) 0, position + SessionSnap::snapSpan (*state, { position, position + dragNoteClip.length },
-                                                                                          snapTolerance(), snapTargets (0, true)));
+                position = juce::jmax (dragNoteClip.position - earliest,
+                                       position + SessionSnap::snapSpan (*state, { position, position + dragNoteClip.length }, snapTolerance(), snapTargets (0, true)));
 
-            SessionEdits::moveNoteClip (next, dragNoteClip.id, juce::jlimit (0, (int) next.tracks.size(), trackAt (juce::jmax (rulerHeight, p.y))), position);
+            SessionEdits::moveNoteClip (next, dragNoteClip.id, target, position);
+
+            for (auto& c : dragNoteGroup)
+                if (const auto where = next.findNoteClip (c.id))
+                    SessionEdits::moveNoteClip (next, c.id, where->first, c.position + position - dragNoteClip.position);
+
+            for (auto& c : dragGroup)
+                if (const auto where = next.findClip (c.id))
+                    SessionEdits::moveClip (next, c.id, where->first, c.position + position - dragNoteClip.position);
+
             break;
         }
         case Drag::trimNotesStart:
@@ -4883,6 +5086,10 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
             for (auto& c : dragGroup)
                 SessionEdits::crossfade (next, c.id);
     }
+
+    if (crossfading && drag == Drag::moveNotes)
+        for (auto& c : dragGroup)
+            SessionEdits::crossfade (next, c.id);
 
     preview = std::move (next);
     rebuildHeaders();
