@@ -4,18 +4,22 @@
 
 /** Mixes a session to stereo.
 
-    Each clip plays its audio with its gain and fades and is panned by its track: mono clips
-    with a constant-power law (-3 dB each side at the centre), stereo clips by balance, so the
-    centre leaves them as they are. Clips with more channels play their first two. Then come the
-    track's effects (Inserts), then its volume, and the track goes to the mix. Its sends take the
-    signal before the volume (pre-fader) or after it, to buses, which play it through their
-    effects, volume and pan (balance) into the mix. A track whose output is a bus goes there,
-    after its volume, in place of the mix; so does a bus whose output is another bus. Each bus is
-    mixed before the buses it plays into.
+    Each clip plays its audio with its gain and fades into the track: a mono clip into both
+    channels, a stereo clip as it is, one with more channels its first two. Then come the
+    track's effects (Inserts, an instrument among them), then its pan, then its volume, and the
+    track goes to the mix. The pan comes after the effects so that an instrument's output and
+    whatever a stereo effect spreads follow it: a track whose sources are all mono (its clips,
+    its live input, no instrument) is panned with a constant-power law (-3 dB each side at the
+    centre, so a mono clip at the centre plays at -3 dB each side, as before); a track with any
+    stereo source by balance, so the centre leaves it as it is. Its sends take the signal before
+    the volume (pre-fader) or after it, to buses, which play it through their effects, volume and
+    pan (balance) into the mix. A track whose output is a bus goes there, after its volume, in
+    place of the mix; so does a bus whose output is another bus. Each bus is mixed before the
+    buses it plays into.
 
-    A volume or pan envelope takes over from the setting, sample by sample: a track's pan
-    envelope where its clips are panned, its volume envelope where its volume is applied (after
-    its effects, so pre-fader sends don't follow it), and a bus's at its output.
+    A volume or pan envelope takes over from the setting, sample by sample: a track's pan and
+    volume envelopes where its pan and volume are applied (after its effects, so pre-fader sends
+    don't follow the volume), and a bus's at its output.
     Envelopes on effect parameters are followed by the effects themselves (Inserts), given the
     session frame of the audio they process.
 
@@ -116,6 +120,9 @@ namespace SessionMixer
         /** Audio thread, before a block is mixed: MIDI played live this block (frames from 0) for
             this track's instrument, or null for none. The buffer must outlive the block. */
         virtual void setLiveMidi (juce::uint32 /*trackId*/, const juce::MidiBuffer* /*midi*/)   {}
+
+        /** Whether the track's chain starts with an instrument (a stereo source, for its pan). */
+        virtual bool hasInstrument (juce::uint32 /*trackId*/)   { return false; }
 
         /** setWideChannels with these tracks all 5.1. */
         juce::StringArray setWideTracks (const std::set<juce::uint32>& tracks)
@@ -219,8 +226,8 @@ namespace SessionMixer
         }
     };
 
-    /** Audio coming in live on a track (input monitoring). It joins the track's clips, panned
-        by the track as a clip with that many channels would be, and goes on through its effects,
+    /** Audio coming in live on a track (input monitoring). It joins the track's clips, placed
+        as a clip with that many channels would be, and goes on through its effects, pan,
         volume, sends and buses like them. */
     struct LiveInput
     {

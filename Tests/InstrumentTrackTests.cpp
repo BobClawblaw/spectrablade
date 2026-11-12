@@ -504,6 +504,21 @@ namespace
         const auto ones = play (s, 0, 9000, 64, &effects);
         check (same (out, odd) && same (out, ones), "instrument tracks: the mix is the same in blocks of 64 and 1,000 frames, and again from the start");
 
+        // Panned hard left: the instrument's output follows the track's pan, after the chain, so
+        // nothing plays on the right, and the left is as it was (a stereo source: balance).
+        auto panned = s;
+        panned.tracks[0].pan = -1.0f;
+        const auto leftOnly = play (panned, 0, 9000, 64, &effects);
+        auto silentRight = true, sameLeft = true;
+
+        for (int i = 0; i < 9000; ++i)
+        {
+            silentRight = silentRight && leftOnly.getSample (1, i) == 0.0f;
+            sameLeft = sameLeft && leftOnly.getSample (0, i) == out.getSample (0, i);
+        }
+
+        check (silentRight && sameLeft, "instrument tracks: panned hard left, the instrument's output and the clip play on the left alone; the pan comes after the chain");
+
         // A jump: the instrument hears every note off, and the clicks after the jump still land.
         clickPtr->allOff = 0;
         const auto later = play (s, 4000, 2000, 64, &effects);

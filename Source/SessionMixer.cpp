@@ -5,7 +5,14 @@ namespace SessionMixer
 {
 std::pair<float, float> panGains (float pan, int sourceChannels)
 {
-    pan = juce::jlimit (-1.0f, 1.0f, pan);
+    // Hard to one side leaves the other exactly silent (the cosine of a right angle is not
+    // quite zero in single precision).
+    if (pan <= -1.0f)
+        return { 1.0f, 0.0f };
+
+    if (pan >= 1.0f)
+        return { 0.0f, 1.0f };
+
     constexpr auto halfPi = juce::MathConstants<float>::halfPi;
 
     if (sourceChannels == 1)
@@ -435,30 +442,34 @@ namespace
         return buffers.keyAudio;
     }
 
-    /** A live input, panned like a clip, into frames [0, numFrames) of out. */
-    void addLive (const LiveInput& live, const juce::AudioBuffer<float>& audio, juce::AudioBuffer<float>& out, int numFrames,
-                  const float* pans, float pan)
+    /** A live input, placed like a clip (a mono one into both channels at monoPlace), into
+        frames [0, numFrames) of out. */
+    void addLive (const LiveInput& live, const juce::AudioBuffer<float>& audio, juce::AudioBuffer<float>& out, int numFrames, float monoPlace)
     {
         const auto channels = juce::jlimit (1, 2, live.numChannels);
-        const auto* inLeft = audio.getReadPointer (live.firstChannel);
-        const auto* inRight = audio.getReadPointer (live.firstChannel + channels - 1);
-        auto* outLeft = out.getWritePointer (0);
-        auto* outRight = out.getWritePointer (1);
+        const auto gain = channels == 1 ? monoPlace : 1.0f;
+        out.addFrom (0, 0, audio, live.firstChannel, 0, numFrames, gain);
+        out.addFrom (1, 0, audio, live.firstChannel + channels - 1, 0, numFrames, gain);
+    }
 
-        if (pans == nullptr)
-        {
-            const auto [left, right] = panGains (pan, channels);
-            juce::FloatVectorOperations::addWithMultiply (outLeft, inLeft, left, numFrames);
-            juce::FloatVectorOperations::addWithMultiply (outRight, inRight, right, numFrames);
-            return;
-        }
+    /** How wide a track's sources are, for its pan law: 1 when every clip, its live input and
+        its chain are mono (no instrument), else 2. Every clip counts, muted or not, so the law
+        holds still as clips come and go. */
+    int sourceWidth (const SessionTrack& track, const Live* live, Inserts* inserts)
+    {
+        if (inserts != nullptr && inserts->hasInstrument (track.id))
+            return 2;
 
-        for (int i = 0; i < numFrames; ++i)
-        {
-            const auto [left, right] = panGains (pans[i], channels);
-            outLeft[i] += inLeft[i] * left;
-            outRight[i] += inRight[i] * right;
-        }
+        for (auto& clip : track.clips)
+            if (clip.audio != nullptr && clip.audio->getNumChannels() >= 2)
+                return 2;
+
+        if (live != nullptr)
+            for (int i = 0; i < live->count; ++i)
+                if (const auto& in = live->inputs[(size_t) i]; in.trackId == track.id && in.numChannels >= 2)
+                    return 2;
+
+        return 1;
     }
 
     /** Reads count frames of a clip from session frame from into scratch (as many channels as
@@ -560,10 +571,10 @@ namespace
         }
     }
 
-    /** The track's clips, panned, before its effects and volume, into frames [0, numFrames) of out.
-        pans, when the pan is automated, holds the pan for each of those frames. */
+    /** The track's clips, placed but not yet panned (a mono clip into both channels at
+        monoPlace), before its effects, pan and volume, into frames [0, numFrames) of out. */
     void renderTrack (const SessionTrack& track, juce::int64 start, juce::AudioBuffer<float>& out, int numFrames,
-                      juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains, const float* pans)
+                      juce::AudioBuffer<float>& scratch, juce::AudioBuffer<float>& gains, float monoPlace)
     {
         out.clear (0, 0, numFrames);
         out.clear (1, 0, numFrames);
@@ -581,28 +592,10 @@ namespace
             grow (scratch, count);
             const auto channels = juce::jmin (2, readClip (clip, from, count, scratch, gains));
 
-            const auto clipGain = juce::Decibels::decibelsToGain (clip.gainDb, -150.0f);
+            const auto clipGain = juce::Decibels::decibelsToGain (clip.gainDb, -150.0f) * (channels == 1 ? monoPlace : 1.0f);
             const auto offset = (int) (from - start);
-
-            if (pans == nullptr)
-            {
-                const auto [left, right] = panGains (track.pan, channels);
-                out.addFrom (0, offset, scratch, 0, 0, count, clipGain * left);
-                out.addFrom (1, offset, scratch, channels - 1, 0, count, clipGain * right);
-                continue;
-            }
-
-            const auto* inLeft = scratch.getReadPointer (0);
-            const auto* inRight = scratch.getReadPointer (channels - 1);
-            auto* outLeft = out.getWritePointer (0, offset);
-            auto* outRight = out.getWritePointer (1, offset);
-
-            for (int i = 0; i < count; ++i)
-            {
-                const auto [left, right] = panGains (pans[offset + i], channels);
-                outLeft[i] += inLeft[i] * (clipGain * left);
-                outRight[i] += inRight[i] * (clipGain * right);
-            }
+            out.addFrom (0, offset, scratch, 0, 0, count, clipGain);
+            out.addFrom (1, offset, scratch, channels - 1, 0, count, clipGain);
         }
     }
 }
@@ -730,10 +723,8 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         const auto fiveOne = track.isWide();   // a 5.1 or 7.1 track
         const auto width = track.wideChannels();
         const auto panAutomated = ! track.panEnvelope.isEmpty() && ! fiveOne;
-
-        // The clips are read at start + own + ahead, so that is where their pan is taken from.
-        if (panAutomated)
-            track.panEnvelope.fill (start + own + ahead, pans, numFrames);
+        const auto panWidth = fiveOne ? 2 : sourceWidth (track, live, inserts);
+        const auto monoPlace = panWidth == 1 ? 1.0f : panGains (0.0f, 1).first;   // a mono clip among stereo sources: at the centre's level
 
         // A frozen track's audio already has its clips, pan and effects: it is the track's
         // output at start + ahead.
@@ -756,7 +747,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                 wide.clear (0, numFrames);
         }
         else if (live == nullptr || live->clips)
-            renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, buffers.clipGains, panAutomated ? pans : nullptr);
+            renderTrack (track, start + own + ahead, buffers.track, numFrames, buffers.clip, buffers.clipGains, monoPlace);
         else
             buffers.track.clear (0, numFrames);
 
@@ -769,7 +760,7 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
                         for (int ch = 0; ch < juce::jlimit (1, 2, in.numChannels); ++ch)
                             wide.addFrom (wideChannel (juce::jlimit (1, 2, in.numChannels), ch, width), 0, *live->audio, in.firstChannel + ch, 0, numFrames);
                     else
-                        addLive (in, *live->audio, buffers.track, numFrames, panAutomated ? pans : nullptr, track.pan);
+                        addLive (in, *live->audio, buffers.track, numFrames, monoPlace);
                 }
 
         if (inserts != nullptr && runsEffects (track) && inserts->isActive (track.id))
@@ -787,6 +778,33 @@ void render (const SessionState& state, juce::int64 start, juce::AudioBuffer<flo
         // master, its volume and ducking applied to both.
         if (fiveOne)
             Surround::foldDown (wide.getArrayOfReadPointers(), width, buffers.track.getWritePointer (0), buffers.track.getWritePointer (1), numFrames);
+
+        // The pan, after the effects, so an instrument's output and what a stereo effect spreads
+        // follow it: mono sources with the constant-power law, stereo ones by balance. The output
+        // here is the audio at start + ahead, so that is where the envelope is read. A frozen
+        // track's audio was panned when it was frozen.
+        if (! fiveOne && ! track.isFrozen())
+        {
+            auto* left = buffers.track.getWritePointer (0);
+            auto* right = buffers.track.getWritePointer (1);
+
+            if (panAutomated)
+            {
+                track.panEnvelope.fill (start + ahead, pans, numFrames);
+
+                for (int i = 0; i < numFrames; ++i)
+                {
+                    const auto [l, r] = panGains (pans[i], panWidth);
+                    left[i] *= l;
+                    right[i] *= r;
+                }
+            }
+            else if (const auto [l, r] = panGains (track.pan, panWidth); ! juce::exactlyEqual (l, 1.0f) || ! juce::exactlyEqual (r, 1.0f))
+            {
+                juce::FloatVectorOperations::multiply (left, l, numFrames);
+                juce::FloatVectorOperations::multiply (right, r, numFrames);
+            }
+        }
 
         const auto applyGains = [&] (const float* gains)
         {

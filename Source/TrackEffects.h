@@ -133,6 +133,7 @@ public:
 
     // SessionMixer::Inserts, for the audio thread
     void setLiveMidi (juce::uint32 trackId, const juce::MidiBuffer*) override;
+    bool hasInstrument (juce::uint32 trackId) override   { return getInstrument (trackId) != nullptr; }
     bool isActive (juce::uint32 trackId) override;
     int getLatency (juce::uint32 trackId) override;
     void reset (juce::uint32 trackId) override;

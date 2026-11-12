@@ -21,7 +21,9 @@
 #include "../Source/SessionNotes.h"
 #include "../Source/SessionRecovery.h"
 #include "../Source/TrackColours.h"
+#include "../Source/TrackEffects.h"
 #include "../Source/UndoHistory.h"
+#include "TestPlugins.h"
 #include "TestUtils.h"
 #include "MixerTests.h"
 
@@ -1931,8 +1933,69 @@ namespace
     }
 }
 
+namespace
+{
+    void testPanAfterEffects()
+    {
+        // A mono clip and a stereo clip, each on a track whose effect swaps left and right, both
+        // panned hard left: the pan comes after the effects, so nothing plays on the right.
+        SessionState s;
+        s.sampleRate = rate;
+        s.addTrack().pan = -1.0f;
+        s.addTrack().pan = -1.0f;
+        SessionEdits::addClip (s, 0, juce::File ("/takes/mono.wav"), constant (1, 4096, 0.5f), 0);
+        SessionEdits::addClip (s, 1, juce::File ("/takes/stereo.wav"), constant (2, 4096, 0.2f), 0);
+        TrackEffects effects;
+        effects.prepare (rate);
+        effects.add (s.tracks[0].id, std::make_unique<TestPlugins::SwapPlugin>());
+        effects.add (s.tracks[1].id, std::make_unique<TestPlugins::SwapPlugin>());
+
+        const auto render = [&] (SessionMixer::Inserts* inserts)
+        {
+            SessionMixer::Levels levels;
+            SessionMixer::Buffers buffers;
+            buffers.levels = &levels;
+            buffers.reserve (4096);
+
+            if (inserts != nullptr)
+                SessionMixer::prime (s, 0, buffers, *inserts);
+
+            juce::AudioBuffer<float> out (2, 4096);
+            SessionMixer::render (s, 0, out, 0, 4096, buffers, inserts);
+            return std::pair { levels.take (0), levels.take (1) };
+        };
+
+        const auto [monoSwapped, stereoSwapped] = render (&effects);
+        const auto [mono, stereo] = render (nullptr);
+        check (monoSwapped.first == 0.5f && monoSwapped.second == 0.0f && stereoSwapped.first == 0.4f && stereoSwapped.second == 0.0f,
+               "pan after effects: hard left, a mono clip and a stereo clip through a channel-swapping effect play on the left alone, "
+               "the stereo clip's right channel now on the left (" + juce::String (monoSwapped.first, 3) + " " + juce::String (monoSwapped.second, 3)
+                   + ", " + juce::String (stereoSwapped.first, 3) + " " + juce::String (stereoSwapped.second, 3) + ")");
+        check (mono.first == 0.5f && mono.second == 0.0f && stereo.first == 0.2f && stereo.second == 0.0f,
+               "pan after effects: without effects the laws are as before, a mono clip at full level on the left, a stereo clip's left as it is");
+
+        // A mono clip beside a stereo one: the track is a stereo source, panned by balance, the
+        // mono clip placed at the centre's level, so the centre leaves the mix as it was.
+        SessionState mixed;
+        mixed.sampleRate = rate;
+        mixed.addTrack();
+        SessionEdits::addClip (mixed, 0, juce::File ("/takes/mono.wav"), constant (1, 4096, 0.5f), 0);
+        SessionEdits::addClip (mixed, 0, juce::File ("/takes/stereo.wav"), constant (2, 4096, 0.2f), 0);
+        SessionMixer::Levels levels;
+        SessionMixer::Buffers buffers;
+        buffers.levels = &levels;
+        juce::AudioBuffer<float> out (2, 4096);
+        SessionMixer::render (mixed, 0, out, 0, 4096, buffers);
+        const auto centre = levels.take (0);
+        const auto placed = 0.5f * SessionMixer::panGains (0.0f, 1).first;
+        check (centre.first == placed + 0.2f && centre.second == placed + 0.4f,
+               "pan after effects: a mono clip on a track with a stereo clip is placed at -3 dB each side, the stereo clip as it is");
+    }
+}
+
 void runMixerTests (AudioEngine& engine)
 {
+    testPanAfterEffects();
     testClipProperties (engine);
     testLevels();
     testMixerView (engine);

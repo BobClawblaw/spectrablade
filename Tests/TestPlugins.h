@@ -354,4 +354,53 @@ public:
 
     Gain* gain = nullptr;
 };
+/** A stereo effect that swaps the left and right channels: what a track's pan does after it
+    shows whether the pan comes before or after the effects. */
+class SwapPlugin final : public juce::AudioPluginInstance
+{
+public:
+    SwapPlugin()
+        : AudioPluginInstance (BusesProperties().withInput ("In", juce::AudioChannelSet::stereo(), true)
+                                                .withOutput ("Out", juce::AudioChannelSet::stereo(), true))
+    {
+    }
+
+    void fillInPluginDescription (juce::PluginDescription& d) const override
+    {
+        d.name = "Test Swap";
+        d.pluginFormatName = "Test";
+        d.fileOrIdentifier = "test-swap";
+        d.numInputChannels = d.numOutputChannels = 2;
+    }
+
+    const juce::String getName() const override  { return "Test Swap"; }
+    void prepareToPlay (double, int) override    {}
+    void releaseResources() override             {}
+
+    void processBlock (juce::AudioBuffer<float>& b, juce::MidiBuffer&) override
+    {
+        if (b.getNumChannels() < 2)
+            return;
+
+        for (int i = 0; i < b.getNumSamples(); ++i)
+        {
+            const auto left = b.getSample (0, i);
+            b.setSample (0, i, b.getSample (1, i));
+            b.setSample (1, i, left);
+        }
+    }
+
+    double getTailLengthSeconds() const override { return 0.0; }
+    bool acceptsMidi() const override            { return false; }
+    bool producesMidi() const override           { return false; }
+    juce::AudioProcessorEditor* createEditor() override { return nullptr; }
+    bool hasEditor() const override              { return false; }
+    int getNumPrograms() override                { return 1; }
+    int getCurrentProgram() override             { return 0; }
+    void setCurrentProgram (int) override        {}
+    const juce::String getProgramName (int) override { return {}; }
+    void changeProgramName (int, const juce::String&) override {}
+    void getStateInformation (juce::MemoryBlock&) override {}
+    void setStateInformation (const void*, int) override {}
+};
 }
