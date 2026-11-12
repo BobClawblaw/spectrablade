@@ -218,6 +218,8 @@ What they check:
 - Exporting stems: which tracks, their file names, and the stems adding up to the mix bit for bit.
 - Bouncing a track: the mix bit for bit the same after a bounce, where it lands, and zooming to the time range.
 - Copying, pasting and duplicating clips through the view, over what was on the track, and several clips selected, moved, pasted, duplicated and deleted together.
+- The Mute tool: a click mutes an audio clip, another lets it be heard again, a click mutes a note clip, nothing moves; the toolbar has a Mute button after Range.
+- Clip Properties for a note clip: shown in place of an audio clip with its name, start, length and loop (the gain, fades and note put away); typing moves, trims, loops and renames it, each an undo step; gone with the clip.
 - The Select tool's rubber band: a drag across empty lane space selects the audio and note clips it crosses without a time range, Shift adds to the selection, another band selects anew; the Range tool's drag selects a time range over the clips moving nothing, its click sets the cursor and clears the range; the toolbar has a Range button after Glue.
 - Several note clips selected: Shift-click adds and removes one, an audio clip joins the same selection, a plain click selects one alone; dragged, nudged and quantized together with the audio clip, each keeping its track and stopping at the session's start; muted and unmuted together; two copied note clips pasted onto one new instrument track keeping their spacing, duplicated after themselves and deleted together; Select All takes both kinds.
 - Clip gain: normalizing against a brute-force peak, its limits, and Command-dragging a clip in the view.

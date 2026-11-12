@@ -112,6 +112,28 @@ public:
                 g.fillPath (dashed);
                 break;
             }
+
+            case Tool::mute:
+            {
+                // A speaker with a cross beside it: sound stopped.
+                const auto y = box.getCentreY();
+                juce::Path speaker;
+                speaker.startNewSubPath (box.getX() + 1.0f, y - 2.5f);
+                speaker.lineTo (box.getX() + 4.0f, y - 2.5f);
+                speaker.lineTo (box.getX() + 8.0f, box.getY() + 2.0f);
+                speaker.lineTo (box.getX() + 8.0f, box.getBottom() - 2.0f);
+                speaker.lineTo (box.getX() + 4.0f, y + 2.5f);
+                speaker.lineTo (box.getX() + 1.0f, y + 2.5f);
+                speaker.closeSubPath();
+                g.fillPath (speaker);
+                juce::Path cross;
+                cross.startNewSubPath (box.getRight() - 5.5f, y - 2.5f);
+                cross.lineTo (box.getRight() - 1.0f, y + 2.5f);
+                cross.startNewSubPath (box.getRight() - 1.0f, y - 2.5f);
+                cross.lineTo (box.getRight() - 5.5f, y + 2.5f);
+                g.strokePath (cross, stroke);
+                break;
+            }
         }
     }
 
@@ -125,7 +147,8 @@ TrackTools::TrackTools (juce::ApplicationCommandManager& c, MultitrackView& v, A
     run = [this] (int id) { commands.invokeDirectly (id, true); };
 
     for (auto [tool, id] : { std::pair (Tool::select, ids.select), std::pair (Tool::draw, ids.draw), std::pair (Tool::split, ids.split),
-                             std::pair (Tool::stretch, ids.stretch), std::pair (Tool::glue, ids.glue), std::pair (Tool::range, ids.range) })
+                             std::pair (Tool::stretch, ids.stretch), std::pair (Tool::glue, ids.glue), std::pair (Tool::range, ids.range),
+                             std::pair (Tool::mute, ids.mute) })
     {
         auto* b = tools.add (new ToolButton (tool, id));
         b->onClick = [this, id] { if (run) run (id); update(); };
@@ -164,6 +187,7 @@ juce::String TrackTools::hintFor (Tool tool)
         case Tool::stretch: return "Stretch: drag a clip's edge to stretch what it plays, audio or notes";
         case Tool::glue:    return "Glue: click a note clip to join it with the next one on its track";
         case Tool::range:   return "Range: drag across the lanes to select a time range, leaving the clips as they are";
+        case Tool::mute:    return "Mute: click a clip, audio or notes, to silence it or let it be heard again";
     }
 
     return {};
@@ -188,7 +212,8 @@ void TrackTools::update()
 
     for (auto [button, name] : { std::pair (tools[(int) Tool::select], "Select"), std::pair (tools[(int) Tool::draw], "Draw"),
                                  std::pair (tools[(int) Tool::split], "Split"), std::pair (tools[(int) Tool::stretch], "Stretch"),
-                                 std::pair (tools[(int) Tool::glue], "Glue"), std::pair (tools[(int) Tool::range], "Range") })
+                                 std::pair (tools[(int) Tool::glue], "Glue"), std::pair (tools[(int) Tool::range], "Range"),
+                                 std::pair (tools[(int) Tool::mute], "Mute") })
     {
         const auto keys = commands.getKeyMappings() != nullptr ? commands.getKeyMappings()->getKeyPressesAssignedToCommand (button->getComponentID().getIntValue()) : juce::Array<juce::KeyPress>();
         button->setTooltip (juce::String (name) + " tool" + (keys.isEmpty() ? juce::String() : " (" + keys[0].getTextDescription() + ")"));

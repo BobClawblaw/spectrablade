@@ -65,6 +65,9 @@ public:
     juce::uint32 getSelectedNoteClip() const noexcept   { return selectedNoteClip; }
     void selectNoteClip (juce::uint32 clipId, bool adding = false);
 
+    /** True when the clip clicked last was a note clip: what Clip Properties shows. */
+    bool isNoteClipLast() const noexcept                { return lastPickedNotes && selectedNoteClip != 0; }
+
     /** Every selected note clip, in the session's order. */
     std::vector<juce::uint32> getSelectedNoteClips() const;
     bool isNoteClipSelected (juce::uint32 clipId) const  { return selectedNoteClips.count (clipId) > 0; }
@@ -81,8 +84,9 @@ public:
         cuts it at the click. Stretch: a drag on a clip's edge stretches it, audio (as Option-drag
         does) or notes. Glue: a click on a note clip joins it with the next one on its track.
         Range: a drag anywhere across the lanes selects a time range (as a drag along the marker
-        lane under the ruler does with any tool), leaving the clips as they are. */
-    enum class Tool { select, draw, split, stretch, glue, range };
+        lane under the ruler does with any tool), leaving the clips as they are. Mute: a click on
+        a clip, audio or notes, silences it or lets it be heard again. */
+    enum class Tool { select, draw, split, stretch, glue, range, mute };
     void setTool (Tool);
     Tool getTool() const noexcept                 { return tool; }
 
@@ -654,6 +658,7 @@ private:
     std::set<juce::uint32> selectedClips;  // selectedClip among them
     juce::uint32 selectedNoteClip = 0;
     std::set<juce::uint32> selectedNoteClips;  // selectedNoteClip among them
+    bool lastPickedNotes = false;          // the clip clicked last was a note clip
     NoteClip dragNoteClip;                 // the note clip being moved or trimmed, as it was
     std::vector<std::pair<int, NoteClip>> copiedNoteClips;   // copied in place of audio clips, with their tracks counted from the topmost
     std::vector<std::pair<int, SessionClip>> copiedClips;   // with their tracks counted from the topmost

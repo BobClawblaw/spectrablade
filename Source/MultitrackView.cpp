@@ -3320,7 +3320,10 @@ void MultitrackView::selectNoteClip (juce::uint32 clipId, bool adding)
     }
 
     if (clipId != 0)
+    {
         selectedNoteClips.insert (clipId);
+        lastPickedNotes = true;
+    }
 
     repaint();
 }
@@ -3400,6 +3403,9 @@ void MultitrackView::selectClip (juce::uint32 clipId, bool adding)
 {
     // A clip in a group brings the rest of its group with it, into the selection or out of it.
     const auto group = SessionEdits::clipGroup (shown(), clipId);
+
+    if (clipId != 0)
+        lastPickedNotes = false;
 
     if (! adding)
     {
@@ -4679,6 +4685,31 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
+    // The Mute tool: a click on a clip, audio or notes, silences it or lets it be heard again.
+    if (! e.mods.isPopupMenu() && tool == Tool::mute)
+    {
+        auto next = *engine.session.getState();
+
+        if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
+        {
+            const auto& c = shown().tracks[(size_t) hit->first].noteClips[(size_t) hit->second];
+            const auto muted = c.muted;
+
+            if (SessionEdits::setNoteClipMuted (next, c.id, ! muted))
+                engine.session.apply (std::move (next), muted ? "Unmute Notes" : "Mute Notes");
+        }
+        else if (const auto audio = clipAt (p))
+        {
+            const auto& c = shown().tracks[(size_t) audio->first].clips[(size_t) audio->second];
+            const auto muted = c.muted;
+
+            if (SessionEdits::setClipMuted (next, c.id, ! muted))
+                engine.session.apply (std::move (next), muted ? "Unmute Clip" : "Mute Clip");
+        }
+
+        return;
+    }
+
     // A note clip: right-click for its menu, a click selects it, a drag moves it in time (with
     // the Stretch tool, a drag on an edge stretches it).
     if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
@@ -4698,6 +4729,7 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
             selectNoteClip (clip.id);
 
         selectedNoteClip = clip.id;
+        lastPickedNotes = true;
         selectTrack (hit->first);
 
         if (e.mods.isPopupMenu())
@@ -4849,6 +4881,7 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
             selectClip (clip.id, false);
 
         selectedClip = clip.id;
+        lastPickedNotes = false;
         dragClip = clip;
         gatherDragGroups (clip.id, 0);
         dragTrack = hit->first;
@@ -5279,6 +5312,8 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
     // over a note clip, Range a text cursor over the lanes.
     if (tool == Tool::range && p.x >= headerWidth && p.y >= rulerHeight)
         cursorShape = juce::MouseCursor::IBeamCursor;
+    else if (tool == Tool::mute && (overNotes || clipAt (p).has_value()))
+        cursorShape = juce::MouseCursor::PointingHandCursor;
     else if (tool == Tool::split && (overNotes || clipAt (p).has_value()))
         cursorShape = juce::MouseCursor::CrosshairCursor;
     else if (tool == Tool::glue && overNotes)

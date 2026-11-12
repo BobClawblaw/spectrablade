@@ -675,9 +675,45 @@ namespace
         check (refused && clip().position == 120000 && text (Field::name) == "vocal",
                "clip properties: text that isn't a setting shows the clip's again, and undo shows here at once");
 
+        // A note clip clicked last: its name, start, length and loop length, the other fields
+        // put away; typing moves, trims, loops and renames it, each as an undo step.
+        auto withNotes = *engine.session.getState();
+        withNotes.addInstrumentTrack();
+        NoteClip pattern;
+        pattern.name = "Riff";
+        pattern.length = 96000;
+        pattern.notes = { { 60, 0, 24000, 0.8f }, { 64, 24000, 24000, 0.8f } };
+        const auto noteId = SessionEdits::placeNoteClip (withNotes, 1, pattern, 48000);
+        engine.session.reset (withNotes, {});
+        juce::uint32 selectedNotes = 0;
+        ClipProperties both (engine, [&selected] { return selected; }, [&selectedNotes] { return selectedNotes; });
+        both.setSize (340, 250);
+        selectedNotes = noteId;
+        juce::MessageManager::getInstance()->runDispatchLoopUntil (200);
+        const auto notesText = [&] (Field f) { return both.getEditor (f).getText(); };
+        const auto shownNotes = both.getShownNoteClip() == noteId && both.getShownClip() == 0 && notesText (Field::name) == "Riff" && notesText (Field::start) == "1.000"
+                                && notesText (Field::length) == "2.000" && notesText (Field::loop) == "0.000" && ! both.getEditor (Field::fadeIn).isVisible()
+                                && both.getEditor (Field::loop).isVisible();
+        const auto typeNotes = [&] (Field f, const juce::String& value)
+        {
+            both.getEditor (f).setText (value, false);
+            both.apply (f);
+            settle();
+        };
+        const auto noteClip = [&] { return engine.session.getState()->tracks[1].noteClips[0]; };
+        typeNotes (Field::start, "2.5");
+        const auto movedNotes = noteClip().position == 120000 && engine.session.getUndoDescription() == "Move Notes";
+        typeNotes (Field::length, "1.5");
+        const auto trimmedNotes = noteClip().length == 72000 && noteClip().position == 120000 && engine.session.getUndoDescription() == "Trim Notes";
+        typeNotes (Field::loop, "0.5");
+        const auto looped = noteClip().loopLength == 24000 && engine.session.getUndoDescription() == "Loop Notes";
+        typeNotes (Field::name, "Lead riff");
+        check (shownNotes && movedNotes && trimmedNotes && looped && noteClip().name == "Lead riff" && engine.session.getUndoDescription() == "Rename Notes",
+               "clip properties: a note clip clicked last shows its name, start, length and loop with the gain, fades and note put away; typing moves, trims, loops and renames it");
+
         engine.session.reset ({}, {});
         settle();
-        check (properties.getShownClip() == 0, "clip properties: a clip that goes away is no longer shown");
+        check (properties.getShownClip() == 0 && both.getShownNoteClip() == 0, "clip properties: a clip that goes away is no longer shown");
     }
 }
 

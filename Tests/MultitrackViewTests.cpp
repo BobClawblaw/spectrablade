@@ -270,6 +270,17 @@ namespace
         check (ranged && view.getTimeSelection().isEmpty() && near (view.getCursor(), 300000) && engine.session.getState()->tracks[0].clips[0].position == 48000,
                "tools: the Range tool's drag selects a time range over the clips (" + juce::String (range.getStart()) + " to " + juce::String (range.getEnd())
                    + ") moving nothing, and its click sets the cursor");
+
+        // The Mute tool: a click on a clip, audio or notes, mutes it; another lets it be heard again.
+        view.setTool (Tool::mute);
+        mouse.click ({ x (72000), laneY (0) });
+        const auto mutedAudio = engine.session.getState()->tracks[0].clips[0].muted && engine.session.getUndoDescription() == "Mute Clip";
+        mouse.click ({ x (72000), laneY (0) });
+        const auto heardAgain = ! engine.session.getState()->tracks[0].clips[0].muted && engine.session.getUndoDescription() == "Unmute Clip";
+        mouse.click ({ x (72000), laneY (1) });
+        check (mutedAudio && heardAgain && engine.session.getState()->tracks[1].noteClips[0].muted && engine.session.getUndoDescription() == "Mute Notes"
+                   && engine.session.getState()->tracks[0].clips[0].position == 48000 && engine.session.getState()->tracks[1].noteClips[0].position == 48000,
+               "tools: the Mute tool's click mutes a clip, audio or notes, another click lets it be heard again, and nothing moves");
         view.setTool (Tool::select);
     }
 
@@ -368,16 +379,16 @@ namespace
         // The toolbar: a button a tool, the one in hand lit, each running its command; the tempo
         // shown (a click runs Tempo...); Bars lit while the ruler counts bars.
         juce::ApplicationCommandManager commands;
-        TrackTools strip (commands, view, engine, { 1, 2, 3, 4, 5, 6, 7, 8 });
+        TrackTools strip (commands, view, engine, { 1, 2, 3, 4, 5, 6, 7, 8, 9 });
         juce::Array<int> ran;
         strip.run = [&ran] (int id) { ran.add (id); };
         strip.setSize (900, TrackTools::height);
         view.setTool (Tool::draw);
         juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
-        const auto lit = [&] { juce::String t; for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue, Tool::range }) t << (strip.getToolButton (tool).getToggleState() ? "1" : "0"); return t; };
+        const auto lit = [&] { juce::String t; for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue, Tool::range, Tool::mute }) t << (strip.getToolButton (tool).getToggleState() ? "1" : "0"); return t; };
         const auto drawLit = lit();
 
-        for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue, Tool::range })
+        for (auto tool : { Tool::select, Tool::draw, Tool::split, Tool::stretch, Tool::glue, Tool::range, Tool::mute })
             strip.getToolButton (tool).triggerClick();
 
         strip.getTempoButton().triggerClick();
@@ -390,8 +401,9 @@ namespace
         juce::MessageManager::getInstance()->runDispatchLoopUntil (150);
         const auto leftToRight = strip.getToolButton (Tool::select).getX() < strip.getToolButton (Tool::draw).getX()
                                  && strip.getToolButton (Tool::glue).getRight() < strip.getToolButton (Tool::range).getX()
-                                 && strip.getToolButton (Tool::range).getRight() < strip.getTempoButton().getX() && strip.getTempoButton().getRight() < strip.getBarsButton().getX();
-        check (drawLit == "010000" && ran == juce::Array<int> { 1, 2, 3, 4, 5, 6, 7, 8 } && leftToRight && strip.getTempoButton().getButtonText() == "98.5 bpm, 3/4"
+                                 && strip.getToolButton (Tool::range).getRight() < strip.getToolButton (Tool::mute).getX()
+                                 && strip.getToolButton (Tool::mute).getRight() < strip.getTempoButton().getX() && strip.getTempoButton().getRight() < strip.getBarsButton().getX();
+        check (drawLit == "0100000" && ran == juce::Array<int> { 1, 2, 3, 4, 5, 6, 7, 8, 9 } && leftToRight && strip.getTempoButton().getButtonText() == "98.5 bpm, 3/4"
                    && strip.getBarsButton().getToggleState() && TrackTools::tempoText (120.0, 4) == "120 bpm, 4/4" && TrackTools::hintFor (Tool::draw).startsWith ("Draw:"),
                "toolbar: a button a tool, left to right, the one in hand lit, each running its command, then the tempo (" + strip.getTempoButton().getButtonText() + ") and Bars, lit while the ruler counts bars");
 

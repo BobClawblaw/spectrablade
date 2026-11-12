@@ -20,8 +20,8 @@ namespace
     }
 }
 
-ClipProperties::ClipProperties (AudioEngine& e, std::function<juce::uint32()> toShow)
-    : engine (e), clipToShow (std::move (toShow))
+ClipProperties::ClipProperties (AudioEngine& e, std::function<juce::uint32()> toShow, std::function<juce::uint32()> notesToShow)
+    : engine (e), clipToShow (std::move (toShow)), noteClipToShow (std::move (notesToShow))
 {
     const juce::StringArray names { "Name", "Start (s)", "Length (s)", "Gain (dB)", "Fade in (s)", "Fade out (s)", "Note" };
 
@@ -59,16 +59,65 @@ void ClipProperties::apply (Field f)
 {
     const auto text = getEditor (f).getText();
     auto next = *engine.session.getState();
+    const auto rate = next.sampleRate;
+    const auto frames = framesFrom (text, rate);
+    auto changed = false;
+    juce::String description;
+
+    // A note clip: its name, start, length and loop length (0 plays the notes once).
+    if (const auto notes = next.findNoteClip (shownNoteClip); shownNoteClip != 0 && notes.has_value())
+    {
+        const auto c = next.tracks[(size_t) notes->first].noteClips[(size_t) notes->second];
+
+        switch (f)
+        {
+            case Field::name:
+                if (text.trim().isNotEmpty() && text.trim() != c.name)
+                {
+                    auto renamed = c;
+                    renamed.name = text.trim();
+                    changed = SessionEdits::replaceNoteClip (next, c.id, renamed);
+                    description = "Rename Notes";
+                }
+                break;
+            case Field::start:
+                changed = frames.has_value() && *frames >= 0 && *frames != c.position && SessionEdits::moveNoteClip (next, c.id, notes->first, *frames);
+                description = "Move Notes";
+                break;
+            case Field::length:
+                changed = frames.has_value() && *frames > 0 && *frames != c.length && SessionEdits::trimNoteClip (next, c.id, c.position, c.position + *frames);
+                description = "Trim Notes";
+                break;
+            case Field::gain:   // the loop's row
+                if (frames.has_value() && *frames >= 0 && *frames != c.loopLength)
+                {
+                    auto looped = c;
+                    looped.loopLength = *frames;
+                    changed = SessionEdits::replaceNoteClip (next, c.id, looped);
+                }
+
+                description = "Loop Notes";
+                break;
+            case Field::fadeIn:
+            case Field::fadeOut:
+            case Field::note:
+                break;
+        }
+
+        if (changed)
+            engine.session.apply (std::move (next), description);
+        else
+            refresh();
+
+        return;
+    }
+
     const auto where = next.findClip (shownClip);
 
     if (! where.has_value())
         return;
 
     const auto c = next.tracks[(size_t) where->first].clips[(size_t) where->second];
-    const auto rate = next.sampleRate;
-    const auto frames = framesFrom (text, rate);
-    auto changed = false;
-    juce::String description;
 
     switch (f)
     {
@@ -128,15 +177,62 @@ void ClipProperties::changeListenerCallback (juce::ChangeBroadcaster*)
 
 void ClipProperties::timerCallback()
 {
-    if (clipToShow != nullptr && clipToShow() != shownClip)
+    if ((clipToShow != nullptr && clipToShow() != shownClip) || (noteClipToShow != nullptr && noteClipToShow() != shownNoteClip))
         refresh();
 }
 
 void ClipProperties::refresh()
 {
     shownClip = clipToShow != nullptr ? clipToShow() : 0;
+    shownNoteClip = noteClipToShow != nullptr ? noteClipToShow() : 0;
     const auto state = engine.session.getState();
-    const auto where = state->findClip (shownClip);
+    const auto notes = state->findNoteClip (shownNoteClip);
+    auto where = state->findClip (shownClip);
+
+    // A note clip takes the panel over an audio clip; its rows are the first four.
+    if (notes.has_value())
+    {
+        shownClip = 0;
+        where.reset();
+    }
+    else
+    {
+        shownNoteClip = 0;
+    }
+
+    static const char* const audioNames[] = { "Name", "Start (s)", "Length (s)", "Gain (dB)", "Fade in (s)", "Fade out (s)", "Note" };
+    static const char* const noteNames[] = { "Name", "Start (s)", "Length (s)", "Loop (s)" };
+    constexpr size_t noteRows = 4;
+
+    for (size_t i = 0; i < rows.size(); ++i)
+    {
+        const auto inUse = ! notes.has_value() || i < noteRows;
+        rows[i].label.setText (notes.has_value() && i < noteRows ? noteNames[i] : audioNames[i], juce::dontSendNotification);
+        rows[i].label.setVisible (inUse);
+        rows[i].editor.setVisible (inUse);
+    }
+
+    if (notes.has_value())
+    {
+        const auto& c = state->tracks[(size_t) notes->first].noteClips[(size_t) notes->second];
+        const auto rate = state->sampleRate;
+        const std::array<juce::String, noteRows> values { c.name, secondsText (c.position, rate), secondsText (c.length, rate), secondsText (c.loopLength, rate) };
+
+        for (size_t i = 0; i < rows.size(); ++i)
+        {
+            rows[i].editor.setEnabled (i < noteRows);
+
+            if (i >= noteRows)
+                rows[i].editor.setText ({}, false);
+            else if (! rows[i].editor.hasKeyboardFocus (true))
+                rows[i].editor.setText (values[i], false);
+        }
+
+        info.setText (juce::String ((int) c.notes.size()) + (c.notes.size() == 1 ? " note, " : " notes, ") + juce::String ((int) c.lanes.size()) + (c.lanes.size() == 1 ? " lane" : " lanes")
+                          + (c.loopLength > 0 ? ", repeating every " + secondsText (c.loopLength, rate) + " s" : juce::String (", played once")) + (c.muted ? ", muted" : ""),
+                      juce::dontSendNotification);
+        return;
+    }
 
     if (! where.has_value())
     {
