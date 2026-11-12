@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 383: The tempo dialogs say what happens to the clips**
+- Found during the round of use: the Tempo Change at Cursor... dialog still said "Clips stay where they are", which has not been true of a musical track since Milestone 381. Both tempo dialogs (Tempo... and Tempo Change at Cursor...) now say that the clips of a track with Musical Timebase keep their bars and beats and the clips of a track in time stay where they are.
+- Measured by the tests: no check reads the dialogs, which are modal; the whole suite passed (1,614 checks; 330 commands, 104 default keys) and the app launched and quit cleanly.
+- Not tried by hand: the dialogs on screen.
 
 ## Released
 

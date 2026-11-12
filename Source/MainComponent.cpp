@@ -3869,9 +3869,10 @@ void MainComponent::showTempoDialog (bool atCursor)
     const auto hasChange = existing != state->tempoChanges.end();
     const auto barFrame = map.barFrame (bar);
     auto* box = new juce::AlertWindow (bar == 0 ? "Tempo" : "Tempo Change at Bar " + juce::String (bar + 1),
-                                       bar == 0 ? "The metronome clicks on this tempo from the start of the session, up to the first tempo change."
-                                                : "The tempo and beats in a bar from the start of bar " + juce::String (bar + 1)
-                                                      + " (where the cursor is) up to the next change. Clips stay where they are.",
+                                       (bar == 0 ? juce::String ("The metronome clicks on this tempo from the start of the session, up to the first tempo change.")
+                                                 : "The tempo and beats in a bar from the start of bar " + juce::String (bar + 1)
+                                                       + " (where the cursor is) up to the next change.")
+                                           + " The clips of a track with Musical Timebase keep their bars and beats; the clips of a track in time stay where they are.",
                                        juce::MessageBoxIconType::NoIcon);
     box->addTextEditor ("tempo", juce::String (hasChange ? existing->tempo : map.tempoAt (barFrame), 2).trimCharactersAtEnd ("0").trimCharactersAtEnd ("."),
                         "Beats a minute (20 to 400)");
