@@ -4,6 +4,14 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.15.3: The first round of use**
+- `SpectraBlade-0.15.3.dmg` on the repository's Releases page, with its SHA-256, and the Windows packages (`SpectraBlade-0.15.3-windows-x64-setup.exe` and `SpectraBlade-0.15.3-windows-x64.zip`, with their SHA-256 files) built from the release's tag and attached by the Windows workflow: Milestones 372 to 375 below on top of 0.15.2, from the first round of use of the 0.15 line by hand: files dragged from the Files panel into the multitrack view (372), the track pan applied after the effects and the instrument, so a stereo track panned hard left is silent on the right (373), instrument tracks apart from audio tracks, each holding its own kind of clip (374), and the version on the loading screen (375); the first three in the [dogfooding log](docs/DOGFOODING.md) as rows 13 to 15. A dogfooding release: built for Apple silicon only on the Mac, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)); the Windows packages are built on a runner without an audio device, so untested there.
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 from the pushed source, signed it, and the whole suite (1,590 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.15.3, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for Milestone 375 and quit cleanly. The new track menus and headers have not been clicked on screen; nothing has been listened to.
+
 **Milestone 375: The version on the loading screen**
 - Asked for during the round of use: the loading screen now shows the app's version, small in its bottom right corner ("Version 0.15.2" and so on), clear of the status line and the Continue button, so a screenshot or a glance says which build is starting.
 - Measured by the tests (1 check extended): a loading screen made outside the app has no version until one is set; set, it reports it and draws. The whole suite passed (1,590 checks; 318 commands, 97 default keys); the app launched and quit cleanly.
@@ -24,8 +32,6 @@ Each milestone as it was built, newest first, with what the tests measured on th
 - From use of 0.15.2: a file in the Files panel could not be dragged into the multitrack view. Now a row of the panel dragged into the view adds that file as a clip where it lands, on the track there or a new one past the last, at the frame it is dropped at (on the grid when snapping is on): the audio as it is in the editor, unsaved changes and all, named after the file (Untitled for one never saved); an empty session takes the file's sample rate, otherwise the audio is converted to the session's; one undo step, "Add <file>". The clip's file is the one on disk, so a session saved to disk reloads the file as saved there: save the file first for a session to find it again as heard. A click in the panel now switches files on mouse up, so a drag does not switch.
 - Measured by the tests (2 new checks): the view takes a row's drag, nothing else, and names the row, the track and the frame; a file added to a session carries the editor's audio, its name, the rate conversion, and Untitled for a file never saved; an empty file adds nothing. The whole suite passed (1,582 checks; 318 commands, 97 default keys); the app launched and quit cleanly.
 - In the [dogfooding log](docs/DOGFOODING.md) as row 13. Not tried by hand: the drag on screen.
-
-## Released
 
 **Release 0.15.2: The instrument menus sorted**
 - `SpectraBlade-0.15.2.dmg` on the repository's Releases page, with its SHA-256: Milestone 371 below on top of 0.15.1, from the first try of 0.15.1 by hand: the instrument menus list the built-in Basic Synth first, a few scanned instruments flat with their format and maker, and many under a submenu a format and a maker, as the effect menus do. A dogfooding release, built for Apple silicon only, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)).
