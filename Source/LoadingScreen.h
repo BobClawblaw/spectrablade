@@ -33,6 +33,10 @@ public:
     bool isOfferingContinue() const                     { return continueButton.isVisible(); }
     bool hasLogo() const                                { return logo.isValid(); }
 
+    /** The version shown in the corner: the app's own to start with ("" when there is no app, as in the tests). */
+    void setVersion (const juce::String& v)             { version = v; repaint(); }
+    juce::String getVersion() const                     { return version; }
+
     /** Called once, when the last step ends or Continue is pressed. */
     std::function<void()> onFinished;
 
@@ -53,6 +57,7 @@ private:
 
     std::vector<Step> steps;
     juce::Image logo;
+    juce::String version;
     juce::uint32 shownAt;
     int dots = 0;
     bool finished = false;

@@ -6,6 +6,10 @@ LoadingScreen::LoadingScreen()
       shownAt (juce::Time::getMillisecondCounter())
 {
     setOpaque (true);
+
+    if (auto* app = juce::JUCEApplication::getInstance())
+        version = app->getApplicationVersion();
+
     continueButton.setTooltip ("Use the app now; what is still loading carries on behind");
     continueButton.onClick = [this] { finish(); };
     addChildComponent (continueButton);
@@ -115,6 +119,14 @@ void LoadingScreen::paint (juce::Graphics& g)
 
     g.setColour (juce::Colour (0xff2a2f36));
     g.drawRect (getLocalBounds());
+
+    // The version, small in the bottom right corner, clear of the status line and Continue.
+    if (version.isNotEmpty())
+    {
+        g.setColour (juce::Colour (0xff6c7488));
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawText ("Version " + version, getLocalBounds().reduced (10, 6), juce::Justification::bottomRight);
+    }
 
     if (const auto status = getStatus(); status.isNotEmpty())
     {

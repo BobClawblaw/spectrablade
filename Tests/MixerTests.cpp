@@ -1836,6 +1836,10 @@ namespace
             screen.onFinished = [&] { ++finishedCount; };
             screen.setSize (900, 520);
             logo = screen.hasLogo();
+            const auto unversioned = screen.getVersion().isEmpty();   // no app in the tests
+            screen.setVersion ("9.8.7");
+            const auto versioned = screen.getVersion() == "9.8.7" && screen.createComponentSnapshot (screen.getLocalBounds()).isValid();
+            logo = logo && unversioned && versioned;
             screen.begin ("device", "Opening the interface");
             screen.begin ("plug-ins", "Reading the plug-in list");
             const auto newest = screen.getStatus() == "Reading the plug-in list";
@@ -1847,7 +1851,7 @@ namespace
             screen.end ("device");
         }
         check (logo && order && waited && done && finishedCount == 1,
-               "loading screen: shows the logo and the newest step, stays up at least its least time, and finishes once when the steps end");
+               "loading screen: shows the logo, the version (the app's; none in the tests until set) and the newest step, stays up at least its least time, and finishes once when the steps end");
 
         // A step that takes long: Continue and the step's note come up; Continue finishes the screen.
         finishedCount = 0;
