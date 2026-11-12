@@ -4,12 +4,18 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
+Nothing yet.
+
+## Released
+
+**Release 0.15.6: What the tempo dialogs say**
+- `SpectraBlade-0.15.6.dmg` on the repository's Releases page, with its SHA-256, and the Windows packages (`SpectraBlade-0.15.6-windows-x64-setup.exe` and `SpectraBlade-0.15.6-windows-x64.zip`, with their SHA-256 files) built from the release's tag and attached by the Windows workflow: Milestone 383 below on top of 0.15.5, found while using the 0.15 line by hand: the two tempo dialogs say that the clips of a track with Musical Timebase keep their bars and beats and the clips of a track in time stay where they are, in place of a sentence the musical timebase of 0.15.5 had made untrue; in the [dogfooding log](docs/DOGFOODING.md) as row 23. A dogfooding release: built for Apple silicon only on the Mac, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)); the Windows packages are built on a runner without an audio device, so untested there.
+- Checked on the development Mac (macOS 27): `Scripts/package.sh` built the app for arm64 from the pushed source, signed it, and the whole suite (1,614 checks, the command table audit among them) passed with the signed app as the plug-in scan worker; the disk image's SHA-256 matched its `.sha256`, its app verified (`codesign --verify --deep --strict`), reads 0.15.6, holds arm64 alone, and carries a licence identical to `LICENSE` with LAME's and Signalsmith's licences. The image's app was not launched; the same code, signed for development, was launched for Milestone 383 and quit cleanly. The dialogs have not been tried on screen; nothing has been listened to.
+
 **Milestone 383: The tempo dialogs say what happens to the clips**
 - Found during the round of use: the Tempo Change at Cursor... dialog still said "Clips stay where they are", which has not been true of a musical track since Milestone 381. Both tempo dialogs (Tempo... and Tempo Change at Cursor...) now say that the clips of a track with Musical Timebase keep their bars and beats and the clips of a track in time stay where they are.
 - Measured by the tests: no check reads the dialogs, which are modal; the whole suite passed (1,614 checks; 330 commands, 104 default keys) and the app launched and quit cleanly.
 - Not tried by hand: the dialogs on screen.
-
-## Released
 
 **Release 0.15.5: Clips that follow the tempo**
 - `SpectraBlade-0.15.5.dmg` on the repository's Releases page, with its SHA-256, and the Windows packages (`SpectraBlade-0.15.5-windows-x64-setup.exe` and `SpectraBlade-0.15.5-windows-x64.zip`, with their SHA-256 files) built from the release's tag and attached by the Windows workflow: Milestones 381 and 382 below on top of 0.15.4, asked for while using the 0.15 line by hand: a musical timebase for each track, so the clips of a musical track keep their bars and beats when the tempo changes (381), and Transpose Notes, Note Velocity and Quantize Notes on the selected note clips from the multitrack view (382); both in the [dogfooding log](docs/DOGFOODING.md) as rows 21 and 22. A dogfooding release: built for Apple silicon only on the Mac, signed ad hoc, not notarized (see [Download and install](README.md#download-and-install)); the Windows packages are built on a runner without an audio device, so untested there.
