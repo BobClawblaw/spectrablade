@@ -16,7 +16,7 @@ A clean-room audio editor for macOS and Windows: waveform and spectral editing, 
 
 **[Download the latest release](https://github.com/BobClawblaw/spectrablade/releases/latest)** (macOS 13 or later, Apple silicon; Windows 10 or later, 64-bit). Every build is on the [Releases](https://github.com/BobClawblaw/spectrablade/releases) page.
 
-**Status:** 0.15.3 is the latest release: the 0.15 line, instrument plug-ins, MIDI and automation for sound design (instrument tracks, note clips, a piano roll, live MIDI input, controller lanes), with the first fixes from using it: instrument tracks and audio tracks told apart, the track pan applied after the effects, open files dragged into the multitrack view, the version on the loading screen. It is still a dogfooding release: what real use turns up is fixed alongside, and 1.0.0 follows once that line has had a round of use. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
+**Status:** 0.15.4 is the latest release: the 0.15 line, instrument plug-ins, MIDI and automation for sound design (instrument tracks, note clips, a piano roll, live MIDI input, controller lanes), with the fixes from using it and a round of MIDI editing in the multitrack view: a toolbar with Select, Draw, Split, Stretch, Glue, Range and Mute tools, the time under the bars on the ruler, several note clips selected at once with audio clips, a rubber band, and Clip Properties for note clips. It is still a dogfooding release: what real use turns up is fixed alongside, and 1.0.0 follows once that line has had a round of use. See the [changelog](CHANGELOG.md) for what each version holds, the [dogfooding log](docs/DOGFOODING.md) for what use has found and what fixed it, the [roadmap](ROADMAP.md) for what comes next, and [keyboard shortcuts](docs/SHORTCUTS.md) for the keys.
 
 ## Features
 
@@ -175,7 +175,7 @@ This finds Visual Studio with `vswhere`, builds a Release program for x64 in `bu
 To check a disk image's app on its own, mount it and point the tests at it:
 
 ```bash
-./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.15.3/SpectraBlade.app/Contents/MacOS/SpectraBlade"
+./build-release/SpectraBladeTests_artefacts/Release/SpectraBladeTests --app "/Volumes/SpectraBlade 0.15.4/SpectraBlade.app/Contents/MacOS/SpectraBlade"
 ```
 
 ## Tests
