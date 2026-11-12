@@ -157,6 +157,7 @@ namespace
         cmdNudgeStartEarlier, cmdNudgeStartLater, cmdNudgeEndEarlier, cmdNudgeEndLater, cmdSelectZeroCrossings, cmdBrushLighter, cmdBrushHeavier, cmdShowStatistics,
         cmdTimeMinutesSeconds, cmdTimeDecimalSeconds, cmdTimeSamples, cmdTimeSmpte24, cmdTimeSmpte25, cmdTimeSmpte2997Drop, cmdTimeSmpte2997, cmdTimeSmpte30,   // one a TimeFormat::Kind, in its order
         cmdExtremeStretch, cmdNewFile, cmdSettings, cmdGenerateInstrument, cmdShowPianoRoll, cmdShowKeyboard, cmdRecordNotes, cmdImportMidi, cmdAddInstrumentTrack,
+        cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue,   // one a MultitrackView::Tool, in its order
         cmdCount   // one past the last command: every id before it is registered
     };
 
@@ -778,14 +779,15 @@ private:
 class MainComponent::EditorPanel final : public juce::Component
 {
 public:
-    EditorPanel (FileTabs& t, WaveformView& w, EditorBar& b, SessionOverview& o, MultitrackView& m)
-        : tabs (t), waveform (w), bar (b), overview (o), multitrack (m)
+    EditorPanel (FileTabs& t, WaveformView& w, EditorBar& b, SessionOverview& o, MultitrackView& m, TrackTools& tt)
+        : tabs (t), waveform (w), bar (b), overview (o), multitrack (m), trackTools (tt)
     {
         addAndMakeVisible (tabs);
         addAndMakeVisible (waveform);
         addAndMakeVisible (bar);
         addChildComponent (overview);
         addChildComponent (multitrack);
+        addChildComponent (trackTools);
     }
 
     /** Whether the open files show as tabs over the editor (the Files panel lists them either way). */
@@ -804,6 +806,8 @@ public:
         r = getLocalBounds();
         overview.setBounds (r.removeFromTop (SessionOverview::height));
         r.removeFromTop (4);
+        trackTools.setVisible (multitrack.isVisible());
+        trackTools.setBounds (multitrack.isVisible() ? r.removeFromBottom (TrackTools::height) : juce::Rectangle<int>());
         multitrack.setBounds (r);
     }
 
@@ -814,6 +818,7 @@ private:
     EditorBar& bar;
     SessionOverview& overview;
     MultitrackView& multitrack;
+    TrackTools& trackTools;
 };
 
 //==============================================================================
@@ -952,7 +957,10 @@ MainComponent::MainComponent()
                                              EditorBar::Commands { cmdZoomOut, cmdZoomIn, cmdZoomFit, cmdShorterTracks, cmdTallerTracks,
                                                                    cmdResetVerticalZoom, cmdGoToTime, cmdSetSelection,
                                                                    cmdBoxTool, cmdLassoTool, cmdBrushTool, cmdSpectralHeal });
-    editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, *editorBar, overview, multitrack);
+    trackTools = std::make_unique<TrackTools> (commands, multitrack, engine,
+                                               TrackTools::Commands { cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue,
+                                                                      cmdTempo, cmdBarsAndBeats });
+    editorPanel = std::make_unique<EditorPanel> (fileTabs, waveform, *editorBar, overview, multitrack, *trackTools);
     fileTabs.onChoose = [this] (int index) { switchToFile (index); };
     fileTabs.onClose = [this] (int index) { closeFile (index); };
     multitrack.setSnapping (settings->getBoolValue (snappingKey, true));
@@ -1902,6 +1910,22 @@ void MainComponent::describeCommand (juce::CommandID id, juce::ApplicationComman
                             info.addDefaultKeypress ('i', cmd); info.setActive (multitrackMode); break;
         case cmdAddInstrumentTrack: info.setInfo ("Add Instrument Track...", "Add a track with an instrument plug-in (chosen from a menu), named after it, for note clips and live MIDI to play", "Multitrack", 0);
                             info.setActive (multitrackMode && ! isRecording()); break;
+        case cmdTrackToolSelect: case cmdTrackToolDraw: case cmdTrackToolSplit: case cmdTrackToolStretch: case cmdTrackToolGlue:
+        {
+            const auto t = (MultitrackView::Tool) (id - cmdTrackToolSelect);
+            info.setInfo (t == MultitrackView::Tool::select ? "Select Tool" : t == MultitrackView::Tool::draw ? "Draw Tool" : t == MultitrackView::Tool::split ? "Split Tool"
+                          : t == MultitrackView::Tool::stretch ? "Stretch Tool" : "Glue Tool",
+                          t == MultitrackView::Tool::select ? "Click and drag clips in the multitrack view to select, move and trim them"
+                          : t == MultitrackView::Tool::draw ? "Drag along an instrument track's lane in the multitrack view to make a note clip there"
+                          : t == MultitrackView::Tool::split ? "Click a clip in the multitrack view to cut it there"
+                          : t == MultitrackView::Tool::stretch ? "Drag a clip's edge in the multitrack view to stretch what it plays, audio or notes"
+                          : "Click a note clip in the multitrack view to join it with the next one on its track",
+                          "Multitrack", 0);
+            info.addDefaultKeypress (id == cmdTrackToolSelect ? '1' : id == cmdTrackToolDraw ? '2' : id == cmdTrackToolSplit ? '3' : id == cmdTrackToolStretch ? '4' : '5', 0);
+            info.setTicked (multitrack.getTool() == t);
+            info.setActive (multitrackMode);
+            break;
+        }
         case cmdAddTrack:   info.setInfo ("Add Track", "Add an empty track", "Multitrack", 0);
                             info.addDefaultKeypress ('t', cmd | shift); info.setActive (multitrackMode); break;
         case cmdAddFolder:  info.setInfo ("Add Folder", "Add a folder above the selected track, with it inside: its mute and solo act on its tracks, and it can be collapsed", "Multitrack", 0);
@@ -2573,6 +2597,10 @@ bool MainComponent::perform (const InvocationInfo& info)
         case cmdNewSession: confirmDiscardSession ([this] { newSession(); }); break;
         case cmdOpenSession: confirmDiscardSession ([this] { chooseSession(); }); break;
         case cmdImportToSession: chooseFilesForSession(); break;
+        case cmdTrackToolSelect: case cmdTrackToolDraw: case cmdTrackToolSplit: case cmdTrackToolStretch: case cmdTrackToolGlue:
+            multitrack.setTool ((MultitrackView::Tool) (info.commandID - cmdTrackToolSelect));
+            commands.commandStatusChanged();
+            break;
         case cmdAddTrack:
         {
             auto next = *engine.session.getState();
@@ -2944,6 +2972,7 @@ juce::PopupMenu MainComponent::getMenuForIndex (int index, const juce::String&)
             add ({ cmdMixer, cmdClipProperties, cmdClipList, cmdMarkerList, cmdSessionNotes, 0, cmdImportToSession, cmdImportMidi, 0 });
             group ("Tracks", { cmdAddTrack, cmdAddInstrumentTrack, cmdAddBus, cmdAddFolder, cmdAddFromTemplate, cmdSaveTrackTemplate, 0, cmdDuplicateTrack, cmdDeleteTrack, cmdMoveTrackUp, cmdMoveTrackDown, cmdHideTrack,
                                0, cmdTrackAbove, cmdTrackBelow, 0, cmdUnsoloAll, cmdUnmuteAll });
+            group ("Tools", { cmdTrackToolSelect, cmdTrackToolDraw, cmdTrackToolSplit, cmdTrackToolStretch, cmdTrackToolGlue });
             group ("Clips", { cmdSplitClip, cmdDuplicateClip, cmdRepeatClip, cmdReverseClip, cmdStretchClip, cmdShiftPitch, 0, cmdLockClip, cmdMuteClip, cmdGroupClips, cmdUngroupClips, cmdClipGainLines });
             group ("Arrange", { cmdNudgeEarlier, cmdNudgeLater, cmdMoveClipsToCursor, cmdTrimStartToCursor, cmdTrimEndToCursor, cmdCloseGaps, cmdQuantize });
             group ("Time Range", { cmdClearRange, cmdDeleteTime, cmdInsertTime, 0, cmdCutTime, cmdCopyTime, cmdPasteTime, cmdDuplicateTime });

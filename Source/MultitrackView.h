@@ -67,6 +67,25 @@ public:
     /** Puts a one-note clip (a hit: C4, a tenth of a second) at the cursor on the track, selected. */
     void addTrigger (juce::uint32 trackId);
 
+    /** The tool in hand, for the toolbar under the view. Select is the usual mouse: clicks and
+        drags select, move and trim clips. Draw: a drag along an instrument track's lane makes a
+        note clip there (below the last track, on a new instrument track); on clips it works as
+        Select. Split: a click on a clip (audio or notes) cuts it at the click. Stretch: a drag on
+        a clip's edge stretches it, audio (as Option-drag does) or notes. Glue: a click on a note
+        clip joins it with the next one on its track. */
+    enum class Tool { select, draw, split, stretch, glue };
+    void setTool (Tool);
+    Tool getTool() const noexcept                 { return tool; }
+
+    /** Cuts the clip or note clip under a point at that frame (snapped; a clip's cut moved to a
+        zero crossing when that is on). */
+    void splitAt (juce::Point<int>);
+
+    /** Joins a note clip with the next one on its track (the next to start after it), as one
+        undo step; nothing without a next. */
+    void mergeWithNext (juce::uint32 clipId);
+    juce::uint32 nextNoteClip (juce::uint32 clipId) const;
+
     /** True when a clip or a note clip is selected (what Cut, Copy, Delete, Split and Duplicate work on). */
     bool hasSelectedClip() const noexcept           { return selectedClip != 0 || selectedNoteClip != 0; }
 
@@ -500,7 +519,10 @@ private:
     class SendsPanel;
 
     enum class Drag { none, range, move, trimStart, trimEnd, fadeIn, fadeOut, envelopePoint, marker, clipGain, clipGainPoint, scrub,
-                      stretchStart, stretchEnd, moveNotes, trimNotesStart, trimNotesEnd };
+                      stretchStart, stretchEnd, moveNotes, trimNotesStart, trimNotesEnd, stretchNotesStart, stretchNotesEnd, drawNotes };
+    Tool tool = Tool::select;
+    juce::int64 drawStart = 0, drawEnd = 0;   // while drawing a note clip: the frames it would span
+    int drawTrack = -1;                       // the track it would go on (past the last: a new one)
     juce::Range<juce::int64> stretchTo;   // while Option-dragging a clip's edge: where it would play, stretched
 
     /** A point of a clip's gain line, or a place on it. */

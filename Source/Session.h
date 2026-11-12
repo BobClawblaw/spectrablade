@@ -876,6 +876,21 @@ namespace SessionEdits
         or past the last track, it goes onto a new track. Returns the copy's id. */
     juce::uint32 placeNoteClip (SessionState&, int track, const NoteClip&, juce::int64 position);
 
+    /** Stretches a note clip by a ratio (1/16 to 16): its notes, lanes, loop and length scale
+        with it, keeping its start, or its end when keepEnd. False when there is no such clip
+        or the ratio is not a number above 0. */
+    bool stretchNoteClip (SessionState&, juce::uint32 clipId, double ratio, bool keepEnd);
+
+    /** The notes and lane points a clip plays, laid out once from its start (every pass of a
+        repeating clip written out, notes cut at its end, each lane starting with its value at the
+        clip's start): the same clip with no offset and no loop. */
+    NoteClip flattenedNoteClip (const NoteClip&);
+
+    /** Joins two note clips on one track into one, from the earlier start to the later end, that
+        plays what both did (each flattened); it keeps clipId, and the earlier clip's name and
+        colour; the other clip goes. False when they are not two note clips on one track. */
+    bool mergeNoteClips (SessionState&, juce::uint32 clipId, juce::uint32 otherId);
+
     /** Clears [start, end) of a track's note clips: clips inside it go, clips across its edges
         are cut back (or split in two), their notes staying in time. False when nothing was there. */
     bool clearNoteRange (SessionState&, int track, juce::int64 start, juce::int64 end);

@@ -4,7 +4,10 @@ Each milestone as it was built, newest first, with what the tests measured on th
 
 ## Unreleased
 
-Nothing yet.
+**Milestone 376: A toolbar for the multitrack view**
+- Asked for during the round of use: there was no way to draw a note clip straight into a lane, and no toolbar in the multitrack view. Now a toolbar sits under the lanes with five tools, each with an icon, a key (1 to 5) and a line saying what it does: **Select** (the usual mouse: clicks and drags select, move and trim clips), **Draw** (a drag along an instrument track's lane makes an empty note clip there, selected, ready for the Piano Roll; below the last track it makes an instrument track; on an audio track nothing), **Split** (a click on a clip, audio or notes, cuts it where it is clicked, a clip's cut moved to a zero crossing when that is on), **Stretch** (a drag on a clip's edge stretches it, audio as Option-drag did, and now notes too: the notes, lanes, loop and length scale with the clip) and **Glue** (a click on a note clip joins it with the next one on its track into one clip that plays what both did, a repeating clip's passes written out; also Merge with Next in a note clip's menu). Right of the tools, the session's tempo and beats in a bar (a click opens Tempo...) and a Bars switch, lit while the ruler counts bars and beats. The tools are under Multitrack > Tools too.
+- Measured by the tests (6 new checks): flattening a repeating clip writes its passes out; merging two clips makes one from the first start to the last end that plays what both did, the second clip's notes and lanes moved along; stretching scales notes, lanes, loop and length keeping the start or the end, and refuses a ratio of 0 or not a number; Draw makes a note clip along an instrument lane, a new instrument track below the tracks, nothing on an audio track or from a click; Split cuts audio and note clips where clicked; Stretch scales a note clip's notes with its length; Glue joins a note clip with the next and does nothing without one; the toolbar's buttons are lit for the tool in hand and run their commands, the tempo reads as "98.5 bpm, 3/4", Bars lights with the ruler. The whole suite passed (1,597 checks; 323 commands, 102 default keys); the app launched and quit cleanly.
+- Not tried by hand: the toolbar and the tools on screen.
 
 ## Released
 

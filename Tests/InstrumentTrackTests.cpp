@@ -534,6 +534,67 @@ namespace
                "makes a track with an instrument in its chain, or note clips alone, an instrument track (" + names (reloaded.state) + "; " + names (old.state) + ")");
     }
 
+    void testMergeAndStretch()
+    {
+        SessionState s;
+        s.sampleRate = rate;
+        const auto trackId = s.addInstrumentTrack().id;
+
+        // A repeating clip (a note at each pass's start, a lane) and a plain one after it.
+        NoteClip a;
+        a.name = "Riff";
+        a.position = 1000;
+        a.length = 48000;
+        a.loopLength = 24000;
+        a.notes = { { 60, 0, 6000, 0.5f } };
+        a.lanes = { { 1, Envelope { { { 0, 0.2f }, { 12000, 0.8f } } } } };
+        NoteClip b;
+        b.position = 60000;
+        b.offset = 500;
+        b.length = 12000;
+        b.notes = { { 64, 500, 3000, 0.25f }, { 67, 20000, 3000, 0.25f } };   // the second past the clip's end: not played
+        b.lanes = { { 1, Envelope { { { 0, 0.9f } } } }, { 7, Envelope { { { 2500, 0.4f } } } } };
+        const auto aId = SessionEdits::addNoteClip (s, trackId, a);
+        const auto bId = SessionEdits::addNoteClip (s, trackId, b);
+        auto& track = s.tracks[0];
+
+        const auto flat = SessionEdits::flattenedNoteClip (track.noteClips[0]);
+        const auto flattened = flat.offset == 0 && flat.loopLength == 0 && flat.position == 1000 && flat.length == 48000
+                               && flat.notes == std::vector<ClipNote> { { 60, 0, 6000, 0.5f }, { 60, 24000, 6000, 0.5f } }
+                               && flat.lanes.size() == 1 && flat.lanes[0].envelope.points == std::vector<AutomationPoint> { { 0, 0.2f }, { 12000, 0.8f }, { 24000, 0.2f }, { 36000, 0.8f } };
+
+        // Merged: from a's start to b's end, a's passes written out, b's notes and lanes moved along
+        // (its lane 1 starting at b's start with b's value, after a's points; its offset notes in time).
+        SessionState other = s;
+        const auto noMerge = ! SessionEdits::mergeNoteClips (other, aId, aId) && ! SessionEdits::mergeNoteClips (other, aId, 999999u);
+        const auto merged = SessionEdits::mergeNoteClips (s, aId, bId);
+        const auto* m = track.noteClips.size() == 1 ? &track.noteClips[0] : nullptr;
+        const auto joined = merged && noMerge && m != nullptr && m->id == aId && m->name == "Riff" && m->position == 1000 && m->length == 71000 && m->offset == 0 && m->loopLength == 0
+                            && m->notes == std::vector<ClipNote> { { 60, 0, 6000, 0.5f }, { 60, 24000, 6000, 0.5f }, { 64, 59000, 3000, 0.25f } }
+                            && m->lanes.size() == 2 && m->lanes[0].controller == 1
+                            && m->lanes[0].envelope.points == std::vector<AutomationPoint> { { 0, 0.2f }, { 12000, 0.8f }, { 24000, 0.2f }, { 36000, 0.8f }, { 59000, 0.9f } }
+                            && m->lanes[1].controller == 7 && m->lanes[1].envelope.points == std::vector<AutomationPoint> { { 59000, 0.4f }, { 61000, 0.4f } };   // its value at b's start, then its point
+        check (flattened && joined, "note clips: flattened, a repeating clip's passes are written out from its start; merged, two clips become one from the first start to the last end, "
+                                    "playing what both did, the second clip's notes and lanes moved along (" + juce::String (m != nullptr ? (int) m->notes.size() : -1) + " notes)");
+
+        // Stretched by 1.5 keeping the start: notes, lanes, loop and length scale; by 0.5 keeping
+        // the end: the start moves up; a ratio out of range or not a number does nothing.
+        SessionState st;
+        st.sampleRate = rate;
+        const auto stId = st.addInstrumentTrack().id;
+        const auto id = SessionEdits::addNoteClip (st, stId, a);
+        const auto grown = SessionEdits::stretchNoteClip (st, id, 1.5, false);
+        const auto& g = st.tracks[0].noteClips[0];
+        const auto scaled = grown && g.position == 1000 && g.length == 72000 && g.loopLength == 36000 && g.notes == std::vector<ClipNote> { { 60, 0, 9000, 0.5f } }
+                            && g.lanes[0].envelope.points == std::vector<AutomationPoint> { { 0, 0.2f }, { 18000, 0.8f } };
+        const auto shrunk = SessionEdits::stretchNoteClip (st, id, 0.5, true);
+        const auto& h = st.tracks[0].noteClips[0];
+        const auto fromEnd = shrunk && h.getEnd() == 73000 && h.length == 36000 && h.position == 37000 && h.loopLength == 18000 && h.notes[0].length == 4500;
+        const auto refused = ! SessionEdits::stretchNoteClip (st, id, 0.0, false) && ! SessionEdits::stretchNoteClip (st, id, std::numeric_limits<double>::quiet_NaN(), false)
+                             && ! SessionEdits::stretchNoteClip (st, 999999u, 2.0, false);
+        check (scaled && fromEnd && refused, "note clips: stretched by a ratio, the notes, lanes, loop and length scale with it, keeping the start or the end; no ratio of 0 or not a number");
+    }
+
     void testFile (juce::AudioFormatManager& formats)
     {
         SessionState s;
@@ -828,6 +889,7 @@ void runInstrumentTrackTests (AudioEngine& engine)
     testEdits();
     testClipEdits();
     testTrackKinds();
+    testMergeAndStretch();
     testFile (engine.formatManager);
     testChain();
     testSynth (engine);

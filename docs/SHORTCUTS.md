@@ -110,6 +110,11 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Move Track Down | `Option-Cmd-Down Arrow` |
 | Duplicate Clip | `Cmd-D` |
 | Bars and Beats | `B` |
+| Select Tool | `1` |
+| Draw Tool | `2` |
+| Split Tool | `3` |
+| Stretch Tool | `4` |
+| Glue Tool | `5` |
 | Tap Tempo | `T` |
 | Input Monitoring | `I` |
 | Loop Recording | `L` |
@@ -142,6 +147,10 @@ In the multitrack view the same keys act on clips where that makes sense: Delete
 | Select a band of frequencies | Option-drag in the spectrogram |
 | Draw round frequencies (lasso tool) | Drag in the spectrogram; Shift-drag adds |
 | Paint over frequencies (brush tool) | Drag in the spectrogram; Shift-drag adds |
+| Draw a note clip (Draw tool) | Drag along an instrument track's lane in the multitrack view (below the tracks makes a track) |
+| Cut a clip where it is clicked (Split tool) | Click the clip in the multitrack view |
+| Stretch a clip, audio or notes (Stretch tool) | Drag the clip's edge in the multitrack view (Option-drag does it with the Select tool, for audio) |
+| Join a note clip with the next on its track (Glue tool) | Click the clip in the multitrack view (or Merge with Next in its menu) |
 | Fade in or out | Drag the handle at the waveform's top-left or top-right corner; drag up or down to bend the curve |
 | Remove a fade | Double-click its handle |
 | Rename a marker | Double-click it |

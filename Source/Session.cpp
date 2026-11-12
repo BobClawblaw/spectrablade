@@ -2495,6 +2495,143 @@ juce::uint32 placeNoteClip (SessionState& s, int track, const NoteClip& clip, ju
     return copy.id;
 }
 
+bool stretchNoteClip (SessionState& s, juce::uint32 clipId, double ratio, bool keepEnd)
+{
+    const auto where = s.findNoteClip (clipId);
+
+    if (! where.has_value() || ! std::isfinite (ratio) || ! (ratio > 0.0))
+        return false;
+
+    ratio = juce::jlimit (1.0 / 16.0, 16.0, ratio);
+    const auto scale = [ratio] (juce::int64 frames) { return (juce::int64) std::llround ((double) frames * ratio); };
+    auto& c = s.tracks[(size_t) where->first].noteClips[(size_t) where->second];
+    const auto end = c.getEnd();
+    c.offset = scale (c.offset);
+    c.length = juce::jmax ((juce::int64) 1, scale (c.length));
+    c.loopLength = scale (c.loopLength);
+
+    for (auto& n : c.notes)
+    {
+        n.start = scale (n.start);
+        n.length = juce::jmax ((juce::int64) 1, scale (n.length));
+    }
+
+    for (auto& lane : c.lanes)
+        for (auto& p : lane.envelope.points)
+            p.frame = scale (p.frame);
+
+    if (keepEnd)
+        c.position = juce::jmax ((juce::int64) 0, end - c.length);
+
+    c = tidiedNoteClip (std::move (c));
+    return true;
+}
+
+NoteClip flattenedNoteClip (const NoteClip& c)
+{
+    auto flat = c;
+    flat.notes.clear();
+    flat.lanes.clear();
+    flat.offset = 0;
+    flat.loopLength = 0;
+
+    const auto laneFor = [&flat] (int controller) -> ControllerLane&
+    {
+        for (auto& lane : flat.lanes)
+            if (lane.controller == controller)
+                return lane;
+
+        flat.lanes.push_back ({ controller, {} });
+        return flat.lanes.back();
+    };
+
+    const auto end = c.getEnd();
+    const auto period = juce::jmax ((juce::int64) 1, c.getPeriod());
+
+    for (auto pass = c.getOrigin(); pass < end; pass += period)
+    {
+        for (auto n : c.notes)
+        {
+            const auto at = pass + n.start;
+
+            if (at < c.position || at >= end)
+                continue;
+
+            n.start = at - c.position;
+            n.length = juce::jmin (n.length, end - at);
+            flat.notes.push_back (n);
+        }
+
+        for (auto& lane : c.lanes)
+            for (auto& p : lane.envelope.points)
+                if (const auto at = pass + p.frame; at >= c.position && at < end)
+                    laneFor (lane.controller).envelope.add (at - c.position, p.value);
+
+        if (c.loopLength <= 0)
+            break;
+    }
+
+    // Each lane starts with its value at the clip's start, as the clip did.
+    for (auto& lane : c.lanes)
+        if (const auto value = c.laneValueAt (lane, c.position))
+        {
+            auto& target = laneFor (lane.controller);
+
+            if (target.envelope.points.empty() || target.envelope.points.front().frame != 0)
+                target.envelope.add (0, *value);
+        }
+
+    std::stable_sort (flat.notes.begin(), flat.notes.end(), [] (auto& a, auto& b) { return a.start < b.start; });
+    return flat;
+}
+
+bool mergeNoteClips (SessionState& s, juce::uint32 clipId, juce::uint32 otherId)
+{
+    const auto a = s.findNoteClip (clipId), b = s.findNoteClip (otherId);
+
+    if (! a.has_value() || ! b.has_value() || a->first != b->first || clipId == otherId)
+        return false;
+
+    auto& clips = s.tracks[(size_t) a->first].noteClips;
+    const auto first = flattenedNoteClip (clips[(size_t) a->second]), second = flattenedNoteClip (clips[(size_t) b->second]);
+    const auto& earlier = first.position <= second.position ? first : second;
+    auto merged = earlier;
+    merged.id = clipId;
+    merged.muted = clips[(size_t) a->second].muted;
+    merged.position = juce::jmin (first.position, second.position);
+    merged.length = juce::jmax (first.getEnd(), second.getEnd()) - merged.position;
+    merged.notes.clear();
+    merged.lanes.clear();
+
+    const auto laneFor = [&merged] (int controller) -> ControllerLane&
+    {
+        for (auto& lane : merged.lanes)
+            if (lane.controller == controller)
+                return lane;
+
+        merged.lanes.push_back ({ controller, {} });
+        return merged.lanes.back();
+    };
+
+    for (const auto* part : { &first, &second })
+    {
+        for (auto n : part->notes)
+        {
+            n.start += part->position - merged.position;
+            merged.notes.push_back (n);
+        }
+
+        for (auto& lane : part->lanes)
+            for (auto& p : lane.envelope.points)
+                laneFor (lane.controller).envelope.add (p.frame + part->position - merged.position, p.value);
+    }
+
+    std::stable_sort (merged.notes.begin(), merged.notes.end(), [] (auto& x, auto& y) { return x.start < y.start; });
+    clips[(size_t) a->second] = tidiedNoteClip (std::move (merged));
+    clips.erase (clips.begin() + b->second);
+    return true;
+}
+
 bool clearNoteRange (SessionState& s, int track, juce::int64 start, juce::int64 end)
 {
     if (! juce::isPositiveAndBelow (track, (int) s.tracks.size()) || end <= start || s.tracks[(size_t) track].isFrozen())

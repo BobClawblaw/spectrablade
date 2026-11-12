@@ -53,6 +53,7 @@
 #include "Dock.h"
 #include "Batch.h"
 #include "EditorBar.h"
+#include "TrackTools.h"
 #include "PitchEditor.h"
 #include "NoteEditor.h"
 #include "Delivery.h"
@@ -761,6 +762,7 @@ private:
 
     int lastRepeatable = 0;   // the last command from the Effects menu, for Repeat
     std::unique_ptr<EditorBar> editorBar;   // made once the commands are registered
+    std::unique_ptr<TrackTools> trackTools; // the toolbar under the multitrack view, likewise
     std::unique_ptr<EditorPanel> editorPanel;
     juce::File projectFile;   // the project last opened or saved (Save Project writes it)
     std::map<juce::String, std::unique_ptr<juce::Component>> madePanels;   // the panels made when shown

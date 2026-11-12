@@ -238,6 +238,7 @@ target_sources(SpectraBlade PRIVATE
     Source/WindowPlaces.cpp
     Source/Dock.cpp
     Source/EditorBar.cpp
+    Source/TrackTools.cpp
     Source/Navigation.cpp
     Source/Restoration.cpp
     Source/Generator.cpp
@@ -497,6 +498,7 @@ target_sources(SpectraBladeTests PRIVATE
     Source/WindowPlaces.cpp
     Source/Dock.cpp
     Source/EditorBar.cpp
+    Source/TrackTools.cpp
     Source/Navigation.cpp
     Source/Restoration.cpp
     Source/Generator.cpp

@@ -2711,8 +2711,35 @@ void MultitrackView::paint (juce::Graphics& g)
         if (x1 > x0)
             g.fillRect (juce::Rectangle<float> (x0, (float) timeRulerHeight - 5.0f, x1 - x0, 5.0f));
     }
+    // A note clip being drawn: where it would go, outlined.
+    if (drag == Drag::drawNotes && drawEnd != drawStart && drawTrack >= 0 && ! s.tracks.empty())
+    {
+        const auto last = juce::jmin (drawTrack, (int) s.tracks.size() - 1);
+        const auto top = laneTop (last) + (drawTrack - last) * laneHeight;
+        const auto x0 = xForFrame (juce::jmin (drawStart, drawEnd)), x1 = xForFrame (juce::jmax (drawStart, drawEnd));
+        const auto r = juce::Rectangle<float> (x0, (float) top + 3.0f, juce::jmax (2.0f, x1 - x0), (float) laneHeight - 6.0f);
+        g.setColour (Theme::accent.withAlpha (0.25f));
+        g.fillRoundedRectangle (r, 3.0f);
+        g.setColour (Theme::accent);
+        g.drawRoundedRectangle (r, 3.0f, 1.5f);
+    }
+
+    // A note clip being stretched: where it would play, outlined, with the ratio.
+    if (! stretchTo.isEmpty() && (drag == Drag::stretchNotesStart || drag == Drag::stretchNotesEnd) && dragTrack >= 0 && dragTrack < (int) s.tracks.size())
+    {
+        auto stretched = dragNoteClip;
+        stretched.position = stretchTo.getStart();
+        stretched.length = stretchTo.getLength();
+        const auto r = noteClipBounds (dragTrack, stretched).toFloat();
+        g.setColour (Theme::accent);
+        g.drawRoundedRectangle (r, 3.0f, 1.5f);
+        g.setFont (juce::FontOptions (11.0f));
+        g.drawText (juce::String (100.0 * (double) stretchTo.getLength() / (double) juce::jmax ((juce::int64) 1, dragNoteClip.length), 1) + "%",
+                    r.reduced (4.0f, 2.0f).toNearestInt(), juce::Justification::topLeft, false);
+    }
+
     // A clip being stretched: where it would play, outlined, with the ratio.
-    if (! stretchTo.isEmpty() && dragTrack >= 0 && dragTrack < (int) s.tracks.size())
+    if (! stretchTo.isEmpty() && (drag == Drag::stretchStart || drag == Drag::stretchEnd) && dragTrack >= 0 && dragTrack < (int) s.tracks.size())
     {
         auto stretched = dragClip;
         stretched.position = stretchTo.getStart();
@@ -3261,6 +3288,7 @@ void MultitrackView::showNoteClipMenu (juce::uint32 clipId)
     juce::PopupMenu menu;
     menu.addItem ("Piano Roll", onOpenNotes != nullptr, false, [safe, clipId] { if (safe != nullptr && safe->onOpenNotes != nullptr) safe->onOpenNotes (clipId); });
     menu.addItem ("Edit Notes...", onEditNotes != nullptr, false, [safe, trackId, clipId] { if (safe != nullptr && safe->onEditNotes != nullptr) safe->onEditNotes (trackId, clipId); });
+    menu.addItem ("Merge with Next", nextNoteClip (clipId) != 0, false, [safe, clipId] { if (safe != nullptr) safe->mergeWithNext (clipId); });
     menu.addItem ("Mute", true, clip.muted, [safe, clipId, muted = clip.muted]
     {
         if (safe == nullptr)
@@ -4434,7 +4462,28 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         return;
     }
 
-    // A note clip: right-click for its menu, a click selects it, a drag moves it in time.
+    // The Split tool cuts the clip under the mouse; Glue joins a note clip with the next.
+    if (! e.mods.isPopupMenu() && tool == Tool::split)
+    {
+        splitAt (p);
+        return;
+    }
+
+    if (! e.mods.isPopupMenu() && tool == Tool::glue)
+    {
+        if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
+        {
+            const auto id = shown().tracks[(size_t) hit->first].noteClips[(size_t) hit->second].id;
+            selectNoteClip (id);
+            selectTrack (hit->first);
+            mergeWithNext (id);
+        }
+
+        return;
+    }
+
+    // A note clip: right-click for its menu, a click selects it, a drag moves it in time (with
+    // the Stretch tool, a drag on an edge stretches it).
     if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
     {
         const auto& clip = shown().tracks[(size_t) hit->first].noteClips[(size_t) hit->second];
@@ -4448,13 +4497,33 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
         }
 
         const auto r = noteClipBounds (hit->first, clip);
+        const auto stretching = tool == Tool::stretch;
         dragNoteClip = clip;
         dragTrack = hit->first;
         dragFrame = frameForX ((float) p.x);
-        drag = p.x <= r.getX() + edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimNotesStart
-             : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimNotesEnd
+        drag = p.x <= r.getX() + edgeGrab && r.getWidth() > 3 * edgeGrab ? (stretching ? Drag::stretchNotesStart : Drag::trimNotesStart)
+             : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? (stretching ? Drag::stretchNotesEnd : Drag::trimNotesEnd)
              : Drag::moveNotes;
-        dragDescription = drag == Drag::moveNotes ? "Move Notes" : "Trim Notes";
+        stretchTo = {};
+        dragDescription = drag == Drag::moveNotes ? "Move Notes" : stretching ? "Stretch Notes" : "Trim Notes";
+        return;
+    }
+
+    // The Draw tool: a drag along an instrument track's lane (or below the tracks) makes a note clip.
+    if (! e.mods.isPopupMenu() && tool == Tool::draw && ! clipAt (p).has_value())
+    {
+        const auto t = trackAt (p.y);
+
+        if (t < 0 || (t < (int) shown().tracks.size() && ! shown().tracks[(size_t) t].takesNoteClips()))
+            return;
+
+        selectClip (0, false);
+        selectNoteClip (0);
+        selectTrack (t);
+        drawTrack = t;
+        drawStart = drawEnd = snapped (frameForX ((float) p.x), 0, false);
+        drag = Drag::drawNotes;
+        repaint();
         return;
     }
 
@@ -4580,8 +4649,8 @@ void MultitrackView::mouseDown (const juce::MouseEvent& e)
                  : p.x >= r.getRight() - edgeGrab && r.getWidth() > 3 * edgeGrab ? Drag::trimEnd
                  : Drag::move;
 
-        // With Option an edge stretches the clip instead of trimming it.
-        if (e.mods.isAltDown() && (drag == Drag::trimStart || drag == Drag::trimEnd))
+        // With Option, or the Stretch tool, an edge stretches the clip instead of trimming it.
+        if ((e.mods.isAltDown() || tool == Tool::stretch) && (drag == Drag::trimStart || drag == Drag::trimEnd))
             drag = drag == Drag::trimStart ? Drag::stretchStart : Drag::stretchEnd;
 
         stretchTo = {};
@@ -4628,10 +4697,33 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         return;
     }
 
+    if (drag == Drag::drawNotes)
+    {
+        drawEnd = snapped (frameForX ((float) juce::jmax (headerWidth, p.x)), 0, false);
+        repaint();
+        return;
+    }
+
     if (drag == Drag::none || e.mouseWasDraggedSinceMouseDown() == false)
         return;
 
     const auto delta = frameForX ((float) p.x) - dragFrame;
+
+    // Stretching notes: only where they would play is shown; the notes are scaled once let go.
+    if (drag == Drag::stretchNotesStart || drag == Drag::stretchNotesEnd)
+    {
+        const auto end = dragNoteClip.getEnd(), start = dragNoteClip.position;
+        const auto shortest = juce::jmax ((juce::int64) 1, (juce::int64) std::ceil ((double) dragNoteClip.length / 16.0));
+        const auto longest = dragNoteClip.length * 16;
+
+        if (drag == Drag::stretchNotesEnd)
+            stretchTo = { start, start + juce::jlimit (shortest, longest, snapped (end + delta) - start) };
+        else
+            stretchTo = { end - juce::jlimit (juce::jmin (shortest, end), juce::jmin (longest, end), end - snapped (start + delta)), end };
+
+        repaint();
+        return;
+    }
 
     // Stretching: only where it would play is shown; the audio is stretched once let go.
     if (drag == Drag::stretchStart || drag == Drag::stretchEnd)
@@ -4762,6 +4854,9 @@ void MultitrackView::mouseDrag (const juce::MouseEvent& e)
         case Drag::scrub:
         case Drag::stretchStart:
         case Drag::stretchEnd:
+        case Drag::stretchNotesStart:
+        case Drag::stretchNotesEnd:
+        case Drag::drawNotes:
             break;
     }
 
@@ -4794,6 +4889,41 @@ void MultitrackView::mouseUp (const juce::MouseEvent&)
         repaint();
     }
 
+    if ((drag == Drag::stretchNotesStart || drag == Drag::stretchNotesEnd) && ! stretchTo.isEmpty())
+    {
+        const auto to = std::exchange (stretchTo, {});
+
+        if (to.getLength() != dragNoteClip.length)
+        {
+            auto next = *engine.session.getState();
+
+            if (SessionEdits::stretchNoteClip (next, dragNoteClip.id, (double) to.getLength() / (double) dragNoteClip.length, drag == Drag::stretchNotesStart))
+                engine.session.apply (std::move (next), "Stretch Notes");
+        }
+
+        repaint();
+    }
+
+    // A drawn note clip: from where the drag began to where it ended, on the track it was drawn on.
+    if (drag == Drag::drawNotes)
+    {
+        const auto span = juce::Range<juce::int64>::between (drawStart, drawEnd);
+
+        if (! span.isEmpty())
+        {
+            NoteClip clip;
+            clip.name = "Notes";
+            clip.length = span.getLength();
+            auto next = *engine.session.getState();
+            const auto id = SessionEdits::placeNoteClip (next, drawTrack, clip, span.getStart());
+            engine.session.apply (std::move (next), "Draw Notes");
+            selectNoteClip (id);
+        }
+
+        drawTrack = -1;
+        repaint();
+    }
+
     if (preview.has_value())
     {
         auto next = std::move (*preview);
@@ -4809,6 +4939,9 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
 {
     auto cursorShape = juce::MouseCursor::NormalCursor;
     const auto p = e.getPosition();
+    const auto overNotes = noteClipAt (p).has_value() && ! clipAt (p).has_value();
+    const auto t = trackAt (p.y);
+    const auto overLane = p.x >= headerWidth && p.y >= rulerHeight && (t >= (int) shown().tracks.size() || (t >= 0 && shown().tracks[(size_t) t].takesNoteClips()));
 
     if (markerAt (p) >= 0)
     {
@@ -4840,7 +4973,93 @@ void MultitrackView::mouseMove (const juce::MouseEvent& e)
                           : juce::MouseCursor::DraggingHandCursor;
     }
 
+    // The tools say what a click would do: Split and Draw a crosshair where they act, Glue a hand over a note clip.
+    if (tool == Tool::split && (overNotes || clipAt (p).has_value()))
+        cursorShape = juce::MouseCursor::CrosshairCursor;
+    else if (tool == Tool::glue && overNotes)
+        cursorShape = juce::MouseCursor::PointingHandCursor;
+    else if (tool == Tool::draw && overLane && ! overNotes && ! clipAt (p).has_value())
+        cursorShape = juce::MouseCursor::CrosshairCursor;
+
     setMouseCursor (cursorShape);
+}
+
+void MultitrackView::setTool (Tool t)
+{
+    if (tool == t)
+        return;
+
+    tool = t;
+    drag = Drag::none;
+    stretchTo = {};
+    drawTrack = -1;
+    repaint();
+}
+
+void MultitrackView::splitAt (juce::Point<int> p)
+{
+    auto next = *engine.session.getState();
+    const auto frame = snapped (frameForX ((float) p.x), 0, false);
+
+    if (const auto hit = noteClipAt (p); hit.has_value() && ! clipAt (p).has_value())
+    {
+        const auto id = next.tracks[(size_t) hit->first].noteClips[(size_t) hit->second].id;
+        selectNoteClip (id);
+        selectTrack (hit->first);
+
+        if (SessionEdits::splitNoteClip (next, id, frame))
+            engine.session.apply (std::move (next), "Split Notes");
+
+        return;
+    }
+
+    if (const auto hit = clipAt (p))
+    {
+        const auto& clip = next.tracks[(size_t) hit->first].clips[(size_t) hit->second];
+        const auto id = clip.id;
+        const auto at = toZeroCrossing (clip, frame);
+        selectClip (id, false);
+        selectedClip = id;
+        selectTrack (hit->first);
+
+        if (! clip.locked && SessionEdits::splitClip (next, id, at))
+            engine.session.apply (std::move (next), "Split Clip");
+    }
+}
+
+juce::uint32 MultitrackView::nextNoteClip (juce::uint32 clipId) const
+{
+    const auto where = shown().findNoteClip (clipId);
+
+    if (! where.has_value())
+        return 0;
+
+    const auto& clips = shown().tracks[(size_t) where->first].noteClips;
+    const auto& clip = clips[(size_t) where->second];
+    const NoteClip* next = nullptr;
+
+    for (auto& c : clips)
+        if (c.id != clip.id && (c.position > clip.position || (c.position == clip.position && c.id > clip.id))
+            && (next == nullptr || c.position < next->position || (c.position == next->position && c.id < next->id)))
+            next = &c;
+
+    return next != nullptr ? next->id : 0;
+}
+
+void MultitrackView::mergeWithNext (juce::uint32 clipId)
+{
+    const auto other = nextNoteClip (clipId);
+
+    if (other == 0)
+        return;
+
+    auto next = *engine.session.getState();
+
+    if (SessionEdits::mergeNoteClips (next, clipId, other))
+    {
+        engine.session.apply (std::move (next), "Merge Notes");
+        selectNoteClip (clipId);
+    }
 }
 
 void MultitrackView::mouseDoubleClick (const juce::MouseEvent& e)
